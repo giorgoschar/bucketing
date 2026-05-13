@@ -1,0 +1,24 @@
+<div id="occ-{{ occ.id }}" class="px-5 py-3.5 flex items-center gap-3">
+  <div class="w-2 h-2 rounded-full flex-shrink-0
+    {% if occ.status.value == 'paid' %}bg-emerald-400
+    {% elif occ.status.value == 'skipped' %}bg-gray-300
+    {% else %}bg-amber-400{% endif %}">
+  </div>
+  <div class="flex-1 min-w-0">
+    <p class="text-sm font-medium">{{ bill.name }}</p>
+    <p class="text-xs text-gray-400">{{ occ.due_date.strftime('%d %b %Y') }}
+      {% if occ.status.value == 'paid' %} · <span class="text-emerald-500 font-medium">Paid</span>
+      {% elif occ.status.value == 'skipped' %} · <span class="text-gray-400">Skipped</span>
+      {% elif bill.is_auto_pay and occ.amount %} · <span class="text-indigo-500 font-medium">Auto-pay set ✓</span>
+      {% endif %}
+    </p>
+  </div>
+  <span class="text-sm font-semibold text-gray-700 dark:text-gray-300 flex-shrink-0">
+    {% if occ.amount %}{{ occ.amount | currency(bill.currency) }}
+    {% elif bill.amount %}{{ bill.amount | currency(bill.currency) }}
+    {% else %}<span class="text-gray-400 font-normal text-xs">Variable</span>{% endif %}
+  </span>
+  {% if occ.status.value == 'unpaid' %}
+  {% include "partials/pay_bill_button.html" %}
+  {% endif %}
+</div>

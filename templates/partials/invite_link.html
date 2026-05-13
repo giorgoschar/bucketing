@@ -1,0 +1,13 @@
+<div class="p-4 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800 rounded-xl">
+  <p class="text-sm font-semibold text-emerald-800 dark:text-emerald-300 mb-1">Invite link created</p>
+  <p class="text-xs text-emerald-700 dark:text-emerald-400 mb-3">Share this link. It expires in 7 days and can only be used once.</p>
+  <div class="flex gap-2">
+    <input type="text" value="{{ invite_url }}" readonly
+           class="flex-1 px-3 py-2 text-xs bg-white dark:bg-gray-800 border border-emerald-200 dark:border-emerald-700 rounded-lg font-mono select-all"
+           onclick="this.select()" />
+    <button onclick="navigator.clipboard.writeText('{{ invite_url }}').then(() => this.textContent = 'Copied!')"
+            class="px-3 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold rounded-lg transition-colors">
+      Copy
+    </button>
+  </div>
+</div>

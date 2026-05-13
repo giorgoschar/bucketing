@@ -1,0 +1,264 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block header_title %}Dashboard{% endblock %}
+
+{% block header_actions %}
+<div class="flex items-center gap-2">
+  <!-- All time / Month toggle -->
+  <div class="flex items-center gap-0.5 bg-gray-100 dark:bg-gray-800 rounded-xl p-1">
+    <a href="/dashboard?all_time=true"
+       class="px-3 py-1 rounded-lg text-xs font-medium transition-colors {% if all_time %}bg-white dark:bg-gray-700 shadow-sm text-gray-900 dark:text-gray-100{% else %}text-gray-500 hover:text-gray-700 dark:hover:text-gray-300{% endif %}">
+      All time
+    </a>
+    <a href="/dashboard"
+       class="px-3 py-1 rounded-lg text-xs font-medium transition-colors {% if not all_time %}bg-white dark:bg-gray-700 shadow-sm text-gray-900 dark:text-gray-100{% else %}text-gray-500 hover:text-gray-700 dark:hover:text-gray-300{% endif %}">
+      This month
+    </a>
+  </div>
+  {% if not all_time %}
+  <!-- Month navigation -->
+  <a href="{{ prev_url }}" class="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 transition-colors">
+    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+  </a>
+  <span class="text-sm font-medium text-gray-700 dark:text-gray-300 min-w-[90px] text-center">{{ month_name }}</span>
+  {% if next_url %}
+  <a href="{{ next_url }}" class="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 transition-colors">
+    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+  </a>
+  {% else %}
+  <span class="p-1.5 text-gray-300 dark:text-gray-700">
+    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+  </span>
+  {% endif %}
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto space-y-6">
+
+  <!-- ===== Bucket type filter pills ===== -->
+  <div class="flex flex-wrap gap-2">
+    {% set base = '/dashboard?' ~ ('all_time=true' if all_time else 'year=' ~ year ~ '&month=' ~ month) %}
+    {% for label, value in [('All', ''), ('Day2Day', 'day2day'), ('Trips', 'trip'), ('Bills', 'bills'), ('Savings', 'savings')] %}
+    <a href="{{ base }}{% if value %}&bucket_type={{ value }}{% endif %}"
+       class="px-3 py-1.5 rounded-full text-xs font-semibold transition-colors
+              {% if bucket_type == value and not selected_bucket_ids %}bg-primary-500 text-white{% else %}bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700{% endif %}">
+      {{ label }}
+    </a>
+    {% endfor %}
+  </div>
+
+  <!-- ===== Individual bucket pills (multi-select, dynamic) ===== -->
+  {% if buckets %}
+  {% set _base = 'all_time=true' if all_time else 'year=' ~ year ~ '&month=' ~ month %}
+  {% set _btype = '&bucket_type=' ~ bucket_type if bucket_type else '' %}
+  <div x-data="bucketFilter({{ selected_bucket_ids | tojson }}, '{{ _base }}{{ _btype }}')" class="flex flex-wrap gap-2">
+    {% for bucket in buckets %}
+    <button type="button"
+            @click="toggle('{{ bucket.id }}')"
+            :class="isSelected('{{ bucket.id }}') ? 'bg-primary-500 text-white ring-2 ring-primary-400' : 'bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-primary-400 hover:text-primary-600'"
+            class="px-3 py-1.5 rounded-full text-xs font-medium transition-colors">
+      {{ bucket.icon }} {{ bucket.name }}
+    </button>
+    {% endfor %}
+    <button type="button" x-show="selected.length > 0" @click="clearAll()"
+            class="px-3 py-1.5 rounded-full text-xs font-medium text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
+      ✕ Clear
+    </button>
+  </div>
+  {% endif %}
+
+  <!-- ===== Month Summary ===== -->
+  <div id="dashboard-summary" class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+
+    <!-- Total spent -->
+    <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800 col-span-1 sm:col-span-1">
+      <p class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">{% if all_time %}All time{% else %}{{ month_name }}{% endif %}</p>
+      <p class="text-3xl font-bold">{{ summary.total_spent | currency(household.default_currency) }}</p>
+      <p class="text-xs text-gray-400 mt-1">Total expenses</p>
+    </div>
+
+    <!-- Who paid what -->
+    <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800 col-span-1 sm:col-span-2">
+      <p class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Who paid</p>
+      {% if summary.paid_by %}
+        <div class="space-y-2">
+          {% for uid, data in summary.paid_by.items() %}
+          <div class="flex items-center gap-3">
+            <div class="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
+                 style="background-color: {{ data.color }}">
+              {{ data.name | initials }}
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center justify-between">
+                <span class="text-sm font-medium">{{ data.name }}</span>
+                <span class="text-sm font-semibold">{{ data.amount | currency(household.default_currency) }}</span>
+              </div>
+              {% if summary.total_spent > 0 %}
+              <div class="mt-1 h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                <div class="h-full rounded-full" style="width: {{ (data.amount / summary.total_spent * 100) | round(1) }}%; background-color: {{ data.color }}"></div>
+              </div>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="text-sm text-gray-400">No expenses yet this month.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- ===== Overdue & Upcoming bills ===== -->
+  {% if overdue_bills or upcoming_bills %}
+  <div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
+    <div class="px-5 py-4 border-b border-gray-50 dark:border-gray-800 flex items-center justify-between">
+      <p class="text-sm font-semibold">Bills</p>
+      <a href="/bills" class="text-xs text-primary-500 font-medium hover:underline">View all →</a>
+    </div>
+    <div class="divide-y divide-gray-50 dark:divide-gray-800">
+      {% for occ in overdue_bills[:3] %}
+      <div class="px-5 py-3.5 flex items-center gap-3">
+        <div class="w-2 h-2 rounded-full bg-red-400 flex-shrink-0"></div>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium truncate">{{ occ.bill.name }}</p>
+          <p class="text-xs text-red-400">Overdue · {{ occ.due_date.strftime('%d %b') }}</p>
+        </div>
+        <span class="text-sm font-semibold text-gray-700 dark:text-gray-300">
+          {% if occ.amount %}{{ occ.amount | currency(occ.bill.currency) }}
+          {% elif occ.bill.amount %}{{ occ.bill.amount | currency(occ.bill.currency) }}
+          {% else %}—{% endif %}
+        </span>
+      </div>
+      {% endfor %}
+      {% for occ in upcoming_bills[:5] %}
+      <div class="px-5 py-3.5 flex items-center gap-3">
+        <div class="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0"></div>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium truncate">{{ occ.bill.name }}</p>
+          <p class="text-xs text-gray-400">Due {{ occ.due_date.strftime('%d %b') }}</p>
+        </div>
+        <span class="text-sm font-semibold text-gray-700 dark:text-gray-300">
+          {% if occ.amount %}{{ occ.amount | currency(occ.bill.currency) }}
+          {% elif occ.bill.amount %}{{ occ.bill.amount | currency(occ.bill.currency) }}
+          {% else %}—{% endif %}
+        </span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- ===== Buckets ===== -->
+  {% if buckets %}
+  <div>
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-sm font-semibold text-gray-700 dark:text-gray-300">Buckets</h2>
+      <a href="/buckets" class="text-xs text-primary-500 font-medium hover:underline">Manage →</a>
+    </div>
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+      {% for bucket in buckets %}
+      <a href="/buckets/{{ bucket.id }}"
+         class="bg-white dark:bg-gray-900 rounded-2xl p-4 border border-gray-100 dark:border-gray-800 hover:border-gray-200 dark:hover:border-gray-700 transition-colors group">
+        <div class="flex items-center gap-2 mb-2">
+          <span class="text-xl">{{ bucket.icon }}</span>
+          <div class="w-2 h-2 rounded-full flex-shrink-0" style="background-color: {{ bucket.color }}"></div>
+        </div>
+        <p class="text-sm font-medium truncate group-hover:text-primary-600 transition-colors">{{ bucket.name }}</p>
+      </a>
+      {% endfor %}
+      <a href="/buckets" class="bg-gray-50 dark:bg-gray-800/50 rounded-2xl p-4 border border-dashed border-gray-200 dark:border-gray-700 flex flex-col items-center justify-center gap-1 hover:border-primary-300 transition-colors group">
+        <svg class="w-5 h-5 text-gray-300 group-hover:text-primary-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+        </svg>
+        <span class="text-xs text-gray-400">New bucket</span>
+      </a>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- ===== Recent Expenses ===== -->
+  {% if recent %}
+  <div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
+    <div class="px-5 py-4 border-b border-gray-50 dark:border-gray-800">
+      <p class="text-sm font-semibold">Recent expenses</p>
+    </div>
+    <div class="divide-y divide-gray-50 dark:divide-gray-800">
+      {% for txn in recent %}
+      <div class="px-5 py-3.5 flex items-center gap-3">
+        <!-- Category icon / color dot -->
+        <div class="w-9 h-9 rounded-xl flex items-center justify-center text-base flex-shrink-0"
+             style="background-color: {{ txn.category.color ~ '22' if txn.category else '#6366f122' }}">
+          {{ txn.category.icon if txn.category else '📦' }}
+        </div>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium truncate">
+            {{ txn.notes or (txn.category.name if txn.category else 'Expense') }}
+          </p>
+          <div class="flex items-center gap-1.5 mt-0.5">
+            <span class="text-xs text-gray-400">{{ txn.transaction_date.strftime('%d %b') }}</span>
+            {% if txn.bucket %}
+            <span class="text-gray-200 dark:text-gray-700">·</span>
+            <span class="text-xs text-gray-400 truncate">{{ txn.bucket.icon }} {{ txn.bucket.name }}</span>
+            {% endif %}
+          </div>
+        </div>
+        <div class="text-right flex-shrink-0">
+          <p class="text-sm font-semibold">{{ txn.amount | currency(txn.currency) }}</p>
+          {% if txn.paid_by_user %}
+          <p class="text-xs text-gray-400">{{ txn.paid_by_user.display_name }}</p>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% else %}
+  <div class="text-center py-12">
+    <div class="text-4xl mb-3">💸</div>
+    <p class="text-gray-500 text-sm">No expenses yet.</p>
+    <a href="/transactions/new"
+       class="mt-4 inline-flex items-center gap-2 px-5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-semibold rounded-xl text-sm transition-colors">
+      Add your first expense
+    </a>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function bucketFilter(initialIds, baseParams) {
+  return {
+    selected: initialIds.slice(),
+    isSelected(id) { return this.selected.includes(id); },
+    toggle(id) {
+      if (this.selected.includes(id)) {
+        this.selected = this.selected.filter(s => s !== id);
+      } else {
+        this.selected = [...this.selected, id];
+      }
+      this._refresh();
+    },
+    clearAll() {
+      this.selected = [];
+      this._refresh();
+    },
+    _refresh() {
+      const ids = this.selected.join(',');
+      const url = '/dashboard?' + baseParams + (ids ? '&bucket_ids=' + ids : '');
+      // Update browser URL without reload
+      history.pushState({}, '', url);
+      // Swap only the summary cards via HTMX
+      htmx.ajax('GET', url, {
+        target: '#dashboard-summary',
+        select: '#dashboard-summary',
+        swap: 'outerHTML',
+      });
+    },
+  };
+}
+</script>
+{% endblock %}

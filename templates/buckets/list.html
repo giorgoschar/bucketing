@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block title %}Buckets{% endblock %}
+{% block header_title %}Buckets{% endblock %}
+
+{% block header_actions %}
+<button onclick="window.dispatchEvent(new CustomEvent('open-bucket-modal'))"
+        class="flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white font-semibold rounded-xl text-sm transition-colors">
+  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+  New Bucket
+</button>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto space-y-8">
+
+  <!-- Active buckets -->
+  <div>
+    <div class="flex items-center justify-between mb-4 lg:hidden">
+      <h2 class="text-base font-semibold">Active</h2>
+      <button onclick="window.dispatchEvent(new CustomEvent('open-bucket-modal'))"
+              class="flex items-center gap-1.5 px-3 py-1.5 bg-primary-500 text-white font-semibold rounded-xl text-sm">
+        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4" /></svg>
+        New
+      </button>
+    </div>
+
+    {% if active_buckets %}
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {% for bucket in active_buckets %}
+      <a href="/buckets/{{ bucket.id }}"
+         class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800 hover:border-gray-200 dark:hover:border-gray-700 hover:shadow-sm transition-all group">
+        <div class="flex items-start justify-between mb-4">
+          <div class="flex items-center gap-3">
+            <div class="w-11 h-11 rounded-xl flex items-center justify-center text-2xl"
+                 style="background-color: {{ bucket.color ~ '22' }}">
+              {{ bucket.icon }}
+            </div>
+          </div>
+          <div class="w-2.5 h-2.5 rounded-full mt-1 flex-shrink-0" style="background-color: {{ bucket.color }}"></div>
+        </div>
+        <p class="font-semibold text-gray-900 dark:text-gray-100 group-hover:text-primary-600 transition-colors">{{ bucket.name }}</p>
+        <p class="text-xs text-gray-400 mt-0.5 capitalize">{{ bucket.type }}</p>
+        {% if bucket.description %}
+        <p class="text-xs text-gray-400 mt-2 line-clamp-2">{{ bucket.description }}</p>
+        {% endif %}
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="text-center py-16 bg-white dark:bg-gray-900 rounded-2xl border border-dashed border-gray-200 dark:border-gray-800">
+      <div class="text-4xl mb-3">🪣</div>
+      <p class="text-gray-500 text-sm mb-4">No buckets yet. Create one to start tracking.</p>
+      <button onclick="document.getElementById('new-bucket-modal').classList.remove('hidden')"
+              class="px-5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-semibold rounded-xl text-sm">
+        Create your first bucket
+      </button>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Archived buckets -->
+  {% if archived_buckets %}
+  <div>
+    <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Archived</h2>
+    <div class="space-y-2">
+      {% for bucket in archived_buckets %}
+      <div class="bg-white dark:bg-gray-900 rounded-2xl px-5 py-3.5 border border-gray-100 dark:border-gray-800 flex items-center gap-3 opacity-60">
+        <span class="text-lg">{{ bucket.icon }}</span>
+        <a href="/buckets/{{ bucket.id }}" class="text-sm font-medium flex-1 hover:text-primary-600 transition-colors">{{ bucket.name }}</a>
+        <form method="POST" action="/buckets/{{ bucket.id }}/unarchive">
+          <button type="submit" class="text-xs text-primary-500 hover:underline font-medium">Restore</button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+
+<!-- ===== New Bucket Modal ===== -->
+<div x-data="{ open: false }" @open-bucket-modal.window="open = true">
+<div x-show="open" x-cloak
+     @keydown.escape.window="open = false"
+     class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+  <div @click.stop
+       class="w-full max-w-md bg-white dark:bg-gray-900 rounded-2xl sm:rounded-2xl shadow-xl overflow-hidden">
+    <div class="px-6 py-5 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
+      <h3 class="font-semibold text-gray-900 dark:text-gray-100">New Bucket</h3>
+      <button type="button" @click="open = false"
+              class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
+        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+      </button>
+    </div>
+    <form method="POST" action="/buckets" class="px-6 py-5 space-y-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Name</label>
+        <input type="text" name="name" required autofocus placeholder="e.g. Paris Trip"
+               class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:bg-white dark:focus:bg-gray-900 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm transition-all" />
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Type</label>
+          <select name="type" class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:bg-white dark:focus:bg-gray-900 focus:border-primary-500 outline-none text-sm">
+            {% for t in bucket_types %}
+            <option value="{{ t }}">{{ t | capitalize }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Icon</label>
+          <input type="text" name="icon" value="🪣" placeholder="🪣"
+                 class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm text-center" />
+        </div>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Color</label>
+        <div class="flex flex-wrap gap-2">
+          {% for color in colors %}
+          <label class="cursor-pointer">
+            <input type="radio" name="color" value="{{ color }}" class="sr-only" {% if loop.first %}checked{% endif %} />
+            <div class="w-7 h-7 rounded-full ring-2 ring-offset-2 ring-transparent has-[:checked]:ring-gray-400 transition-all"
+                 style="background-color: {{ color }}"></div>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Budget <span class="text-gray-400 font-normal">(optional)</span></label>
+        <input type="number" name="budget" step="0.01" min="0" placeholder="0.00"
+               class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Description <span class="text-gray-400 font-normal">(optional)</span></label>
+        <textarea name="description" rows="2" placeholder="What is this bucket for?"
+                  class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm resize-none"></textarea>
+      </div>
+      <!-- Show income toggle -->
+      <div class="flex items-center justify-between py-1">
+        <div>
+          <p class="text-sm font-medium text-gray-700 dark:text-gray-300">Track income</p>
+          <p class="text-xs text-gray-400">Show income entries and net balance</p>
+        </div>
+        <label class="relative inline-flex items-center cursor-pointer">
+          <input type="checkbox" name="show_income" value="on" class="sr-only peer" checked>
+          <div class="w-10 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
+        </label>
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button type="button" @click="open = false"
+                class="flex-1 py-2.5 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 font-semibold rounded-xl text-sm hover:bg-gray-50 transition-colors">
+          Cancel
+        </button>
+        <button type="submit"
+                class="flex-1 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-semibold rounded-xl text-sm transition-colors">
+          Create bucket
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+</div>
+{% endblock %}

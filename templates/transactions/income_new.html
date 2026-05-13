@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Add Income{% endblock %}
+{% block header_title %}Add Income{% endblock %}
+
+{% block content %}
+<div class="max-w-lg mx-auto">
+  <form method="POST" action="/income" class="space-y-5">
+
+    <!-- Bucket -->
+    <div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-5 space-y-4">
+      <div>
+        <label class="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Bucket</label>
+        {% if buckets %}
+        <div class="grid grid-cols-2 gap-2.5">
+          {% for bucket in buckets %}
+          <label class="cursor-pointer">
+            <input type="radio" name="bucket_id" value="{{ bucket.id }}" class="sr-only peer"
+                   {% if bucket.id == selected_bucket_id %}checked{% endif %} required />
+            <div class="flex items-center gap-3 p-3.5 rounded-xl border border-gray-100 dark:border-gray-800 transition-all peer-checked:border-primary-400 peer-checked:bg-primary-50 dark:peer-checked:bg-primary-900/20 peer-checked:ring-2 peer-checked:ring-primary-400/30 hover:border-gray-200 dark:hover:border-gray-700">
+              <span class="text-xl flex-shrink-0">{{ bucket.icon }}</span>
+              <div class="min-w-0">
+                <p class="text-sm font-medium truncate">{{ bucket.name }}</p>
+                <p class="text-xs text-gray-400 capitalize">{{ bucket.type }}</p>
+              </div>
+            </div>
+          </label>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-sm text-gray-400">No buckets with income tracking enabled. Enable "Track income" on a bucket first.</p>
+        {% endif %}
+      </div>
+
+      <!-- Date -->
+      <div>
+        <label class="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Date</label>
+        <input type="date" name="transaction_date" value="{{ today }}" required
+               class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm" />
+      </div>
+
+      <!-- Amount -->
+      <div>
+        <label class="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Amount</label>
+        <div class="flex gap-2">
+          <select name="currency"
+                  class="px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:border-primary-500 outline-none text-sm font-medium">
+            {% for c in currencies %}
+            <option value="{{ c }}" {% if c == (household.default_currency if household else 'EUR') %}selected{% endif %}>{{ c }}</option>
+            {% endfor %}
+          </select>
+          <input type="number" name="amount" step="0.01" min="0.01" placeholder="0.00" required autofocus
+                 class="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-2xl font-bold text-right" />
+        </div>
+      </div>
+
+      <!-- Category -->
+      <div>
+        <label class="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Category <span class="text-gray-400 font-normal">(optional)</span></label>
+        <div class="grid grid-cols-4 sm:grid-cols-5 gap-2">
+          {% for cat in categories %}
+          <label class="cursor-pointer">
+            <input type="radio" name="category_id" value="{{ cat.id }}" class="sr-only peer" />
+            <div class="flex flex-col items-center gap-1 p-2.5 rounded-xl border border-gray-100 dark:border-gray-800 transition-all peer-checked:ring-2 peer-checked:ring-offset-1 peer-checked:ring-gray-400 hover:scale-95"
+                 style="background-color: {{ cat.color }}22">
+              <span class="text-xl">{{ cat.icon }}</span>
+              <span class="text-[10px] font-medium text-gray-700 dark:text-gray-300 text-center leading-tight">{{ cat.name }}</span>
+            </div>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Whose income -->
+      <div>
+        <label class="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Whose income? <span class="text-gray-400 font-normal">(optional)</span></label>
+        <div class="flex flex-wrap gap-2">
+          {% for member in members %}
+          <label class="cursor-pointer">
+            <input type="radio" name="received_by" value="{{ member.id }}" class="sr-only peer" />
+            <div class="flex items-center gap-2.5 px-4 py-2.5 rounded-xl border border-gray-100 dark:border-gray-800 transition-all peer-checked:ring-2 peer-checked:ring-primary-400 peer-checked:bg-primary-50 dark:peer-checked:bg-primary-900/20 hover:border-gray-200">
+              <div class="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
+                   style="background-color: {{ member.avatar_color }}">
+                {{ member.display_name | initials }}
+              </div>
+              <span class="text-sm font-medium">{{ member.display_name }}</span>
+            </div>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Notes -->
+      <div>
+        <label class="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Notes <span class="text-gray-400 font-normal">(optional)</span></label>
+        <input type="text" name="notes" placeholder="e.g. Salary, freelance, rental..."
+               class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm" />
+      </div>
+    </div>
+
+    <button type="submit"
+            class="w-full py-3.5 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-xl text-sm transition-colors">
+      Save income ✓
+    </button>
+
+  </form>
+</div>
+{% endblock %}

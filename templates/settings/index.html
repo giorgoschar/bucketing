@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block header_title %}Settings{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto space-y-6">
+
+  {% if request.query_params.get('pw_changed') %}
+  <div class="px-4 py-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800 rounded-xl text-sm text-emerald-700 dark:text-emerald-300">
+    Password changed successfully.
+  </div>
+  {% endif %}
+
+  <!-- ===== Profile ===== -->
+  <div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
+    <div class="px-6 py-4 border-b border-gray-50 dark:border-gray-800">
+      <p class="text-sm font-semibold">Your Profile</p>
+    </div>
+    <form method="POST" action="/settings/profile" class="px-6 py-5 space-y-4">
+      <div class="flex items-center gap-4 mb-2">
+        <div class="w-14 h-14 rounded-2xl flex items-center justify-center text-white text-xl font-bold"
+             style="background-color: {{ user.avatar_color }}">
+          {{ user.display_name | initials }}
+        </div>
+        <div>
+          <p class="font-semibold">{{ user.display_name }}</p>
+          <p class="text-sm text-gray-400">@{{ user.username }}</p>
+        </div>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Display name</label>
+        <input type="text" name="display_name" value="{{ user.display_name }}" required
+               class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Avatar color</label>
+        <div class="flex flex-wrap gap-2">
+          {% for color in avatar_colors %}
+          <label class="cursor-pointer">
+            <input type="radio" name="avatar_color" value="{{ color }}" class="sr-only"
+                   {% if user.avatar_color == color %}checked{% endif %} />
+            <div class="w-8 h-8 rounded-full ring-2 ring-offset-2 ring-transparent has-[:checked]:ring-gray-400 transition-all flex items-center justify-center text-white text-xs font-bold"
+                 style="background-color: {{ color }}">
+              {{ user.display_name | initials }}
+            </div>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      <button type="submit" class="px-5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-semibold rounded-xl text-sm transition-colors">
+        Save profile
+      </button>
+    </form>
+
+    <!-- Change password -->
+    <div class="px-6 pb-5">
+      <div class="border-t border-gray-100 dark:border-gray-800 pt-4">
+        <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Change password</p>
+        {% if pw_error is defined and pw_error %}
+        <div class="mb-3 px-4 py-2 bg-red-50 border border-red-100 rounded-xl text-sm text-red-600">{{ pw_error }}</div>
+        {% endif %}
+        <form method="POST" action="/settings/profile/password" class="space-y-3">
+          <input type="password" name="current_password" placeholder="Current password" required
+                 class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm" />
+          <input type="password" name="new_password" placeholder="New password (min 6 chars)" required minlength="6"
+                 class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm" />
+          <button type="submit" class="px-5 py-2.5 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 font-semibold rounded-xl text-sm transition-colors">
+            Change password
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Household ===== -->
+  <div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
+    <div class="px-6 py-4 border-b border-gray-50 dark:border-gray-800">
+      <p class="text-sm font-semibold">Household</p>
+    </div>
+    {% if is_owner %}
+    <form method="POST" action="/settings/household" class="px-6 py-5 space-y-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Household name</label>
+        <input type="text" name="name" value="{{ household.name }}" required
+               class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Default currency</label>
+        <select name="default_currency" class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:border-primary-500 outline-none text-sm">
+          {% for c in currencies %}
+          <option value="{{ c }}" {% if household.default_currency == c %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="px-5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-semibold rounded-xl text-sm">Save</button>
+    </form>
+    {% endif %}
+
+    <!-- Members -->
+    <div class="px-6 pb-5">
+      <div class="{% if is_owner %}border-t border-gray-100 dark:border-gray-800 pt-4{% endif %}">
+        <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Members</p>
+        <div class="space-y-2">
+          {% for m in members %}
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
+                 style="background-color: {{ m.user.avatar_color }}">
+              {{ m.user.display_name | initials }}
+            </div>
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-medium">{{ m.user.display_name }}</p>
+              <p class="text-xs text-gray-400">@{{ m.user.username }}</p>
+            </div>
+            <span class="text-xs px-2 py-1 rounded-lg
+              {% if m.role.value == 'owner' %}bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400{% else %}bg-gray-100 dark:bg-gray-800 text-gray-500{% endif %}">
+              {{ m.role.value | capitalize }}
+            </span>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Invite ===== -->
+  <div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
+    <div class="px-6 py-4 border-b border-gray-50 dark:border-gray-800">
+      <p class="text-sm font-semibold">Invite Members</p>
+    </div>
+    <div class="px-6 py-5">
+      <p class="text-sm text-gray-500 mb-4">Generate a one-time link. No email required. Expires in 7 days.</p>
+      <div id="invite-result">
+        <!-- Active invites -->
+        {% if invitations %}
+        <div class="space-y-2 mb-4">
+          {% for inv in invitations %}
+          <div class="flex items-center gap-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-xl">
+            <span class="text-xs font-mono text-gray-500 flex-1 truncate">{{ request.base_url }}join/{{ inv.token }}</span>
+            <button onclick="navigator.clipboard.writeText('{{ request.base_url }}join/{{ inv.token }}')"
+                    class="text-xs text-primary-500 font-medium flex-shrink-0 hover:underline">Copy</button>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      <form hx-post="/settings/invite"
+            hx-target="#invite-result"
+            hx-swap="afterbegin"
+            class="flex">
+        <button type="submit"
+                class="flex items-center gap-2 px-5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-semibold rounded-xl text-sm transition-colors">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
+          Generate invite link
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== Add another household ===== -->
+  <div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
+    <div class="px-6 py-4 border-b border-gray-50 dark:border-gray-800">
+      <p class="text-sm font-semibold">Create another household</p>
+    </div>
+    <form method="POST" action="/settings/household/new" class="px-6 py-5 space-y-4">
+      <p class="text-sm text-gray-500">e.g. for tracking a parent's or second household.</p>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Name</label>
+        <input type="text" name="name" placeholder="e.g. Mum's House" required
+               class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Currency</label>
+        <select name="default_currency" class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:border-primary-500 outline-none text-sm">
+          {% for c in currencies %}
+          <option value="{{ c }}" {% if c == 'EUR' %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="px-5 py-2.5 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 font-semibold rounded-xl text-sm transition-colors">
+        Create household
+      </button>
+    </form>
+  </div>
+
+  <!-- ===== Categories ===== -->
+  <div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
+    <div class="px-6 py-4 border-b border-gray-50 dark:border-gray-800">
+      <p class="text-sm font-semibold">Categories</p>
+    </div>
+    <div class="px-6 py-5">
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-5">
+        {% for cat in categories %}
+        <div class="flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-100 dark:border-gray-800"
+             style="background-color: {{ cat.color }}11">
+          <span>{{ cat.icon }}</span>
+          <span class="text-xs font-medium flex-1 truncate">{{ cat.name }}</span>
+          {% if not cat.is_default %}
+          <form method="POST" action="/settings/categories/{{ cat.id }}/delete">
+            <button type="submit" class="text-gray-300 hover:text-red-400 transition-colors ml-1">
+              <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+          </form>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      <div class="border-t border-gray-100 dark:border-gray-800 pt-4">
+        <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Add custom category</p>
+        <form method="POST" action="/settings/categories" class="flex gap-2">
+          <input type="text" name="icon" value="📦" placeholder="🏷️"
+                 class="w-14 px-2 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:border-primary-500 outline-none text-sm text-center" />
+          <input type="text" name="name" placeholder="Category name" required
+                 class="flex-1 px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm" />
+          <input type="color" name="color" value="#6366f1"
+                 class="w-12 h-11 rounded-xl border border-gray-200 dark:border-gray-700 cursor-pointer p-0.5 bg-gray-50 dark:bg-gray-800" />
+          <button type="submit" class="px-4 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-semibold rounded-xl text-sm">Add</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

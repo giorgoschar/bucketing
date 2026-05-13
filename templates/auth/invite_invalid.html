@@ -1,0 +1,11 @@
+{% extends "auth/base_auth.html" %}
+{% block title %}Invalid Invite{% endblock %}
+{% block auth_title %}Invite not valid{% endblock %}
+{% block auth_content %}
+<div class="text-center py-4">
+  <p class="text-gray-600 text-sm">
+    {% if expired %}This invite link has expired.{% else %}This invite link is invalid or has already been used.{% endif %}
+  </p>
+  <a href="/login" class="mt-4 inline-block text-primary-500 text-sm font-medium hover:underline">Go to sign in →</a>
+</div>
+{% endblock %}

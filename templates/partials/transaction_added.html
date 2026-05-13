@@ -1,0 +1,15 @@
+<div class="p-6 text-center">
+  <div class="text-3xl mb-2">✅</div>
+  <p class="font-semibold text-gray-900 dark:text-gray-100">Expense added!</p>
+  <p class="text-sm text-gray-500 mt-1">{{ transaction.amount | currency(transaction.currency) }} in {{ bucket.icon }} {{ bucket.name }}</p>
+  <div class="flex gap-3 mt-4">
+    <a href="/transactions/new"
+       class="flex-1 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-semibold rounded-xl text-sm text-center transition-colors">
+      Add another
+    </a>
+    <a href="/buckets/{{ bucket.id }}"
+       class="flex-1 py-2.5 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 font-semibold rounded-xl text-sm text-center hover:bg-gray-50 transition-colors">
+      View bucket
+    </a>
+  </div>
+</div>

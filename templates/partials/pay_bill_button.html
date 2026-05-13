@@ -1,0 +1,39 @@
+{% set _is_variable = not bill.amount %}
+{% set _occ_amount = occ.amount %}
+
+{# "Set amount" inline form — shown for variable bills without a pre-set occurrence amount #}
+{% if _is_variable and not _occ_amount %}
+<div x-data="{ showSet: false }" class="flex items-center gap-1.5 flex-shrink-0">
+  <button type="button" x-show="!showSet" @click="showSet = true" x-cloak
+          class="px-2.5 py-1.5 text-xs font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/30 transition-colors">
+    Set amount
+  </button>
+  <form x-show="showSet" x-cloak
+        hx-post="/bills/{{ bill.id }}/occurrences/{{ occ.id }}/set-amount"
+        hx-target="#occ-{{ occ.id }}" hx-swap="outerHTML"
+        class="flex items-center gap-1.5">
+    <input type="number" name="amount" step="0.01" min="0.01" placeholder="0.00" required
+           :required="showSet"
+           class="w-24 px-2 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20" />
+    <button type="submit"
+            class="px-2.5 py-1.5 text-xs font-semibold text-white bg-indigo-500 rounded-lg hover:bg-indigo-600 transition-colors">✓</button>
+    <button type="button" @click="showSet = false"
+            class="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-xs transition-colors">✕</button>
+  </form>
+</div>
+{% endif %}
+
+<button type="button"
+        onclick="openPayModal('{{ occ.id }}', '{{ bill.id }}', {{ 'true' if _is_variable else 'false' }}, '{{ bill.name | replace("'", "\\'") }}', [{% for s in bill.splits %}{'user_id':'{{ s.user_id }}','name':'{{ s.user.display_name | replace("'", "\\'") }}','amount':{{ s.amount }}}{% if not loop.last %},{% endif %}{% endfor %}], {{ _occ_amount | tojson }})"
+        class="ml-2 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 font-semibold text-xs rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition-colors flex-shrink-0">
+  Pay
+</button>
+<form method="POST" action="/bills/{{ bill.id }}/occurrences/{{ occ.id }}/skip"
+      hx-post="/bills/{{ bill.id }}/occurrences/{{ occ.id }}/skip"
+      hx-target="#occ-{{ occ.id }}"
+      hx-swap="outerHTML">
+  <button type="submit"
+          class="px-3 py-1.5 text-gray-400 font-medium text-xs rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex-shrink-0">
+    Skip
+  </button>
+</form>

@@ -1,0 +1,392 @@
+{% extends "base.html" %}
+{% block title %}Bills{% endblock %}
+{% block header_title %}Bills & Recurring{% endblock %}
+
+{% block header_actions %}
+<button onclick="document.getElementById('new-bill-modal').classList.remove('hidden')"
+        class="flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white font-semibold rounded-xl text-sm transition-colors">
+  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+  New Bill
+</button>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto space-y-6">
+
+  <!-- Mobile CTA -->
+  <div class="lg:hidden">
+    <button onclick="document.getElementById('new-bill-modal').classList.remove('hidden')"
+            class="w-full flex items-center justify-center gap-2 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-semibold rounded-xl text-sm">
+      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4" /></svg>
+      New Bill
+    </button>
+  </div>
+
+  <!-- Needs amount (variable auto-pay bills due today or overdue) -->
+  {% set needs_amount = [] %}
+  {% for occ in overdue %}
+    {% if occ.bill.is_auto_pay and not occ.bill.amount %}
+      {% set _ = needs_amount.append(occ) %}
+    {% endif %}
+  {% endfor %}
+  {% for occ in upcoming %}
+    {% if occ.bill.is_auto_pay and not occ.bill.amount and occ.due_date <= today %}
+      {% set _ = needs_amount.append(occ) %}
+    {% endif %}
+  {% endfor %}
+  {% if needs_amount %}
+  <div class="bg-amber-50 dark:bg-amber-900/10 rounded-2xl border border-amber-200 dark:border-amber-900/40 overflow-hidden">
+    <div class="px-5 py-4 border-b border-amber-100 dark:border-amber-900/30 flex items-center gap-2">
+      <span class="text-amber-500">⚡</span>
+      <p class="text-sm font-semibold text-amber-700 dark:text-amber-400">Auto-pay — needs amount ({{ needs_amount | length }})</p>
+    </div>
+    <div class="divide-y divide-amber-50 dark:divide-amber-900/20">
+      {% for occ in needs_amount %}
+      {% set bill = occ.bill %}
+      <div id="occ-{{ occ.id }}" class="px-5 py-4 flex items-center gap-3">
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{{ bill.name }}</p>
+          <p class="text-xs text-amber-500 mt-0.5">Due {{ occ.due_date.strftime('%d %b %Y') }} · Enter amount to record</p>
+        </div>
+        {% include "partials/pay_bill_button.html" %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Overdue -->
+  {% if overdue %}
+  <div class="bg-red-50 dark:bg-red-900/10 rounded-2xl border border-red-100 dark:border-red-900/30 overflow-hidden">
+    <div class="px-5 py-4 border-b border-red-100 dark:border-red-900/30">
+      <p class="text-sm font-semibold text-red-600 dark:text-red-400">⚠️ Overdue ({{ overdue | length }})</p>
+    </div>
+    <div class="divide-y divide-red-50 dark:divide-red-900/20">
+      {% for occ in overdue %}
+      {% set bill = occ.bill %}
+      <div id="occ-{{ occ.id }}" class="px-5 py-4 flex items-center gap-3">
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{{ bill.name }}</p>
+          <p class="text-xs text-red-400 mt-0.5">Due {{ occ.due_date.strftime('%d %b %Y') }}</p>
+        </div>
+        <span class="text-sm font-bold text-gray-900 dark:text-gray-100 flex-shrink-0">
+          {% if occ.amount %}{{ occ.amount | currency(bill.currency) }}
+          {% elif bill.amount %}{{ bill.amount | currency(bill.currency) }}
+          {% else %}<span class="text-gray-400 font-normal text-xs">Variable</span>{% endif %}
+        </span>
+        {% include "partials/pay_bill_button.html" %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Upcoming -->
+  {% if upcoming %}
+  <div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
+    <div class="px-5 py-4 border-b border-gray-50 dark:border-gray-800">
+      <p class="text-sm font-semibold">Upcoming (next 60 days)</p>
+    </div>
+    <div class="divide-y divide-gray-50 dark:divide-gray-800">
+      {% for occ in upcoming %}
+      {% set bill = occ.bill %}
+      <div id="occ-{{ occ.id }}" class="px-5 py-4 flex items-center gap-3">
+        <div class="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0 mt-1"></div>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium truncate">{{ bill.name }}</p>
+          <p class="text-xs text-gray-400 mt-0.5">{{ occ.due_date.strftime('%d %b %Y') }}
+            {% set days_left = (occ.due_date - today).days %}
+            {% if days_left == 0 %} · <span class="text-amber-500 font-medium">Today</span>
+            {% elif days_left == 1 %} · <span class="text-amber-500 font-medium">Tomorrow</span>
+            {% else %} · in {{ days_left }} days{% endif %}
+          </p>
+        </div>
+        <span class="text-sm font-semibold text-gray-700 dark:text-gray-300 flex-shrink-0">
+          {% if occ.amount %}{{ occ.amount | currency(bill.currency) }}
+          {% elif bill.amount %}{{ bill.amount | currency(bill.currency) }}
+          {% else %}<span class="text-gray-400 font-normal text-xs">Variable</span>{% endif %}
+        </span>
+        {% include "partials/pay_bill_button.html" %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- All recurring bills -->
+  <div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
+    <div class="px-5 py-4 border-b border-gray-50 dark:border-gray-800">
+      <p class="text-sm font-semibold">All recurring bills</p>
+    </div>
+    {% if all_bills %}
+    <div class="divide-y divide-gray-50 dark:divide-gray-800">
+      {% for bill in all_bills %}
+      <div class="px-5 py-4 flex items-center gap-3 {% if not bill.is_active %}opacity-50{% endif %}">
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium truncate">{{ bill.name }}</p>
+          <div class="flex flex-wrap gap-1.5 mt-1">
+            <span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 px-2 py-0.5 rounded-md">
+              {% if bill.frequency.value == 'monthly' %}Monthly{% else %}Every {{ bill.interval_months }} months{% endif %}
+            </span>
+            {% if bill.end_date %}<span class="text-xs text-gray-400">Until {{ bill.end_date.strftime('%b %Y') }}</span>
+            {% elif bill.total_occurrences %}<span class="text-xs text-gray-400">{{ bill.total_occurrences }} total</span>{% endif %}
+            {% if not bill.amount %}<span class="text-xs bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded-md">Variable</span>{% endif %}
+            {% if bill.is_auto_pay %}<span class="text-xs bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded-md">🔄 Auto-pay</span>{% endif %}
+            {% if bill.splits %}<span class="text-xs bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 px-2 py-0.5 rounded-md">👥 Shared</span>{% endif %}
+            {% if not bill.is_active %}<span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-400 px-2 py-0.5 rounded-md">Inactive</span>{% endif %}
+          </div>
+        </div>
+        <span class="text-sm font-semibold text-gray-700 dark:text-gray-300 flex-shrink-0">
+          {% if bill.amount %}{{ bill.amount | currency(bill.currency) }}{% else %}—{% endif %}
+        </span>
+        <div class="flex items-center gap-1 flex-shrink-0">          <a href="/bills/{{ bill.id }}/edit"
+             class="p-1.5 text-gray-400 hover:text-primary-500 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="Edit">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+          </a>          <form method="POST" action="/bills/{{ bill.id }}/toggle">
+            <button type="submit" class="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="{{ 'Disable' if bill.is_active else 'Enable' }}">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                {% if bill.is_active %}
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                {% else %}
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                {% endif %}
+              </svg>
+            </button>
+          </form>
+          <form method="POST" action="/bills/{{ bill.id }}/delete" onsubmit="return confirm('Delete {{ bill.name }}? This will remove all future occurrences.')">
+            <button type="submit" class="p-1.5 text-gray-400 hover:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+            </button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="text-center py-12">
+      <p class="text-gray-400 text-sm">No recurring bills yet.</p>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+
+<!-- ===== New Bill Modal ===== -->
+<div id="new-bill-modal" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+  <div class="w-full max-w-md bg-white dark:bg-gray-900 rounded-2xl shadow-xl overflow-hidden max-h-[90vh] overflow-y-auto">
+    <div class="px-6 py-5 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between sticky top-0 bg-white dark:bg-gray-900 z-10">
+      <h3 class="font-semibold">New Recurring Bill</h3>
+      <button onclick="document.getElementById('new-bill-modal').classList.add('hidden')"
+              class="text-gray-400 hover:text-gray-600 transition-colors">
+        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+      </button>
+    </div>
+    <form method="POST" action="/bills" class="px-6 py-5 space-y-4" x-data="{ isVariable: false, isAutoPlay: false, isShared: false }">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Name</label>
+        <input type="text" name="name" required placeholder="e.g. Rent, Netflix, Electricity"
+               class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm" />
+      </div>
+
+      <div>
+        <div class="flex items-center justify-between mb-1.5">
+          <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Amount</label>
+          <label class="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+            <input type="checkbox" x-model="isVariable" class="rounded" />
+            Variable (e.g. electricity)
+          </label>
+        </div>
+        <div class="flex gap-2">
+          <select name="currency" class="px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:border-primary-500 outline-none text-sm">
+            {% for c in ['EUR', 'USD', 'GBP', 'CHF'] %}
+            <option value="{{ c }}">{{ c }}</option>
+            {% endfor %}
+          </select>
+          <input type="number" name="amount" step="0.01" min="0" placeholder="0.00"
+                 :disabled="isVariable"
+                 :class="isVariable ? 'opacity-40 cursor-not-allowed' : ''"
+                 class="flex-1 px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm" />
+        </div>
+      </div>
+
+      <!-- Auto-pay toggle -->
+      <label class="flex items-center justify-between p-3.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 cursor-pointer">
+        <div>
+          <p class="text-sm font-medium text-gray-700 dark:text-gray-300">🔄 Auto-pay (standing order)</p>
+          <p class="text-xs text-gray-400 mt-0.5">Fixed amount is marked paid automatically each month</p>
+        </div>
+        <input type="checkbox" name="is_auto_pay" x-model="isAutoPlay" class="rounded w-4 h-4" />
+      </label>
+
+      <!-- Shared expense toggle -->
+      <label class="flex items-center justify-between p-3.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 cursor-pointer">
+        <div>
+          <p class="text-sm font-medium text-gray-700 dark:text-gray-300">👥 Shared expense</p>
+          <p class="text-xs text-gray-400 mt-0.5">Split the cost between household members</p>
+        </div>
+        <input type="checkbox" x-model="isShared" class="rounded w-4 h-4" />
+      </label>
+
+      <!-- Per-member split amounts -->
+      <div x-show="isShared" x-cloak class="space-y-3 p-3.5 rounded-xl border border-purple-200 dark:border-purple-900/40 bg-purple-50 dark:bg-purple-900/10">
+        <p class="text-xs font-semibold text-purple-700 dark:text-purple-300 uppercase tracking-wider">Each member's share</p>
+        {% for m in members %}
+        <div class="flex items-center gap-3">
+          <div class="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
+               style="background-color: {{ m.avatar_color }}">{{ m.display_name | truncate(1, True, '') }}</div>
+          <label class="flex-1 text-sm text-gray-700 dark:text-gray-300">{{ m.display_name }}</label>
+          <input type="number" name="split_{{ m.id }}" step="0.01" min="0" placeholder="0.00"
+                 class="w-28 px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:border-primary-500 outline-none text-sm text-right" />
+        </div>
+        {% endfor %}
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Frequency</label>
+          <select name="frequency" x-data x-model="$el.form.frequency" class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:border-primary-500 outline-none text-sm">
+            <option value="monthly">Monthly</option>
+            <option value="custom">Custom</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Every N months</label>
+          <input type="number" name="interval_months" value="1" min="1" max="24"
+                 class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm" />
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Start date</label>
+        <input type="date" name="start_date" required
+               class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm" />
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">End date <span class="text-gray-400 font-normal">(or)</span></label>
+          <input type="date" name="end_date"
+                 class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Total payments</label>
+          <input type="number" name="total_occurrences" min="1" placeholder="e.g. 36"
+                 class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm" />
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Bucket <span class="text-gray-400 font-normal">(optional)</span></label>
+        <select name="bucket_id" class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:border-primary-500 outline-none text-sm">
+          <option value="">No bucket</option>
+          {% for b in buckets %}
+          <option value="{{ b.id }}">{{ b.icon }} {{ b.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Category <span class="text-gray-400 font-normal">(optional)</span></label>
+        <select name="category_id" class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:border-primary-500 outline-none text-sm">
+          <option value="">No category</option>
+          {% for cat in categories %}
+          <option value="{{ cat.id }}">{{ cat.icon }} {{ cat.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Default payer <span class="text-gray-400 font-normal">(optional)</span></label>
+        <select name="paid_by_default" class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:border-primary-500 outline-none text-sm">
+          <option value="">No default</option>
+          {% for m in members %}
+          <option value="{{ m.id }}">{{ m.display_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="flex gap-3 pt-2">
+        <button type="button" onclick="document.getElementById('new-bill-modal').classList.add('hidden')"
+                class="flex-1 py-2.5 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 font-semibold rounded-xl text-sm">Cancel</button>
+        <button type="submit"
+                class="flex-1 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-semibold rounded-xl text-sm">Create bill</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Pay bill modal (Alpine-driven) -->
+<div id="pay-modal" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+     x-data="{ occ_id: '', bill_id: '', is_variable: false, bill_name: '', splits: [] }">
+  <div @click.away="document.getElementById('pay-modal').classList.add('hidden')"
+       class="w-full max-w-sm bg-white dark:bg-gray-900 rounded-2xl shadow-xl overflow-hidden">
+    <div class="px-6 py-5 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
+      <h3 class="font-semibold" x-text="'Mark paid: ' + bill_name"></h3>
+      <button onclick="document.getElementById('pay-modal').classList.add('hidden')"
+              class="text-gray-400 hover:text-gray-600">
+        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+      </button>
+    </div>
+    <form method="POST" id="pay-bill-form" class="px-6 py-5 space-y-4"
+          hx-target="[id^='occ-']" hx-swap="outerHTML">
+      <div x-show="is_variable">
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Amount</label>
+        <input type="number" name="amount" step="0.01" min="0" placeholder="Enter amount"
+               class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm" />
+      </div>
+
+      <!-- Shared splits (shown when bill has splits, editable) -->
+      <div x-show="splits.length > 0" x-cloak class="space-y-2.5 p-3.5 rounded-xl border border-purple-200 dark:border-purple-900/40 bg-purple-50 dark:bg-purple-900/10">
+        <p class="text-xs font-semibold text-purple-700 dark:text-purple-300 uppercase tracking-wider">Shares (editable)</p>
+        <template x-for="s in splits" :key="s.user_id">
+          <div class="flex items-center gap-3">
+            <span class="flex-1 text-sm text-gray-700 dark:text-gray-300" x-text="s.name"></span>
+            <input type="number" :name="'split_' + s.user_id" :value="s.amount" step="0.01" min="0"
+                   class="w-28 px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:border-primary-500 outline-none text-sm text-right" />
+          </div>
+        </template>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Paid by</label>
+        <select name="paid_by" class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:border-primary-500 outline-none text-sm">
+          <option value="">Default payer</option>
+          {% for m in members %}
+          <option value="{{ m.id }}">{{ m.display_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="flex gap-3 pt-1">
+        <button type="button" onclick="document.getElementById('pay-modal').classList.add('hidden')"
+                class="flex-1 py-2.5 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 font-semibold rounded-xl text-sm">Cancel</button>
+        <button type="submit" @click="document.getElementById('pay-modal').classList.add('hidden')"
+                class="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-xl text-sm">Mark paid</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function openPayModal(occId, billId, isVariable, billName, splits, occAmount) {
+  const modal = document.getElementById('pay-modal');
+  const form  = document.getElementById('pay-bill-form');
+  form.action = `/bills/${billId}/occurrences/${occId}/pay`;
+  // Fix: target the exact occurrence row so HTMX swaps the right element
+  form.setAttribute('hx-target', '#occ-' + occId);
+  htmx.process(form);
+  const alpineData = Alpine.$data(modal);
+  alpineData.occ_id = occId;
+  alpineData.bill_id = billId;
+  alpineData.is_variable = isVariable;
+  alpineData.bill_name = billName;
+  alpineData.splits = splits || [];
+  // Pre-fill amount if already set on the occurrence
+  const amtInput = form.querySelector('input[name="amount"]');
+  if (amtInput) amtInput.value = occAmount != null ? occAmount : '';
+  modal.classList.remove('hidden');
+}
+</script>
+{% endblock %}
