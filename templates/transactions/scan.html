@@ -244,8 +244,8 @@
 {% endblock %}
 
 {% block scripts %}
-<!-- jsQR — lightweight QR code reader (pure JS, no WASM) -->
-<script src="https://cdn.jsdelivr.net/npm/jsqr@1/dist/jsQR.js"></script>
+<!-- qr-scanner by Nimiq — built for real-world photos (perspective, glare, small QR) -->
+<script src="https://cdn.jsdelivr.net/npm/qr-scanner@1/qr-scanner.legacy.min.js"></script>
 <!-- Tesseract.js — runs OCR on the device (WASM), used only when no QR found -->
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
@@ -396,22 +396,25 @@ function receiptScanner() {
       }
     },
 
-    // QR code reader using jsQR.
-    // Returns the URL string if an AADE QR code is found, otherwise null.
+    // QR code reader using qr-scanner (Nimiq).
+    // Scans the File directly — handles perspective, glare, and small QR codes
+    // in real-world receipt photos far better than jsQR.
+    // Returns the AADE URL string if found, otherwise null.
     async tryReadQR(file) {
+      if (typeof QrScanner === 'undefined') return null;
       try {
-        const canvas = await this.imageToCanvas(file);
-        const ctx = canvas.getContext('2d');
-        const { width: w, height: h } = canvas;
-        const imageData = ctx.getImageData(0, 0, w, h);
-        const result = typeof jsQR !== 'undefined'
-          ? jsQR(imageData.data, w, h, { inversionAttempts: 'dontInvert' })
-          : null;
-        if (result && result.data && result.data.includes('aade.gr')) {
-          return result.data;
+        const result = await QrScanner.scanImage(file, {
+          returnDetailedScanResult: true,
+        });
+        const url = result && (result.data || result);
+        if (url && typeof url === 'string' && url.includes('aade.gr')) {
+          return url;
         }
       } catch (e) {
-        console.warn('QR scan failed:', e);
+        // QrScanner throws when no QR found — expected for old receipts
+        if (!String(e).includes('No QR code found')) {
+          console.warn('QR scan error:', e);
+        }
       }
       return null;
     },
