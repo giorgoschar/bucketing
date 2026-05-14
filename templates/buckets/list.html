@@ -50,7 +50,7 @@
     <div class="text-center py-16 bg-white dark:bg-gray-900 rounded-2xl border border-dashed border-gray-200 dark:border-gray-800">
       <div class="text-4xl mb-3">🪣</div>
       <p class="text-gray-500 text-sm mb-4">No buckets yet. Create one to start tracking.</p>
-      <button onclick="document.getElementById('new-bucket-modal').classList.remove('hidden')"
+      <button onclick="window.dispatchEvent(new CustomEvent('open-bucket-modal'))"
               class="px-5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-semibold rounded-xl text-sm">
         Create your first bucket
       </button>

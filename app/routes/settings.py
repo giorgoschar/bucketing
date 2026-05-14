@@ -130,9 +130,8 @@ def create_household(
     db.commit()
     seed_categories(db, household.id)
 
-    from app.auth import set_session
     response = RedirectResponse("/dashboard", status_code=302)
-    set_session(response, user.id, household.id)
+    set_session(response, user.id, household.id, user.session_version)
     return response
 
 

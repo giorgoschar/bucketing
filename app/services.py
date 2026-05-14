@@ -46,10 +46,13 @@ def get_month_summary(db: Session, household_id: str, year: int, month: int, buc
 
     total_spent = sum(t.amount for t in txns)
 
-    # Amount paid by each user
+    # Amount paid by each user — use splits when present, else paid_by
     paid_by: dict[str, float] = defaultdict(float)
     for t in txns:
-        if t.paid_by:
+        if t.splits:
+            for s in t.splits:
+                paid_by[s.user_id] += s.amount
+        elif t.paid_by:
             paid_by[t.paid_by] += t.amount
 
     # Load member info
@@ -109,9 +112,13 @@ def get_bucket_month_summary(db: Session, bucket_id: str, year: int, month: int)
 
     total_spent = sum(t.amount for t in txns)
 
+    # Amount paid by each user — use splits when present, else paid_by
     paid_by: dict[str, float] = defaultdict(float)
     for t in txns:
-        if t.paid_by:
+        if t.splits:
+            for s in t.splits:
+                paid_by[s.user_id] += s.amount
+        elif t.paid_by:
             paid_by[t.paid_by] += t.amount
 
     members = (
