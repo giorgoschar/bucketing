@@ -22,6 +22,7 @@ from app.models import (
 )
 from app.templates import templates
 from app.receipt_parser import parse_receipt_text, match_category, _extract_category_hint
+from app.config import settings
 
 router = APIRouter(prefix="/transactions")
 
@@ -112,9 +113,10 @@ async def parse_scan(
 # QR-code → AADE lookup
 # ---------------------------------------------------------------------------
 
-# SSRF guard: only the official AADE receipt verification endpoint is allowed.
-_AADE_HOST = "www1.aade.gr"
-_AADE_PATH_PREFIX = "/tameiakes/myweb/q1.php"
+# SSRF guard values come from settings so the host/path can be overridden via
+# env vars without a redeploy (e.g. if AADE changes their URL).
+_AADE_HOST = settings.aade_host
+_AADE_PATH_PREFIX = settings.aade_path_prefix
 
 
 class _AADEParser(HTMLParser):
@@ -216,7 +218,7 @@ async def scan_qr(
     try:
         async with httpx.AsyncClient(
             follow_redirects=False,
-            timeout=8.0,
+            timeout=settings.aade_timeout_seconds,
         ) as client:
             resp = await client.get(url, headers={"Accept-Language": "el"})
     except httpx.TimeoutException:
@@ -271,7 +273,7 @@ def _get_context(db: Session, user, hh_id: str) -> dict:
         "members": members,
         "household": household,
         "households": households,
-        "currencies": ["EUR", "USD", "GBP", "CHF", "JPY", "AUD", "CAD", "SEK", "NOK", "DKK"],
+        "currencies": settings.currencies,
         "today": date.today().isoformat(),
     }
 

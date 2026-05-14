@@ -16,6 +16,7 @@ from app.models import (
 )
 from app.bills_service import generate_occurrences, delete_future_occurrences
 from app.services import get_upcoming_bills, get_overdue_bills
+from app.config import settings
 from app.templates import templates
 
 router = APIRouter(prefix="/bills")
@@ -52,7 +53,7 @@ def bills_page(
     ctx = _ctx(db, user, hh_id)
 
     overdue = get_overdue_bills(db, hh_id)
-    upcoming = get_upcoming_bills(db, hh_id, days=60)
+    upcoming = get_upcoming_bills(db, hh_id, days=settings.upcoming_bills_days)
     all_bills = (
         db.query(RecurringBill)
         .filter_by(household_id=hh_id)

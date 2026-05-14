@@ -14,6 +14,7 @@ from app.models import (
     Bucket, BucketStatus, Category, User, HouseholdMember, Household,
 )
 from app.templates import templates
+from app.config import settings
 
 router = APIRouter(prefix="/income")
 
@@ -67,7 +68,7 @@ def new_income(
             "buckets": buckets,
             "categories": categories,
             "members": members,
-            "currencies": ["EUR", "USD", "GBP", "CHF", "JPY", "AUD", "CAD", "SEK", "NOK", "DKK"],
+            "currencies": settings.currencies,
             "today": date.today().isoformat(),
             "selected_bucket_id": selected_bucket_id,
         },

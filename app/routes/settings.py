@@ -86,7 +86,7 @@ def settings_page(
         "categories": categories,
         "is_owner": my_membership and my_membership.role == MemberRole.owner,
         "avatar_colors": AVATAR_COLORS,
-        "currencies": ["EUR", "USD", "GBP", "CHF", "JPY", "AUD", "CAD"],
+        "currencies": settings.currencies,
     })
     return templates.TemplateResponse("settings/index.html", ctx)
 
@@ -192,7 +192,7 @@ def create_invite(
         household_id=hh_id,
         token=str(uuid.uuid4()),
         created_by=user.id,
-        expires_at=datetime.utcnow() + timedelta(days=7),
+        expires_at=datetime.utcnow() + timedelta(days=settings.invite_expiry_days),
     )
     db.add(invite)
     db.commit()

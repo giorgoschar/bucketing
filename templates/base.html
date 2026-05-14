@@ -50,9 +50,14 @@
     .htmx-indicator { opacity: 0; transition: opacity 200ms ease-in; }
     .htmx-request .htmx-indicator { opacity: 1; }
     .htmx-request.htmx-indicator { opacity: 1; }
+
+    /* hx-boost page transition — fade the main content area on navigation */
+    main.htmx-swapping { opacity: 0; transition: opacity 120ms ease-out; }
+    main { transition: opacity 120ms ease-in; }
   </style>
 </head>
-<body class="h-full bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 font-sans antialiased">
+<body class="h-full bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 font-sans antialiased"
+      hx-boost="true">
 
   <!-- Mobile bottom nav + desktop sidebar wrapper -->
   <div class="flex h-full">
@@ -153,7 +158,7 @@
             <p class="text-sm font-medium truncate">{{ user.display_name }}</p>
             <p class="text-xs text-gray-400 truncate">@{{ user.username }}</p>
           </div>
-          <form method="POST" action="/logout">
+          <form method="POST" action="/logout" hx-boost="false">
             <button type="submit" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors" title="Sign out">
               <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
