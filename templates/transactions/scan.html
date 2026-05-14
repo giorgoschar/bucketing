@@ -3,6 +3,27 @@
 {% block header_title %}Scan Receipt{% endblock %}
 
 {% block content %}
+
+<!-- ===== Full-screen live QR camera overlay ===== -->
+<div id="qr-overlay"
+     class="fixed inset-0 z-50 bg-black hidden flex-col items-center justify-center"
+     style="display:none">
+  <div class="relative w-full max-w-sm px-4">
+    <video id="qr-video" class="w-full rounded-2xl" playsinline muted></video>
+    <!-- Viewfinder -->
+    <div class="absolute inset-4 flex items-center justify-center pointer-events-none">
+      <div class="w-52 h-52 border-[3px] border-white rounded-2xl"
+           style="box-shadow:0 0 0 9999px rgba(0,0,0,0.55)"></div>
+    </div>
+  </div>
+  <p class="text-white/70 text-sm mt-5 text-center px-8">Point the rear camera at the QR code<br>at the bottom of the receipt</p>
+  <button id="qr-cancel"
+          class="mt-6 px-8 py-3 bg-white/20 hover:bg-white/30 text-white font-semibold rounded-xl transition-colors">
+    Cancel
+  </button>
+  <p id="qr-status" class="mt-3 text-white/60 text-xs"></p>
+</div>
+
 <div class="max-w-lg mx-auto space-y-6" x-data="receiptScanner()" x-cloak>
 
   <!-- ===== Upload / dropzone ===== -->
@@ -10,8 +31,24 @@
     <div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-6 space-y-5">
 
       <p class="text-sm text-gray-500 dark:text-gray-400">
-        Upload a photo or PDF of your receipt. OCR runs on your device — nothing is sent to the server except the extracted text.
+        Scan the QR code on your receipt for instant accurate results, or upload a photo/PDF.
       </p>
+
+      <!-- Primary CTA: live QR camera -->
+      <button @click="startQrCamera()"
+              class="w-full py-3.5 bg-primary-500 hover:bg-primary-600 text-white font-semibold rounded-xl text-sm transition-colors flex items-center justify-center gap-2">
+        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
+        </svg>
+        Scan QR Code
+      </button>
+
+      <div class="flex items-center gap-3">
+        <div class="flex-1 h-px bg-gray-100 dark:bg-gray-800"></div>
+        <span class="text-xs text-gray-400">or upload photo / PDF for OCR</span>
+        <div class="flex-1 h-px bg-gray-100 dark:bg-gray-800"></div>
+      </div>
 
       <!-- Dropzone -->
       <div
@@ -275,6 +312,7 @@ function receiptScanner() {
     previewUrl: '',
     receiptFilename: '',
     resultReady: false,
+    _qrScanner: null,
 
     result: {
       amount: '',
@@ -322,24 +360,6 @@ function receiptScanner() {
 
       try {
         const isPdf = this.file.type === 'application/pdf' || this.file.name.toLowerCase().endsWith('.pdf');
-
-        // ── Step 0: Try QR code scan first (instant, no WASM needed) ──────
-        // Greek fiscal receipts have an AADE QR code at the bottom that links
-        // directly to the authoritative tax portal with all receipt data.
-        if (!isPdf) {
-          this.progressLabel = 'Looking for QR code…';
-          this.progress = 10;
-          const qrUrl = await this.tryReadQR(this.file);
-          if (qrUrl) {
-            this.progressLabel = 'Reading from AADE portal…';
-            this.progress = 40;
-            const ok = await this.fetchFromAade(qrUrl);
-            if (ok) {
-              this.progress = 100;
-              return;  // done — no OCR needed
-            }
-          }
-        }
 
         // ── Step 1: For digital PDFs try text layer directly ───────────────
         if (isPdf) {
@@ -396,28 +416,64 @@ function receiptScanner() {
       }
     },
 
-    // QR code reader using qr-scanner (Nimiq).
-    // Scans the File directly — handles perspective, glare, and small QR codes
-    // in real-world receipt photos far better than jsQR.
-    // Returns the AADE URL string if found, otherwise null.
-    async tryReadQR(file) {
-      if (typeof QrScanner === 'undefined') return null;
-      try {
-        const result = await QrScanner.scanImage(file, {
-          returnDetailedScanResult: true,
-        });
-        const url = result && (result.data || result);
-        if (url && typeof url === 'string' && url.includes('aade.gr')) {
-          return url;
-        }
-      } catch (e) {
-        // QrScanner throws when no QR found — expected for old receipts
-        if (!String(e).includes('No QR code found')) {
-          console.warn('QR scan error:', e);
-        }
+    // ─── Live QR camera ──────────────────────────────────────────────
+
+    async startQrCamera() {
+      if (typeof QrScanner === 'undefined') {
+        this.errorMsg = 'QR scanner failed to load. Please refresh the page.';
+        return;
       }
-      return null;
+      const overlay  = document.getElementById('qr-overlay');
+      const video    = document.getElementById('qr-video');
+      const cancelBtn = document.getElementById('qr-cancel');
+      const status   = document.getElementById('qr-status');
+
+      overlay.style.display = 'flex';
+      status.textContent = '';
+
+      const stop = () => {
+        if (this._qrScanner) {
+          this._qrScanner.stop();
+          this._qrScanner.destroy();
+          this._qrScanner = null;
+        }
+        overlay.style.display = 'none';
+      };
+
+      cancelBtn.onclick = stop;
+
+      try {
+        this._qrScanner = new QrScanner(
+          video,
+          async (result) => {
+            const url = result && (result.data || result);
+            if (!url || typeof url !== 'string' || !url.includes('aade.gr')) return;
+            stop();
+            this.scanning = true;
+            this.progressLabel = 'Reading from AADE portal…';
+            this.progress = 50;
+            const ok = await this.fetchFromAade(url);
+            this.scanning = false;
+            if (!ok) {
+              this.errorMsg = 'Could not load receipt from AADE. Try uploading a photo instead.';
+            }
+          },
+          {
+            preferredCamera: 'environment',
+            highlightScanRegion: true,
+            highlightCodeOutline: true,
+            onDecodeError: () => {},   // silence per-frame misses
+          }
+        );
+        await this._qrScanner.start();
+      } catch (e) {
+        stop();
+        this.errorMsg = 'Camera access denied. Please allow camera access or upload a photo instead.';
+        console.warn('QrScanner error:', e);
+      }
     },
+
+    // ─── AADE portal fetch ───────────────────────────────────────────
 
     // Fetch receipt data from AADE portal via our backend proxy.
     // Returns true on success, false if it should fall through to OCR.
