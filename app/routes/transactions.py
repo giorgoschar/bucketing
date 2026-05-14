@@ -7,7 +7,7 @@ from datetime import date
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Form, Request, HTTPException, UploadFile, File
-from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -17,6 +17,7 @@ from app.models import (
     Bucket, BucketStatus, Category, User, HouseholdMember, Household,
 )
 from app.templates import templates
+from app.receipt_parser import parse_receipt_text, match_category
 
 router = APIRouter(prefix="/transactions")
 
@@ -52,6 +53,55 @@ def serve_receipt(
         raise HTTPException(status_code=404)
 
     return FileResponse(str(file_path))
+
+
+# ---------------------------------------------------------------------------
+# Receipt scan — on-device OCR (Tesseract.js), server parses raw text
+# ---------------------------------------------------------------------------
+
+@router.get("/scan", response_class=HTMLResponse)
+def scan_receipt_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    auth=Depends(require_auth),
+):
+    user, hh_id = auth
+    ctx = _get_context(db, user, hh_id)
+    ctx.update({"request": request, "user": user})
+    return templates.TemplateResponse("transactions/scan.html", ctx)
+
+
+@router.post("/scan/parse", response_class=JSONResponse)
+async def parse_scan(
+    request: Request,
+    db: Session = Depends(get_db),
+    auth=Depends(require_auth),
+):
+    user, hh_id = auth
+
+    body = await request.json()
+    text = body.get("text", "")
+    if not isinstance(text, str) or len(text) > 50_000:
+        raise HTTPException(status_code=400, detail="Invalid text payload")
+
+    parsed = parse_receipt_text(text)
+
+    # Map category hint to an actual category in this household
+    categories = (
+        db.query(Category)
+        .filter_by(household_id=hh_id)
+        .all()
+    )
+    category_id = match_category(parsed["category_hint"], categories)
+
+    return {
+        "amount": parsed["amount"],
+        "currency": parsed["currency"],
+        "date": parsed["date"],
+        "merchant": parsed["merchant"],
+        "category_hint": parsed["category_hint"],
+        "category_id": category_id,
+    }
 
 
 def _get_context(db: Session, user, hh_id: str) -> dict:

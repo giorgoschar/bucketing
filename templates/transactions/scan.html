@@ -1,0 +1,442 @@
+{% extends "base.html" %}
+{% block title %}Scan Receipt{% endblock %}
+{% block header_title %}Scan Receipt{% endblock %}
+
+{% block content %}
+<div class="max-w-lg mx-auto space-y-6" x-data="receiptScanner()" x-cloak>
+
+  <!-- ===== Upload / dropzone ===== -->
+  <div x-show="!resultReady">
+    <div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-6 space-y-5">
+
+      <p class="text-sm text-gray-500 dark:text-gray-400">
+        Upload a photo or PDF of your receipt. OCR runs on your device — nothing is sent to the server except the extracted text.
+      </p>
+
+      <!-- Dropzone -->
+      <label
+        class="flex flex-col items-center justify-center gap-3 p-8 rounded-xl border-2 border-dashed transition-colors cursor-pointer"
+        :class="dragging
+          ? 'border-primary-400 bg-primary-50 dark:bg-primary-900/20'
+          : 'border-gray-200 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-700'"
+        @dragover.prevent="dragging = true"
+        @dragleave.prevent="dragging = false"
+        @drop.prevent="handleDrop($event)"
+      >
+        <svg class="w-10 h-10 text-gray-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+            d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 13a3 3 0 11-6 0 3 3 0 016 0" />
+        </svg>
+        <div class="text-center">
+          <p class="text-sm font-semibold text-gray-700 dark:text-gray-300">
+            <span x-text="fileName || 'Tap to pick a receipt'"></span>
+          </p>
+          <p class="text-xs text-gray-400 mt-0.5">JPG, PNG, WEBP or PDF</p>
+        </div>
+        <input type="file" accept="image/*,.pdf" class="sr-only" @change="handleFile($event)" />
+      </label>
+
+      <!-- Scan button -->
+      <button
+        @click="startScan()"
+        :disabled="!file || scanning"
+        :class="file && !scanning
+          ? 'bg-primary-500 hover:bg-primary-600 text-white'
+          : 'bg-gray-100 dark:bg-gray-800 text-gray-400 cursor-not-allowed'"
+        class="w-full py-3.5 font-semibold rounded-xl text-sm transition-colors flex items-center justify-center gap-2"
+      >
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M9 5H7a2 2 0 00-2 2v3M9 5a2 2 0 012-2h2a2 2 0 012 2M9 5h6m-3 4v10m4-6H8" />
+        </svg>
+        <span x-text="scanning ? 'Scanning…' : 'Scan Receipt'"></span>
+      </button>
+
+      <!-- Progress bar -->
+      <div x-show="scanning" class="space-y-1.5">
+        <div class="flex justify-between text-xs text-gray-400">
+          <span x-text="progressLabel"></span>
+          <span x-text="Math.round(progress) + '%'"></span>
+        </div>
+        <div class="w-full h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+          <div class="h-full bg-primary-500 rounded-full transition-all duration-300"
+               :style="'width:' + progress + '%'"></div>
+        </div>
+        <p class="text-xs text-gray-400 text-center">Running on your device — this may take 10–20 s on the first scan.</p>
+      </div>
+
+      <!-- Error message -->
+      <div x-show="errorMsg" class="flex items-start gap-2 p-3 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm">
+        <svg class="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+        </svg>
+        <span x-text="errorMsg"></span>
+      </div>
+
+    </div>
+
+    <!-- Manual fallback link -->
+    <div class="text-center">
+      <a href="/transactions/new" class="text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
+        Skip scan → fill manually
+      </a>
+    </div>
+  </div>
+
+  <!-- ===== Confirmation form (shown after scan) ===== -->
+  <div x-show="resultReady" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 translate-y-2" x-transition:enter-end="opacity-100 translate-y-0">
+
+    <!-- Receipt preview -->
+    <div x-show="previewUrl" class="flex justify-center mb-4">
+      <img :src="previewUrl" alt="Receipt preview"
+           class="max-h-48 rounded-xl border border-gray-100 dark:border-gray-800 object-contain shadow-sm" />
+    </div>
+
+    <!-- Rescan button -->
+    <button @click="reset()" class="w-full mb-4 py-2.5 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 font-medium rounded-xl text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+      ↺ Scan a different receipt
+    </button>
+
+    <form method="POST" action="/transactions" enctype="multipart/form-data"
+          @submit.prevent="submitForm($event)">
+
+      <!-- Hidden fields required by create_transaction -->
+      <input type="hidden" name="type" value="expense" />
+      <input type="hidden" name="exchange_rate" value="1.0" />
+      <input type="hidden" name="is_shared" value="off" />
+
+      <div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-5 space-y-5">
+
+        <!-- Amount + Currency -->
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Amount</label>
+          <div class="flex gap-2">
+            <select name="currency" x-model="result.currency"
+                    class="px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:border-primary-500 outline-none text-sm font-medium">
+              {% for c in currencies %}
+              <option value="{{ c }}">{{ c }}</option>
+              {% endfor %}
+            </select>
+            <input type="number" name="amount" step="0.01" min="0.01" required
+                   x-model="result.amount" placeholder="0.00"
+                   class="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-2xl font-bold text-right" />
+          </div>
+        </div>
+
+        <!-- Date -->
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Date</label>
+          <input type="date" name="transaction_date" required
+                 x-model="result.date"
+                 class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm" />
+        </div>
+
+        <!-- Notes / Merchant -->
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Notes</label>
+          <input type="text" name="notes" x-model="result.merchant" placeholder="Merchant / description"
+                 class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm" />
+        </div>
+
+        <!-- Category -->
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Category</label>
+          <div class="grid grid-cols-3 sm:grid-cols-4 gap-2">
+            <button type="button" @click="result.category_id = ''"
+                    :class="result.category_id === '' ? 'ring-2 ring-offset-1 ring-gray-400 scale-95' : 'hover:scale-95'"
+                    class="flex flex-col items-center gap-1.5 p-3 rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800 transition-all">
+              <span class="text-2xl">—</span>
+              <span class="text-xs font-medium text-gray-400 text-center">None</span>
+            </button>
+            {% for cat in categories %}
+            <button type="button" @click="result.category_id = '{{ cat.id }}'"
+                    :class="result.category_id === '{{ cat.id }}' ? 'ring-2 ring-offset-1 ring-gray-400 scale-95' : 'hover:scale-95'"
+                    class="flex flex-col items-center gap-1.5 p-3 rounded-xl border border-gray-100 dark:border-gray-800 transition-all"
+                    style="background-color: {{ cat.color }}22">
+              <span class="text-2xl">{{ cat.icon }}</span>
+              <span class="text-xs font-medium text-gray-700 dark:text-gray-300 text-center leading-tight">{{ cat.name }}</span>
+            </button>
+            {% endfor %}
+          </div>
+          <input type="hidden" name="category_id" :value="result.category_id" />
+        </div>
+
+        <!-- Bucket -->
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Bucket</label>
+          <div class="grid grid-cols-2 gap-2">
+            {% for bucket in buckets %}
+            <button type="button" @click="result.bucket_id = '{{ bucket.id }}'"
+                    :class="result.bucket_id === '{{ bucket.id }}'
+                      ? 'border-primary-400 bg-primary-50 dark:bg-primary-900/20 ring-2 ring-primary-400/30'
+                      : 'border-gray-100 dark:border-gray-800 hover:border-gray-200'"
+                    class="flex items-center gap-3 p-3.5 rounded-xl border text-left transition-all">
+              <span class="text-xl flex-shrink-0">{{ bucket.icon }}</span>
+              <div class="min-w-0">
+                <p class="text-sm font-medium truncate">{{ bucket.name }}</p>
+                <p class="text-xs text-gray-400 capitalize">{{ bucket.type }}</p>
+              </div>
+            </button>
+            {% endfor %}
+          </div>
+          <input type="hidden" name="bucket_id" :value="result.bucket_id" />
+        </div>
+
+        <!-- Who paid -->
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Who paid?</label>
+          <div class="flex flex-wrap gap-2">
+            {% for member in members %}
+            <button type="button" @click="result.paid_by = '{{ member.id }}'"
+                    :class="result.paid_by === '{{ member.id }}'
+                      ? 'ring-2 ring-primary-400 bg-primary-50 dark:bg-primary-900/20'
+                      : 'border-gray-100 dark:border-gray-800 hover:border-gray-200'"
+                    class="flex items-center gap-2.5 px-4 py-2.5 rounded-xl border transition-all">
+              <div class="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
+                   style="background-color: {{ member.avatar_color }}">
+                {{ member.display_name | initials }}
+              </div>
+              <span class="text-sm font-medium">{{ member.display_name }}</span>
+            </button>
+            {% endfor %}
+          </div>
+          <input type="hidden" name="paid_by" :value="result.paid_by" />
+        </div>
+
+        <!-- Receipt file (already on server after scan, or re-attach) -->
+        <div x-show="receiptFilename">
+          <label class="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Receipt</label>
+          <div class="flex items-center gap-2 px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm text-gray-500">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+            </svg>
+            <span x-text="receiptFilename" class="truncate"></span>
+          </div>
+          <input type="hidden" name="receipt_path" :value="receiptFilename" />
+        </div>
+
+      </div>
+
+      <!-- Validation hint -->
+      <p x-show="!result.bucket_id || !result.amount" class="text-xs text-amber-500 text-center mt-2">
+        Please select a bucket and confirm the amount before saving.
+      </p>
+
+      <!-- Submit -->
+      <div class="mt-4">
+        <button type="submit"
+                :disabled="!result.bucket_id || !result.amount"
+                :class="result.bucket_id && result.amount
+                  ? 'bg-primary-500 hover:bg-primary-600 text-white'
+                  : 'bg-gray-100 dark:bg-gray-800 text-gray-400 cursor-not-allowed'"
+                class="w-full py-3.5 font-semibold rounded-xl text-sm transition-colors">
+          Save expense ✓
+        </button>
+      </div>
+
+    </form>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<!-- Tesseract.js — runs OCR on the device (WASM) -->
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<!-- PDF.js — renders first page of a PDF to canvas for OCR -->
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.min.mjs" type="module" id="pdfjs-script"></script>
+
+<script>
+// We need PDF.js loaded as a module; expose it on window for Alpine use.
+(async () => {
+  // Wait for the script tag to load then grab the module export.
+  // PDF.js 4.x is an ES module; we import it dynamically.
+  try {
+    const pdfjsLib = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.min.mjs');
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.worker.min.mjs';
+    window._pdfjsLib = pdfjsLib;
+  } catch (e) {
+    console.warn('PDF.js failed to load:', e);
+  }
+})();
+
+function receiptScanner() {
+  return {
+    // --- state ---
+    file: null,
+    fileName: '',
+    dragging: false,
+    scanning: false,
+    progress: 0,
+    progressLabel: 'Initialising…',
+    errorMsg: '',
+    previewUrl: '',
+    receiptFilename: '',
+    resultReady: false,
+
+    result: {
+      amount: '',
+      currency: '{{ household.default_currency if household else "EUR" }}',
+      date: '{{ today }}',
+      merchant: '',
+      category_id: '',
+      bucket_id: '{{ buckets[0].id if buckets else "" }}',
+      paid_by: '',
+    },
+
+    // --- file handling ---
+    handleFile(event) {
+      const f = event.target.files[0];
+      if (f) this.setFile(f);
+    },
+
+    handleDrop(event) {
+      this.dragging = false;
+      const f = event.dataTransfer.files[0];
+      if (f) this.setFile(f);
+    },
+
+    setFile(f) {
+      this.file = f;
+      this.fileName = f.name;
+      this.errorMsg = '';
+      // Show image preview immediately (not for PDFs)
+      if (f.type.startsWith('image/')) {
+        this.previewUrl = URL.createObjectURL(f);
+      } else {
+        this.previewUrl = '';
+      }
+    },
+
+    // --- scan pipeline ---
+    async startScan() {
+      if (!this.file) return;
+      this.scanning = true;
+      this.errorMsg = '';
+      this.progress = 0;
+      this.progressLabel = 'Preparing image…';
+
+      try {
+        const canvas = await this.fileToCanvas(this.file);
+        this.progressLabel = 'Running OCR…';
+
+        const worker = await Tesseract.createWorker(['ell', 'eng'], 1, {
+          logger: (m) => {
+            if (m.status === 'recognizing text') {
+              this.progress = Math.round(m.progress * 100);
+              this.progressLabel = 'Recognising text…';
+            } else if (m.status.includes('load')) {
+              this.progressLabel = 'Loading language pack…';
+              this.progress = Math.min(this.progress + 5, 30);
+            }
+          },
+        });
+
+        const { data: { text } } = await worker.recognize(canvas);
+        await worker.terminate();
+
+        this.progressLabel = 'Parsing fields…';
+        this.progress = 95;
+
+        await this.parseOnServer(text);
+        this.progress = 100;
+
+      } catch (err) {
+        console.error(err);
+        this.errorMsg = 'Could not read the receipt. Please fill in the details manually.';
+        this.resultReady = true; // show blank form anyway
+      } finally {
+        this.scanning = false;
+      }
+    },
+
+    async fileToCanvas(file) {
+      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+        return await this.pdfToCanvas(file);
+      }
+      return await this.imageToCanvas(file);
+    },
+
+    imageToCanvas(file) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          // Scale down very large images to speed up OCR
+          const MAX = 2400;
+          let w = img.naturalWidth, h = img.naturalHeight;
+          if (w > MAX || h > MAX) {
+            const ratio = Math.min(MAX / w, MAX / h);
+            w = Math.round(w * ratio);
+            h = Math.round(h * ratio);
+          }
+          canvas.width = w;
+          canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          URL.revokeObjectURL(url);
+          resolve(canvas);
+        };
+        img.onerror = reject;
+        img.src = url;
+      });
+    },
+
+    async pdfToCanvas(file) {
+      const pdfjsLib = window._pdfjsLib;
+      if (!pdfjsLib) throw new Error('PDF.js not loaded');
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      const page = await pdf.getPage(1);
+      const scale = 2.0; // render at 2× for better OCR accuracy
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext('2d');
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      return canvas;
+    },
+
+    async parseOnServer(text) {
+      const resp = await fetch('/transactions/scan/parse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      if (!resp.ok) throw new Error('Server parse failed');
+      const data = await resp.json();
+
+      if (data.amount)       this.result.amount      = data.amount;
+      if (data.currency)     this.result.currency    = data.currency;
+      if (data.date)         this.result.date        = data.date;
+      if (data.merchant)     this.result.merchant    = data.merchant;
+      if (data.category_id)  this.result.category_id = data.category_id;
+
+      this.resultReady = true;
+    },
+
+    // --- form submission ---
+    // We POST to the standard /transactions endpoint as a normal form.
+    // Because we use enctype=multipart/form-data and the receipt is already
+    // on the server (receipt_path hidden field), we just submit normally.
+    submitForm(event) {
+      event.target.submit();
+    },
+
+    // --- reset ---
+    reset() {
+      this.file = null;
+      this.fileName = '';
+      this.previewUrl = '';
+      this.scanning = false;
+      this.progress = 0;
+      this.resultReady = false;
+      this.errorMsg = '';
+    },
+  };
+}
+</script>
+{% endblock %}
