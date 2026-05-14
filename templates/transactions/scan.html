@@ -351,7 +351,10 @@ function receiptScanner() {
           },
         });
         await worker.setParameters({
-          tessedit_pageseg_mode: Tesseract.PSM.SINGLE_COLUMN,
+          // PSM 6 = SINGLE_BLOCK: treats receipt as one uniform text block.
+          // Better than PSM 4 (single column) for two-column receipt layouts
+          // where item names are left-aligned and prices are right-aligned.
+          tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK,
           tessedit_ocr_engine_mode: Tesseract.OEM.LSTM_ONLY,
         });
 
@@ -455,7 +458,37 @@ function receiptScanner() {
         data[i * 4] = data[i * 4 + 1] = data[i * 4 + 2] = v;
         data[i * 4 + 3] = 255;
       }
-      ctx.putImageData(imageData, 0, 0);
+
+      // Step 4: sharpening (unsharp mask on the binary image).
+      // Thermal print can be slightly blurry when photographed — sharpening
+      // reinforces thin strokes (Greek accents, small digits, decimal dots).
+      // Kernel: identity * 2 - 3x3 box blur * 1 (lightweight, no extra libs)
+      const sharpened = new Uint8ClampedArray(data.length);
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const idx = (y * w + x) * 4;
+          // 3×3 neighbour average
+          let sum3 = 0, count3 = 0;
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              const nx = x + dx, ny = y + dy;
+              if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+                sum3 += data[(ny * w + nx) * 4];
+                count3++;
+              }
+            }
+          }
+          const blurred = sum3 / count3;
+          // sharpened = 2*original - blurred, clamped
+          const sharp = Math.max(0, Math.min(255, 2 * data[idx] - blurred));
+          // Re-binarize after sharpening to keep clean B&W
+          const out = sharp < 128 ? 0 : 255;
+          sharpened[idx] = sharpened[idx + 1] = sharpened[idx + 2] = out;
+          sharpened[idx + 3] = 255;
+        }
+      }
+      const sharpData = new ImageData(sharpened, w, h);
+      ctx.putImageData(sharpData, 0, 0);
       return dst;
     },
 

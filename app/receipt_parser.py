@@ -51,7 +51,10 @@ _CATEGORY_RULES: list[tuple[list[str], str]] = [
     # Dining out
     (["ΕΣΤΙΑΤΟΡΙΟ", "ΤΑΒΕΡΝΑ", "ΜΕΖΕΔΟΠΩΛΕΙΟ", "ΚΑΦΕ", "ΚΑΦΕΤΕΡΙΑ", "CAFE",
       "COFFEE", "RESTAURANT", "PIZZERIA", "ΠΙΤΣΑΡΙΑ", "ΜΠΑΡ", "BAR", "GRILL",
-      "ΣΟΥΒΛΑΤΖΙΔΙΚΟ", "FAST FOOD", "DELIVERY", "EFOOD", "WOLT", "FOODY"], "food & drink"),
+      "ΣΟΥΒΛΑΤΖΙΔΙΚΟ", "FAST FOOD", "DELIVERY", "EFOOD", "WOLT", "FOODY",
+      "ΑΝΑΨΥΚΤΗΡΙΟ", "ΑΡΤΟΠΟΙΕΙΟ", "ΑΡΤΟΖΑΧΑΡΟΠΛΑΣΤΕΙΟ", "ΖΑΧΑΡΟΠΛΑΣΤΕΙΟ",
+      "ΖΥΜΑΡΙΑ", "ΖΥΜΑΡΗ", "ΨΗΤΟΠΩΛΕΙΟ", "ΣΝΑΚ", "SNACK", "ΚΥΛΙΚΕΙΟ",
+      "ESPRESSO", "FREDDO", "FRAPPE", "CAPPUCCINO"], "food & drink"),
     # Transport / fuel
     (["ΒΕΝΖΙΝΑΔΙΚΟ", "ΠΡΑΤΗΡΙΟ", "SHELL", "BP", "AVIN", "ΕΛΙΝ", "ELIN", "REVOIL",
       "ΜΟΤΟΡ ΟΙΛ", "MOTOR OIL", "FUEL", "ΕΛΒΟΚ", "PARKING", "ΠΑΡΚΙΝΓΚ",
@@ -117,6 +120,15 @@ def _parse_number(s: str) -> float | None:
         return None
 
 
+# Greek VAT rates — these appear after prices and must not be taken as the total
+_GREEK_VAT_RATES: frozenset[float] = frozenset({6.0, 6.5, 13.0, 24.0})
+
+
+def _strip_vat_percentages(s: str) -> str:
+    """Remove NN,NN% / NN.NN% / NN% patterns so VAT rates don't pollute number lists."""
+    return re.sub(r"\d+[,.]\d+\s*%|\d+\s*%", " ", s)
+
+
 def _extract_numbers_near(text: str, keyword: str) -> list[float]:
     """Find all numbers on the same line(s) as keyword."""
     results = []
@@ -124,8 +136,9 @@ def _extract_numbers_near(text: str, keyword: str) -> list[float]:
     kw_pos = norm.find(keyword)
     if kw_pos == -1:
         return results
-    # Take text from kw_pos to end-of-line + next line
-    snippet = norm[kw_pos: kw_pos + 120]
+    # Take 250 chars from keyword — receipts often put the amount on the next line
+    # e.g. ΣΥΝΟΛΟ\nΠΙΣΤ.ΚΑΡΤΑ    4,30 ΕΥΡΩ
+    snippet = _strip_vat_percentages(norm[kw_pos: kw_pos + 250])
     for m in re.finditer(r"\d[\d.,]*\d|\d", snippet):
         val = _parse_number(m.group())
         if val is not None and val > 0:
@@ -158,8 +171,13 @@ def _extract_amount(text: str) -> float | None:
     if not candidates:
         return None
 
-    # Filter out implausible values (years like 2024, large codes, etc.)
-    reasonable = [v for v in candidates if 0.01 <= v <= 99_999]
+    # Filter out implausible values: years, large codes, and Greek VAT rates (6/13/24)
+    reasonable = [
+        v for v in candidates
+        if 0.01 <= v <= 99_999
+        and v not in _GREEK_VAT_RATES
+        and not (1990 <= v <= 2100)  # year-like numbers
+    ]
     return max(reasonable) if reasonable else None
 
 
@@ -202,23 +220,44 @@ def _extract_date(text: str) -> str | None:
     return None
 
 
+# Prefixes that identify boilerplate lines printed on every Greek fiscal receipt.
+# None of these are the merchant name.
+_MERCHANT_SKIP_PREFIXES: tuple[str, ...] = (
+    "ΦΟΡΟΛΟΓΙΚΗ ΑΠΟΔΕΙΞΗ", "ΑΠΟΔΕΙΞΗ ΛΙΑΝΙΚΗΣ", "ΑΠΟΔΕΙΞΗ ΛΙΑΝΙΚOY",
+    "FISCAL", "RECEIPT",
+    "ΑΦΜ", "ΔΟΥ", "ΥΠ:", "ΥΠ.", "ΕΔ:", "ΕΔ.",
+    "ΜΗΧΑΝΗ", "ΩΡΑ:", "ΩΡΑ ",
+    "ΠΑΡΑΣΚΕΥΗ", "ΣΑΒΒΑΤΟ", "ΚΥΡΙΑΚΗ", "ΔΕΥΤΕΡΑ", "ΤΡΙΤΗ", "ΤΕΤΑΡΤΗ", "ΠΕΜΠΤΗ",
+    "ΗΜΕΡΟΜΗΝΙΑ", "ΗΜΕΡΗΣΙΟΣ",
+    "ΑΡΙΘΜΟΣ", "ΑΡΙΘ.",
+    "ΠΛΗΡΩΜΗ", "ΠΙΣΤ.", "ΜΕΤΡΗΤΑ", "CASH",
+    "ECB", "QR",
+)
+
+
 def _extract_merchant(text: str) -> str | None:
     """
-    The merchant name is typically in the first few non-empty lines
-    before the items list starts. Return the first line that looks like a name
-    (not a pure number, not a date, not empty, not an address-only line).
+    Return the first non-boilerplate, non-numeric line — this is the merchant name.
+    Greek fiscal receipts always open with "ΦΟΡΟΛΟΓΙΚΗ ΑΠΟΔΕΙΞΗ – ΕΝΑΡΞΗ"
+    followed by the actual business name on line 2.
     """
     for line in text.splitlines():
         line = line.strip()
         if not line:
             continue
-        # Skip lines that are mostly numbers / short codes
-        if re.match(r"^[\d\s/.\-:,€$£%]+$", line):
+        norm_line = line.upper()
+        # Skip Greek fiscal / POS boilerplate
+        if any(norm_line.startswith(p) for p in _MERCHANT_SKIP_PREFIXES):
             continue
-        # Skip lines that are purely an address number pattern
-        if re.match(r"^\d+[\w\s]*\d+$", line) and len(line) < 15:
+        # Skip lines that are mostly numbers / separators / codes
+        if re.match(r"^[\d\s/.\-:,€$£%=_*|]+$", line):
             continue
-        # Skip very short lines (single chars, etc.)
+        # Skip typical address lines: starts with letters then digits (e.g. "ΦΡΑΓΚΟΥΔΗ 9")
+        if re.match(r"^[\w\s]+\d+", line) and len(line) < 35 and re.search(r"\d", line):
+            # Only skip if it looks like a street address (has a number embedded short line)
+            if re.search(r"\b\d{1,3}\b", line):
+                continue
+        # Skip very short lines
         if len(line) < 3:
             continue
         return line
