@@ -244,7 +244,9 @@
 {% endblock %}
 
 {% block scripts %}
-<!-- Tesseract.js — runs OCR on the device (WASM) -->
+<!-- jsQR — lightweight QR code reader (pure JS, no WASM) -->
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1/dist/jsQR.js"></script>
+<!-- Tesseract.js — runs OCR on the device (WASM), used only when no QR found -->
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
 <script>
@@ -321,7 +323,25 @@ function receiptScanner() {
       try {
         const isPdf = this.file.type === 'application/pdf' || this.file.name.toLowerCase().endsWith('.pdf');
 
-        // Fix 1: For digital PDFs try to extract the text layer directly — no OCR needed.
+        // ── Step 0: Try QR code scan first (instant, no WASM needed) ──────
+        // Greek fiscal receipts have an AADE QR code at the bottom that links
+        // directly to the authoritative tax portal with all receipt data.
+        if (!isPdf) {
+          this.progressLabel = 'Looking for QR code…';
+          this.progress = 10;
+          const qrUrl = await this.tryReadQR(this.file);
+          if (qrUrl) {
+            this.progressLabel = 'Reading from AADE portal…';
+            this.progress = 40;
+            const ok = await this.fetchFromAade(qrUrl);
+            if (ok) {
+              this.progress = 100;
+              return;  // done — no OCR needed
+            }
+          }
+        }
+
+        // ── Step 1: For digital PDFs try text layer directly ───────────────
         if (isPdf) {
           const extracted = await this.extractPdfTextLayer(this.file);
           if (extracted && extracted.trim().length > 40) {
@@ -373,6 +393,50 @@ function receiptScanner() {
         this.resultReady = true;
       } finally {
         this.scanning = false;
+      }
+    },
+
+    // QR code reader using jsQR.
+    // Returns the URL string if an AADE QR code is found, otherwise null.
+    async tryReadQR(file) {
+      try {
+        const canvas = await this.imageToCanvas(file);
+        const ctx = canvas.getContext('2d');
+        const { width: w, height: h } = canvas;
+        const imageData = ctx.getImageData(0, 0, w, h);
+        const result = typeof jsQR !== 'undefined'
+          ? jsQR(imageData.data, w, h, { inversionAttempts: 'dontInvert' })
+          : null;
+        if (result && result.data && result.data.includes('aade.gr')) {
+          return result.data;
+        }
+      } catch (e) {
+        console.warn('QR scan failed:', e);
+      }
+      return null;
+    },
+
+    // Fetch receipt data from AADE portal via our backend proxy.
+    // Returns true on success, false if it should fall through to OCR.
+    async fetchFromAade(url) {
+      try {
+        const resp = await fetch('/transactions/scan/qr', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url }),
+        });
+        if (!resp.ok) return false;
+        const data = await resp.json();
+        if (data.amount)       this.result.amount      = data.amount;
+        if (data.currency)     this.result.currency    = data.currency;
+        if (data.date)         this.result.date        = data.date;
+        if (data.merchant)     this.result.merchant    = data.merchant;
+        if (data.category_id)  this.result.category_id = data.category_id;
+        this.resultReady = true;
+        return true;
+      } catch (e) {
+        console.warn('AADE fetch failed:', e);
+        return false;
       }
     },
 

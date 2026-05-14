@@ -2,10 +2,14 @@
 Transactions routes: add expense wizard + CRUD.
 """
 import os
+import re
 import uuid
 from datetime import date
+from html.parser import HTMLParser
 from pathlib import Path
+from urllib.parse import urlparse
 
+import httpx
 from fastapi import APIRouter, Depends, Form, Request, HTTPException, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
 from sqlalchemy.orm import Session
@@ -17,7 +21,7 @@ from app.models import (
     Bucket, BucketStatus, Category, User, HouseholdMember, Household,
 )
 from app.templates import templates
-from app.receipt_parser import parse_receipt_text, match_category
+from app.receipt_parser import parse_receipt_text, match_category, _extract_category_hint
 
 router = APIRouter(prefix="/transactions")
 
@@ -100,6 +104,140 @@ async def parse_scan(
         "date": parsed["date"],
         "merchant": parsed["merchant"],
         "category_hint": parsed["category_hint"],
+        "category_id": category_id,
+    }
+
+
+# ---------------------------------------------------------------------------
+# QR-code → AADE lookup
+# ---------------------------------------------------------------------------
+
+# SSRF guard: only the official AADE receipt verification endpoint is allowed.
+_AADE_HOST = "www1.aade.gr"
+_AADE_PATH_PREFIX = "/tameiakes/myweb/q1.php"
+
+
+class _AADEParser(HTMLParser):
+    """Extract label→value pairs from AADE receipt verification table."""
+
+    def __init__(self):
+        super().__init__()
+        self.rows: dict[str, str] = {}
+        self._in_td = False
+        self._cells: list[str] = []
+        self._current: list[str] = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "tr":
+            self._cells = []
+        elif tag == "td":
+            self._in_td = True
+            self._current = []
+
+    def handle_endtag(self, tag):
+        if tag == "td":
+            self._in_td = False
+            self._cells.append("".join(self._current).strip())
+        elif tag == "tr" and len(self._cells) == 2:
+            self.rows[self._cells[0].strip()] = self._cells[1].strip()
+
+    def handle_data(self, data):
+        if self._in_td:
+            self._current.append(data)
+
+
+def _parse_aade_html(html: str) -> dict:
+    """Parse AADE HTML and return structured receipt fields."""
+    parser = _AADEParser()
+    parser.feed(html)
+    rows = parser.rows
+
+    amount = None
+    raw_amount = rows.get("Συνολική αξία", "")
+    m = re.search(r"[\d.,]+", raw_amount.replace(",", "."))
+    if m:
+        try:
+            amount = float(m.group().replace(",", "."))
+        except ValueError:
+            pass
+
+    date_str = None
+    raw_date = rows.get("Ημερομηνία, ώρα", "")
+    dm = re.match(r"(\d{4}-\d{2}-\d{2})", raw_date)
+    if dm:
+        date_str = dm.group(1)
+
+    merchant = rows.get("Επωνυμία") or None
+    address = rows.get("Διεύθυνση") or ""
+
+    # Category from merchant name + address
+    combined = f"{merchant or ''} {address}"
+    category_hint = _extract_category_hint(combined)
+
+    return {
+        "amount": amount,
+        "currency": "EUR",
+        "date": date_str,
+        "merchant": merchant,
+        "category_hint": category_hint,
+    }
+
+
+@router.post("/scan/qr", response_class=JSONResponse)
+async def scan_qr(
+    request: Request,
+    db: Session = Depends(get_db),
+    auth=Depends(require_auth),
+):
+    """
+    Fetch receipt data from the AADE portal using the QR code URL.
+    The URL is validated to only allow the official AADE host — no SSRF risk.
+    """
+    user, hh_id = auth
+
+    body = await request.json()
+    url = body.get("url", "")
+    if not isinstance(url, str) or len(url) > 500:
+        raise HTTPException(status_code=400, detail="Invalid URL")
+
+    # SSRF guard — whitelist only the known AADE host and path
+    try:
+        parsed_url = urlparse(url)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid URL")
+
+    if (
+        parsed_url.scheme != "https"
+        or parsed_url.hostname != _AADE_HOST
+        or not parsed_url.path.startswith(_AADE_PATH_PREFIX)
+    ):
+        raise HTTPException(status_code=400, detail="URL not allowed")
+
+    try:
+        async with httpx.AsyncClient(
+            follow_redirects=False,
+            timeout=8.0,
+        ) as client:
+            resp = await client.get(url, headers={"Accept-Language": "el"})
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="AADE portal timed out")
+    except httpx.RequestError:
+        raise HTTPException(status_code=502, detail="Could not reach AADE portal")
+
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"AADE returned {resp.status_code}")
+
+    receipt = _parse_aade_html(resp.text)
+
+    categories = db.query(Category).filter_by(household_id=hh_id).all()
+    category_id = match_category(receipt["category_hint"], categories)
+
+    return {
+        "amount": receipt["amount"],
+        "currency": receipt["currency"],
+        "date": receipt["date"],
+        "merchant": receipt["merchant"],
+        "category_hint": receipt["category_hint"],
         "category_id": category_id,
     }
 
