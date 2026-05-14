@@ -5,8 +5,8 @@ from datetime import date, timedelta
 from collections import defaultdict
 from typing import Optional
 
-from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func, and_, case
 
 from app.models import (
     Transaction, TransactionSplit, TransactionType,
@@ -42,7 +42,7 @@ def get_month_summary(db: Session, household_id: str, year: int, month: int, buc
         q = q.join(Bucket, Bucket.id == Transaction.bucket_id).filter(Bucket.type == BucketType(bucket_type))
     if bucket_ids:
         q = q.filter(Transaction.bucket_id.in_(bucket_ids))
-    txns = q.all()
+    txns = q.options(joinedload(Transaction.splits)).all()
 
     total_spent = sum(t.amount for t in txns)
 
@@ -107,6 +107,7 @@ def get_bucket_month_summary(db: Session, bucket_id: str, year: int, month: int)
             Transaction.transaction_date >= start,
             Transaction.transaction_date <= end,
         )
+        .options(joinedload(Transaction.splits))
         .all()
     )
 
@@ -160,12 +161,15 @@ def get_all_time_summary(db: Session, household_id: str, bucket_type: str = "", 
         q = q.join(Bucket, Bucket.id == Transaction.bucket_id).filter(Bucket.type == BucketType(bucket_type))
     if bucket_ids:
         q = q.filter(Transaction.bucket_id.in_(bucket_ids))
-    txns = q.all()
+    txns = q.options(joinedload(Transaction.splits)).all()
     total_spent = sum(t.amount for t in txns)
 
     paid_by: dict[str, float] = defaultdict(float)
     for t in txns:
-        if t.paid_by:
+        if t.splits:
+            for s in t.splits:
+                paid_by[s.user_id] += s.amount
+        elif t.paid_by:
             paid_by[t.paid_by] += t.amount
 
     members = (
@@ -193,17 +197,20 @@ def get_all_time_summary(db: Session, household_id: str, bucket_type: str = "", 
 
 
 def get_bucket_balance(db: Session, bucket_id: str) -> dict:
-    """Total income, expenses, and net for a bucket."""
-    txns = db.query(Transaction).filter_by(bucket_id=bucket_id).all()
-
-    income = sum(t.amount for t in txns if t.type == TransactionType.income)
-    expenses = sum(t.amount for t in txns if t.type == TransactionType.expense)
-    net = income - expenses
-
+    """Total income, expenses, and net for a bucket — single SQL aggregation query."""
+    income_sum = func.coalesce(
+        func.sum(case((Transaction.type == TransactionType.income, Transaction.amount), else_=0)), 0
+    )
+    expense_sum = func.coalesce(
+        func.sum(case((Transaction.type == TransactionType.expense, Transaction.amount), else_=0)), 0
+    )
+    row = db.query(income_sum, expense_sum).filter(Transaction.bucket_id == bucket_id).one()
+    income = float(row[0])
+    expenses = float(row[1])
     return {
         "income": round(income, 2),
         "expenses": round(expenses, 2),
-        "net": round(net, 2),
+        "net": round(income - expenses, 2),
     }
 
 

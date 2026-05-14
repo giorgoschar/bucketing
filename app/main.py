@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
-from fastapi.responses import RedirectResponse, JSONResponse, HTMLResponse
+from fastapi.responses import RedirectResponse, JSONResponse, HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -57,7 +57,7 @@ async def security_headers(request: Request, call_next):
         "style-src 'self' 'unsafe-inline' cdn.tailwindcss.com; "
         "worker-src blob: 'self' cdn.jsdelivr.net; "
         "img-src 'self' data: blob:; "
-        "connect-src 'self' cdn.jsdelivr.net blob:;"
+        "connect-src 'self' cdn.jsdelivr.net cdn.tailwindcss.com unpkg.com blob:;"
     )
     if not settings.debug:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
@@ -89,6 +89,20 @@ app.include_router(transactions.router)
 app.include_router(income.router)
 app.include_router(bills.router)
 app.include_router(settings_router.router)
+
+
+@app.get("/sw.js", include_in_schema=False)
+async def service_worker():
+    """Serve the service worker from the root scope so it can control all pages."""
+    sw_path = Path(__file__).parent.parent / "static" / "sw.js"
+    return FileResponse(
+        str(sw_path),
+        media_type="application/javascript",
+        headers={
+            "Service-Worker-Allowed": "/",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+        },
+    )
 
 
 @app.get("/health", include_in_schema=False)
