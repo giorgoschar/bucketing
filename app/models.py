@@ -67,6 +67,10 @@ class User(Base):
     password_hash = Column(String, nullable=False)
     avatar_color = Column(String(7), default="#6366f1")  # hex color
     created_at = Column(DateTime, default=datetime.utcnow)
+    session_version = Column(Integer, default=0, nullable=False)
+    totp_secret = Column(String, nullable=True)
+    totp_enabled = Column(Boolean, default=False, nullable=False)
+    totp_backup_codes = Column(Text, nullable=True)  # JSON array of bcrypt-hashed codes
 
     memberships = relationship("HouseholdMember", back_populates="user")
     paid_transactions = relationship("Transaction", back_populates="paid_by_user")

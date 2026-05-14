@@ -1,0 +1,17 @@
+{% extends "auth/base_auth.html" %}
+{% block title %}Coming Soon{% endblock %}
+{% block auth_title %}Registration coming soon{% endblock %}
+{% block auth_subtitle %}Self-hosted setup{% endblock %}
+
+{% block auth_content %}
+<div class="text-center py-4 text-gray-500 text-sm">
+  <p>Public registration is not available on this instance.</p>
+  <p class="mt-2">If you've been invited, check your invite link.</p>
+</div>
+
+<div class="mt-6 text-center">
+  <a href="/login" class="text-sm text-primary-600 hover:text-primary-700 font-medium transition-colors">
+    ← Sign in
+  </a>
+</div>
+{% endblock %}

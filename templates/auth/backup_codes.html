@@ -1,0 +1,24 @@
+{% extends "auth/base_auth.html" %}
+{% block title %}Save Your Backup Codes{% endblock %}
+{% block auth_title %}2FA activated!{% endblock %}
+{% block auth_subtitle %}Save these backup codes somewhere safe{% endblock %}
+
+{% block auth_content %}
+<div class="mb-4 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
+  <strong>This is the only time these codes will be shown.</strong>
+  Each code can be used once to sign in if you lose access to your authenticator app.
+</div>
+
+<div class="bg-gray-50 border border-gray-200 rounded-xl p-4 font-mono text-sm mb-5">
+  {% for code in codes %}
+  <div class="py-1 select-all">{{ code }}</div>
+  {% endfor %}
+</div>
+
+<div class="text-center">
+  <a href="/dashboard"
+     class="inline-block w-full py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-semibold rounded-xl transition-colors text-sm text-center">
+    I've saved my codes — continue →
+  </a>
+</div>
+{% endblock %}

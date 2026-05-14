@@ -17,9 +17,7 @@ skipped (INSERT OR IGNORE semantics via on_conflict_do_nothing).
 import argparse
 import sys
 
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import Session
-
+from sqlalchemy import create_engine, inspect, text, Boolean
 # ---------------------------------------------------------------------------
 # FK-safe insertion order (parents before children)
 # ---------------------------------------------------------------------------
@@ -47,6 +45,16 @@ def migrate(source_url: str, target_url: str, dry_run: bool = False) -> None:
     src_engine = create_engine(source_url, connect_args={"check_same_thread": False} if "sqlite" in source_url else {})
     tgt_engine = create_engine(target_url)
 
+        # Build a map of {table: {col_name}} for all boolean columns in the target
+    tgt_inspector = inspect(tgt_engine)
+    bool_cols: dict[str, set[str]] = {}
+    for table in TABLE_ORDER:
+        bool_cols[table] = {
+            col["name"]
+            for col in tgt_inspector.get_columns(table)
+            if isinstance(col["type"], Boolean)
+        }
+
     with src_engine.connect() as src_conn, tgt_engine.connect() as tgt_conn:
         for table in TABLE_ORDER:
             rows = src_conn.execute(text(f"SELECT * FROM {table}")).mappings().all()
@@ -58,7 +66,6 @@ def migrate(source_url: str, target_url: str, dry_run: bool = False) -> None:
                 print(f"  {table}: would copy {len(rows)} row(s)")
                 continue
 
-            # Build INSERT ... ON CONFLICT DO NOTHING so re-running is safe
             cols = list(rows[0].keys())
             col_list = ", ".join(f'"{c}"' for c in cols)
             placeholders = ", ".join(f":{c}" for c in cols)
@@ -67,10 +74,17 @@ def migrate(source_url: str, target_url: str, dry_run: bool = False) -> None:
                 f" ON CONFLICT DO NOTHING"
             )
 
+            table_bool_cols = bool_cols.get(table, set())
+
             inserted = 0
             with tgt_conn.begin():
                 for row in rows:
-                    result = tgt_conn.execute(stmt, dict(row))
+                    data = dict(row)
+                    # SQLite stores booleans as 0/1 — cast to Python bool for Postgres
+                    for col in table_bool_cols:
+                        if col in data and data[col] is not None:
+                            data[col] = bool(data[col])
+                    result = tgt_conn.execute(stmt, data)
                     inserted += result.rowcount
 
             print(f"  {table}: {inserted}/{len(rows)} row(s) inserted ({len(rows) - inserted} skipped as duplicates)")

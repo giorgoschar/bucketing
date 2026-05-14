@@ -4,9 +4,10 @@ Transactions routes: add expense wizard + CRUD.
 import os
 import uuid
 from datetime import date
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, Form, Request, HTTPException, UploadFile, File
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -20,6 +21,37 @@ from app.templates import templates
 router = APIRouter(prefix="/transactions")
 
 UPLOADS_DIR = "uploads"
+
+
+# ---------------------------------------------------------------------------
+# Authenticated file download (replaces the old public /uploads static mount)
+# ---------------------------------------------------------------------------
+
+@router.get("/files/{filename}", response_class=FileResponse)
+def serve_receipt(
+    filename: str,
+    db: Session = Depends(get_db),
+    auth=Depends(require_auth),
+):
+    user, hh_id = auth
+
+    # Security: verify that a transaction in this household owns this file
+    txn = (
+        db.query(Transaction)
+        .filter(
+            Transaction.household_id == hh_id,
+            Transaction.receipt_path == filename,
+        )
+        .first()
+    )
+    if not txn:
+        raise HTTPException(status_code=404)
+
+    file_path = Path(UPLOADS_DIR) / filename
+    if not file_path.is_file():
+        raise HTTPException(status_code=404)
+
+    return FileResponse(str(file_path))
 
 
 def _get_context(db: Session, user, hh_id: str) -> dict:
