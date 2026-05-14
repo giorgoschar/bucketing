@@ -14,14 +14,17 @@
       </p>
 
       <!-- Dropzone -->
-      <label
-        class="flex flex-col items-center justify-center gap-3 p-8 rounded-xl border-2 border-dashed transition-colors cursor-pointer"
+      <div
+        class="rounded-xl border-2 border-dashed transition-colors"
         :class="dragging
           ? 'border-primary-400 bg-primary-50 dark:bg-primary-900/20'
           : 'border-gray-200 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-700'"
         @dragover.prevent="dragging = true"
         @dragleave.prevent="dragging = false"
         @drop.prevent="handleDrop($event)"
+      >
+      <label
+        class="flex flex-col items-center justify-center gap-3 p-8 cursor-pointer"
       >
         <svg class="w-10 h-10 text-gray-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
@@ -36,8 +39,7 @@
         </div>
         <input type="file" accept="image/*,.pdf" class="sr-only" @change="handleFile($event)" />
       </label>
-
-      <!-- Scan button -->
+      </div>
       <button
         @click="startScan()"
         :disabled="!file || scanning"
@@ -244,14 +246,10 @@
 {% block scripts %}
 <!-- Tesseract.js — runs OCR on the device (WASM) -->
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-<!-- PDF.js — renders first page of a PDF to canvas for OCR -->
-<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.min.mjs" type="module" id="pdfjs-script"></script>
 
 <script>
-// We need PDF.js loaded as a module; expose it on window for Alpine use.
+// PDF.js 4.x is an ES module — load it once and expose on window.
 (async () => {
-  // Wait for the script tag to load then grab the module export.
-  // PDF.js 4.x is an ES module; we import it dynamically.
   try {
     const pdfjsLib = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.min.mjs');
     pdfjsLib.GlobalWorkerOptions.workerSrc =
@@ -308,6 +306,8 @@ function receiptScanner() {
       } else {
         this.previewUrl = '';
       }
+      // Auto-start scan so mobile users don't need a second tap
+      this.$nextTick(() => this.startScan());
     },
 
     // --- scan pipeline ---

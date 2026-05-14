@@ -53,9 +53,11 @@ async def security_headers(request: Request, call_next):
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval' cdn.tailwindcss.com cdn.jsdelivr.net unpkg.com; "        "style-src 'self' 'unsafe-inline' cdn.tailwindcss.com; "
-        "img-src 'self' data:; "
-        "connect-src 'self';"
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' cdn.tailwindcss.com cdn.jsdelivr.net unpkg.com; "
+        "style-src 'self' 'unsafe-inline' cdn.tailwindcss.com; "
+        "worker-src blob: 'self' cdn.jsdelivr.net; "
+        "img-src 'self' data: blob:; "
+        "connect-src 'self' cdn.jsdelivr.net blob:;"
     )
     if not settings.debug:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
