@@ -316,12 +316,29 @@ function receiptScanner() {
       this.scanning = true;
       this.errorMsg = '';
       this.progress = 0;
-      this.progressLabel = 'Preparing image…';
+      this.progressLabel = 'Preparing…';
 
       try {
+        const isPdf = this.file.type === 'application/pdf' || this.file.name.toLowerCase().endsWith('.pdf');
+
+        // Fix 1: For digital PDFs try to extract the text layer directly — no OCR needed.
+        if (isPdf) {
+          const extracted = await this.extractPdfTextLayer(this.file);
+          if (extracted && extracted.trim().length > 40) {
+            this.progressLabel = 'Parsing fields…';
+            this.progress = 90;
+            await this.parseOnServer(extracted);
+            this.progress = 100;
+            return;
+          }
+          // Sparse text layer → scanned PDF, fall through to OCR
+        }
+
         const canvas = await this.fileToCanvas(this.file);
         this.progressLabel = 'Running OCR…';
 
+        // Fix 3: PSM 4 = single column (receipts are always narrow single column).
+        // OEM 1 = LSTM only (more accurate than legacy+LSTM combo for Greek).
         const worker = await Tesseract.createWorker(['ell', 'eng'], 1, {
           logger: (m) => {
             if (m.status === 'recognizing text') {
@@ -332,6 +349,10 @@ function receiptScanner() {
               this.progress = Math.min(this.progress + 5, 30);
             }
           },
+        });
+        await worker.setParameters({
+          tessedit_pageseg_mode: Tesseract.PSM.SINGLE_COLUMN,
+          tessedit_ocr_engine_mode: Tesseract.OEM.LSTM_ONLY,
         });
 
         const { data: { text } } = await worker.recognize(canvas);
@@ -346,17 +367,96 @@ function receiptScanner() {
       } catch (err) {
         console.error(err);
         this.errorMsg = 'Could not read the receipt. Please fill in the details manually.';
-        this.resultReady = true; // show blank form anyway
+        this.resultReady = true;
       } finally {
         this.scanning = false;
       }
     },
 
-    async fileToCanvas(file) {
-      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
-        return await this.pdfToCanvas(file);
+    // Fix 1: Extract text layer from a digital PDF (skips OCR entirely).
+    async extractPdfTextLayer(file) {
+      const pdfjsLib = window._pdfjsLib;
+      if (!pdfjsLib) return null;
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        let allText = '';
+        // Extract up to first 3 pages (multi-page invoices)
+        const pageCount = Math.min(pdf.numPages, 3);
+        for (let i = 1; i <= pageCount; i++) {
+          const page = await pdf.getPage(i);
+          const content = await page.getTextContent();
+          const pageText = content.items.map(item => item.str).join(' ');
+          allText += pageText + '\n';
+        }
+        return allText;
+      } catch (e) {
+        console.warn('PDF text layer extraction failed:', e);
+        return null;
       }
-      return await this.imageToCanvas(file);
+    },
+
+    async fileToCanvas(file) {
+      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+      const raw = isPdf ? await this.pdfToCanvas(file) : await this.imageToCanvas(file);
+      // Fix 2: Preprocess for better OCR on thermal/printed receipts
+      return this.preprocessCanvas(raw);
+    },
+
+    // Fix 2: Grayscale + Otsu threshold + upscale.
+    // Converts a noisy photo of a thermal receipt to clean black-on-white.
+    preprocessCanvas(src) {
+      const MIN_WIDTH = 1800;
+      let w = src.width, h = src.height;
+      // Upscale small images — Tesseract struggles below ~150 DPI effective
+      if (w < MIN_WIDTH) {
+        const scale = MIN_WIDTH / w;
+        w = Math.round(w * scale);
+        h = Math.round(h * scale);
+      }
+      const dst = document.createElement('canvas');
+      dst.width = w;
+      dst.height = h;
+      const ctx = dst.getContext('2d');
+      ctx.drawImage(src, 0, 0, w, h);
+
+      const imageData = ctx.getImageData(0, 0, w, h);
+      const data = imageData.data;
+      const len = w * h;
+
+      // Step 1: convert to grayscale in-place
+      const gray = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        const r = data[i * 4], g = data[i * 4 + 1], b = data[i * 4 + 2];
+        gray[i] = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+      }
+
+      // Step 2: Otsu's threshold — find optimal split from histogram
+      const hist = new Int32Array(256);
+      for (let i = 0; i < len; i++) hist[gray[i]]++;
+      let sum = 0;
+      for (let t = 0; t < 256; t++) sum += t * hist[t];
+      let sumB = 0, wB = 0, max = 0, threshold = 128;
+      for (let t = 0; t < 256; t++) {
+        wB += hist[t];
+        if (wB === 0) continue;
+        const wF = len - wB;
+        if (wF === 0) break;
+        sumB += t * hist[t];
+        const mB = sumB / wB;
+        const mF = (sum - sumB) / wF;
+        const between = wB * wF * (mB - mF) ** 2;
+        if (between > max) { max = between; threshold = t; }
+      }
+
+      // Step 3: binarize — white background, black text
+      for (let i = 0; i < len; i++) {
+        const v = gray[i] > threshold ? 255 : 0;
+        data[i * 4] = data[i * 4 + 1] = data[i * 4 + 2] = v;
+        data[i * 4 + 3] = 255;
+      }
+      ctx.putImageData(imageData, 0, 0);
+      return dst;
     },
 
     imageToCanvas(file) {
@@ -365,8 +465,8 @@ function receiptScanner() {
         const url = URL.createObjectURL(file);
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          // Scale down very large images to speed up OCR
-          const MAX = 2400;
+          // Cap at 3000px — above this Tesseract slows dramatically with no gain
+          const MAX = 3000;
           let w = img.naturalWidth, h = img.naturalHeight;
           if (w > MAX || h > MAX) {
             const ratio = Math.min(MAX / w, MAX / h);
