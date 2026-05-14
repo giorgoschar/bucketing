@@ -75,6 +75,29 @@ _CATEGORY_RULES: list[tuple[list[str], str]] = [
 # Helpers
 # ---------------------------------------------------------------------------
 
+# Common Tesseract confusions on thermal Greek receipts.
+# Corrected before parsing so keyword matching still works.
+_OCR_FIXES: list[tuple[str, str]] = [
+    # Greek total keywords corrupted by digit/letter swaps
+    (r"[5Ss][Y\u03a5][Nn][O\u039f][\u039blL][O\u039f]", "\u03a3\u03a5\u039d\u039f\u039b\u039f"),  # 5YNOΛO / SYNOЛО -> ΣΥΝΟΛΟ
+    (r"[Pp][Ll\u039b][Hh\u0397][Pp\u03a1][Oo\u03a9][Tt\u03a4][Ee\u0395][Oo\u039f]", "\u03a0\u039b\u0397\u03a1\u03a9\u03a4\u0395\u039f"),
+    # Lowercase l between Greek capitals -> iota
+    (r"(?<=[\u0391-\u03a9])l(?=[\u0391-\u03a9])", "\u0399"),
+    # Trailing E after a number likely means euro
+    (r"(?<=\d) *E(?=[\s,.]|$)", "\u20ac"),
+]
+
+
+def _clean_ocr_noise(text: str) -> str:
+    """Correct common Tesseract misreads on Greek thermal receipts."""
+    for pattern, replacement in _OCR_FIXES:
+        try:
+            text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+        except re.error:
+            pass
+    return text
+
+
 def _normalize(text: str) -> str:
     """Upper-case + collapse whitespace for easier matching."""
     return re.sub(r"\s+", " ", text.upper().strip())
@@ -225,6 +248,7 @@ def parse_receipt_text(text: str) -> dict:
       merchant    (str | None)
       category_hint (str | None)
     """
+    text = _clean_ocr_noise(text)
     return {
         "amount": _extract_amount(text),
         "currency": _extract_currency(text),
