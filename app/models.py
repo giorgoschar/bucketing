@@ -55,9 +55,10 @@ class OccurrenceStatus(str, enum.Enum):
 
 
 class NotificationType(str, enum.Enum):
-    bill_due       = "bill_due"
-    bill_overdue   = "bill_overdue"
-    bill_auto_paid = "bill_auto_paid"
+    bill_due           = "bill_due"
+    bill_overdue       = "bill_overdue"
+    bill_auto_paid     = "bill_auto_paid"
+    contract_expiring  = "contract_expiring"
 
 
 # ---------------------------------------------------------------------------
@@ -232,6 +233,7 @@ class RecurringBill(Base):
     interval_months = Column(Integer, default=1)  # every N months
     start_date = Column(Date, nullable=False)
     end_date = Column(Date, nullable=True)  # null = indefinite
+    contract_end_date = Column(Date, nullable=True)  # telco/power contract expiry
     total_occurrences = Column(Integer, nullable=True)  # null = indefinite
     paid_by_default = Column(String, ForeignKey("users.id"), nullable=True)
     notes = Column(Text, nullable=True)

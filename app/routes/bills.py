@@ -84,6 +84,7 @@ async def create_bill(
     interval_months: int = Form(1),
     start_date: str = Form(...),
     end_date: str = Form(""),
+    contract_end_date: str = Form(""),
     total_occurrences: str = Form(""),
     paid_by_default: str = Form(""),
     notes: str = Form(""),
@@ -104,6 +105,7 @@ async def create_bill(
         interval_months=interval_months,
         start_date=date.fromisoformat(start_date),
         end_date=date.fromisoformat(end_date) if end_date.strip() else None,
+        contract_end_date=date.fromisoformat(contract_end_date) if contract_end_date.strip() else None,
         total_occurrences=int(total_occurrences) if total_occurrences.strip() else None,
         paid_by_default=paid_by_default or None,
         notes=notes.strip() or None,
@@ -297,6 +299,7 @@ async def edit_bill(
     interval_months: int = Form(1),
     start_date: str = Form(...),
     end_date: str = Form(""),
+    contract_end_date: str = Form(""),
     total_occurrences: str = Form(""),
     paid_by_default: str = Form(""),
     notes: str = Form(""),
@@ -318,6 +321,7 @@ async def edit_bill(
     bill.interval_months = interval_months
     bill.start_date = date.fromisoformat(start_date)
     bill.end_date = date.fromisoformat(end_date) if end_date.strip() else None
+    bill.contract_end_date = date.fromisoformat(contract_end_date) if contract_end_date.strip() else None
     bill.total_occurrences = int(total_occurrences) if total_occurrences.strip() else None
     bill.paid_by_default = paid_by_default or None
     bill.notes = notes.strip() or None

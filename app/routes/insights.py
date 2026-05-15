@@ -101,7 +101,8 @@ def insights(
 
     net = round((income_total or 0) - summary["total_spent"], 2) if income_total is not None else None
 
-    template = "insights_partial.html" if request.headers.get("HX-Request") else "insights.html"
+    is_partial = bool(request.headers.get("HX-Request")) and not request.headers.get("HX-Boosted")
+    template = "insights_partial.html" if is_partial else "insights.html"
     return templates.TemplateResponse(
         template,
         {

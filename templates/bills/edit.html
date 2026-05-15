@@ -155,6 +155,15 @@
                   class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm resize-none">{{ bill.notes or '' }}</textarea>
       </div>
 
+      <!-- Contract end date -->
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">📋 Contract end date <span class="text-gray-400 font-normal">(optional)</span></label>
+        <p class="text-xs text-gray-400 mb-1.5">Telco, power, gym, etc. — you'll be notified 30 &amp; 10 days before expiry</p>
+        <input type="date" name="contract_end_date"
+               value="{{ bill.contract_end_date.isoformat() if bill.contract_end_date else '' }}"
+               class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm" />
+      </div>
+
       <div class="flex gap-3 pt-2">
         <a href="/bills"
            class="flex-1 py-2.5 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 font-semibold rounded-xl text-sm text-center">Cancel</a>

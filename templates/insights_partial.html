@@ -16,6 +16,7 @@
        hx-target="#insights-body"
        hx-swap="outerHTML"
        hx-push-url="true"
+       hx-boost="false"
        class="px-3 py-1.5 rounded-full text-xs font-semibold transition-colors
               {% if bucket_type == value and not selected_bucket_ids %}bg-primary-500 text-white{% else %}bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700{% endif %}">
       {{ label }}

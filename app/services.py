@@ -36,6 +36,7 @@ def get_month_summary(db: Session, household_id: str, year: int, month: int, buc
             Transaction.type == TransactionType.expense,
             Transaction.transaction_date >= start,
             Transaction.transaction_date <= end,
+            Transaction.exclude_from_forecast == False,  # noqa: E712
         )
     )
     if bucket_type:
@@ -155,6 +156,7 @@ def get_all_time_summary(db: Session, household_id: str, bucket_type: str = "", 
         .filter(
             Transaction.household_id == household_id,
             Transaction.type == TransactionType.expense,
+            Transaction.exclude_from_forecast == False,  # noqa: E712
         )
     )
     if bucket_type:
@@ -318,6 +320,7 @@ def get_category_breakdown(
             Transaction.type == TransactionType.expense,
             Transaction.transaction_date >= start,
             Transaction.transaction_date <= end,
+            Transaction.exclude_from_forecast == False,  # noqa: E712
         )
     )
     if bucket_type:

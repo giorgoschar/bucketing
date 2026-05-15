@@ -171,6 +171,37 @@ def auto_mark_paid_job() -> None:
                 )
                 send_push_for_notification(db, notif)
 
+        # ----------------------------------------------------------------
+        # Notify: contract expiring (30 days and 10 days before end)
+        # ----------------------------------------------------------------
+        for days_out in (30, 10):
+            expiry_date = today + timedelta(days=days_out)
+            expiring_bills = (
+                db.query(RecurringBill)
+                .filter(
+                    RecurringBill.contract_end_date == expiry_date,
+                    RecurringBill.is_active.is_(True),
+                )
+                .all()
+            )
+            for bill in expiring_bills:
+                members = (
+                    db.query(HouseholdMember)
+                    .filter(HouseholdMember.household_id == bill.household_id)
+                    .all()
+                )
+                for m in members:
+                    notif = create_notification(
+                        db,
+                        household_id=bill.household_id,
+                        user_id=m.user_id,
+                        type=NotificationType.contract_expiring,
+                        title=f"Contract expiring: {bill.name}",
+                        body=f"Expires on {expiry_date} — {days_out} days to act.",
+                        link="/bills",
+                    )
+                    send_push_for_notification(db, notif)
+
         db.commit()
     except Exception:
         logger.exception("auto_mark_paid_job failed")
