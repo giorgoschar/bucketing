@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.auth import require_auth
 from app.models import Bucket, BucketType, BucketStatus, Household, HouseholdMember, Transaction, TransactionType
-from app.services import get_bucket_balance, get_bucket_month_summary
+from app.services import get_bucket_balance, get_bucket_month_summary, get_bucket_settlement
 from app.templates import templates
 
 router = APIRouter(prefix="/buckets")
@@ -73,6 +73,7 @@ def create_bucket(
     budget: str = Form(""),
     description: str = Form(""),
     show_income: str = Form(""),
+    enable_settlement: str = Form(""),
     db: Session = Depends(get_db),
     auth=Depends(require_auth),
 ):
@@ -86,6 +87,7 @@ def create_bucket(
         budget=float(budget) if budget.strip() else None,
         description=description.strip() or None,
         show_income=(show_income == "on"),
+        enable_settlement=(enable_settlement == "on"),
     )
     db.add(bucket)
     db.commit()
@@ -157,6 +159,8 @@ def bucket_detail(
     memberships = db.query(HouseholdMember).filter_by(user_id=user.id).all()
     households = [db.get(Household, m.household_id) for m in memberships]
 
+    settlement = get_bucket_settlement(db, bucket_id) if bucket.enable_settlement else []
+
     return templates.TemplateResponse(
         "buckets/detail.html",
         {
@@ -179,6 +183,7 @@ def bucket_detail(
             "month_name": date(year, month, 1).strftime("%B %Y"),
             "all_time": all_time,
             "all_time_total": all_time_total,
+            "settlement": settlement,
         },
     )
 
@@ -193,6 +198,7 @@ def edit_bucket(
     budget: str = Form(""),
     description: str = Form(""),
     show_income: str = Form(""),
+    enable_settlement: str = Form(""),
     db: Session = Depends(get_db),
     auth=Depends(require_auth),
 ):
@@ -208,6 +214,7 @@ def edit_bucket(
     bucket.budget = float(budget) if budget.strip() else None
     bucket.description = description.strip() or None
     bucket.show_income = (show_income == "on")
+    bucket.enable_settlement = (enable_settlement == "on")
     db.commit()
     return RedirectResponse(f"/buckets/{bucket_id}", status_code=302)
 

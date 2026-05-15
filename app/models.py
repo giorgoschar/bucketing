@@ -163,6 +163,7 @@ class Bucket(Base):
     budget = Column(Float, nullable=True)
     description = Column(Text, nullable=True)
     show_income = Column(Boolean, default=True, nullable=False)
+    enable_settlement = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     household = relationship("Household", back_populates="buckets")

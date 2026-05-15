@@ -141,6 +141,40 @@
     </div>
     {% endif %}
 
+    {# ===== Settlement card ===== #}
+    {% if bucket.enable_settlement and settlement is defined %}
+    <div class="px-5 py-4 border-b border-gray-50 dark:border-gray-800">
+      <p class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Settlement</p>
+      {% if not settlement %}
+      <div class="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
+        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+        </svg>
+        <span class="text-sm font-medium">All square — no debts</span>
+      </div>
+      {% else %}
+      <div class="space-y-3">
+        {% for row in settlement %}
+        <div class="flex items-center gap-3">
+          <div class="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
+               style="background-color: {{ row.from_color }}">{{ row.from_name | initials }}</div>
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium">
+              <span class="font-semibold">{{ row.from_name }}</span>
+              <span class="text-gray-400 mx-1">owes</span>
+              <span class="font-semibold">{{ row.to_name }}</span>
+            </p>
+          </div>
+          <span class="text-sm font-bold text-orange-500 flex-shrink-0">{{ row.amount | currency(household.default_currency) }}</span>
+          <div class="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
+               style="background-color: {{ row.to_color }}">{{ row.to_name | initials }}</div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
     <!-- Transactions list -->
     {% if transactions %}
     <div id="transaction-list" class="divide-y divide-gray-50 dark:divide-gray-800">
@@ -218,6 +252,17 @@
         </div>
         <label class="relative inline-flex items-center cursor-pointer">
           <input type="checkbox" name="show_income" value="on" class="sr-only peer" {% if bucket.show_income %}checked{% endif %}>
+          <div class="w-10 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
+        </label>
+      </div>
+      <!-- Settlement toggle -->
+      <div class="flex items-center justify-between py-2">
+        <div>
+          <p class="text-sm font-medium text-gray-700 dark:text-gray-300">Track settlement</p>
+          <p class="text-xs text-gray-400">Show who owes whom in this bucket</p>
+        </div>
+        <label class="relative inline-flex items-center cursor-pointer">
+          <input type="checkbox" name="enable_settlement" value="on" class="sr-only peer" {% if bucket.enable_settlement %}checked{% endif %}>
           <div class="w-10 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
         </label>
       </div>
