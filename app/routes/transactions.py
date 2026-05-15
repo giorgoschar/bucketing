@@ -450,6 +450,20 @@ async def edit_transaction(
     txn.paid_by = paid_by or None
     txn.category_id = category_id or None
     txn.notes = notes.strip() or None
+
+    # Replace splits
+    db.query(TransactionSplit).filter_by(transaction_id=txn.id).delete()
+    form_data = await request.form()
+    for key, value in form_data.items():
+        if key.startswith("split_") and value.strip():
+            uid = key[6:]
+            try:
+                split_amount = float(value)
+            except ValueError:
+                continue
+            if split_amount > 0:
+                db.add(TransactionSplit(transaction_id=txn.id, user_id=uid, amount=split_amount))
+
     db.commit()
 
     return RedirectResponse(f"/buckets/{txn.bucket_id}", status_code=302)

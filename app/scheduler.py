@@ -23,6 +23,7 @@ def auto_mark_paid_job() -> None:
         OccurrenceStatus,
         RecurringBill,
         Transaction,
+        TransactionSplit,
         TransactionType,
     )
 
@@ -35,6 +36,7 @@ def auto_mark_paid_job() -> None:
             .filter(
                 BillOccurrence.status == OccurrenceStatus.unpaid,
                 BillOccurrence.due_date <= today,
+                BillOccurrence.transaction_id.is_(None),
                 RecurringBill.is_auto_pay.is_(True),
                 RecurringBill.is_active.is_(True),
                 # Fixed-amount bill OR occurrence has a pre-set amount (variable standing order)
@@ -62,6 +64,14 @@ def auto_mark_paid_job() -> None:
                 db.add(txn)
                 db.flush()
                 occ.transaction_id = txn.id
+                # Create per-member split records if the bill has splits configured
+                if bill.splits:
+                    for s in bill.splits:
+                        db.add(TransactionSplit(
+                            transaction_id=txn.id,
+                            user_id=s.user_id,
+                            amount=s.amount,
+                        ))
 
             occ.status = OccurrenceStatus.paid
             occ.paid_at = datetime.utcnow()
