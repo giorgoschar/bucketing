@@ -15,6 +15,7 @@ from app.database import engine, Base
 import app.models  # noqa: F401
 
 from app.routes import auth, dashboard, buckets, transactions, income, bills, settings as settings_router
+from app.routes import notifications as notifications_router
 from app.scheduler import start_scheduler, stop_scheduler
 
 # ---------------------------------------------------------------------------
@@ -89,6 +90,7 @@ app.include_router(transactions.router)
 app.include_router(income.router)
 app.include_router(bills.router)
 app.include_router(settings_router.router)
+app.include_router(notifications_router.router)
 
 
 @app.get("/sw.js", include_in_schema=False)

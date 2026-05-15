@@ -54,6 +54,12 @@ class OccurrenceStatus(str, enum.Enum):
     skipped = "skipped"
 
 
+class NotificationType(str, enum.Enum):
+    bill_due       = "bill_due"
+    bill_overdue   = "bill_overdue"
+    bill_auto_paid = "bill_auto_paid"
+
+
 # ---------------------------------------------------------------------------
 # Users & Households
 # ---------------------------------------------------------------------------
@@ -263,4 +269,39 @@ class RecurringBillSplit(Base):
     amount = Column(Float, nullable=False)
 
     bill = relationship("RecurringBill", back_populates="splits")
+    user = relationship("User")
+
+
+# ---------------------------------------------------------------------------
+# Notifications & Push Subscriptions
+# ---------------------------------------------------------------------------
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id           = Column(String, primary_key=True, default=gen_id)
+    household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id      = Column(String, ForeignKey("users.id",      ondelete="CASCADE"), nullable=False, index=True)
+    type         = Column(SAEnum(NotificationType), nullable=False)
+    title        = Column(String(200), nullable=False)
+    body         = Column(Text, nullable=True)
+    link         = Column(String, nullable=True)
+    is_read      = Column(Boolean, default=False, nullable=False)
+    created_at   = Column(DateTime, default=datetime.utcnow)
+
+    household = relationship("Household")
+    user      = relationship("User")
+
+
+class PushSubscription(Base):
+    __tablename__ = "push_subscriptions"
+
+    id           = Column(String, primary_key=True, default=gen_id)
+    user_id      = Column(String, ForeignKey("users.id",      ondelete="CASCADE"), nullable=False, index=True)
+    household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False)
+    endpoint     = Column(Text, nullable=False, unique=True)
+    p256dh       = Column(Text, nullable=False)
+    auth         = Column(Text, nullable=False)
+    created_at   = Column(DateTime, default=datetime.utcnow)
+
     user = relationship("User")

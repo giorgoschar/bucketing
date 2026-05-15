@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     # Bills dashboard — how many days ahead to show upcoming bills
     upcoming_bills_days: int = 60
 
+    # Web Push (VAPID) — set via environment variables in production
+    # Generate with: vapid --gen  (after installing pywebpush)
+    vapid_private_key: str = ""
+    vapid_public_key: str  = ""
+    vapid_claims_email: str = "admin@localhost"
+
     @model_validator(mode="after")
     def _guard_production_defaults(self) -> "Settings":
         if not self.debug and self.app_secret_key == "dev-secret-change-me":

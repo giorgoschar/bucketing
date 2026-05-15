@@ -164,3 +164,32 @@ self.addEventListener('fetch', event => {
     return;
   }
 });
+
+// ---------------------------------------------------------------------------
+// Web Push handlers
+// ---------------------------------------------------------------------------
+
+self.addEventListener('push', event => {
+  let data = { title: 'Expenses', body: '', link: '/' };
+  try { data = { ...data, ...event.data.json() }; } catch (_) {}
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body:  data.body,
+      icon:  '/static/icons/icon-192.png',
+      badge: '/static/icons/icon-192.png',
+      data:  { url: data.link },
+    })
+  );
+});
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const url = event.notification.data?.url || '/';
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(wins => {
+      const existing = wins.find(w => w.url.includes(url));
+      if (existing) return existing.focus();
+      return clients.openWindow(url);
+    })
+  );
+});

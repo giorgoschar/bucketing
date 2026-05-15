@@ -20,3 +20,4 @@ slowapi==0.1.9
 limits==3.13.0
 pyotp==2.9.0
 qrcode[pil]==8.0
+pywebpush>=2.0.0

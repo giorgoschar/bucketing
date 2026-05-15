@@ -1,9 +1,9 @@
 """
-Background scheduler for auto-pay bills.
-Runs a daily job at midnight+5min to auto-mark fixed-amount auto-pay bills as paid.
+Background scheduler for auto-pay bills and bill-due notifications.
+Runs a daily job at midnight+5min.
 """
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -16,16 +16,21 @@ def auto_mark_paid_job() -> None:
     """
     Mark fixed-amount auto-pay bill occurrences as paid when they are due.
     Variable-amount auto-pay bills are skipped (user must enter the amount manually).
+    Also fires bill_due notifications for occurrences coming up in 3 days,
+    and bill_overdue notifications for overdue unpaid occurrences.
     """
     from app.database import SessionLocal
     from app.models import (
         BillOccurrence,
+        HouseholdMember,
+        NotificationType,
         OccurrenceStatus,
         RecurringBill,
         Transaction,
         TransactionSplit,
         TransactionType,
     )
+    from app.notification_service import create_notification, send_push_for_notification
 
     db = SessionLocal()
     try:
@@ -78,9 +83,95 @@ def auto_mark_paid_job() -> None:
             occ.paid_by = bill.paid_by_default
             count += 1
 
+            # Notify all household members about the auto-payment
+            members = (
+                db.query(HouseholdMember)
+                .filter(HouseholdMember.household_id == bill.household_id)
+                .all()
+            )
+            for m in members:
+                notif = create_notification(
+                    db,
+                    household_id=bill.household_id,
+                    user_id=m.user_id,
+                    type=NotificationType.bill_auto_paid,
+                    title=f"Auto-paid: {bill.name}",
+                    body=f"€{pay_amount:.2f} marked as paid",
+                    link="/bills",
+                )
+                send_push_for_notification(db, notif)
+
         if count:
             db.commit()
             logger.info("Auto-paid %d bill occurrence(s)", count)
+
+        # ----------------------------------------------------------------
+        # Notify: bill due soon (exactly 3 days out)
+        # ----------------------------------------------------------------
+        due_soon_date = today + timedelta(days=3)
+        due_soon_occs = (
+            db.query(BillOccurrence)
+            .join(RecurringBill, RecurringBill.id == BillOccurrence.bill_id)
+            .filter(
+                BillOccurrence.status == OccurrenceStatus.unpaid,
+                BillOccurrence.due_date == due_soon_date,
+                RecurringBill.is_active.is_(True),
+            )
+            .all()
+        )
+        for occ in due_soon_occs:
+            bill = occ.bill
+            members = (
+                db.query(HouseholdMember)
+                .filter(HouseholdMember.household_id == bill.household_id)
+                .all()
+            )
+            for m in members:
+                notif = create_notification(
+                    db,
+                    household_id=bill.household_id,
+                    user_id=m.user_id,
+                    type=NotificationType.bill_due,
+                    title=f"Bill due in 3 days: {bill.name}",
+                    body=f"€{occ.amount or bill.amount:.2f} due on {occ.due_date}",
+                    link="/bills",
+                )
+                send_push_for_notification(db, notif)
+
+        # ----------------------------------------------------------------
+        # Notify: overdue bills (due before today, still unpaid)
+        # ----------------------------------------------------------------
+        overdue_occs = (
+            db.query(BillOccurrence)
+            .join(RecurringBill, RecurringBill.id == BillOccurrence.bill_id)
+            .filter(
+                BillOccurrence.status == OccurrenceStatus.unpaid,
+                BillOccurrence.due_date < today,
+                RecurringBill.is_active.is_(True),
+                RecurringBill.is_auto_pay.is_(False),
+            )
+            .all()
+        )
+        for occ in overdue_occs:
+            bill = occ.bill
+            members = (
+                db.query(HouseholdMember)
+                .filter(HouseholdMember.household_id == bill.household_id)
+                .all()
+            )
+            for m in members:
+                notif = create_notification(
+                    db,
+                    household_id=bill.household_id,
+                    user_id=m.user_id,
+                    type=NotificationType.bill_overdue,
+                    title=f"Overdue bill: {bill.name}",
+                    body=f"Was due on {occ.due_date}",
+                    link="/bills",
+                )
+                send_push_for_notification(db, notif)
+
+        db.commit()
     except Exception:
         logger.exception("auto_mark_paid_job failed")
         db.rollback()

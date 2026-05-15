@@ -129,6 +129,48 @@
           {% endfor %}
         </nav>
 
+        <!-- Notifications bell (desktop) -->
+        <div x-data="notifCenter()" x-init="init()" class="relative px-3 pb-2">
+          <button @click="open = !open; if (open) markAllRead()"
+                  class="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100 transition-colors">
+            <span class="relative flex-shrink-0">
+              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+              </svg>
+              <span x-show="unread > 0" x-cloak
+                    class="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center"
+                    x-text="unread > 9 ? '9+' : unread"></span>
+            </span>
+            Notifications
+          </button>
+          <!-- Notification dropdown -->
+          <div x-show="open" x-cloak @click.away="open = false"
+               class="absolute bottom-full left-0 mb-2 w-80 bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 z-50 overflow-hidden">
+            <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-700">
+              <span class="text-sm font-semibold">Notifications</span>
+              <button @click="markAllRead()" class="text-xs text-primary-600 hover:underline">Mark all read</button>
+            </div>
+            <div class="max-h-80 overflow-y-auto divide-y divide-gray-50 dark:divide-gray-700">
+              <template x-if="items.length === 0">
+                <p class="px-4 py-6 text-center text-sm text-gray-400">No notifications yet</p>
+              </template>
+              <template x-for="n in items" :key="n.id">
+                <a :href="n.link || '/bills'"
+                   class="flex gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                   :class="{ 'opacity-60': n.is_read }">
+                  <span class="mt-0.5 text-base flex-shrink-0"
+                        x-text="n.type === 'bill_auto_paid' ? '✅' : n.type === 'bill_overdue' ? '⚠️' : '🔔'"></span>
+                  <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium leading-tight" x-text="n.title"></p>
+                    <p class="text-xs text-gray-400 mt-0.5" x-text="n.body"></p>
+                    <p class="text-[11px] text-gray-300 dark:text-gray-500 mt-0.5" x-text="relativeTime(n.created_at)"></p>
+                  </div>
+                </a>
+              </template>
+            </div>
+          </div>
+        </div>
+
         <!-- Add Expense CTA -->
         <div class="px-3 pb-4 space-y-2">
           <a href="/transactions/new"
@@ -228,6 +270,44 @@
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z M15 13a3 3 0 11-6 0 3 3 0 016 0" />
             </svg>
           </a>
+          <!-- Bell icon (mobile) -->
+          <div x-data="notifCenter()" x-init="init()" class="relative" x-cloak>
+            <button @click="open = !open; if (open) markAllRead()"
+                    class="w-8 h-8 rounded-full border border-gray-200 dark:border-gray-700 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors relative"
+                    title="Notifications">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+              </svg>
+              <span x-show="unread > 0"
+                    class="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center"
+                    x-text="unread > 9 ? '9+' : unread"></span>
+            </button>
+            <!-- Mobile notification dropdown -->
+            <div x-show="open" x-cloak @click.away="open = false"
+                 class="absolute top-full right-0 mt-2 w-72 bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 z-50 overflow-hidden">
+              <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-700">
+                <span class="text-sm font-semibold">Notifications</span>
+                <button @click="markAllRead()" class="text-xs text-primary-600 hover:underline">Mark all read</button>
+              </div>
+              <div class="max-h-64 overflow-y-auto divide-y divide-gray-50 dark:divide-gray-700">
+                <template x-if="items.length === 0">
+                  <p class="px-4 py-6 text-center text-sm text-gray-400">No notifications yet</p>
+                </template>
+                <template x-for="n in items" :key="n.id">
+                  <a :href="n.link || '/bills'"
+                     class="flex gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                     :class="{ 'opacity-60': n.is_read }">
+                    <span class="mt-0.5 text-sm flex-shrink-0"
+                          x-text="n.type === 'bill_auto_paid' ? '✅' : n.type === 'bill_overdue' ? '⚠️' : '🔔'"></span>
+                    <div class="flex-1 min-w-0">
+                      <p class="text-xs font-medium leading-tight" x-text="n.title"></p>
+                      <p class="text-[11px] text-gray-400 mt-0.5" x-text="n.body"></p>
+                    </div>
+                  </a>
+                </template>
+              </div>
+            </div>
+          </div>
           <a href="/transactions/new"
              class="w-8 h-8 bg-primary-500 rounded-full flex items-center justify-center text-white">
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -275,8 +355,73 @@
   {% block scripts %}{% endblock %}
 
   <script>
+    // Alpine: shared notification center component
+    function notifCenter() {
+      return {
+        open: false,
+        unread: 0,
+        items: [],
+        _timer: null,
+        async init() {
+          await this.fetchNotifs();
+          this._timer = setInterval(() => this.fetchNotifs(), 60000);
+        },
+        async fetchNotifs() {
+          try {
+            const r = await fetch('/notifications', { headers: { 'Accept': 'application/json' } });
+            if (!r.ok) return;
+            const d = await r.json();
+            this.unread = d.unread;
+            this.items  = d.items;
+          } catch (_) {}
+        },
+        async markAllRead() {
+          try {
+            await fetch('/notifications/read-all', { method: 'POST' });
+            this.unread = 0;
+            this.items  = this.items.map(n => ({ ...n, is_read: true }));
+          } catch (_) {}
+        },
+        relativeTime(iso) {
+          if (!iso) return '';
+          const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+          if (diff < 60)   return 'just now';
+          if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+          if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+          return Math.floor(diff / 86400) + 'd ago';
+        },
+      };
+    }
+
+    // Service worker + Web Push subscription
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js', { scope: '/' });
+      navigator.serviceWorker.register('/sw.js', { scope: '/' }).then(reg => {
+        if (!('PushManager' in window)) return;
+        reg.pushManager.getSubscription().then(async existing => {
+          if (existing) return;
+          try {
+            const keyResp = await fetch('/push/vapid-public-key');
+            if (!keyResp.ok) return;  // VAPID not configured
+            const { public_key } = await keyResp.json();
+            const sub = await reg.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey: _urlBase64ToUint8(public_key),
+            });
+            await fetch('/push/subscribe', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(sub),
+            });
+          } catch (_) {}
+        });
+      });
+    }
+
+    function _urlBase64ToUint8(base64String) {
+      const padding = '='.repeat((4 - base64String.length % 4) % 4);
+      const base64  = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+      const raw     = atob(base64);
+      return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
     }
   </script>
 </body>
