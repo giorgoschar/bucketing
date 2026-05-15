@@ -1,0 +1,248 @@
+{#
+  insights_partial.html — standalone fragment, no extends.
+  Returned for HX-Request (htmx.ajax), included by insights.html for full loads.
+  Must stay self-contained so it renders correctly in both contexts.
+#}
+
+<div id="insights-body" class="space-y-6">
+
+  {# ===== Bucket type filter pills ===== #}
+  {% set base = '/insights?' ~ ('all_time=true' if all_time else 'year=' ~ year ~ '&month=' ~ month) %}
+  <div class="flex flex-wrap gap-2">
+    {% for label, value in [('All', ''), ('Day2Day', 'day2day'), ('Trips', 'trip'), ('Bills', 'bills'), ('Savings', 'savings')] %}
+    {% set pill_url = base ~ ('&bucket_type=' ~ value if value else '') ~ ('&bucket_ids=' ~ selected_bucket_ids | join(',') if selected_bucket_ids else '') %}
+    <a href="{{ pill_url }}"
+       hx-get="{{ pill_url }}"
+       hx-target="#insights-body"
+       hx-swap="outerHTML"
+       hx-push-url="true"
+       class="px-3 py-1.5 rounded-full text-xs font-semibold transition-colors
+              {% if bucket_type == value and not selected_bucket_ids %}bg-primary-500 text-white{% else %}bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700{% endif %}">
+      {{ label }}
+    </a>
+    {% endfor %}
+  </div>
+
+  {# ===== Individual bucket pills (multi-select via Alpine + debounced htmx.ajax) ===== #}
+  {% if buckets %}
+  {% set _base = 'all_time=true' if all_time else 'year=' ~ year ~ '&month=' ~ month %}
+  {% set _btype = '&bucket_type=' ~ bucket_type if bucket_type else '' %}
+  <div x-data="bucketFilter({{ selected_bucket_ids | tojson }}, '{{ _base }}{{ _btype }}')"
+       x-init="applyInitialState()"
+       class="flex flex-wrap gap-2">
+    {% for bucket in buckets %}
+    <button type="button"
+            @click="toggle('{{ bucket.id }}')"
+            :class="isSelected('{{ bucket.id }}')
+              ? 'bg-primary-500 text-white ring-2 ring-primary-400'
+              : 'bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-primary-400 hover:text-primary-600'"
+            class="px-3 py-1.5 rounded-full text-xs font-medium transition-colors">
+      {{ bucket.icon }} {{ bucket.name }}
+    </button>
+    {% endfor %}
+    <button type="button"
+            x-show="selected.length > 0"
+            x-cloak
+            @click="clearAll()"
+            class="px-3 py-1.5 rounded-full text-xs font-medium text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
+      ✕ Clear
+    </button>
+  </div>
+  {% endif %}
+
+  {# ===== KPI cards ===== #}
+  <div class="grid grid-cols-2 {% if income_total is not none %}lg:grid-cols-4{% else %}lg:grid-cols-2{% endif %} gap-4">
+
+    <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
+      <p class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">Expenses</p>
+      <p class="text-2xl font-bold">{{ summary.total_spent | currency(household.default_currency) }}</p>
+      <p class="text-xs text-gray-400 mt-1">{% if all_time %}all time{% else %}{{ month_name }}{% endif %}</p>
+    </div>
+
+    {% if income_total is not none %}
+    <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
+      <p class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">Income</p>
+      <p class="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{{ income_total | currency(household.default_currency) }}</p>
+      <p class="text-xs text-gray-400 mt-1">{{ month_name }}</p>
+    </div>
+
+    <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
+      <p class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">Net</p>
+      <p class="text-2xl font-bold {% if net >= 0 %}text-emerald-600 dark:text-emerald-400{% else %}text-red-500{% endif %}">
+        {% if net >= 0 %}+{% endif %}{{ net | currency(household.default_currency) }}
+      </p>
+      <p class="text-xs text-gray-400 mt-1">income − expenses</p>
+    </div>
+
+    <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
+      <p class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">Bills due</p>
+      <p class="text-2xl font-bold">{{ bills_due | currency(household.default_currency) }}</p>
+      <p class="text-xs text-gray-400 mt-1">this month</p>
+    </div>
+    {% endif %}
+
+  </div>
+
+  {# ===== Forecast banner (current month only) ===== #}
+  {% if forecast and is_current_month and not all_time %}
+  <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">Forecast</p>
+        <p class="text-xl font-bold">{{ forecast.projected | currency(household.default_currency) }}</p>
+        <p class="text-xs text-gray-500 mt-1">
+          projected end-of-month · based on {{ forecast.days_elapsed }}/{{ forecast.days_in_month }} days
+        </p>
+      </div>
+      <div class="text-right flex-shrink-0">
+        <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold
+          {% if forecast.above_trend %}bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400{% else %}bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400{% endif %}">
+          {% if forecast.above_trend %}↑{% else %}↓{% endif %}
+          {{ forecast.trend_delta | abs | currency(household.default_currency) }}
+          vs avg
+        </span>
+        <p class="text-xs text-gray-400 mt-1">3-month avg: {{ forecast.baseline | currency(household.default_currency) }}</p>
+      </div>
+    </div>
+    {% set elapsed_pct = [(forecast.days_elapsed / forecast.days_in_month * 100), 100] | min %}
+    {% set spend_pct   = [(forecast.spend_so_far / [forecast.projected, 0.01] | max * 100), 100] | min %}
+    <div class="mt-4 space-y-1">
+      <div class="flex items-center justify-between text-xs text-gray-400">
+        <span>{{ forecast.spend_so_far | currency(household.default_currency) }} spent</span>
+        <span>{{ forecast.projected | currency(household.default_currency) }} projected</span>
+      </div>
+      <div class="h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden relative">
+        <div class="absolute inset-0 {% if forecast.above_trend %}bg-red-100 dark:bg-red-900/30{% else %}bg-emerald-100 dark:bg-emerald-900/20{% endif %} rounded-full"></div>
+        <div class="h-full rounded-full {% if forecast.above_trend %}bg-red-400{% else %}bg-emerald-400{% endif %} relative"
+             style="width: {{ spend_pct }}%"></div>
+        <div class="absolute top-0 bottom-0 w-0.5 bg-gray-400 dark:bg-gray-500 rounded"
+             style="left: {{ elapsed_pct }}%"></div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ===== 6-month trend ===== #}
+  {% if trend %}
+  <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
+    <p class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-4">6-month trend</p>
+    <div class="flex items-end gap-2 h-24">
+      {% for m in trend %}
+      {% set bar_pct = [(m.total / trend_max * 100), 2] | max %}
+      <div class="flex-1 flex flex-col items-center gap-1">
+        <span class="text-[10px] text-gray-400 leading-none {% if m.total == 0 %}invisible{% endif %}">
+          {{ m.total | currency(household.default_currency) }}
+        </span>
+        <div class="w-full rounded-t-lg transition-all
+          {% if m.is_current %}bg-primary-500{% else %}bg-gray-200 dark:bg-gray-700{% endif %}"
+             style="height: {{ bar_pct }}%"></div>
+        <span class="text-[10px] {% if m.is_current %}text-primary-600 dark:text-primary-400 font-semibold{% else %}text-gray-400{% endif %} leading-none">
+          {{ m.label }}
+        </span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# ===== Category breakdown + Budget status ===== #}
+  {% if categories or budget_status %}
+  <div class="grid grid-cols-1 {% if categories and budget_status %}lg:grid-cols-2{% endif %} gap-4">
+
+    {% if categories %}
+    <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
+      <p class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-4">Spending by category</p>
+      <div class="space-y-3">
+        {% for cat in categories %}
+        <div class="space-y-1">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="text-sm">{{ cat.icon }}</span>
+              <span class="text-sm font-medium">{{ cat.name }}</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-gray-400">{{ cat.pct }}%</span>
+              <span class="text-sm font-semibold">{{ cat.amount | currency(household.default_currency) }}</span>
+            </div>
+          </div>
+          <div class="h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+            <div class="h-full rounded-full" style="width: {{ cat.pct }}%; background-color: {{ cat.color }}"></div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if budget_status %}
+    <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
+      <p class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-4">Budget progress</p>
+      <div class="space-y-4">
+        {% for row in budget_status %}
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-1.5 min-w-0">
+              <span>{{ row.bucket.icon }}</span>
+              <span class="text-sm font-medium truncate">{{ row.bucket.name }}</span>
+              {% if row.over_budget %}
+              <span class="flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-full">Over</span>
+              {% endif %}
+            </div>
+            <span class="text-xs text-gray-500 flex-shrink-0">
+              {{ row.spent | currency(household.default_currency) }} / {{ row.budget | currency(household.default_currency) }}
+            </span>
+          </div>
+          <div class="h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+            <div class="h-full rounded-full {% if row.pct > 90 %}bg-red-400{% elif row.pct > 70 %}bg-amber-400{% else %}bg-emerald-400{% endif %}"
+                 style="width: {{ row.pct }}%"></div>
+          </div>
+          <p class="text-xs text-gray-400">{{ row.pct }}% used</p>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+  </div>
+  {% endif %}
+
+  {# ===== Who paid breakdown ===== #}
+  {% if summary.paid_by %}
+  <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
+    <p class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-4">Who paid</p>
+    <div class="space-y-3">
+      {% for uid, data in summary.paid_by.items() %}
+      <div class="flex items-center gap-3">
+        <div class="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
+             style="background-color: {{ data.color }}">{{ data.name | initials }}</div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center justify-between">
+            <span class="text-sm font-medium">{{ data.name }}</span>
+            <span class="text-sm font-semibold">{{ data.amount | currency(household.default_currency) }}</span>
+          </div>
+          {% if summary.total_spent > 0 %}
+          <div class="mt-1 h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+            <div class="h-full rounded-full"
+                 style="width: {{ (data.amount / summary.total_spent * 100) | round(1) }}%; background-color: {{ data.color }}"></div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# ===== Empty state ===== #}
+  {% if not summary.paid_by and not categories and not all_time %}
+  <div class="text-center py-12">
+    <div class="text-4xl mb-3">📊</div>
+    <p class="text-gray-500 text-sm">No data yet for {{ month_name }}.</p>
+    <a href="/transactions/new"
+       class="mt-4 inline-flex items-center gap-2 px-5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-semibold rounded-xl text-sm transition-colors">
+      Add an expense
+    </a>
+  </div>
+  {% endif %}
+
+</div>

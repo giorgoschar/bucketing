@@ -368,6 +368,7 @@ def get_monthly_trend(db: Session, household_id: str, n_months: int = 6) -> list
                 Transaction.type == TransactionType.expense,
                 Transaction.transaction_date >= start,
                 Transaction.transaction_date <= end,
+                Transaction.exclude_from_forecast == False,  # noqa: E712
             )
             .scalar()
         )
@@ -411,6 +412,7 @@ def get_forecast(db: Session, household_id: str) -> dict:
             Transaction.type == TransactionType.expense,
             Transaction.transaction_date >= start,
             Transaction.transaction_date <= today,
+            Transaction.exclude_from_forecast == False,  # noqa: E712
         )
         .scalar()
     )

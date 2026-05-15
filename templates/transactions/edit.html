@@ -100,6 +100,16 @@
                class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm" />
       </div>
 
+      <!-- Exclude from forecast toggle -->
+      <label class="flex items-center justify-between p-3.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 cursor-pointer">
+        <div>
+          <p class="text-sm font-medium text-gray-700 dark:text-gray-300">📊 Exclude from forecast</p>
+          <p class="text-xs text-gray-400 mt-0.5">One-off purchase — won't affect spending projections</p>
+        </div>
+        <input type="checkbox" name="exclude_from_forecast" value="on" class="rounded w-4 h-4"
+               {% if txn.exclude_from_forecast %}checked{% endif %} />
+      </label>
+
       <div class="flex gap-3 pt-2">
         <a href="/buckets/{{ txn.bucket_id }}"
            class="flex-1 py-2.5 text-center border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 font-semibold rounded-xl text-sm hover:bg-gray-50 transition-colors">

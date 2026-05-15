@@ -190,6 +190,7 @@ class Transaction(Base):
     notes = Column(Text, nullable=True)
     transaction_date = Column(Date, default=date.today, nullable=False)
     receipt_path = Column(String, nullable=True)
+    exclude_from_forecast = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     bucket = relationship("Bucket", back_populates="transactions")

@@ -433,6 +433,7 @@ async def edit_transaction(
     category_id: str = Form(""),
     paid_by: str = Form(""),
     notes: str = Form(""),
+    exclude_from_forecast: str = Form(""),
     db: Session = Depends(get_db),
     auth=Depends(require_auth),
 ):
@@ -450,6 +451,7 @@ async def edit_transaction(
     txn.paid_by = paid_by or None
     txn.category_id = category_id or None
     txn.notes = notes.strip() or None
+    txn.exclude_from_forecast = (exclude_from_forecast == "on")
 
     # Replace splits
     db.query(TransactionSplit).filter_by(transaction_id=txn.id).delete()
