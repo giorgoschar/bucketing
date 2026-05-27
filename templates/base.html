@@ -425,6 +425,15 @@
       const raw     = atob(base64);
       return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
     }
+
+    // Fix Alpine + hx-boost timing: after HTMX settles (scripts evaluated),
+    // re-init any Alpine components that failed because their factory function
+    // wasn't yet defined when Alpine's MutationObserver fired.
+    document.body.addEventListener('htmx:afterSettle', function(evt) {
+      if (window.Alpine && evt.detail && evt.detail.target) {
+        Alpine.initTree(evt.detail.target);
+      }
+    });
   </script>
 </body>
 </html>

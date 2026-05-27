@@ -11,34 +11,45 @@ from sqlalchemy.orm import Session
 from app.models import Notification, NotificationType, PushSubscription
 
 
-def _normalize_vapid_private_key(key_str: str) -> str:
-    """Convert a VAPID private key to PEM format if needed.
+def _build_vapid(private_key_str: str):
+    """Return a py_vapid.Vapid instance from any common key format.
 
-    Most VAPID key generators (web tools, Node.js web-push) emit the private
-    key as a base64url-encoded raw P-256 scalar (32 bytes).  pywebpush 2.x
-    expects either a PEM string or a base64url-encoded DER block; it cannot
-    handle the raw-bytes format, so we detect that case and convert on the fly.
+    pywebpush >=2 calls Vapid.from_string() for *every* str key — it has no
+    PEM-detection branch.  from_string() assumes base64url-DER, so it fails
+    for both PEM and raw-scalar formats.  We therefore build the Vapid object
+    ourselves and pass the instance directly; pywebpush uses non-str values
+    as a pre-built Vapid object without any further parsing.
+
+    Supported formats
+    -----------------
+    - PEM  (starts with "-----BEGIN")
+    - Raw base64url P-256 scalar (32 bytes) — output of most VAPID generators
+    - Base64url-DER — fall-through to Vapid.from_string()
     """
-    if not key_str or key_str.startswith("-----BEGIN"):
-        return key_str
+    from py_vapid import Vapid  # local import keeps startup fast
+
+    if private_key_str.startswith("-----BEGIN"):
+        return Vapid.from_pem(private_key_str.encode("utf-8"))
+
     try:
-        padding = "=" * ((4 - len(key_str) % 4) % 4)
-        key_bytes = base64.urlsafe_b64decode(key_str + padding)
+        padding = "=" * ((4 - len(private_key_str) % 4) % 4)
+        key_bytes = base64.urlsafe_b64decode(private_key_str + padding)
         if len(key_bytes) == 32:
+            # Raw P-256 private scalar → build EC key → PEM → Vapid
             from cryptography.hazmat.primitives import serialization
             from cryptography.hazmat.primitives.asymmetric import ec
-            private_key = ec.derive_private_key(
-                int.from_bytes(key_bytes, "big"),
-                ec.SECP256R1(),
-            )
-            return private_key.private_bytes(
+            ec_key = ec.derive_private_key(int.from_bytes(key_bytes, "big"), ec.SECP256R1())
+            pem = ec_key.private_bytes(
                 encoding=serialization.Encoding.PEM,
                 format=serialization.PrivateFormat.TraditionalOpenSSL,
                 encryption_algorithm=serialization.NoEncryption(),
-            ).decode("utf-8")
+            )
+            return Vapid.from_pem(pem)
     except Exception:
-        pass  # fall through and let pywebpush try its own parsing
-    return key_str
+        pass
+
+    # Assume base64url-DER; let py_vapid parse it directly
+    return Vapid.from_string(private_key=private_key_str)
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +105,7 @@ def send_push_for_notification(db: Session, notification: Notification) -> int:
         "link":  notification.link or "/",
     })
 
-    private_key = _normalize_vapid_private_key(settings.vapid_private_key)
+    private_key = _build_vapid(settings.vapid_private_key)
 
     dead_ids: list[str] = []
     sent_count = 0
