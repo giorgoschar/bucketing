@@ -6,6 +6,7 @@ from datetime import date
 from dateutil.relativedelta import relativedelta
 
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from app.models import BillOccurrence, RecurringBill, OccurrenceStatus
 
@@ -35,12 +36,16 @@ def generate_occurrences(db: Session, bill: RecurringBill):
             break
 
         if current not in existing_dates:
-            db.add(BillOccurrence(
-                bill_id=bill.id,
-                due_date=current,
-                amount=None,  # will use bill.amount unless variable
-                status=OccurrenceStatus.unpaid,
-            ))
+            try:
+                db.add(BillOccurrence(
+                    bill_id=bill.id,
+                    due_date=current,
+                    amount=None,  # will use bill.amount unless variable
+                    status=OccurrenceStatus.unpaid,
+                ))
+                db.flush()
+            except IntegrityError:
+                db.rollback()
 
         count += 1
         current = current + relativedelta(months=bill.interval_months)

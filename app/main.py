@@ -19,6 +19,10 @@ from app.routes import notifications as notifications_router
 from app.routes import insights as insights_router
 from app.scheduler import start_scheduler, stop_scheduler
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 # ---------------------------------------------------------------------------
 # Rate limiter (shared across routers)
 # ---------------------------------------------------------------------------
@@ -27,6 +31,11 @@ limiter = Limiter(key_func=get_remote_address)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if not settings.vapid_private_key or not settings.vapid_public_key:
+        logger.warning(
+            "VAPID keys are not configured. Push notifications will be silently disabled. "
+            "Set VAPID_PRIVATE_KEY and VAPID_PUBLIC_KEY environment variables."
+        )
     start_scheduler()
     yield
     stop_scheduler()
@@ -55,11 +64,11 @@ async def security_headers(request: Request, call_next):
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval' cdn.tailwindcss.com cdn.jsdelivr.net unpkg.com; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' cdn.tailwindcss.com; "
         "style-src 'self' 'unsafe-inline' cdn.tailwindcss.com; "
-        "worker-src blob: 'self' cdn.jsdelivr.net; "
+        "worker-src blob: 'self'; "
         "img-src 'self' data: blob:; "
-        "connect-src 'self' cdn.jsdelivr.net cdn.tailwindcss.com unpkg.com blob:;"
+        "connect-src 'self' cdn.tailwindcss.com blob:;"
     )
     if not settings.debug:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"

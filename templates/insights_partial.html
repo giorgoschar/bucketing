@@ -4,92 +4,239 @@
   Must stay self-contained so it renders correctly in both contexts.
 #}
 
-<div id="insights-body" class="space-y-6">
+<div id="insights-body"
+     x-data="widgetToggle()"
+     @toggle-widget-panel.window="open = !open"
+     class="space-y-4">
 
-  {# ===== Bucket type filter pills ===== #}
-  {% set base = '/insights?' ~ ('all_time=true' if all_time else 'year=' ~ year ~ '&month=' ~ month) %}
-  <div class="flex flex-wrap gap-2">
-    {% for label, value in [('All', ''), ('Day2Day', 'day2day'), ('Trips', 'trip'), ('Bills', 'bills'), ('Savings', 'savings')] %}
-    {% set pill_url = base ~ ('&bucket_type=' ~ value if value else '') ~ ('&bucket_ids=' ~ selected_bucket_ids | join(',') if selected_bucket_ids else '') %}
-    <a href="{{ pill_url }}"
-       hx-get="{{ pill_url }}"
-       hx-target="#insights-body"
-       hx-swap="outerHTML"
-       hx-push-url="true"
-       hx-boost="false"
-       class="px-3 py-1.5 rounded-full text-xs font-semibold transition-colors
-              {% if bucket_type == value and not selected_bucket_ids %}bg-primary-500 text-white{% else %}bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700{% endif %}">
-      {{ label }}
-    </a>
-    {% endfor %}
+  {# ===== Filter bar ===== #}
+  <div x-data="insightsFilters({
+         preset:       '{{ preset }}',
+         startDate:    '{{ start_date }}',
+         endDate:      '{{ end_date }}',
+         bucketType:   '{{ bucket_type }}',
+         bucketIds:    {{ selected_bucket_ids | tojson }},
+         categoryIds:  {{ selected_category_ids | tojson }},
+         paidBy:       '{{ paid_by }}',
+       })"
+       class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-3 space-y-2">
+
+    {# Row 1: date preset + clear #}
+    <div class="flex items-center gap-2 flex-wrap">
+
+      {# Date range dropdown #}
+      <div class="relative" @click.outside="openPreset = false">
+        <button type="button" @click="openPreset = !openPreset"
+                class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm font-medium text-gray-700 dark:text-gray-200 hover:border-primary-400 transition-colors">
+          <svg class="w-3.5 h-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+          <span x-text="presetLabel()"></span>
+          <svg class="w-3 h-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+        </button>
+        <div x-show="openPreset" x-cloak
+             class="absolute top-full left-0 mt-1 w-48 bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg z-30 overflow-hidden">
+          {% for p, label in [('this_month','This month'),('last_month','Last month'),('last_3m','Last 3 months'),('last_6m','Last 6 months'),('this_year','This year'),('all_time','All time'),('custom','Custom range…')] %}
+          <button type="button" @click="setPreset('{{ p }}')"
+                  class="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                  :class="preset === '{{ p }}' ? 'text-primary-600 dark:text-primary-400 font-semibold bg-primary-50 dark:bg-primary-900/20' : 'text-gray-700 dark:text-gray-300'">
+            {{ label }}
+          </button>
+          {% endfor %}
+          {# Custom date inputs #}
+          <div x-show="preset === 'custom'" x-cloak class="px-3 pb-3 pt-1 space-y-2 border-t border-gray-100 dark:border-gray-800">
+            <input type="date" x-model="startDate" class="w-full px-2.5 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-xs outline-none focus:border-primary-500" />
+            <input type="date" x-model="endDate" class="w-full px-2.5 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-xs outline-none focus:border-primary-500" />
+            <button type="button" @click="applyCustom()"
+                    class="w-full py-2 bg-primary-500 hover:bg-primary-600 text-white text-xs font-semibold rounded-lg transition-colors">
+              Apply
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {# Bucket type pills #}
+      {% for label, value in [('All',''),('Day2Day','day2day'),('Trips','trip'),('Bills','bills'),('Savings','savings')] %}
+      <button type="button" @click="setBucketType('{{ value }}')"
+              :class="bucketType === '{{ value }}' ? 'bg-primary-500 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'"
+              class="px-3 py-1.5 rounded-full text-xs font-semibold transition-colors">
+        {{ label }}
+      </button>
+      {% endfor %}
+
+      {# Clear button #}
+      <button type="button" x-show="hasFilters()" x-cloak @click="clearAll()"
+              class="ml-auto px-3 py-1.5 rounded-xl text-xs font-medium text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
+        ✕ Clear
+      </button>
+    </div>
+
+    {# Row 2: bucket multi-select + categories + who paid #}
+    <div class="flex items-center gap-2 flex-wrap">
+
+      {# Individual bucket multi-select #}
+      {% if buckets %}
+      <div class="relative" @click.outside="openBuckets = false">
+        <button type="button" @click="openBuckets = !openBuckets"
+                class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-colors text-xs font-medium"
+                :class="bucketIds.length ? 'border-primary-400 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:border-primary-400'">
+          <span>Buckets</span>
+          <span x-show="bucketIds.length" x-cloak class="bg-primary-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px] font-bold" x-text="bucketIds.length"></span>
+          <svg class="w-3 h-3 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+        </button>
+        <div x-show="openBuckets" x-cloak
+             class="absolute top-full left-0 mt-1 w-56 bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg z-30 overflow-hidden max-h-60 overflow-y-auto">
+          {% for bucket in buckets %}
+          <button type="button" @click="toggleBucket('{{ bucket.id }}')"
+                  class="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                  :class="bucketIds.includes('{{ bucket.id }}') ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300' : 'text-gray-700 dark:text-gray-300'">
+            <span class="text-base leading-none">{{ bucket.icon }}</span>
+            <span class="flex-1 text-left text-xs font-medium">{{ bucket.name }}</span>
+            <svg x-show="bucketIds.includes('{{ bucket.id }}')" class="w-3.5 h-3.5 text-primary-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+          </button>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      {# Category multi-select #}
+      {% if all_categories %}
+      <div class="relative" @click.outside="openCats = false">
+        <button type="button" @click="openCats = !openCats"
+                class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-colors text-xs font-medium"
+                :class="categoryIds.length ? 'border-primary-400 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:border-primary-400'">
+          <span>Categories</span>
+          <span x-show="categoryIds.length" x-cloak class="bg-primary-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px] font-bold" x-text="categoryIds.length"></span>
+          <svg class="w-3 h-3 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+        </button>
+        <div x-show="openCats" x-cloak
+             class="absolute top-full left-0 mt-1 w-56 bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg z-30 overflow-hidden max-h-60 overflow-y-auto">
+          {% for cat in all_categories %}
+          <button type="button" @click="toggleCategory('{{ cat.id }}')"
+                  class="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                  :class="categoryIds.includes('{{ cat.id }}') ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300' : 'text-gray-700 dark:text-gray-300'">
+            <span class="text-base leading-none">{{ cat.icon }}</span>
+            <span class="flex-1 text-left text-xs font-medium">{{ cat.name }}</span>
+            <span class="w-3 h-3 rounded-full flex-shrink-0" style="background-color: {{ cat.color }}"></span>
+            <svg x-show="categoryIds.includes('{{ cat.id }}')" class="w-3.5 h-3.5 text-primary-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+          </button>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      {# Who paid filter #}
+      {% if member_users | length > 1 %}
+      <div class="relative" @click.outside="openPaidBy = false">
+        <button type="button" @click="openPaidBy = !openPaidBy"
+                class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-colors text-xs font-medium"
+                :class="paidBy ? 'border-primary-400 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:border-primary-400'">
+          <span x-text="paidBy ? '{{ member_users | map(attribute='display_name') | join(', ') }}' : 'Paid by'">Paid by</span>
+          <svg class="w-3 h-3 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+        </button>
+        <div x-show="openPaidBy" x-cloak
+             class="absolute top-full left-0 mt-1 w-48 bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg z-30 overflow-hidden">
+          <button type="button" @click="paidBy = ''; openPaidBy = false; _go()"
+                  class="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+            Everyone
+          </button>
+          {% for u in member_users %}
+          <button type="button" @click="paidBy = '{{ u.id }}'; openPaidBy = false; _go()"
+                  class="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                  :class="paidBy === '{{ u.id }}' ? 'bg-primary-50 dark:bg-primary-900/20' : ''">
+            <div class="w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0"
+                 style="background-color: {{ u.avatar_color }}">{{ u.display_name | initials }}</div>
+            <span class="text-xs font-medium text-gray-700 dark:text-gray-300">{{ u.display_name }}</span>
+          </button>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+    </div>
+
+    {# Active filter chips summary #}
+    <div class="flex flex-wrap gap-1.5" x-show="bucketIds.length > 0 || categoryIds.length > 0">
+      <template x-for="id in bucketIds" :key="id">
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300">
+          <span x-text="id"></span>
+          <button @click="toggleBucket(id)" class="hover:text-primary-900 dark:hover:text-primary-100">✕</button>
+        </span>
+      </template>
+    </div>
+
   </div>
 
-  {# ===== Individual bucket pills (multi-select via Alpine + debounced htmx.ajax) ===== #}
-  {% if buckets %}
-  {% set _base = 'all_time=true' if all_time else 'year=' ~ year ~ '&month=' ~ month %}
-  {% set _btype = '&bucket_type=' ~ bucket_type if bucket_type else '' %}
-  <div x-data="bucketFilter({{ selected_bucket_ids | tojson }}, '{{ _base }}{{ _btype }}')"
-       x-init="applyInitialState()"
-       class="flex flex-wrap gap-2">
-    {% for bucket in buckets %}
-    <button type="button"
-            @click="toggle('{{ bucket.id }}')"
-            :class="isSelected('{{ bucket.id }}')
-              ? 'bg-primary-500 text-white ring-2 ring-primary-400'
-              : 'bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-primary-400 hover:text-primary-600'"
-            class="px-3 py-1.5 rounded-full text-xs font-medium transition-colors">
-      {{ bucket.icon }} {{ bucket.name }}
-    </button>
-    {% endfor %}
-    <button type="button"
-            x-show="selected.length > 0"
-            x-cloak
-            @click="clearAll()"
-            class="px-3 py-1.5 rounded-full text-xs font-medium text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
-      ✕ Clear
-    </button>
+  {# ===== Period label ===== #}
+  <div class="flex items-center justify-between">
+    <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider">{{ period_label }}</p>
+    <p class="text-xs text-gray-400">{{ summary.total_spent | currency(household.default_currency) }} total</p>
   </div>
-  {% endif %}
+
+  {# ===== Widget customisation panel (slide-in) ===== #}
+  <div x-show="open" x-cloak
+       class="fixed inset-y-0 right-0 w-72 bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-800 shadow-2xl z-40 flex flex-col"
+       @click.outside="open = false">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-800">
+      <p class="text-sm font-semibold">Widgets</p>
+      <button @click="open = false" class="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="flex-1 overflow-y-auto px-5 py-4 space-y-1">
+      {% set widget_labels = [('kpi','KPI summary'),('forecast','Forecast'),('trend','6-month trend'),('categories','Category breakdown'),('budget','Budget progress'),('who_paid','Who paid'),('bucket_breakdown','Per-bucket spending'),('cat_trend','Category trend')] %}
+      {% for key, label in widget_labels %}
+      <div class="flex items-center justify-between py-2.5">
+        <span class="text-sm text-gray-700 dark:text-gray-300">{{ label }}</span>
+        <button @click="toggle('{{ key }}')"
+                :class="show('{{ key }}') ? 'bg-primary-500' : 'bg-gray-200 dark:bg-gray-700'"
+                class="relative inline-flex w-9 h-5 rounded-full transition-colors">
+          <span :class="show('{{ key }}') ? 'translate-x-4' : 'translate-x-0.5'"
+                class="inline-block w-4 h-4 mt-0.5 bg-white rounded-full shadow-sm transition-transform"></span>
+        </button>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  <div x-show="open" x-cloak class="fixed inset-0 bg-black/20 z-30" @click="open = false"></div>
 
   {# ===== KPI cards ===== #}
-  <div class="grid grid-cols-2 {% if income_total is not none %}lg:grid-cols-4{% else %}lg:grid-cols-2{% endif %} gap-4">
+  <div x-show="show('kpi')" x-cloak
+       class="grid grid-cols-2 lg:grid-cols-4 gap-3">
 
-    <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
-      <p class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">Expenses</p>
-      <p class="text-2xl font-bold">{{ summary.total_spent | currency(household.default_currency) }}</p>
-      <p class="text-xs text-gray-400 mt-1">{% if all_time %}all time{% else %}{{ month_name }}{% endif %}</p>
+    <div class="bg-white dark:bg-gray-900 rounded-2xl p-4 border border-gray-100 dark:border-gray-800">
+      <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Expenses</p>
+      <p class="text-xl font-bold">{{ summary.total_spent | currency(household.default_currency) }}</p>
+      <p class="text-[11px] text-gray-400 mt-1">{{ period_label }}</p>
     </div>
 
-    {% if income_total is not none %}
-    <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
-      <p class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">Income</p>
-      <p class="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{{ income_total | currency(household.default_currency) }}</p>
-      <p class="text-xs text-gray-400 mt-1">{{ month_name }}</p>
+    <div class="bg-white dark:bg-gray-900 rounded-2xl p-4 border border-gray-100 dark:border-gray-800">
+      <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Income</p>
+      <p class="text-xl font-bold text-emerald-600 dark:text-emerald-400">{{ income_total | currency(household.default_currency) }}</p>
+      <p class="text-[11px] text-gray-400 mt-1">{{ period_label }}</p>
     </div>
 
-    <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
-      <p class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">Net</p>
-      <p class="text-2xl font-bold {% if net >= 0 %}text-emerald-600 dark:text-emerald-400{% else %}text-red-500{% endif %}">
+    <div class="bg-white dark:bg-gray-900 rounded-2xl p-4 border border-gray-100 dark:border-gray-800">
+      <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Net</p>
+      <p class="text-xl font-bold {% if net >= 0 %}text-emerald-600 dark:text-emerald-400{% else %}text-red-500{% endif %}">
         {% if net >= 0 %}+{% endif %}{{ net | currency(household.default_currency) }}
       </p>
-      <p class="text-xs text-gray-400 mt-1">income − expenses</p>
+      <p class="text-[11px] text-gray-400 mt-1">income − expenses</p>
     </div>
 
-    <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
-      <p class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">Bills due</p>
-      <p class="text-2xl font-bold">{{ bills_due | currency(household.default_currency) }}</p>
-      <p class="text-xs text-gray-400 mt-1">this month</p>
+    <div class="bg-white dark:bg-gray-900 rounded-2xl p-4 border border-gray-100 dark:border-gray-800">
+      <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Bills due</p>
+      <p class="text-xl font-bold">{{ bills_due | currency(household.default_currency) }}</p>
+      <p class="text-[11px] text-gray-400 mt-1">{{ period_label }}</p>
     </div>
-    {% endif %}
 
   </div>
 
   {# ===== Forecast banner (current month only) ===== #}
-  {% if forecast and is_current_month and not all_time %}
-  <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
+  {% if forecast and is_current_month %}
+  <div x-show="show('forecast')" x-cloak
+       class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
     <div class="flex items-start justify-between gap-4">
       <div>
-        <p class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">Forecast</p>
+        <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Forecast</p>
         <p class="text-xl font-bold">{{ forecast.projected | currency(household.default_currency) }}</p>
         <p class="text-xs text-gray-500 mt-1">
           projected end-of-month · based on {{ forecast.days_elapsed }}/{{ forecast.days_in_month }} days
@@ -99,8 +246,7 @@
         <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold
           {% if forecast.above_trend %}bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400{% else %}bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400{% endif %}">
           {% if forecast.above_trend %}↑{% else %}↓{% endif %}
-          {{ forecast.trend_delta | abs | currency(household.default_currency) }}
-          vs avg
+          {{ forecast.trend_delta | abs | currency(household.default_currency) }} vs avg
         </span>
         <p class="text-xs text-gray-400 mt-1">3-month avg: {{ forecast.baseline | currency(household.default_currency) }}</p>
       </div>
@@ -125,8 +271,9 @@
 
   {# ===== 6-month trend ===== #}
   {% if trend %}
-  <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
-    <p class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-4">6-month trend</p>
+  <div x-show="show('trend')" x-cloak
+       class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
+    <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">6-month trend</p>
     <div class="flex items-end gap-2 h-24">
       {% for m in trend %}
       {% set bar_pct = [(m.total / trend_max * 100), 2] | max %}
@@ -147,12 +294,12 @@
   {% endif %}
 
   {# ===== Category breakdown + Budget status ===== #}
-  {% if categories or budget_status %}
   <div class="grid grid-cols-1 {% if categories and budget_status %}lg:grid-cols-2{% endif %} gap-4">
 
     {% if categories %}
-    <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
-      <p class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-4">Spending by category</p>
+    <div x-show="show('categories')" x-cloak
+         class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
+      <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Spending by category</p>
       <div class="space-y-3">
         {% for cat in categories %}
         <div class="space-y-1">
@@ -176,8 +323,9 @@
     {% endif %}
 
     {% if budget_status %}
-    <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
-      <p class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-4">Budget progress</p>
+    <div x-show="show('budget')" x-cloak
+         class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
+      <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Budget progress</p>
       <div class="space-y-4">
         {% for row in budget_status %}
         <div class="space-y-1.5">
@@ -205,12 +353,72 @@
     {% endif %}
 
   </div>
+
+  {# ===== Per-bucket spending breakdown (new) ===== #}
+  {% if bucket_breakdown %}
+  <div x-show="show('bucket_breakdown')" x-cloak
+       class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
+    <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Spending by bucket</p>
+    <div class="space-y-3">
+      {% for row in bucket_breakdown %}
+      <div class="space-y-1">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="text-sm">{{ row.bucket.icon }}</span>
+            <span class="text-sm font-medium">{{ row.bucket.name }}</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-gray-400">{{ row.pct }}%</span>
+            <span class="text-sm font-semibold">{{ row.total | currency(household.default_currency) }}</span>
+          </div>
+        </div>
+        <div class="h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+          <div class="h-full rounded-full bg-primary-400" style="width: {{ row.pct }}%"></div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# ===== Category trend over time (new) ===== #}
+  {% if category_trend and category_trend.series %}
+  <div x-show="show('cat_trend')" x-cloak
+       class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
+    <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Category trend</p>
+    {# Legend #}
+    <div class="flex flex-wrap gap-3 mb-4">
+      {% for s in category_trend.series %}
+      <div class="flex items-center gap-1.5">
+        <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background-color: {{ s.color }}"></span>
+        <span class="text-xs text-gray-600 dark:text-gray-400">{{ s.icon }} {{ s.name }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {# Grouped bar chart: each month is a group of bars (one per category) #}
+    <div class="flex items-end gap-3">
+      {% for i in range(category_trend.months | length) %}
+      {% set month_label = category_trend.months[i] %}
+      <div class="flex-1 flex flex-col gap-1">
+        <div class="flex items-end gap-0.5 h-20">
+          {% for s in category_trend.series %}
+          {% set val = s.values[i] %}
+          {% set bar_h = [(val / cat_trend_max * 100), 2] | max if cat_trend_max > 0 else 2 %}
+          <div class="flex-1 rounded-t-sm transition-all" style="height: {{ bar_h }}%; background-color: {{ s.color }}" title="{{ s.name }}: {{ val | currency(household.default_currency) }}"></div>
+          {% endfor %}
+        </div>
+        <span class="text-[10px] text-gray-400 text-center leading-none">{{ month_label }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
   {% endif %}
 
   {# ===== Who paid breakdown ===== #}
   {% if summary.paid_by %}
-  <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
-    <p class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-4">Who paid</p>
+  <div x-show="show('who_paid')" x-cloak
+       class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
+    <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Who paid</p>
     <div class="space-y-3">
       {% for uid, data in summary.paid_by.items() %}
       <div class="flex items-center gap-3">
@@ -235,10 +443,10 @@
   {% endif %}
 
   {# ===== Empty state ===== #}
-  {% if not summary.paid_by and not categories and not all_time %}
+  {% if not summary.paid_by and not categories %}
   <div class="text-center py-12">
     <div class="text-4xl mb-3">📊</div>
-    <p class="text-gray-500 text-sm">No data yet for {{ month_name }}.</p>
+    <p class="text-gray-500 text-sm">No expenses found for this period.</p>
     <a href="/transactions/new"
        class="mt-4 inline-flex items-center gap-2 px-5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-semibold rounded-xl text-sm transition-colors">
       Add an expense
@@ -247,3 +455,4 @@
   {% endif %}
 
 </div>
+

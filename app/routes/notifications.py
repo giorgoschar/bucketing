@@ -159,3 +159,50 @@ async def push_unsubscribe(
     ).delete()
     db.commit()
     return {"ok": True}
+
+
+@router.post("/push/test", response_class=JSONResponse)
+def push_test(
+    request: Request,
+    db: Session = Depends(get_db),
+    auth=Depends(require_auth),
+):
+    """Send a test push notification to the current user immediately."""
+    from app.models import Household, HouseholdMember, NotificationType
+    from app.notification_service import create_notification, send_push_for_notification
+    from app.config import settings as app_settings
+
+    user, hh_id = auth
+
+    # Check VAPID is configured
+    if not app_settings.vapid_private_key or not app_settings.vapid_public_key:
+        return JSONResponse(
+            {"sent": False, "error": "VAPID keys are not configured on the server."},
+            status_code=200,
+        )
+
+    # Check the user has at least one subscription
+    subs = db.query(PushSubscription).filter(PushSubscription.user_id == user.id).count()
+    if subs == 0:
+        return JSONResponse(
+            {"sent": False, "error": "No push subscription found for this device. Enable notifications first."},
+            status_code=200,
+        )
+
+    notif = create_notification(
+        db,
+        household_id=hh_id,
+        user_id=user.id,
+        type=NotificationType.general,
+        title="Test notification 🎉",
+        body="Push notifications are working correctly.",
+        link="/settings",
+    )
+    try:
+        send_push_for_notification(db, notif)
+        db.commit()
+        return {"sent": True, "error": None}
+    except Exception as exc:
+        logger.exception("push/test failed: %s", exc)
+        db.commit()  # still save the in-app notif
+        return {"sent": False, "error": str(exc)}

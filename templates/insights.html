@@ -3,33 +3,16 @@
 {% block header_title %}Insights{% endblock %}
 
 {% block header_actions %}
-<div class="flex items-center gap-2">
-  <div class="flex items-center gap-0.5 bg-gray-100 dark:bg-gray-800 rounded-xl p-1">
-    <a href="/insights?all_time=true"
-       class="px-3 py-1 rounded-lg text-xs font-medium transition-colors {% if all_time %}bg-white dark:bg-gray-700 shadow-sm text-gray-900 dark:text-gray-100{% else %}text-gray-500 hover:text-gray-700 dark:hover:text-gray-300{% endif %}">
-      All time
-    </a>
-    <a href="/insights"
-       class="px-3 py-1 rounded-lg text-xs font-medium transition-colors {% if not all_time %}bg-white dark:bg-gray-700 shadow-sm text-gray-900 dark:text-gray-100{% else %}text-gray-500 hover:text-gray-700 dark:hover:text-gray-300{% endif %}">
-      Monthly
-    </a>
-  </div>
-  {% if not all_time %}
-  <a href="{{ prev_url }}" class="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 transition-colors">
-    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
-  </a>
-  <span class="text-sm font-medium text-gray-700 dark:text-gray-300 min-w-[90px] text-center">{{ month_name }}</span>
-  {% if next_url %}
-  <a href="{{ next_url }}" class="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 transition-colors">
-    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
-  </a>
-  {% else %}
-  <span class="p-1.5 text-gray-300 dark:text-gray-700">
-    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
-  </span>
-  {% endif %}
-  {% endif %}
-</div>
+{# Widget customisation gear button #}
+<button type="button"
+        @click="$dispatch('toggle-widget-panel')"
+        class="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 transition-colors"
+        title="Customise widgets">
+  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"
+          d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0" />
+  </svg>
+</button>
 {% endblock %}
 
 {% block content %}
@@ -40,31 +23,148 @@
 
 {% block scripts %}
 <script>
-function bucketFilter(initialIds, baseParams) {
+/* -----------------------------------------------------------------------
+ * insightsFilters — manages the filter bar state and triggers HTMX swaps
+ * ----------------------------------------------------------------------- */
+function insightsFilters(initial) {
   return {
-    selected: initialIds.slice(),
+    preset:        initial.preset       || 'this_month',
+    startDate:     initial.startDate    || '',
+    endDate:       initial.endDate      || '',
+    bucketType:    initial.bucketType   || '',
+    bucketIds:     initial.bucketIds    ? initial.bucketIds.slice() : [],
+    categoryIds:   initial.categoryIds  ? initial.categoryIds.slice() : [],
+    paidBy:        initial.paidBy       || '',
+
+    // Dropdown open states
+    openPreset:    false,
+    openBuckets:   false,
+    openCats:      false,
+    openPaidBy:    false,
+
     _timer: null,
-    applyInitialState() {},
-    isSelected(id) { return this.selected.includes(id); },
-    toggle(id) {
-      this.selected = this.isSelected(id)
-        ? this.selected.filter(s => s !== id)
-        : [...this.selected, id];
-      history.replaceState({}, '', this._url());
+
+    presetLabel() {
+      const map = {
+        'this_month': 'This month', 'last_month': 'Last month',
+        'last_3m': 'Last 3 months', 'last_6m': 'Last 6 months',
+        'this_year': 'This year',   'all_time': 'All time',
+        'custom': 'Custom range',
+      };
+      return map[this.preset] || this.preset;
+    },
+
+    setPreset(p) {
+      this.preset = p;
+      this.openPreset = false;
+      if (p !== 'custom') {
+        this.startDate = '';
+        this.endDate   = '';
+        this._go();
+      }
+    },
+
+    applyCustom() {
+      if (this.startDate && this.endDate) {
+        this.preset = 'custom';
+        this.openPreset = false;
+        this._go();
+      }
+    },
+
+    toggleBucket(id) {
+      this.bucketIds = this.bucketIds.includes(id)
+        ? this.bucketIds.filter(b => b !== id)
+        : [...this.bucketIds, id];
+      this._debounce();
+    },
+
+    toggleCategory(id) {
+      this.categoryIds = this.categoryIds.includes(id)
+        ? this.categoryIds.filter(c => c !== id)
+        : [...this.categoryIds, id];
+      this._debounce();
+    },
+
+    setBucketType(t) {
+      this.bucketType = (this.bucketType === t) ? '' : t;
+      this.bucketIds  = [];
+      this._go();
+    },
+
+    clearAll() {
+      this.preset      = 'this_month';
+      this.startDate   = '';
+      this.endDate     = '';
+      this.bucketType  = '';
+      this.bucketIds   = [];
+      this.categoryIds = [];
+      this.paidBy      = '';
+      this.openPreset  = false;
+      this.openBuckets = false;
+      this.openCats    = false;
+      this.openPaidBy  = false;
+      this._go();
+    },
+
+    hasFilters() {
+      return this.preset !== 'this_month' || this.bucketType || this.bucketIds.length ||
+             this.categoryIds.length || this.paidBy;
+    },
+
+    _debounce() {
       clearTimeout(this._timer);
       this._timer = setTimeout(() => this._go(), 400);
     },
-    clearAll() {
-      this.selected = [];
-      history.replaceState({}, '', this._url());
-      this._go();
-    },
+
     _url() {
-      const ids = this.selected.join(',');
-      return '/insights?' + baseParams + (ids ? '&bucket_ids=' + ids : '');
+      let p = '?preset=' + encodeURIComponent(this.preset);
+      if (this.startDate)            p += '&start_date=' + this.startDate;
+      if (this.endDate)              p += '&end_date='   + this.endDate;
+      if (this.bucketType)           p += '&bucket_type='  + encodeURIComponent(this.bucketType);
+      if (this.bucketIds.length)     p += '&bucket_ids='   + this.bucketIds.join(',');
+      if (this.categoryIds.length)   p += '&category_ids=' + this.categoryIds.join(',');
+      if (this.paidBy)               p += '&paid_by='      + encodeURIComponent(this.paidBy);
+      return '/insights' + p;
     },
+
     _go() {
-      htmx.ajax('GET', this._url(), { target: '#insights-body', swap: 'outerHTML' });
+      const url = this._url();
+      history.replaceState({}, '', url);
+      htmx.ajax('GET', url, { target: '#insights-body', swap: 'outerHTML' });
+    },
+  };
+}
+
+/* -----------------------------------------------------------------------
+ * widgetToggle — persists widget visibility to localStorage
+ * ----------------------------------------------------------------------- */
+function widgetToggle() {
+  const DEFAULTS = {
+    kpi: true, forecast: true, trend: true, categories: true,
+    budget: true, who_paid: true, bucket_breakdown: true, cat_trend: true,
+  };
+  const stored = (() => {
+    try { return JSON.parse(localStorage.getItem('insights_widgets') || '{}'); }
+    catch (_) { return {}; }
+  })();
+  const state = Object.assign({}, DEFAULTS, stored);
+
+  return {
+    open: false,
+    ...state,
+
+    toggle(key) {
+      this[key] = !this[key];
+      this._save();
+    },
+
+    show(key) { return !!this[key]; },
+
+    _save() {
+      const out = {};
+      Object.keys(DEFAULTS).forEach(k => { out[k] = !!this[k]; });
+      try { localStorage.setItem('insights_widgets', JSON.stringify(out)); } catch (_) {}
     },
   };
 }

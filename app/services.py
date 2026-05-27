@@ -582,3 +582,336 @@ def get_bucket_spend_this_month(db: Session, household_id: str, year: int, month
         .all()
     )
     return {bid: round(float(total), 2) for bid, total in rows}
+
+
+# ---------------------------------------------------------------------------
+# Insights v2 — unified helpers that accept flexible date ranges + new filters
+# ---------------------------------------------------------------------------
+
+def _build_expense_query(
+    db: Session,
+    household_id: str,
+    start: date | None,
+    end: date | None,
+    bucket_type: str = "",
+    bucket_ids: list | None = None,
+    category_ids: list | None = None,
+    paid_by: str | None = None,
+):
+    """Return a base Transaction query pre-filtered by all insight dimensions."""
+    q = (
+        db.query(Transaction)
+        .filter(
+            Transaction.household_id == household_id,
+            Transaction.type == TransactionType.expense,
+            Transaction.exclude_from_forecast == False,  # noqa: E712
+        )
+    )
+    if start:
+        q = q.filter(Transaction.transaction_date >= start)
+    if end:
+        q = q.filter(Transaction.transaction_date <= end)
+    if bucket_type:
+        q = q.join(Bucket, Bucket.id == Transaction.bucket_id).filter(
+            Bucket.type == BucketType(bucket_type)
+        )
+    if bucket_ids:
+        q = q.filter(Transaction.bucket_id.in_(bucket_ids))
+    if category_ids:
+        q = q.filter(Transaction.category_id.in_(category_ids))
+    if paid_by:
+        q = q.filter(Transaction.paid_by == paid_by)
+    return q
+
+
+def get_insights_summary(
+    db: Session,
+    household_id: str,
+    start: date | None,
+    end: date | None,
+    bucket_type: str = "",
+    bucket_ids: list | None = None,
+    category_ids: list | None = None,
+    paid_by: str | None = None,
+) -> dict:
+    """Unified summary: total expenses + paid-by breakdown for any date range + filters."""
+    q = _build_expense_query(db, household_id, start, end, bucket_type, bucket_ids, category_ids, paid_by)
+    txns = q.options(joinedload(Transaction.splits)).all()
+    total_spent = sum(t.amount for t in txns)
+
+    paid_by_acc: dict[str, float] = defaultdict(float)
+    for t in txns:
+        if t.splits:
+            for s in t.splits:
+                paid_by_acc[s.user_id] += s.amount
+        elif t.paid_by:
+            paid_by_acc[t.paid_by] += t.amount
+
+    members = (
+        db.query(User)
+        .join(HouseholdMember, HouseholdMember.user_id == User.id)
+        .filter(HouseholdMember.household_id == household_id)
+        .all()
+    )
+    member_map = {m.id: m for m in members}
+    paid_by_detail = {}
+    for uid, amount in paid_by_acc.items():
+        u = member_map.get(uid)
+        if u:
+            paid_by_detail[uid] = {
+                "name":   u.display_name,
+                "color":  u.avatar_color,
+                "amount": round(amount, 2),
+            }
+
+    return {
+        "total_spent": round(total_spent, 2),
+        "paid_by":     paid_by_detail,
+        "period_start": start,
+        "period_end":   end,
+    }
+
+
+def get_insights_income(db: Session, household_id: str, start: date | None, end: date | None) -> float:
+    """Sum of income transactions in the date range, limited to show_income buckets."""
+    q = (
+        db.query(func.coalesce(func.sum(Transaction.amount), 0))
+        .join(Bucket, Bucket.id == Transaction.bucket_id)
+        .filter(
+            Transaction.household_id == household_id,
+            Transaction.type == TransactionType.income,
+            Bucket.show_income.is_(True),
+        )
+    )
+    if start:
+        q = q.filter(Transaction.transaction_date >= start)
+    if end:
+        q = q.filter(Transaction.transaction_date <= end)
+    return round(float(q.scalar()), 2)
+
+
+def get_insights_bills_due(db: Session, household_id: str, start: date | None, end: date | None) -> float:
+    """Sum of bill occurrence amounts due within the date range."""
+    q = (
+        db.query(BillOccurrence)
+        .join(RecurringBill, RecurringBill.id == BillOccurrence.bill_id)
+        .filter(RecurringBill.household_id == household_id)
+    )
+    if start:
+        q = q.filter(BillOccurrence.due_date >= start)
+    if end:
+        q = q.filter(BillOccurrence.due_date <= end)
+    occurrences = q.all()
+    total = sum(float(occ.amount or occ.bill.amount or 0) for occ in occurrences)
+    return round(total, 2)
+
+
+def get_insights_category_breakdown(
+    db: Session,
+    household_id: str,
+    start: date | None,
+    end: date | None,
+    bucket_type: str = "",
+    bucket_ids: list | None = None,
+    category_ids: list | None = None,
+    paid_by: str | None = None,
+    limit: int = 8,
+) -> list[dict]:
+    """Top spending categories filtered by all insight dimensions."""
+    q = _build_expense_query(db, household_id, start, end, bucket_type, bucket_ids, category_ids, paid_by)
+    txns = q.all()
+
+    totals: dict[str | None, float] = defaultdict(float)
+    for t in txns:
+        totals[t.category_id] += t.amount
+
+    grand = sum(totals.values()) or 1
+    cat_ids = [cid for cid in totals if cid is not None]
+    cats = {c.id: c for c in db.query(Category).filter(Category.id.in_(cat_ids)).all()}
+
+    rows = []
+    for cat_id, amount in sorted(totals.items(), key=lambda x: -x[1])[:limit]:
+        cat = cats.get(cat_id) if cat_id else None
+        rows.append({
+            "name":   cat.name  if cat else "Uncategorised",
+            "icon":   cat.icon  if cat else "📦",
+            "color":  cat.color if cat else "#9ca3af",
+            "amount": round(amount, 2),
+            "pct":    round(amount / grand * 100, 1),
+        })
+    return rows
+
+
+def get_insights_bucket_breakdown(
+    db: Session,
+    household_id: str,
+    start: date | None,
+    end: date | None,
+    bucket_type: str = "",
+    category_ids: list | None = None,
+    paid_by: str | None = None,
+) -> list[dict]:
+    """Spending per active bucket within the date range."""
+    buckets = (
+        db.query(Bucket)
+        .filter_by(household_id=household_id, status="active")
+        .order_by(Bucket.created_at)
+        .all()
+    )
+    if not buckets:
+        return []
+
+    result = []
+    for b in buckets:
+        if bucket_type and b.type.value != bucket_type:
+            continue
+        q = _build_expense_query(
+            db, household_id, start, end,
+            bucket_ids=[b.id],
+            category_ids=category_ids,
+            paid_by=paid_by,
+        )
+        total = sum(t.amount for t in q.all())
+        result.append({
+            "bucket": b,
+            "total":  round(total, 2),
+        })
+
+    result = [r for r in result if r["total"] > 0]
+    result.sort(key=lambda x: -x["total"])
+    grand = sum(r["total"] for r in result) or 1
+    for r in result:
+        r["pct"] = round(r["total"] / grand * 100, 1)
+    return result
+
+
+def get_insights_category_trend(
+    db: Session,
+    household_id: str,
+    n_months: int = 6,
+    bucket_type: str = "",
+    bucket_ids: list | None = None,
+    category_ids: list | None = None,
+    paid_by: str | None = None,
+    top_n: int = 5,
+) -> dict:
+    """
+    Per-category expense totals for each of the last n_months calendar months.
+    Returns {months: [label,...], series: [{name, color, icon, values: [float,...]}]}
+    Only includes the top_n categories by total spend across the period.
+    """
+    today = date.today()
+
+    # Build month list (oldest → newest)
+    month_list: list[tuple[int, int]] = []
+    for i in range(n_months - 1, -1, -1):
+        m = today.month - i
+        y = today.year
+        while m <= 0:
+            m += 12
+            y -= 1
+        month_list.append((y, m))
+
+    # Determine which categories appear at all
+    all_q = _build_expense_query(
+        db, household_id,
+        start=_month_range(month_list[0][0], month_list[0][1])[0],
+        end=_month_range(month_list[-1][0], month_list[-1][1])[1],
+        bucket_type=bucket_type,
+        bucket_ids=bucket_ids,
+        category_ids=category_ids,
+        paid_by=paid_by,
+    )
+    all_txns = all_q.all()
+    cat_totals: dict[str | None, float] = defaultdict(float)
+    for t in all_txns:
+        cat_totals[t.category_id] += t.amount
+
+    # Pick top_n categories
+    top_cats = sorted(cat_totals.items(), key=lambda x: -x[1])[:top_n]
+    top_cat_ids = [cid for cid, _ in top_cats]
+
+    # Load category objects
+    cat_objs = {c.id: c for c in db.query(Category).filter(Category.id.in_([c for c in top_cat_ids if c])).all()}
+
+    # Build monthly data per category
+    monthly_data: dict[str | None, list[float]] = {cid: [] for cid in top_cat_ids}
+    labels = []
+
+    for y, m in month_list:
+        start, end = _month_range(y, m)
+        labels.append(date(y, m, 1).strftime("%b"))
+        month_txns = _build_expense_query(
+            db, household_id, start, end,
+            bucket_type=bucket_type,
+            bucket_ids=bucket_ids,
+            paid_by=paid_by,
+        ).all()
+        month_by_cat: dict[str | None, float] = defaultdict(float)
+        for t in month_txns:
+            if t.category_id in top_cat_ids:
+                month_by_cat[t.category_id] += t.amount
+        for cid in top_cat_ids:
+            monthly_data[cid].append(round(month_by_cat[cid], 2))
+
+    series = []
+    for cid in top_cat_ids:
+        cat = cat_objs.get(cid) if cid else None
+        series.append({
+            "name":   cat.name  if cat else "Uncategorised",
+            "icon":   cat.icon  if cat else "📦",
+            "color":  cat.color if cat else "#9ca3af",
+            "values": monthly_data[cid],
+        })
+
+    return {"months": labels, "series": series}
+
+
+def get_insights_budget_status(
+    db: Session,
+    household_id: str,
+    start: date | None,
+    end: date | None,
+) -> list[dict]:
+    """Spending vs budget for each bucket with a budget, over a date range."""
+    buckets = (
+        db.query(Bucket)
+        .filter(
+            Bucket.household_id == household_id,
+            Bucket.budget.isnot(None),
+            Bucket.status == "active",
+        )
+        .all()
+    )
+    if not buckets:
+        return []
+
+    bucket_ids = [b.id for b in buckets]
+    q = (
+        db.query(Transaction.bucket_id, func.sum(Transaction.amount))
+        .filter(
+            Transaction.bucket_id.in_(bucket_ids),
+            Transaction.type == TransactionType.expense,
+        )
+    )
+    if start:
+        q = q.filter(Transaction.transaction_date >= start)
+    if end:
+        q = q.filter(Transaction.transaction_date <= end)
+    rows = q.group_by(Transaction.bucket_id).all()
+    spend_map = {bid: float(total) for bid, total in rows}
+
+    result = []
+    for b in buckets:
+        spent  = round(spend_map.get(b.id, 0.0), 2)
+        budget = float(b.budget)
+        pct    = min(round(spent / budget * 100, 1), 100) if budget > 0 else 0
+        result.append({
+            "bucket":      b,
+            "spent":       spent,
+            "budget":      budget,
+            "pct":         pct,
+            "over_budget": spent > budget,
+        })
+    result.sort(key=lambda x: -x["pct"])
+    return result

@@ -289,5 +289,176 @@
     </div>
   </div>
 
+  <!-- ===== Notifications & Push ===== -->
+  <div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden"
+       x-data="pushSettings()">
+    <div class="px-6 py-4 border-b border-gray-50 dark:border-gray-800">
+      <p class="text-sm font-semibold">Notifications &amp; Push</p>
+    </div>
+    <div class="px-6 py-5 space-y-4">
+
+      <!-- Subscription status -->
+      <div class="flex items-center justify-between">
+        <div>
+          <p class="text-sm font-medium text-gray-700 dark:text-gray-300">Push notifications</p>
+          <p class="text-xs text-gray-400 mt-0.5" x-text="statusText"></p>
+        </div>
+        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
+              :class="{
+                'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400': subStatus === 'subscribed',
+                'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400': subStatus === 'pending',
+                'bg-gray-100 dark:bg-gray-800 text-gray-500': subStatus === 'none' || subStatus === 'unsupported'
+              }">
+          <span x-text="subStatus === 'subscribed' ? '● Active' : subStatus === 'pending' ? '● Pending' : subStatus === 'unsupported' ? 'Not supported' : '○ Inactive'"></span>
+        </span>
+      </div>
+
+      <!-- Enable / Disable button -->
+      <div class="flex gap-2 flex-wrap">
+        <button type="button"
+                x-show="subStatus !== 'subscribed' && subStatus !== 'unsupported'"
+                @click="subscribe()"
+                :disabled="loading"
+                class="px-4 py-2.5 bg-primary-500 hover:bg-primary-600 disabled:opacity-50 text-white font-semibold rounded-xl text-sm transition-colors">
+          🔔 Enable push notifications
+        </button>
+        <button type="button"
+                x-show="subStatus === 'subscribed'"
+                @click="unsubscribe()"
+                :disabled="loading"
+                class="px-4 py-2.5 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 text-gray-700 dark:text-gray-300 font-semibold rounded-xl text-sm transition-colors">
+          🔕 Disable push notifications
+        </button>
+
+        <!-- Test button — only shown when subscribed -->
+        <button type="button"
+                x-show="subStatus === 'subscribed'"
+                @click="sendTest()"
+                :disabled="loading"
+                class="px-4 py-2.5 bg-indigo-50 dark:bg-indigo-900/20 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 disabled:opacity-50 text-indigo-700 dark:text-indigo-300 font-semibold rounded-xl text-sm transition-colors">
+          🧪 Send test notification
+        </button>
+      </div>
+
+      <!-- Feedback message -->
+      <div x-show="feedback" x-cloak
+           :class="feedbackOk ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 border-emerald-100 dark:border-emerald-800' : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border-red-100 dark:border-red-800'"
+           class="px-4 py-3 rounded-xl border text-sm" x-text="feedback">
+      </div>
+
+    </div>
+  </div>
+
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function pushSettings() {
+  return {
+    subStatus: 'pending',   // pending | subscribed | none | unsupported
+    statusText: 'Checking…',
+    loading: false,
+    feedback: '',
+    feedbackOk: true,
+    _sub: null,
+
+    async init() {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        this.subStatus = 'unsupported';
+        this.statusText = 'Push notifications are not supported in this browser.';
+        return;
+      }
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        this._sub = await reg.pushManager.getSubscription();
+        if (this._sub) {
+          this.subStatus = 'subscribed';
+          this.statusText = 'This device will receive push notifications.';
+        } else {
+          this.subStatus = 'none';
+          this.statusText = 'Push notifications are not enabled on this device.';
+        }
+      } catch (e) {
+        this.subStatus = 'none';
+        this.statusText = 'Could not determine subscription status.';
+      }
+    },
+
+    async subscribe() {
+      this.loading = true;
+      this.feedback = '';
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        const keyResp = await fetch('/push/vapid-public-key');
+        if (!keyResp.ok) { this._err('VAPID keys are not configured on the server.'); return; }
+        const { public_key } = await keyResp.json();
+
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') { this._err('Permission denied. Please allow notifications in browser settings.'); return; }
+
+        const sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: this._urlB64(public_key),
+        });
+        await fetch('/push/subscribe', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(sub) });
+        this._sub = sub;
+        this.subStatus = 'subscribed';
+        this.statusText = 'This device will receive push notifications.';
+        this._ok('Subscribed! You will now receive push notifications.');
+      } catch (e) {
+        this._err('Failed to subscribe: ' + e.message);
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async unsubscribe() {
+      this.loading = true;
+      this.feedback = '';
+      try {
+        if (this._sub) {
+          await fetch('/push/subscribe', { method: 'DELETE', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ endpoint: this._sub.endpoint }) });
+          await this._sub.unsubscribe();
+          this._sub = null;
+        }
+        this.subStatus = 'none';
+        this.statusText = 'Push notifications are not enabled on this device.';
+        this._ok('Unsubscribed from push notifications.');
+      } catch (e) {
+        this._err('Failed to unsubscribe: ' + e.message);
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async sendTest() {
+      this.loading = true;
+      this.feedback = '';
+      try {
+        const resp = await fetch('/push/test', { method: 'POST' });
+        const data = await resp.json();
+        if (data.sent) {
+          this._ok('Test notification sent! Check your device.');
+        } else {
+          this._err(data.error || 'Push delivery failed.');
+        }
+      } catch (e) {
+        this._err('Request failed: ' + e.message);
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    _ok(msg) { this.feedback = msg; this.feedbackOk = true; },
+    _err(msg) { this.feedback = msg; this.feedbackOk = false; },
+
+    _urlB64(b64) {
+      const pad = '='.repeat((4 - b64.length % 4) % 4);
+      const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
+      return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+    },
+  };
+}
+</script>
 {% endblock %}

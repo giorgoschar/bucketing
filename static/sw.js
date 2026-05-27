@@ -1,10 +1,12 @@
-const CACHE_NAME = 'expenses-v2';
-const CDN_CACHE = 'expenses-cdn-v2';
+const CACHE_NAME = 'expenses-v3';
+const CDN_CACHE = 'expenses-cdn-v3';
 
 const STATIC_ASSETS = [
   '/static/manifest.json',
   '/static/icons/icon-192.png',
   '/static/icons/icon-512.png',
+  '/static/vendor/htmx.min.js',
+  '/static/vendor/alpine.min.js',
 ];
 
 // CDN origins to cache with stale-while-revalidate

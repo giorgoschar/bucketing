@@ -3,7 +3,7 @@ from datetime import datetime, date
 
 from sqlalchemy import (
     Column, String, Integer, Float, Boolean, DateTime, Date,
-    ForeignKey, Text, Enum as SAEnum
+    ForeignKey, Text, Enum as SAEnum, UniqueConstraint
 )
 from sqlalchemy.orm import relationship
 import enum
@@ -59,6 +59,7 @@ class NotificationType(str, enum.Enum):
     bill_overdue       = "bill_overdue"
     bill_auto_paid     = "bill_auto_paid"
     contract_expiring  = "contract_expiring"
+    general            = "general"
 
 
 # ---------------------------------------------------------------------------
@@ -250,6 +251,7 @@ class RecurringBill(Base):
 
 class BillOccurrence(Base):
     __tablename__ = "bill_occurrences"
+    __table_args__ = (UniqueConstraint('bill_id', 'due_date', name='uq_bill_occurrence'),)
 
     id = Column(String, primary_key=True, default=gen_id)
     bill_id = Column(String, ForeignKey("recurring_bills.id", ondelete="CASCADE"), nullable=False)
