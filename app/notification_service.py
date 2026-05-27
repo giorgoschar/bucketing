@@ -35,8 +35,11 @@ def create_notification(
     return notif
 
 
-def send_push_for_notification(db: Session, notification: Notification) -> None:
-    """Send a web push message to all subscriptions of notification.user_id."""
+def send_push_for_notification(db: Session, notification: Notification) -> int:
+    """Send a web push message to all subscriptions of notification.user_id.
+
+    Returns the number of subscriptions successfully notified.
+    """
     from app.config import settings
 
     if not settings.vapid_private_key or not settings.vapid_public_key:
@@ -61,6 +64,7 @@ def send_push_for_notification(db: Session, notification: Notification) -> None:
     })
 
     dead_ids: list[str] = []
+    sent_count = 0
     for sub in subs:
         try:
             webpush(
@@ -68,10 +72,11 @@ def send_push_for_notification(db: Session, notification: Notification) -> None:
                     "endpoint": sub.endpoint,
                     "keys": {"p256dh": sub.p256dh, "auth": sub.auth},
                 },
-                data=payload,
+                data=payload.encode("utf-8"),
                 vapid_private_key=settings.vapid_private_key,
                 vapid_claims={"sub": f"mailto:{settings.vapid_claims_email}"},
             )
+            sent_count += 1
         except WebPushException as exc:
             # 410 Gone = subscription expired/revoked → remove it
             status = getattr(exc.response, "status_code", None)
@@ -84,6 +89,8 @@ def send_push_for_notification(db: Session, notification: Notification) -> None:
 
     for dead_id in dead_ids:
         db.query(PushSubscription).filter(PushSubscription.id == dead_id).delete()
+
+    return sent_count
 
 
 def get_unread_count(db: Session, *, user_id: str, household_id: str) -> int:

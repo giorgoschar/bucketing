@@ -345,8 +345,7 @@
         <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
       </button>
     </div>
-    <form method="POST" id="pay-bill-form" class="px-6 py-5 space-y-4"
-          hx-target="[id^='occ-']" hx-swap="outerHTML">
+    <form method="POST" id="pay-bill-form" class="px-6 py-5 space-y-4">
       <div x-show="is_variable">
         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Amount</label>
         <input type="number" name="amount" step="0.01" min="0" placeholder="Enter amount"
@@ -391,9 +390,9 @@
 function openPayModal(occId, billId, isVariable, billName, splits, occAmount) {
   const modal = document.getElementById('pay-modal');
   const form  = document.getElementById('pay-bill-form');
-  form.action = `/bills/${billId}/occurrences/${occId}/pay`;
-  // Fix: target the exact occurrence row so HTMX swaps the right element
+  form.setAttribute('hx-post',   `/bills/${billId}/occurrences/${occId}/pay`);
   form.setAttribute('hx-target', '#occ-' + occId);
+  form.setAttribute('hx-swap',   'outerHTML');
   htmx.process(form);
   const alpineData = Alpine.$data(modal);
   alpineData.occ_id = occId;

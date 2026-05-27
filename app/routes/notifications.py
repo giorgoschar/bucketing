@@ -199,9 +199,11 @@ def push_test(
         link="/settings",
     )
     try:
-        send_push_for_notification(db, notif)
+        sent_count = send_push_for_notification(db, notif)
         db.commit()
-        return {"sent": True, "error": None}
+        if sent_count > 0:
+            return {"sent": True, "error": None}
+        return {"sent": False, "error": "Push was attempted but delivery failed. Check server logs for details."}
     except Exception as exc:
         logger.exception("push/test failed: %s", exc)
         db.commit()  # still save the in-app notif
