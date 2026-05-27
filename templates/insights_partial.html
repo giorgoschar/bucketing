@@ -406,7 +406,7 @@
       <div class="flex-1 flex flex-col gap-1">
         <div class="flex items-end gap-0.5 h-20">
           {% for s in category_trend.series %}
-          {% set val = s.values[i] %}
+          {% set val = s['values'][i] %}
           {% set _raw = (val / cat_trend_max * 100) if cat_trend_max > 0 else 0 %}
           {% set bar_h = _raw if _raw > 2 else 2 %}
           <div class="flex-1 rounded-t-sm transition-all" style="height: {{ bar_h }}%; background-color: {{ s.color }}" title="{{ s.name }}: {{ val | currency(household.default_currency) }}"></div>
