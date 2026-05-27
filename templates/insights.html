@@ -16,8 +16,172 @@
 {% endblock %}
 
 {% block content %}
-<div class="max-w-4xl mx-auto">
+<div class="max-w-4xl mx-auto space-y-4"
+     x-data="insightsFilters({
+         preset:       '{{ preset }}',
+         startDate:    '{{ start_date }}',
+         endDate:      '{{ end_date }}',
+         bucketType:   '{{ bucket_type }}',
+         bucketIds:    {{ selected_bucket_ids | tojson }},
+         categoryIds:  {{ selected_category_ids | tojson }},
+         paidBy:       '{{ paid_by }}',
+         membersMap:   { {% for u in member_users %}'{{ u.id }}': {{ u.display_name | tojson }},{% endfor %} },
+         bucketsMap:   { {% for b in buckets %}'{{ b.id }}': {{ b.name | tojson }},{% endfor %} },
+         catsMap:      { {% for c in all_categories %}'{{ c.id }}': {{ c.name | tojson }},{% endfor %} },
+       })">
+
+  {# ===== Filter bar — lives outside #insights-body so it survives HTMX partial swaps ===== #}
+  <div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-3 space-y-2">
+
+    {# Row 1: date preset + bucket type pills + clear #}
+    <div class="flex items-center gap-2 flex-wrap">
+
+      {# Date range dropdown #}
+      <div class="relative" @click.outside="openPreset = false">
+        <button type="button" @click="openPreset = !openPreset"
+                class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm font-medium text-gray-700 dark:text-gray-200 hover:border-primary-400 transition-colors">
+          <svg class="w-3.5 h-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+          <span x-text="presetLabel()"></span>
+          <svg class="w-3 h-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+        </button>
+        <div x-show="openPreset" x-cloak
+             class="absolute top-full left-0 mt-1 w-48 bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg z-30 overflow-hidden">
+          {% for p, label in [('this_month','This month'),('last_month','Last month'),('last_3m','Last 3 months'),('last_6m','Last 6 months'),('this_year','This year'),('all_time','All time'),('custom','Custom range…')] %}
+          <button type="button" @click="setPreset('{{ p }}')"
+                  class="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                  :class="preset === '{{ p }}' ? 'text-primary-600 dark:text-primary-400 font-semibold bg-primary-50 dark:bg-primary-900/20' : 'text-gray-700 dark:text-gray-300'">
+            {{ label }}
+          </button>
+          {% endfor %}
+          <div x-show="preset === 'custom'" x-cloak class="px-3 pb-3 pt-1 space-y-2 border-t border-gray-100 dark:border-gray-800">
+            <input type="date" x-model="startDate" class="w-full px-2.5 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-xs outline-none focus:border-primary-500" />
+            <input type="date" x-model="endDate" class="w-full px-2.5 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-xs outline-none focus:border-primary-500" />
+            <button type="button" @click="applyCustom()"
+                    class="w-full py-2 bg-primary-500 hover:bg-primary-600 text-white text-xs font-semibold rounded-lg transition-colors">
+              Apply
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {# Bucket type pills #}
+      {% for label, value in [('All',''),('Day2Day','day2day'),('Trips','trip'),('Bills','bills'),('Savings','savings')] %}
+      <button type="button" @click="setBucketType('{{ value }}')"
+              :class="bucketType === '{{ value }}' ? 'bg-primary-500 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'"
+              class="px-3 py-1.5 rounded-full text-xs font-semibold transition-colors">
+        {{ label }}
+      </button>
+      {% endfor %}
+
+      {# Clear button — no x-cloak since filter bar is never swapped #}
+      <button type="button" x-show="hasFilters()" @click="clearAll()"
+              class="ml-auto px-3 py-1.5 rounded-xl text-xs font-medium text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
+        ✕ Clear
+      </button>
+    </div>
+
+    {# Row 2: bucket multi-select + categories + who paid #}
+    <div class="flex items-center gap-2 flex-wrap">
+
+      {% if buckets %}
+      <div class="relative" @click.outside="openBuckets = false">
+        <button type="button" @click="openBuckets = !openBuckets"
+                class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-colors text-xs font-medium"
+                :class="bucketIds.length ? 'border-primary-400 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:border-primary-400'">
+          <span>Buckets</span>
+          <span x-show="bucketIds.length" class="bg-primary-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px] font-bold" x-text="bucketIds.length"></span>
+          <svg class="w-3 h-3 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+        </button>
+        <div x-show="openBuckets" x-cloak
+             class="absolute top-full left-0 mt-1 w-56 bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg z-30 overflow-hidden max-h-60 overflow-y-auto">
+          {% for bucket in buckets %}
+          <button type="button" @click="toggleBucket('{{ bucket.id }}')"
+                  class="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                  :class="bucketIds.includes('{{ bucket.id }}') ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300' : 'text-gray-700 dark:text-gray-300'">
+            <span class="text-base leading-none">{{ bucket.icon }}</span>
+            <span class="flex-1 text-left text-xs font-medium">{{ bucket.name }}</span>
+            <svg x-show="bucketIds.includes('{{ bucket.id }}')" class="w-3.5 h-3.5 text-primary-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+          </button>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      {% if all_categories %}
+      <div class="relative" @click.outside="openCats = false">
+        <button type="button" @click="openCats = !openCats"
+                class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-colors text-xs font-medium"
+                :class="categoryIds.length ? 'border-primary-400 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:border-primary-400'">
+          <span>Categories</span>
+          <span x-show="categoryIds.length" class="bg-primary-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px] font-bold" x-text="categoryIds.length"></span>
+          <svg class="w-3 h-3 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+        </button>
+        <div x-show="openCats" x-cloak
+             class="absolute top-full left-0 mt-1 w-56 bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg z-30 overflow-hidden max-h-60 overflow-y-auto">
+          {% for cat in all_categories %}
+          <button type="button" @click="toggleCategory('{{ cat.id }}')"
+                  class="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                  :class="categoryIds.includes('{{ cat.id }}') ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300' : 'text-gray-700 dark:text-gray-300'">
+            <span class="text-base leading-none">{{ cat.icon }}</span>
+            <span class="flex-1 text-left text-xs font-medium">{{ cat.name }}</span>
+            <span class="w-3 h-3 rounded-full flex-shrink-0" style="background-color: {{ cat.color }}"></span>
+            <svg x-show="categoryIds.includes('{{ cat.id }}')" class="w-3.5 h-3.5 text-primary-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+          </button>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      {% if member_users | length > 1 %}
+      <div class="relative" @click.outside="openPaidBy = false">
+        <button type="button" @click="openPaidBy = !openPaidBy"
+                class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-colors text-xs font-medium"
+                :class="paidBy ? 'border-primary-400 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:border-primary-400'">
+          <span x-text="paidByLabel()">Paid by</span>
+          <svg class="w-3 h-3 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+        </button>
+        <div x-show="openPaidBy" x-cloak
+             class="absolute top-full left-0 mt-1 w-48 bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg z-30 overflow-hidden">
+          <button type="button" @click="paidBy = ''; openPaidBy = false; _go()"
+                  class="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+            Everyone
+          </button>
+          {% for u in member_users %}
+          <button type="button" @click="paidBy = '{{ u.id }}'; openPaidBy = false; _go()"
+                  class="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                  :class="paidBy === '{{ u.id }}' ? 'bg-primary-50 dark:bg-primary-900/20' : ''">
+            <div class="w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0"
+                 style="background-color: {{ u.avatar_color }}">{{ u.display_name | initials }}</div>
+            <span class="text-xs font-medium text-gray-700 dark:text-gray-300">{{ u.display_name }}</span>
+          </button>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+    </div>
+
+    {# Active filter chips — names shown via Alpine lookup maps #}
+    <div x-show="bucketIds.length > 0 || categoryIds.length > 0" class="flex flex-wrap gap-1.5">
+      <template x-for="id in bucketIds" :key="'b-' + id">
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300">
+          <span x-text="bucketsMap[id] || id"></span>
+          <button @click="toggleBucket(id)" class="hover:opacity-70">✕</button>
+        </span>
+      </template>
+      <template x-for="id in categoryIds" :key="'c-' + id">
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300">
+          <span x-text="catsMap[id] || id"></span>
+          <button @click="toggleCategory(id)" class="hover:opacity-70">✕</button>
+        </span>
+      </template>
+    </div>
+
+  </div>
+
+  {# ===== Widgets region — #insights-body is the HTMX swap target ===== #}
   {% include "insights_partial.html" %}
+
 </div>
 {% endblock %}
 
@@ -35,6 +199,9 @@ function insightsFilters(initial) {
     bucketIds:     initial.bucketIds    ? initial.bucketIds.slice() : [],
     categoryIds:   initial.categoryIds  ? initial.categoryIds.slice() : [],
     paidBy:        initial.paidBy       || '',
+    membersMap:    initial.membersMap   || {},
+    bucketsMap:    initial.bucketsMap   || {},
+    catsMap:       initial.catsMap      || {},
 
     // Dropdown open states
     openPreset:    false,
@@ -43,6 +210,10 @@ function insightsFilters(initial) {
     openPaidBy:    false,
 
     _timer: null,
+
+    paidByLabel() {
+      return (this.paidBy && this.membersMap[this.paidBy]) ? this.membersMap[this.paidBy] : 'Paid by';
+    },
 
     presetLabel() {
       const map = {
