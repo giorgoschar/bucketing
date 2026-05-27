@@ -16,19 +16,29 @@
 {% endblock %}
 
 {% block content %}
+{#
+  Init data is passed via a script variable, NOT inline in x-data="...".
+  Reason: | tojson outputs double-quoted JSON strings (e.g. "Alice"), which
+  would close the double-quoted HTML attribute and corrupt Alpine's x-data.
+  Inside a <script> block, double-quoted JSON is perfectly safe.
+#}
+<script>
+var _insightsData = {
+  preset:      {{ preset | tojson }},
+  startDate:   {{ start_date | tojson }},
+  endDate:     {{ end_date | tojson }},
+  bucketType:  {{ bucket_type | tojson }},
+  bucketIds:   {{ selected_bucket_ids | tojson }},
+  categoryIds: {{ selected_category_ids | tojson }},
+  paidBy:      {{ paid_by | tojson }},
+  membersMap:  { {% for u in member_users %}"{{ u.id }}": {{ u.display_name | tojson }},{% endfor %} },
+  bucketsMap:  { {% for b in buckets %}"{{ b.id }}": {{ b.name | tojson }},{% endfor %} },
+  catsMap:     { {% for c in all_categories %}"{{ c.id }}": {{ c.name | tojson }},{% endfor %} },
+};
+</script>
+
 <div class="max-w-4xl mx-auto space-y-4"
-     x-data="insightsFilters({
-         preset:       '{{ preset }}',
-         startDate:    '{{ start_date }}',
-         endDate:      '{{ end_date }}',
-         bucketType:   '{{ bucket_type }}',
-         bucketIds:    {{ selected_bucket_ids | tojson }},
-         categoryIds:  {{ selected_category_ids | tojson }},
-         paidBy:       '{{ paid_by }}',
-         membersMap:   { {% for u in member_users %}'{{ u.id }}': {{ u.display_name | tojson }},{% endfor %} },
-         bucketsMap:   { {% for b in buckets %}'{{ b.id }}': {{ b.name | tojson }},{% endfor %} },
-         catsMap:      { {% for c in all_categories %}'{{ c.id }}': {{ c.name | tojson }},{% endfor %} },
-       })">
+     x-data="insightsFilters(_insightsData)">
 
   {# ===== Filter bar — lives outside #insights-body so it survives HTMX partial swaps ===== #}
   <div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-3 space-y-2">
