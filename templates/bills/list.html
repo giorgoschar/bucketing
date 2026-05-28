@@ -370,8 +370,9 @@
 
 <!-- Pay bill modal (Alpine-driven) -->
 <div id="pay-modal" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
-     x-data="{ occ_id: '', bill_id: '', is_variable: false, bill_name: '', splits: [] }">
-  <div @click.away="document.getElementById('pay-modal').classList.add('hidden')"
+     x-data="{ occ_id: '', bill_id: '', is_variable: false, bill_name: '', splits: [] }"
+     @click.self="classList.add('hidden')">
+  <div
        class="w-full max-w-sm bg-white dark:bg-gray-900 rounded-2xl shadow-xl overflow-hidden">
     <div class="px-6 py-5 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
       <h3 class="font-semibold" x-text="'Mark paid: ' + bill_name"></h3>
