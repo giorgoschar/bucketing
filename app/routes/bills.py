@@ -259,8 +259,12 @@ def skip_occurrence(
     occ.status = OccurrenceStatus.skipped
     db.commit()
 
+    bill = occ.bill
     if request.headers.get("HX-Request"):
-        return HTMLResponse("")
+        return templates.TemplateResponse(
+            "partials/bill_occurrence_row.html",
+            {"request": request, "occ": occ, "bill": bill},
+        )
     return RedirectResponse("/bills", status_code=302)
 
 

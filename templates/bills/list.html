@@ -411,7 +411,7 @@
       <div class="flex gap-3 pt-1">
         <button type="button" onclick="document.getElementById('pay-modal').classList.add('hidden')"
                 class="flex-1 py-2.5 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 font-semibold rounded-xl text-sm">Cancel</button>
-        <button type="submit" @click="document.getElementById('pay-modal').classList.add('hidden')"
+        <button type="submit"
                 class="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-xl text-sm">Mark paid</button>
       </div>
     </form>
@@ -425,9 +425,11 @@
 function openPayModal(occId, billId, isVariable, billName, splits, occAmount) {
   const modal = document.getElementById('pay-modal');
   const form  = document.getElementById('pay-bill-form');
-  form.setAttribute('hx-post',   `/bills/${billId}/occurrences/${occId}/pay`);
-  form.setAttribute('hx-target', '#occ-' + occId);
-  form.setAttribute('hx-swap',   'outerHTML');
+  form.setAttribute('action',          `/bills/${billId}/occurrences/${occId}/pay`);
+  form.setAttribute('hx-post',         `/bills/${billId}/occurrences/${occId}/pay`);
+  form.setAttribute('hx-target',       '#occ-' + occId);
+  form.setAttribute('hx-swap',         'outerHTML');
+  form.setAttribute('hx-on::after-request', "if(event.detail.successful) document.getElementById('pay-modal').classList.add('hidden')");
   htmx.process(form);
   const alpineData = Alpine.$data(modal);
   alpineData.occ_id = occId;
