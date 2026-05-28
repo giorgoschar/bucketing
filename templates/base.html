@@ -50,16 +50,23 @@
   <!-- CSRF token for double-submit validation -->
   <meta name="csrf-token" content="{{ request.cookies.get('csrf_token', '') }}">
   <script>
-    // Send CSRF token on every HTMX request
+    // Helper: read CSRF token from the non-httponly cookie.
+    // Defined first so it's available to all listeners below.
+    function _csrfToken() {
+      var m = document.cookie.split('; ').find(function(r) { return r.startsWith('csrf_token='); });
+      return m ? m.split('=').slice(1).join('=') : '';
+    }
+
+    // Send CSRF token on every HTMX request (reads cookie, not meta tag, so
+    // it stays correct even after the cookie is refreshed mid-session).
     document.addEventListener('htmx:configRequest', function (evt) {
-      var token = document.querySelector('meta[name="csrf-token"]');
-      if (token) evt.detail.headers['X-CSRF-Token'] = token.getAttribute('content');
+      var token = _csrfToken();
+      if (token) evt.detail.headers['X-CSRF-Token'] = token;
     });
     // Inject hidden field into traditional (non-HTMX) POST forms
     function _injectCsrfFields() {
-      var token = document.querySelector('meta[name="csrf-token"]');
-      if (!token) return;
-      var val = token.getAttribute('content');
+      var val = _csrfToken();
+      if (!val) return;
       document.querySelectorAll('form').forEach(function (f) {
         if ((f.method || '').toLowerCase() === 'post' && !f.querySelector('[name="_csrf_token"]')) {
           var inp = document.createElement('input');
@@ -70,12 +77,6 @@
     }
     document.addEventListener('DOMContentLoaded', _injectCsrfFields);
     document.addEventListener('htmx:afterSwap', _injectCsrfFields);
-
-    // Helper: read CSRF token from the non-httponly cookie for direct fetch() calls.
-    function _csrfToken() {
-      var m = document.cookie.split('; ').find(function(r) { return r.startsWith('csrf_token='); });
-      return m ? decodeURIComponent(m.split('=').slice(1).join('=')) : '';
-    }
   </script>
 
   <style>
@@ -603,7 +604,11 @@
         this.loading = true;
         this.feedback = '';
         try {
-          const resp = await fetch('/push/test', { method: 'POST', headers: { 'X-CSRF-Token': _csrfToken() } });
+          const resp = await fetch('/push/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': _csrfToken() },
+            body: JSON.stringify({ endpoint: this._sub?.endpoint || null }),
+          });
           const data = await resp.json();
           if (data.sent) {
             this._ok('Test notification sent! Check your device.');

@@ -172,12 +172,12 @@ async def push_unsubscribe(
 
 
 @router.post("/push/test", response_class=JSONResponse)
-def push_test(
+async def push_test(
     request: Request,
     db: Session = Depends(get_db),
     auth=Depends(require_auth),
 ):
-    """Send a test push notification to the current user immediately."""
+    """Send a test push notification to the current device only."""
     from app.models import Household, HouseholdMember, NotificationType
     from app.notification_service import create_notification, send_push_for_notification
     from app.config import settings as app_settings
@@ -191,13 +191,32 @@ def push_test(
             status_code=200,
         )
 
-    # Check the user has at least one subscription
-    subs = db.query(PushSubscription).filter(PushSubscription.user_id == user.id).count()
-    if subs == 0:
-        return JSONResponse(
-            {"sent": False, "error": "No push subscription found for this device. Enable notifications first."},
-            status_code=200,
-        )
+    # Parse optional endpoint from body to target only the current device
+    endpoint: str | None = None
+    try:
+        body = await request.json()
+        endpoint = body.get("endpoint") or None
+    except Exception:
+        pass
+
+    if endpoint:
+        target_sub = db.query(PushSubscription).filter(
+            PushSubscription.endpoint == endpoint,
+            PushSubscription.user_id == user.id,
+        ).first()
+        if not target_sub:
+            return JSONResponse(
+                {"sent": False, "error": "Subscription not found for this device. Try re-enabling notifications."},
+                status_code=200,
+            )
+        target_subs = [target_sub]
+    else:
+        target_subs = db.query(PushSubscription).filter(PushSubscription.user_id == user.id).all()
+        if not target_subs:
+            return JSONResponse(
+                {"sent": False, "error": "No push subscription found for this device. Enable notifications first."},
+                status_code=200,
+            )
 
     notif = create_notification(
         db,
@@ -209,7 +228,7 @@ def push_test(
         link="/settings",
     )
     try:
-        sent_count = send_push_for_notification(db, notif)
+        sent_count = send_push_for_notification(db, notif, target_subs=target_subs)
         db.commit()
         if sent_count > 0:
             return {"sent": True, "error": None}

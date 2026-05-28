@@ -100,9 +100,11 @@ def create_notification(
     return notif
 
 
-def send_push_for_notification(db: Session, notification: Notification) -> int:
-    """Send a web push message to all subscriptions of notification.user_id.
+def send_push_for_notification(db: Session, notification: Notification, target_subs=None) -> int:
+    """Send a web push message to subscriptions of notification.user_id.
 
+    Pass target_subs to restrict delivery to a specific list of PushSubscription
+    objects (e.g. just the current device for test notifications).
     Returns the number of subscriptions successfully notified.
     """
     from app.config import settings
@@ -116,11 +118,14 @@ def send_push_for_notification(db: Session, notification: Notification) -> int:
         logger.warning("pywebpush not installed — skipping push delivery")
         return
 
-    subs = (
-        db.query(PushSubscription)
-        .filter(PushSubscription.user_id == notification.user_id)
-        .all()
-    )
+    if target_subs is not None:
+        subs = target_subs
+    else:
+        subs = (
+            db.query(PushSubscription)
+            .filter(PushSubscription.user_id == notification.user_id)
+            .all()
+        )
 
     payload = json.dumps({
         "title": notification.title,

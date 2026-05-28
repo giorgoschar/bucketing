@@ -100,7 +100,13 @@ def insights(
         category_ids=selected_category_ids or None,
         paid_by=paid_by or None,
     )
-    income_total   = get_insights_income(db, hh_id, start, end)
+    income_total   = get_insights_income(
+        db, hh_id, start, end,
+        bucket_type=bucket_type,
+        bucket_ids=selected_bucket_ids or None,
+        category_ids=selected_category_ids or None,
+        paid_by=paid_by or None,
+    )
     bills_due      = get_insights_bills_due(db, hh_id, start, end)
     categories     = get_insights_category_breakdown(
         db, hh_id, start, end,

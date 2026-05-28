@@ -719,7 +719,16 @@ def get_insights_summary(
     }
 
 
-def get_insights_income(db: Session, household_id: str, start: date | None, end: date | None) -> float:
+def get_insights_income(
+    db: Session,
+    household_id: str,
+    start: date | None,
+    end: date | None,
+    bucket_type: str = "",
+    bucket_ids: list | None = None,
+    category_ids: list | None = None,
+    paid_by: str | None = None,
+) -> float:
     """Sum of income transactions in the date range, limited to show_income buckets."""
     q = (
         db.query(func.coalesce(func.sum(Transaction.amount), 0))
@@ -734,6 +743,24 @@ def get_insights_income(db: Session, household_id: str, start: date | None, end:
         q = q.filter(Transaction.transaction_date >= start)
     if end:
         q = q.filter(Transaction.transaction_date <= end)
+    if bucket_type:
+        q = q.filter(Bucket.type == BucketType(bucket_type))
+    if bucket_ids:
+        q = q.filter(Transaction.bucket_id.in_(bucket_ids))
+    if category_ids:
+        q = q.filter(Transaction.category_id.in_(category_ids))
+    if paid_by:
+        split_subq = (
+            db.query(TransactionSplit.transaction_id)
+            .filter(TransactionSplit.user_id == paid_by)
+            .subquery()
+        )
+        q = q.filter(
+            or_(
+                Transaction.paid_by == paid_by,
+                Transaction.id.in_(split_subq),
+            )
+        )
     return round(float(q.scalar()), 2)
 
 

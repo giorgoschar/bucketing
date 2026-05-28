@@ -81,6 +81,20 @@ async def csrf_error_handler(request: Request, exc: CSRFError):
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
     response = await call_next(request)
+    # If the user has a valid authenticated session but no CSRF cookie (e.g. it was
+    # previously wiped by an aggressive error handler), issue a fresh one so that
+    # the very next state-changing request will pass CSRF validation again.
+    if not request.cookies.get(CSRF_COOKIE_NAME) and request.cookies.get(COOKIE_NAME):
+        from app.auth import decode_cookie, generate_csrf_token
+        session = decode_cookie(request.cookies.get(COOKIE_NAME))
+        if session and session.get("state") == "authenticated":
+            csrf_val = generate_csrf_token(session["user_id"])
+            response.set_cookie(
+                CSRF_COOKIE_NAME, csrf_val,
+                httponly=False, samesite="strict",
+                max_age=60 * 60 * 24 * 30,
+                secure=not settings.debug,
+            )
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
