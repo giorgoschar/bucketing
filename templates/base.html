@@ -358,6 +358,13 @@
       </header>
 
       <!-- Page content -->
+      {% if user is defined and user and not user.email %}
+      <div class="px-4 pt-4 lg:px-8">
+        <div class="px-4 py-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl text-sm text-amber-800 dark:text-amber-300 flex items-center justify-between gap-3">
+          <span>⚠️ <strong>No email on file.</strong> Add one in <a href="/settings" class="underline font-semibold">Settings → Profile</a> to enable email login.</span>
+        </div>
+      </div>
+      {% endif %}
       <div class="flex-1 {% block content_class %}px-4 py-6 lg:px-8{% endblock %}">
         {% block content %}{% endblock %}
       </div>

@@ -15,6 +15,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 
 from app.database import get_db
 from app.auth import (
@@ -137,13 +138,39 @@ def create_household(
 
 @router.post("/profile", response_class=HTMLResponse)
 def update_profile(
+    request: Request,
     display_name: str = Form(...),
+    email: str = Form(default=""),
     avatar_color: str = Form("#6366f1"),
     db: Session = Depends(get_db),
     auth=Depends(require_auth),
 ):
     user, hh_id = auth
+    email_clean = email.strip().lower() or None
+    if email_clean:
+        conflict = db.query(User).filter(
+            User.email == email_clean, User.id != user.id
+        ).first()
+        if conflict:
+            ctx = base_ctx(db, user, hh_id)
+            members = db.query(HouseholdMember).filter_by(household_id=hh_id).all()
+            invitations = db.query(Invitation).filter_by(household_id=hh_id).filter(Invitation.used_at.is_(None)).all()
+            categories = db.query(Category).filter_by(household_id=hh_id).order_by(Category.is_default.desc(), Category.name).all()
+            my_membership = db.query(HouseholdMember).filter_by(user_id=user.id, household_id=hh_id).first()
+            ctx.update({
+                "request": request,
+                "user": user,
+                "members": members,
+                "invitations": invitations,
+                "categories": categories,
+                "is_owner": my_membership and my_membership.role == MemberRole.owner,
+                "avatar_colors": AVATAR_COLORS,
+                "currencies": settings.currencies,
+                "profile_error": "That email is already registered to another account.",
+            })
+            return templates.TemplateResponse("settings/index.html", ctx)
     user.display_name = display_name.strip()
+    user.email = email_clean
     user.avatar_color = avatar_color
     db.commit()
     return RedirectResponse("/settings", status_code=302)
@@ -444,6 +471,85 @@ def admin_reset_member_totp(
 
 
 # ---------------------------------------------------------------------------
+# Member management (owner only): remove member + transfer ownership
+# ---------------------------------------------------------------------------
+
+@router.post("/remove-member/{member_id}", response_class=HTMLResponse)
+def remove_member(
+    member_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    auth=Depends(require_auth),
+):
+    """Owner removes a member from the household. All their data stays."""
+    owner, hh_id = auth
+
+    owner_membership = db.query(HouseholdMember).filter_by(
+        user_id=owner.id, household_id=hh_id
+    ).first()
+    if not owner_membership or owner_membership.role != MemberRole.owner:
+        raise HTTPException(status_code=403)
+
+    if member_id == owner.id:
+        raise HTTPException(status_code=400, detail="Cannot remove yourself.")
+
+    target_membership = db.query(HouseholdMember).filter_by(
+        user_id=member_id, household_id=hh_id
+    ).first()
+    if not target_membership:
+        raise HTTPException(status_code=404)
+
+    if target_membership.role == MemberRole.owner:
+        raise HTTPException(status_code=400, detail="Cannot remove another owner. Transfer ownership first.")
+
+    db.delete(target_membership)
+    db.commit()
+
+    security_logger.info(
+        "Owner '%s' removed member '%s' from household %s",
+        owner.username, member_id, hh_id,
+    )
+    return RedirectResponse("/settings", status_code=302)
+
+
+@router.post("/transfer-ownership/{member_id}", response_class=HTMLResponse)
+def transfer_ownership(
+    member_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    auth=Depends(require_auth),
+):
+    """Transfer household ownership from the current owner to another member."""
+    owner, hh_id = auth
+
+    owner_membership = db.query(HouseholdMember).filter_by(
+        user_id=owner.id, household_id=hh_id
+    ).first()
+    if not owner_membership or owner_membership.role != MemberRole.owner:
+        raise HTTPException(status_code=403)
+
+    if member_id == owner.id:
+        raise HTTPException(status_code=400, detail="Already the owner.")
+
+    target_membership = db.query(HouseholdMember).filter_by(
+        user_id=member_id, household_id=hh_id
+    ).first()
+    if not target_membership:
+        raise HTTPException(status_code=404)
+
+    owner_membership.role = MemberRole.member
+    target_membership.role = MemberRole.owner
+    db.commit()
+
+    target_user = db.get(User, member_id)
+    security_logger.info(
+        "Ownership of household %s transferred from '%s' to '%s'",
+        hh_id, owner.username, target_user.username if target_user else member_id,
+    )
+    return RedirectResponse("/settings", status_code=302)
+
+
+# ---------------------------------------------------------------------------
 # Leave household
 # ---------------------------------------------------------------------------
 
@@ -472,7 +578,7 @@ def leave_household(
             ctx.update({
                 "request": request,
                 "user": user,
-                "leave_error": "You are the owner. Transfer ownership or remove all members before leaving.",
+                "leave_error": "You are the owner. Use the ··· menu next to each member to transfer ownership or remove them before leaving.",
             })
             # Re-render settings with error
             members = db.query(HouseholdMember).filter_by(household_id=hh_id).all()

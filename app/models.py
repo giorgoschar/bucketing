@@ -71,6 +71,8 @@ class User(Base):
 
     id = Column(String, primary_key=True, default=gen_id)
     username = Column(String(50), unique=True, nullable=False, index=True)
+    email = Column(String(254), unique=True, nullable=True, index=True)
+    email_verified = Column(Boolean, default=False, nullable=False)
     display_name = Column(String(100), nullable=False)
     password_hash = Column(String, nullable=False)
     avatar_color = Column(String(7), default="#6366f1")  # hex color

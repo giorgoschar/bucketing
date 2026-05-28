@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 
 from app.database import get_db
 from app.models import User, Household, HouseholdMember, Invitation, MemberRole
@@ -71,6 +72,7 @@ def setup_submit(
     household_name: str = Form(...),
     display_name: str = Form(...),
     username: str = Form(...),
+    email: str = Form(...),
     password: str = Form(...),
     db: Session = Depends(get_db),
 ):
@@ -83,6 +85,13 @@ def setup_submit(
             {"request": request, "error": "Password must be at least 12 characters."},
         )
 
+    email_clean = email.strip().lower()
+    if db.query(User).filter(User.email == email_clean).first():
+        return templates.TemplateResponse(
+            "auth/setup.html",
+            {"request": request, "error": "That email is already registered."},
+        )
+
     # Create household
     household = Household(name=household_name.strip())
     db.add(household)
@@ -91,6 +100,7 @@ def setup_submit(
     # Create user
     user = User(
         username=username.strip().lower(),
+        email=email_clean,
         display_name=display_name.strip(),
         password_hash=hash_password(password),
         avatar_color="#6366f1",
@@ -139,7 +149,10 @@ def login_submit(
     db: Session = Depends(get_db),
 ):
     ip = _client_ip(request)
-    user = db.query(User).filter_by(username=username.strip().lower()).first()
+    identifier = username.strip().lower()
+    user = db.query(User).filter(
+        or_(User.username == identifier, User.email == identifier)
+    ).first()
     if not user or not verify_password(password, user.password_hash):
         security_logger.warning("Failed login for '%s' from %s", username.strip().lower(), ip)
         return templates.TemplateResponse(
@@ -339,6 +352,7 @@ def join_submit(
     request: Request,
     display_name: str = Form(...),
     username: str = Form(...),
+    email: str = Form(...),
     password: str = Form(...),
     db: Session = Depends(get_db),
 ):
@@ -360,6 +374,18 @@ def join_submit(
             },
         )
 
+    email_clean = email.strip().lower()
+    if db.query(User).filter(User.email == email_clean).first():
+        return templates.TemplateResponse(
+            "auth/join.html",
+            {
+                "request": request,
+                "invite": invite,
+                "household": invite.household,
+                "error": "That email is already registered.",
+            },
+        )
+
     existing = db.query(User).filter_by(username=username.strip().lower()).first()
     if existing:
         return templates.TemplateResponse(
@@ -374,6 +400,7 @@ def join_submit(
 
     user = User(
         username=username.strip().lower(),
+        email=email_clean,
         display_name=display_name.strip(),
         password_hash=hash_password(password),
         avatar_color="#ec4899",

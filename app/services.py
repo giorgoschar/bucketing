@@ -6,7 +6,7 @@ from collections import defaultdict
 from typing import Optional
 
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func, and_, case
+from sqlalchemy import func, and_, case, or_
 
 from app.models import (
     Transaction, TransactionSplit, TransactionType,
@@ -642,8 +642,31 @@ def _build_expense_query(
     if category_ids:
         q = q.filter(Transaction.category_id.in_(category_ids))
     if paid_by:
-        q = q.filter(Transaction.paid_by == paid_by)
+        split_subq = (
+            db.query(TransactionSplit.transaction_id)
+            .filter(TransactionSplit.user_id == paid_by)
+            .subquery()
+        )
+        q = q.filter(
+            or_(
+                Transaction.paid_by == paid_by,
+                Transaction.id.in_(split_subq),
+            )
+        )
     return q
+
+
+def _effective_amount(t: Transaction, paid_by: str | None) -> float:
+    """When a paid_by filter is active, return only that user's share of the transaction.
+    For split transactions: returns the user's split amount (0.0 if they have no split).
+    Without a filter: returns the full transaction amount.
+    """
+    if paid_by and t.splits:
+        for s in t.splits:
+            if s.user_id == paid_by:
+                return float(s.amount)
+        return 0.0
+    return float(t.amount)
 
 
 def get_insights_summary(
@@ -659,15 +682,17 @@ def get_insights_summary(
     """Unified summary: total expenses + paid-by breakdown for any date range + filters."""
     q = _build_expense_query(db, household_id, start, end, bucket_type, bucket_ids, category_ids, paid_by)
     txns = q.options(joinedload(Transaction.splits)).all()
-    total_spent = sum(float(t.amount) for t in txns)
+    total_spent = sum(_effective_amount(t, paid_by) for t in txns)
 
     paid_by_acc: dict[str, float] = defaultdict(float)
     for t in txns:
         if t.splits:
             for s in t.splits:
-                paid_by_acc[s.user_id] += float(s.amount)
+                if paid_by is None or s.user_id == paid_by:
+                    paid_by_acc[s.user_id] += float(s.amount)
         elif t.paid_by:
-            paid_by_acc[t.paid_by] += float(t.amount)
+            if paid_by is None or t.paid_by == paid_by:
+                paid_by_acc[t.paid_by] += float(t.amount)
 
     members = (
         db.query(User)
@@ -741,11 +766,11 @@ def get_insights_category_breakdown(
 ) -> list[dict]:
     """Top spending categories filtered by all insight dimensions."""
     q = _build_expense_query(db, household_id, start, end, bucket_type, bucket_ids, category_ids, paid_by)
-    txns = q.all()
+    txns = q.options(joinedload(Transaction.splits)).all() if paid_by else q.all()
 
     totals: dict[str | None, float] = defaultdict(float)
     for t in txns:
-        totals[t.category_id] += float(t.amount)
+        totals[t.category_id] += _effective_amount(t, paid_by)
 
     grand = sum(totals.values()) or 1
     cat_ids = [cid for cid in totals if cid is not None]
@@ -793,7 +818,8 @@ def get_insights_bucket_breakdown(
             category_ids=category_ids,
             paid_by=paid_by,
         )
-        total = sum(float(t.amount) for t in q.all())
+        txns = q.options(joinedload(Transaction.splits)).all() if paid_by else q.all()
+        total = sum(_effective_amount(t, paid_by) for t in txns)
         result.append({
             "bucket": b,
             "total":  round(total, 2),
@@ -844,10 +870,10 @@ def get_insights_category_trend(
         category_ids=category_ids,
         paid_by=paid_by,
     )
-    all_txns = all_q.all()
+    all_txns = all_q.options(joinedload(Transaction.splits)).all() if paid_by else all_q.all()
     cat_totals: dict[str | None, float] = defaultdict(float)
     for t in all_txns:
-        cat_totals[t.category_id] += float(t.amount)
+        cat_totals[t.category_id] += _effective_amount(t, paid_by)
 
     # Pick top_n categories
     top_cats = sorted(cat_totals.items(), key=lambda x: -x[1])[:top_n]
@@ -863,16 +889,17 @@ def get_insights_category_trend(
     for y, m in month_list:
         start, end = _month_range(y, m)
         labels.append(date(y, m, 1).strftime("%b"))
-        month_txns = _build_expense_query(
+        _month_q = _build_expense_query(
             db, household_id, start, end,
             bucket_type=bucket_type,
             bucket_ids=bucket_ids,
             paid_by=paid_by,
-        ).all()
+        )
+        month_txns = _month_q.options(joinedload(Transaction.splits)).all() if paid_by else _month_q.all()
         month_by_cat: dict[str | None, float] = defaultdict(float)
         for t in month_txns:
             if t.category_id in top_cat_ids:
-                month_by_cat[t.category_id] += float(t.amount)
+                month_by_cat[t.category_id] += _effective_amount(t, paid_by)
         for cid in top_cat_ids:
             monthly_data[cid].append(round(month_by_cat[cid], 2))
 
