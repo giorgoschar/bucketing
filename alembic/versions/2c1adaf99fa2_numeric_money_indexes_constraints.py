@@ -42,11 +42,24 @@ def upgrade() -> None:
 
     op.create_index('ix_household_members_household_id', 'household_members', ['household_id'], unique=False)
 
-    with op.batch_alter_table('notifications') as batch_op:
-        batch_op.alter_column('type',
-                              existing_type=sa.VARCHAR(length=14),
-                              type_=sa.Enum('bill_due', 'bill_overdue', 'bill_auto_paid', 'contract_expiring', 'general', name='notificationtype'),
-                              existing_nullable=False)
+    conn = op.get_bind()
+    if conn.dialect.name == 'postgresql':
+        conn.execute(sa.text(
+            "DO $$ BEGIN "
+            "CREATE TYPE notificationtype AS ENUM "
+            "('bill_due', 'bill_overdue', 'bill_auto_paid', 'contract_expiring', 'general'); "
+            "EXCEPTION WHEN duplicate_object THEN null; END $$;"
+        ))
+        conn.execute(sa.text(
+            "ALTER TABLE notifications ALTER COLUMN type "
+            "TYPE notificationtype USING type::notificationtype"
+        ))
+    else:
+        with op.batch_alter_table('notifications') as batch_op:
+            batch_op.alter_column('type',
+                                  existing_type=sa.VARCHAR(length=14),
+                                  type_=sa.Enum('bill_due', 'bill_overdue', 'bill_auto_paid', 'contract_expiring', 'general', name='notificationtype'),
+                                  existing_nullable=False)
 
     with op.batch_alter_table('recurring_bill_splits') as batch_op:
         batch_op.alter_column('amount',
@@ -112,11 +125,18 @@ def downgrade() -> None:
                               type_=sa.FLOAT(),
                               existing_nullable=False)
 
-    with op.batch_alter_table('notifications') as batch_op:
-        batch_op.alter_column('type',
-                              existing_type=sa.Enum('bill_due', 'bill_overdue', 'bill_auto_paid', 'contract_expiring', 'general', name='notificationtype'),
-                              type_=sa.VARCHAR(length=14),
-                              existing_nullable=False)
+    conn = op.get_bind()
+    if conn.dialect.name == 'postgresql':
+        conn.execute(sa.text(
+            "ALTER TABLE notifications ALTER COLUMN type TYPE VARCHAR(14) USING type::VARCHAR"
+        ))
+        conn.execute(sa.text("DROP TYPE IF EXISTS notificationtype"))
+    else:
+        with op.batch_alter_table('notifications') as batch_op:
+            batch_op.alter_column('type',
+                                  existing_type=sa.Enum('bill_due', 'bill_overdue', 'bill_auto_paid', 'contract_expiring', 'general', name='notificationtype'),
+                                  type_=sa.VARCHAR(length=14),
+                                  existing_nullable=False)
 
     with op.batch_alter_table('household_members') as batch_op:
         batch_op.drop_constraint('uq_household_member', type_='unique')
