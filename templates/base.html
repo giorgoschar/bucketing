@@ -134,11 +134,12 @@
         <!-- Nav links -->
         <nav class="flex-1 px-3 py-4 space-y-1">
           {% set nav = [
-            ('/dashboard',     'Dashboard',     'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6'),
-            ('/insights',      'Insights',      'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z'),
-            ('/buckets',       'Buckets',       'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10'),
-            ('/bills',         'Bills',         'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2'),
-            ('/settings',      'Settings',      'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0'),
+            ('/dashboard',           'Dashboard',    'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6'),
+            ('/insights',            'Insights',     'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z'),
+            ('/buckets',             'Buckets',      'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10'),
+            ('/bills',               'Bills',        'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2'),
+            ('/transactions/search', 'Search',       'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z'),
+            ('/settings',            'Settings',     'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0'),
           ] %}
           {% for href, label, icon_path in nav %}
           <a href="{{ href }}" class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors
@@ -193,6 +194,9 @@
                   </div>
                 </a>
               </template>
+            </div>
+            <div x-show="hasMore" class="px-4 py-2 border-t border-gray-100 dark:border-gray-700">
+              <button @click="loadMore()" class="w-full text-center text-xs text-primary-600 hover:underline py-1">Load more</button>
             </div>
           </div>
         </div>
@@ -289,6 +293,13 @@
         </div>
         <div class="flex items-center gap-2">
           {% block mobile_header_actions %}{% endblock %}
+          <a href="/transactions/search"
+             class="w-8 h-8 rounded-full border border-gray-200 dark:border-gray-700 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+             title="Search transactions">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </a>
           <a href="/transactions/scan"
              class="w-8 h-8 rounded-full border border-gray-200 dark:border-gray-700 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
              title="Scan receipt">
@@ -331,6 +342,9 @@
                     </div>
                   </a>
                 </template>
+              </div>
+              <div x-show="hasMore" class="px-4 py-2 border-t border-gray-100 dark:border-gray-700">
+                <button @click="loadMore()" class="w-full text-center text-xs text-primary-600 hover:underline py-1">Load more</button>
               </div>
             </div>
           </div>
@@ -381,6 +395,8 @@
 
   {% block scripts %}{% endblock %}
 
+  <!-- Offline expense queuing helpers -->
+  <script src="/static/offline.js"></script>
   <script>
     // Alpine: shared notification center component
     function notifCenter() {
@@ -388,19 +404,30 @@
         open: false,
         unread: 0,
         items: [],
+        hasMore: false,
+        offset: 0,
         _timer: null,
         async init() {
-          await this.fetchNotifs();
-          this._timer = setInterval(() => this.fetchNotifs(), 60000);
+          await this.fetchNotifs(0);
+          this._timer = setInterval(() => this.fetchNotifs(0, true), 60000);
         },
-        async fetchNotifs() {
+        async fetchNotifs(offset = 0, silent = false) {
           try {
-            const r = await fetch('/notifications', { headers: { 'Accept': 'application/json' } });
+            const r = await fetch(`/notifications?offset=${offset}`, { headers: { 'Accept': 'application/json' } });
             if (!r.ok) return;
             const d = await r.json();
             this.unread = d.unread;
-            this.items  = d.items;
+            this.hasMore = d.has_more;
+            this.offset = offset;
+            if (offset === 0 || silent) {
+              this.items = d.items;
+            } else {
+              this.items = [...this.items, ...d.items];
+            }
           } catch (_) {}
+        },
+        async loadMore() {
+          await this.fetchNotifs(this.offset + 50);
         },
         async markAllRead() {
           try {
@@ -441,6 +468,25 @@
             });
           } catch (_) {}
         });
+      });
+    }
+
+    // Flush queued offline expenses when online and on message from SW sync
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', async (evt) => {
+        if (evt.data?.type === 'FLUSH_OFFLINE_EXPENSES' && window.offlineExpenses) {
+          const result = await window.offlineExpenses.flushPendingTransactions();
+          if (result.sent > 0) location.reload();
+        }
+      });
+      // Also flush on reconnect
+      window.addEventListener('online', async () => {
+        if (!window.offlineExpenses) return;
+        const count = await window.offlineExpenses.getPendingCount();
+        if (count > 0) {
+          await window.offlineExpenses.flushPendingTransactions();
+          location.reload();
+        }
       });
     }
 

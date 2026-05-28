@@ -1,6 +1,8 @@
 """
 Transactions routes: add expense wizard + CRUD.
 """
+import csv
+import io
 import os
 import re
 import uuid
@@ -10,8 +12,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import APIRouter, Depends, Form, Request, HTTPException, UploadFile, File
-from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
+from fastapi import APIRouter, Depends, Form, Query, Request, HTTPException, UploadFile, File
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -483,3 +485,178 @@ def delete_transaction(
     if request.headers.get("HX-Request"):
         return HTMLResponse("")  # HTMX removes the row
     return RedirectResponse(f"/buckets/{bucket_id}", status_code=302)
+
+
+# ---------------------------------------------------------------------------
+# Duplicate transaction
+# ---------------------------------------------------------------------------
+
+@router.post("/{txn_id}/duplicate", response_class=HTMLResponse)
+def duplicate_transaction(
+    txn_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    auth=Depends(require_auth),
+):
+    user, hh_id = auth
+    src = db.get(Transaction, txn_id)
+    if not src or src.household_id != hh_id:
+        raise HTTPException(status_code=404)
+
+    new_txn = Transaction(
+        bucket_id=src.bucket_id,
+        household_id=src.household_id,
+        amount=src.amount,
+        currency=src.currency,
+        exchange_rate=src.exchange_rate,
+        type=src.type,
+        paid_by=src.paid_by,
+        category_id=src.category_id,
+        notes=src.notes,
+        transaction_date=date.today(),
+        exclude_from_forecast=src.exclude_from_forecast,
+    )
+    db.add(new_txn)
+    db.commit()
+
+    if request.headers.get("HX-Request"):
+        bucket = db.get(Bucket, new_txn.bucket_id)
+        return templates.TemplateResponse(
+            "partials/transaction_added.html",
+            {"request": request, "transaction": new_txn, "bucket": bucket},
+        )
+    return RedirectResponse(f"/buckets/{src.bucket_id}", status_code=302)
+
+
+# ---------------------------------------------------------------------------
+# Transaction search (cross-bucket)
+# ---------------------------------------------------------------------------
+
+SEARCH_PAGE_SIZE = 25
+
+@router.get("/search", response_class=HTMLResponse)
+def search_transactions(
+    request: Request,
+    q: str = Query(""),
+    category_id: str = Query(""),
+    type: str = Query(""),
+    from_date: str = Query(""),
+    to_date: str = Query(""),
+    bucket_id: str = Query(""),
+    page: int = Query(1, ge=1),
+    db: Session = Depends(get_db),
+    auth=Depends(require_auth),
+):
+    user, hh_id = auth
+    ctx = _get_context(db, user, hh_id)
+
+    query = db.query(Transaction).filter(Transaction.household_id == hh_id)
+
+    if q.strip():
+        query = query.filter(Transaction.notes.ilike(f"%{q.strip()}%"))
+    if category_id:
+        query = query.filter(Transaction.category_id == category_id)
+    if type:
+        try:
+            query = query.filter(Transaction.type == TransactionType(type))
+        except ValueError:
+            pass
+    if from_date:
+        try:
+            query = query.filter(Transaction.transaction_date >= date.fromisoformat(from_date))
+        except ValueError:
+            pass
+    if to_date:
+        try:
+            query = query.filter(Transaction.transaction_date <= date.fromisoformat(to_date))
+        except ValueError:
+            pass
+    if bucket_id:
+        query = query.filter(Transaction.bucket_id == bucket_id)
+
+    total = query.count()
+    total_pages = max(1, -(-total // SEARCH_PAGE_SIZE))
+    page = min(page, total_pages)
+    transactions = (
+        query
+        .order_by(Transaction.transaction_date.desc(), Transaction.created_at.desc())
+        .offset((page - 1) * SEARCH_PAGE_SIZE)
+        .limit(SEARCH_PAGE_SIZE)
+        .all()
+    )
+
+    ctx.update({
+        "request": request,
+        "user": user,
+        "transactions": transactions,
+        "q": q,
+        "category_id": category_id,
+        "selected_type": type,
+        "from_date": from_date,
+        "to_date": to_date,
+        "selected_bucket_id": bucket_id,
+        "page": page,
+        "total_pages": total_pages,
+        "total": total,
+        "transaction_types": [t.value for t in TransactionType],
+    })
+
+    if request.headers.get("HX-Request"):
+        return templates.TemplateResponse("transactions/search_results.html", ctx)
+    return templates.TemplateResponse("transactions/list.html", ctx)
+
+
+# ---------------------------------------------------------------------------
+# CSV export
+# ---------------------------------------------------------------------------
+
+@router.get("/export", response_class=StreamingResponse)
+def export_transactions(
+    year: int = Query(None),
+    month: int = Query(None),
+    bucket_id: str = Query(""),
+    db: Session = Depends(get_db),
+    auth=Depends(require_auth),
+):
+    user, hh_id = auth
+
+    query = db.query(Transaction).filter(Transaction.household_id == hh_id)
+    if bucket_id:
+        query = query.filter(Transaction.bucket_id == bucket_id)
+    if year:
+        query = query.filter(
+            Transaction.transaction_date >= date(year, month or 1, 1),
+            Transaction.transaction_date <= date(year, month or 12, 31) if not month else
+                date(year, month, 28 if month == 2 else (30 if month in (4,6,9,11) else 31)),
+        )
+    transactions = query.order_by(Transaction.transaction_date.desc()).all()
+
+    def generate():
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(["Date", "Bucket", "Category", "Type", "Amount", "Currency", "Paid By", "Notes"])
+        yield buf.getvalue()
+        for txn in transactions:
+            buf = io.StringIO()
+            writer = csv.writer(buf)
+            bucket_name = txn.bucket.name if txn.bucket else ""
+            category_name = txn.category.name if txn.category else ""
+            paid_by_name = txn.paid_by_user.display_name if txn.paid_by_user else ""
+            writer.writerow([
+                txn.transaction_date.isoformat(),
+                bucket_name,
+                category_name,
+                txn.type.value,
+                float(txn.amount),
+                txn.currency,
+                paid_by_name,
+                txn.notes or "",
+            ])
+            yield buf.getvalue()
+
+    filename = f"transactions_{year or 'all'}{'_' + str(month) if month else ''}.csv"
+    return StreamingResponse(
+        generate(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

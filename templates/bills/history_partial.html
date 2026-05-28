@@ -1,0 +1,58 @@
+<!-- Bill payment history partial — loaded via HTMX into a dialog/panel -->
+<div class="p-5">
+  <div class="flex items-center justify-between mb-4">
+    <h3 class="font-semibold text-gray-900 dark:text-gray-100">
+      Payment history · {{ bill.name }}
+    </h3>
+    <button onclick="document.getElementById('history-panel-{{ bill.id }}').remove()"
+            class="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+      </svg>
+    </button>
+  </div>
+
+  {% if occurrences %}
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="text-left text-xs text-gray-400 border-b border-gray-100 dark:border-gray-800">
+          <th class="pb-2 font-medium">Due date</th>
+          <th class="pb-2 font-medium">Amount</th>
+          <th class="pb-2 font-medium">Paid by</th>
+          <th class="pb-2 font-medium">Paid at</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-50 dark:divide-gray-800">
+        {% for occ in occurrences %}
+        <tr class="group">
+          <td class="py-2.5 text-gray-700 dark:text-gray-300">{{ occ.due_date.strftime('%d %b %Y') }}</td>
+          <td class="py-2.5 font-medium text-gray-900 dark:text-gray-100">
+            {{ occ.amount | currency(bill.currency) if occ.amount else bill.amount | currency(bill.currency) }}
+          </td>
+          <td class="py-2.5 text-gray-500 dark:text-gray-400">
+            {% if occ.paid_by_user %}
+            <span class="flex items-center gap-1.5">
+              <span class="w-5 h-5 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
+                    style="background-color: {{ occ.paid_by_user.avatar_color }}">
+                {{ occ.paid_by_user.display_name | initials }}
+              </span>
+              {{ occ.paid_by_user.display_name }}
+            </span>
+            {% else %}—{% endif %}
+          </td>
+          <td class="py-2.5 text-gray-400 text-xs">
+            {% if occ.paid_at %}{{ occ.paid_at.strftime('%d %b %Y') }}{% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="text-center py-8 text-gray-400">
+    <div class="text-3xl mb-2">📋</div>
+    <p class="text-sm">No payments recorded yet</p>
+  </div>
+  {% endif %}
+</div>

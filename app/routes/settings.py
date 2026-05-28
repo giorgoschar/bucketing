@@ -20,7 +20,7 @@ from app.database import get_db
 from app.auth import (
     require_auth, require_pending_session, require_csrf,
     hash_password, verify_password,
-    set_session, get_current_session,
+    set_session, clear_session, get_current_session,
     security_logger,
 )
 from app.config import settings
@@ -441,3 +441,75 @@ def admin_reset_member_totp(
         owner.username, target_user.username, hh_id,
     )
     return RedirectResponse("/settings", status_code=302)
+
+
+# ---------------------------------------------------------------------------
+# Leave household
+# ---------------------------------------------------------------------------
+
+@router.post("/leave-household", response_class=HTMLResponse)
+def leave_household(
+    request: Request,
+    db: Session = Depends(get_db),
+    auth=Depends(require_auth),
+):
+    user, hh_id = auth
+
+    my_membership = db.query(HouseholdMember).filter_by(
+        user_id=user.id, household_id=hh_id
+    ).first()
+    if not my_membership:
+        raise HTTPException(status_code=404)
+
+    # Block owners from leaving if other members remain
+    if my_membership.role == MemberRole.owner:
+        other_members = db.query(HouseholdMember).filter(
+            HouseholdMember.household_id == hh_id,
+            HouseholdMember.user_id != user.id,
+        ).count()
+        if other_members > 0:
+            ctx = base_ctx(db, user, hh_id)
+            ctx.update({
+                "request": request,
+                "user": user,
+                "leave_error": "You are the owner. Transfer ownership or remove all members before leaving.",
+            })
+            # Re-render settings with error
+            members = db.query(HouseholdMember).filter_by(household_id=hh_id).all()
+            invitations = db.query(Invitation).filter_by(household_id=hh_id).filter(Invitation.used_at.is_(None)).all()
+            categories = db.query(Category).filter_by(household_id=hh_id).order_by(Category.is_default.desc(), Category.name).all()
+            ctx.update({
+                "members": members,
+                "invitations": invitations,
+                "categories": categories,
+                "is_owner": True,
+                "avatar_colors": AVATAR_COLORS,
+                "currencies": settings.currencies,
+            })
+            return templates.TemplateResponse("settings/index.html", ctx)
+
+    household = db.get(Household, hh_id)
+    is_sole_member = db.query(HouseholdMember).filter_by(household_id=hh_id).count() == 1
+
+    # Remove membership
+    db.delete(my_membership)
+
+    if is_sole_member:
+        # Delete the empty household
+        db.delete(household)
+
+    db.commit()
+
+    # Find another household for the user
+    remaining = db.query(HouseholdMember).filter_by(user_id=user.id).first()
+
+    if remaining:
+        remaining_hh = db.get(Household, remaining.household_id)
+        response = RedirectResponse("/settings", status_code=302)
+        set_session(response, user.id, remaining.household_id, user.session_version)
+        return response
+
+    # No households left — redirect to setup
+    response = RedirectResponse("/auth/setup", status_code=302)
+    clear_session(response)
+    return response

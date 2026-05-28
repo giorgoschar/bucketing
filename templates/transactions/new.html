@@ -54,6 +54,7 @@
           <div>
             <label class="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Choose bucket</label>
             <div class="grid grid-cols-2 gap-2.5">
+              {% if buckets %}
               {% for bucket in buckets %}
               <button type="button"
                       @click="form.bucket_id = '{{ bucket.id }}'"
@@ -68,6 +69,17 @@
                 </div>
               </button>
               {% endfor %}
+              {% else %}
+              <div class="col-span-2 py-8 text-center">
+                <div class="text-3xl mb-2">🪣</div>
+                <p class="text-sm font-medium text-gray-600 dark:text-gray-300">No buckets yet</p>
+                <p class="text-xs text-gray-400 mt-1 mb-3">Create a bucket before adding an expense</p>
+                <a href="/buckets"
+                   class="inline-flex items-center gap-1.5 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white font-semibold rounded-xl text-sm transition-colors">
+                  Go to Buckets
+                </a>
+              </div>
+              {% endif %}
             </div>
           </div>
 
@@ -139,9 +151,13 @@
       <div x-show="step === 3" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 translate-x-2" x-transition:enter-end="opacity-100 translate-x-0">
         <div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-5">
           <label class="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Category</label>
+          <!-- Category search -->
+          <input type="text" x-model="catSearch" placeholder="Filter categories…"
+                 class="w-full px-3 py-2 mb-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm" />
           <div class="grid grid-cols-3 sm:grid-cols-4 gap-2">
             {% for cat in categories %}
             <button type="button"
+                    x-show="!catSearch || '{{ cat.name }}'.toLowerCase().includes(catSearch.toLowerCase())"
                     @click="form.category_id = '{{ cat.id }}'"
                     :class="form.category_id === '{{ cat.id }}'
                       ? 'ring-2 ring-offset-1 ring-gray-400 scale-95'
@@ -218,11 +234,21 @@
                 </div>
                 <span class="text-sm flex-1">{{ member.display_name }}</span>
                 <input type="number" name="split_{{ member.id }}" step="0.01" min="0" placeholder="0.00"
+                       x-model="splits['{{ member.id }}']"
+                       @input="updateSplitTotal()"
                        class="w-24 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:border-primary-500 outline-none text-sm text-right" />
               </div>
               {% endfor %}
             </div>
-            <p class="text-xs text-gray-400 mt-2">Leave blank for equal split</p>
+            <!-- Live split preview -->
+            <div class="mt-2 flex items-center justify-between">
+              <p class="text-xs text-gray-400">Leave blank for equal split</p>
+              <p class="text-xs font-medium"
+                 :class="splitTotal > 0 && Math.abs(splitTotal - parseFloat(form.amount || 0)) > 0.01 ? 'text-red-500' : 'text-emerald-600'"
+                 x-show="splitTotal > 0">
+                Split: <span x-text="parseFloat(splitTotal).toFixed(2)"></span> / <span x-text="parseFloat(form.amount || 0).toFixed(2)"></span>
+              </p>
+            </div>
           </div>
 
           <!-- Notes -->
@@ -300,6 +326,9 @@ function expenseWizard() {
   return {
     step: 1,
     receiptName: '',
+    catSearch: '',
+    splits: {},
+    splitTotal: 0,
     form: {
       bucket_id: '{{ selected_bucket_id }}',
       transaction_date: '{{ today }}',
@@ -328,6 +357,15 @@ function expenseWizard() {
       return buckets[id] || '—';
     },
 
+    updateSplitTotal() {
+      let total = 0;
+      for (const v of Object.values(this.splits)) {
+        const n = parseFloat(v);
+        if (!isNaN(n)) total += n;
+      }
+      this.splitTotal = total;
+    },
+
     handleResult(evt) {
       if (evt.detail.successful) {
         this.step = 5; // hides all steps, result shown in #wizard-result
@@ -335,5 +373,34 @@ function expenseWizard() {
     }
   };
 }
+</script>
+
+<script>
+// Intercept form submission when offline — queue in IndexedDB + register Background Sync
+document.getElementById('expense-form').addEventListener('submit', async function(e) {
+  if (navigator.onLine) return; // let normal submission proceed
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  if (!window.offlineExpenses) {
+    alert('Offline support is loading. Please try again in a moment.');
+    return;
+  }
+  const formData = new FormData(this);
+  await window.offlineExpenses.saveOfflineTransaction(formData);
+  // Register Background Sync if supported
+  if ('serviceWorker' in navigator && 'SyncManager' in window) {
+    const reg = await navigator.serviceWorker.ready;
+    await reg.sync.register('submit-expense').catch(() => {});
+  }
+  // Show toast and reset wizard
+  const result = document.getElementById('wizard-result');
+  result.innerHTML = '<div class="mt-6 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl text-center"><p class="text-sm font-medium text-amber-700 dark:text-amber-400">📶 You\'re offline. Your expense has been saved and will sync automatically when you reconnect.</p></div>';
+  // Move Alpine wizard to step 5 to hide the form
+  const wizardEl = document.querySelector('[x-data="expenseWizard()"]');
+  if (wizardEl && wizardEl._x_dataStack) {
+    const data = Alpine.$data(wizardEl);
+    if (data) data.step = 5;
+  }
+});
 </script>
 {% endblock %}

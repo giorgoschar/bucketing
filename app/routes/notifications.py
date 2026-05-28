@@ -4,7 +4,7 @@ Notification and web push routes.
 import json
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
@@ -25,23 +25,33 @@ router = APIRouter(dependencies=[Depends(require_csrf)])
 @router.get("/notifications", response_class=JSONResponse)
 def list_notifications(
     request: Request,
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     auth=Depends(require_auth),
 ):
     user, hh_id = auth
-    items = (
+    PAGE_SIZE = 50
+    base_q = (
         db.query(Notification)
         .filter(
             Notification.user_id == user.id,
             Notification.household_id == hh_id,
         )
+    )
+    unread = base_q.filter(Notification.is_read.is_(False)).count()
+    items = (
+        base_q
         .order_by(Notification.created_at.desc())
-        .limit(50)
+        .offset(offset)
+        .limit(PAGE_SIZE)
         .all()
     )
-    unread = sum(1 for n in items if not n.is_read)
+    total = base_q.count()
+    has_more = (offset + PAGE_SIZE) < total
     return {
         "unread": unread,
+        "has_more": has_more,
+        "offset": offset,
         "items": [
             {
                 "id":         n.id,

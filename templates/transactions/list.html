@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Search Transactions{% endblock %}
+{% block header_title %}Search{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto space-y-4">
+
+  <!-- Filter bar -->
+  <div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-4">
+    <form method="GET" action="/transactions/search" id="search-form">
+      <div class="flex gap-2 mb-3">
+        <input type="text" name="q" value="{{ q }}"
+               placeholder="Search by notes…"
+               class="flex-1 px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm"
+               autofocus />
+        <button type="submit"
+                class="px-4 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-semibold rounded-xl text-sm transition-colors">
+          Search
+        </button>
+      </div>
+
+      <details class="group">
+        <summary class="text-xs text-gray-400 cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-300">
+          Filters <span class="group-open:hidden">▸</span><span class="hidden group-open:inline">▾</span>
+        </summary>
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-3">
+          <!-- Category -->
+          <select name="category_id"
+                  class="px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm focus:border-primary-500 outline-none">
+            <option value="">All categories</option>
+            {% for cat in categories %}
+            <option value="{{ cat.id }}" {% if category_id == cat.id %}selected{% endif %}>{{ cat.icon }} {{ cat.name }}</option>
+            {% endfor %}
+          </select>
+
+          <!-- Type -->
+          <select name="type"
+                  class="px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm focus:border-primary-500 outline-none">
+            <option value="">All types</option>
+            {% for t in transaction_types %}
+            <option value="{{ t }}" {% if selected_type == t %}selected{% endif %}>{{ t | capitalize }}</option>
+            {% endfor %}
+          </select>
+
+          <!-- Bucket -->
+          <select name="bucket_id"
+                  class="px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm focus:border-primary-500 outline-none">
+            <option value="">All buckets</option>
+            {% for b in buckets %}
+            <option value="{{ b.id }}" {% if selected_bucket_id == b.id %}selected{% endif %}>{{ b.icon }} {{ b.name }}</option>
+            {% endfor %}
+          </select>
+
+          <!-- From date -->
+          <input type="date" name="from_date" value="{{ from_date }}"
+                 class="px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm focus:border-primary-500 outline-none" />
+
+          <!-- To date -->
+          <input type="date" name="to_date" value="{{ to_date }}"
+                 class="px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm focus:border-primary-500 outline-none" />
+
+          <a href="/transactions/search"
+             class="px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 text-center transition-colors">
+            Clear
+          </a>
+        </div>
+      </details>
+    </form>
+  </div>
+
+  <!-- Result count + export -->
+  {% if total is defined %}
+  <div class="flex items-center justify-between px-1">
+    <p class="text-sm text-gray-500">
+      {{ total }} transaction{{ 's' if total != 1 else '' }} found
+    </p>
+    {% set qs = [] %}
+    {% if q %}{% set _ = qs.append('q=' ~ q | urlencode) %}{% endif %}
+    {% if category_id %}{% set _ = qs.append('category_id=' ~ category_id) %}{% endif %}
+    {% if selected_type %}{% set _ = qs.append('type=' ~ selected_type) %}{% endif %}
+    {% if from_date %}{% set _ = qs.append('from_date=' ~ from_date) %}{% endif %}
+    {% if to_date %}{% set _ = qs.append('to_date=' ~ to_date) %}{% endif %}
+    {% if selected_bucket_id %}{% set _ = qs.append('bucket_id=' ~ selected_bucket_id) %}{% endif %}
+    <a href="/transactions/export?{{ qs | join('&') }}"
+       class="flex items-center gap-1.5 text-xs text-primary-500 hover:text-primary-600 font-medium transition-colors">
+      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+      </svg>
+      Export CSV
+    </a>
+  </div>
+  {% endif %}
+
+  <!-- Results -->
+  {% include "transactions/search_results.html" %}
+
+</div>
+{% endblock %}

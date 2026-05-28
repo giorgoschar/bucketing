@@ -7,6 +7,7 @@ const STATIC_ASSETS = [
   '/static/icons/icon-512.png',
   '/static/vendor/htmx.min.js',
   '/static/vendor/alpine.min.js',
+  '/static/offline.js',
 ];
 
 // CDN origins to cache with stale-while-revalidate
@@ -194,4 +195,23 @@ self.addEventListener('notificationclick', event => {
       return clients.openWindow(url);
     })
   );
+});
+
+// ---------------------------------------------------------------------------
+// Background Sync — flush queued offline expenses
+// ---------------------------------------------------------------------------
+
+self.addEventListener('sync', event => {
+  if (event.tag === 'submit-expense') {
+    event.waitUntil(
+      clients.matchAll({ type: 'window' }).then(async wins => {
+        // Ask the active page to flush (it has CSRF token in DOM)
+        for (const win of wins) {
+          win.postMessage({ type: 'FLUSH_OFFLINE_EXPENSES' });
+        }
+        // Give the page 8 seconds to handle it
+        return new Promise(resolve => setTimeout(resolve, 8000));
+      })
+    );
+  }
 });

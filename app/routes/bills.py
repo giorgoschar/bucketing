@@ -3,7 +3,7 @@ Bills routes: recurring bills + occurrences.
 """
 from datetime import date, datetime
 
-from fastapi import APIRouter, Depends, Form, Request, HTTPException
+from fastapi import APIRouter, Depends, Form, Query, Request, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -26,6 +26,7 @@ router = APIRouter(prefix="/bills", dependencies=[Depends(require_csrf)])
 @router.get("", response_class=HTMLResponse)
 def bills_page(
     request: Request,
+    page: int = Query(1, ge=1),
     db: Session = Depends(get_db),
     auth=Depends(require_auth),
 ):
@@ -34,12 +35,13 @@ def bills_page(
 
     overdue = get_overdue_bills(db, hh_id)
     upcoming = get_upcoming_bills(db, hh_id, days=settings.upcoming_bills_days)
-    all_bills = (
-        db.query(RecurringBill)
-        .filter_by(household_id=hh_id)
-        .order_by(RecurringBill.created_at)
-        .all()
-    )
+
+    BILLS_PAGE_SIZE = 20
+    bills_q = db.query(RecurringBill).filter_by(household_id=hh_id).order_by(RecurringBill.created_at)
+    bills_total = bills_q.count()
+    bills_total_pages = max(1, -(-bills_total // BILLS_PAGE_SIZE))
+    page = min(page, bills_total_pages)
+    all_bills = bills_q.offset((page - 1) * BILLS_PAGE_SIZE).limit(BILLS_PAGE_SIZE).all()
 
     ctx.update({
         "request": request,
@@ -48,6 +50,8 @@ def bills_page(
         "upcoming": upcoming,
         "all_bills": all_bills,
         "today": date.today(),
+        "bills_page": page,
+        "bills_total_pages": bills_total_pages,
     })
     return templates.TemplateResponse("bills/list.html", ctx)
 
@@ -375,3 +379,35 @@ def delete_bill(
     db.delete(bill)
     db.commit()
     return RedirectResponse("/bills", status_code=302)
+
+
+# ---------------------------------------------------------------------------
+# Bill payment history
+# ---------------------------------------------------------------------------
+
+@router.get("/{bill_id}/history", response_class=HTMLResponse)
+def bill_history(
+    bill_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    auth=Depends(require_auth),
+):
+    user, hh_id = auth
+    bill = db.get(RecurringBill, bill_id)
+    if not bill or bill.household_id != hh_id:
+        raise HTTPException(status_code=404)
+
+    paid_occurrences = (
+        db.query(BillOccurrence)
+        .filter_by(bill_id=bill_id, status=OccurrenceStatus.paid)
+        .order_by(BillOccurrence.due_date.desc())
+        .all()
+    )
+    return templates.TemplateResponse(
+        "bills/history_partial.html",
+        {
+            "request": request,
+            "bill": bill,
+            "occurrences": paid_occurrences,
+        },
+    )
