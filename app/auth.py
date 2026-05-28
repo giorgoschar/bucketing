@@ -31,6 +31,10 @@ PENDING_MAX_AGE = 60 * 5  # 5 minutes
 security_logger = logging.getLogger("security")
 
 
+class CSRFError(Exception):
+    """Raised on CSRF validation failure; triggers session wipe + redirect to login."""
+
+
 # ---------------------------------------------------------------------------
 # Passwords
 # ---------------------------------------------------------------------------
@@ -276,5 +280,5 @@ async def require_csrf(request: Request) -> None:
             user_id,
             request.client.host if request.client else "unknown",
         )
-        raise HTTPException(status_code=403, detail="CSRF validation failed")
+        raise CSRFError()
 

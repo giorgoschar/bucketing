@@ -4,6 +4,11 @@
 {% block auth_subtitle %}Sign in to your household{% endblock %}
 
 {% block auth_content %}
+{% if request.query_params.get('expired') %}
+<div class="mb-4 px-4 py-3 bg-amber-50 border border-amber-100 rounded-xl text-sm text-amber-700">
+  Your session expired. Please sign in again.
+</div>
+{% endif %}
 {% if error %}
 <div class="mb-4 px-4 py-3 bg-red-50 border border-red-100 rounded-xl text-sm text-red-600">
   {{ error }}

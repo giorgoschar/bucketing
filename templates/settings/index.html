@@ -205,13 +205,14 @@
                   ···
                 </button>
                 <div x-show="showActions" x-cloak @click.away="showActions = false"
-                     class="absolute right-0 mt-1 w-48 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg z-10 overflow-hidden">
+                     class="absolute right-0 mt-1 w-52 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg z-10 overflow-hidden">
                   <form method="POST" action="/settings/transfer-ownership/{{ m.user.id }}"
                         onsubmit="return confirm('Transfer ownership to {{ m.user.display_name }}? You will become a regular member.')">
-                    <button type="submit" class="w-full text-left px-4 py-2.5 text-xs hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium">
+                    <button type="submit" class="w-full text-left px-4 py-2.5 text-xs hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 font-semibold">
                       👑 Transfer ownership
                     </button>
                   </form>
+                  <div class="border-t border-gray-100 dark:border-gray-700 mx-3"></div>
                   <form method="POST" action="/settings/remove-member/{{ m.user.id }}"
                         onsubmit="return confirm('Remove {{ m.user.display_name }} from this household?')">
                     <button type="submit" class="w-full text-left px-4 py-2.5 text-xs hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 font-medium">
@@ -427,113 +428,4 @@
 </div>
 {% endblock %}
 
-{% block scripts %}
-<script>
-function pushSettings() {
-  return {
-    subStatus: 'pending',   // pending | subscribed | none | unsupported
-    statusText: 'Checking…',
-    loading: false,
-    feedback: '',
-    feedbackOk: true,
-    _sub: null,
-
-    async init() {
-      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-        this.subStatus = 'unsupported';
-        this.statusText = 'Push notifications are not supported in this browser.';
-        return;
-      }
-      try {
-        const reg = await navigator.serviceWorker.ready;
-        this._sub = await reg.pushManager.getSubscription();
-        if (this._sub) {
-          this.subStatus = 'subscribed';
-          this.statusText = 'This device will receive push notifications.';
-        } else {
-          this.subStatus = 'none';
-          this.statusText = 'Push notifications are not enabled on this device.';
-        }
-      } catch (e) {
-        this.subStatus = 'none';
-        this.statusText = 'Could not determine subscription status.';
-      }
-    },
-
-    async subscribe() {
-      this.loading = true;
-      this.feedback = '';
-      try {
-        const reg = await navigator.serviceWorker.ready;
-        const keyResp = await fetch('/push/vapid-public-key');
-        if (!keyResp.ok) { this._err('VAPID keys are not configured on the server.'); return; }
-        const { public_key } = await keyResp.json();
-
-        const permission = await Notification.requestPermission();
-        if (permission !== 'granted') { this._err('Permission denied. Please allow notifications in browser settings.'); return; }
-
-        const sub = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: this._urlB64(public_key),
-        });
-        await fetch('/push/subscribe', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(sub) });
-        this._sub = sub;
-        this.subStatus = 'subscribed';
-        this.statusText = 'This device will receive push notifications.';
-        this._ok('Subscribed! You will now receive push notifications.');
-      } catch (e) {
-        this._err('Failed to subscribe: ' + e.message);
-      } finally {
-        this.loading = false;
-      }
-    },
-
-    async unsubscribe() {
-      this.loading = true;
-      this.feedback = '';
-      try {
-        if (this._sub) {
-          await fetch('/push/subscribe', { method: 'DELETE', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ endpoint: this._sub.endpoint }) });
-          await this._sub.unsubscribe();
-          this._sub = null;
-        }
-        this.subStatus = 'none';
-        this.statusText = 'Push notifications are not enabled on this device.';
-        this._ok('Unsubscribed from push notifications.');
-      } catch (e) {
-        this._err('Failed to unsubscribe: ' + e.message);
-      } finally {
-        this.loading = false;
-      }
-    },
-
-    async sendTest() {
-      this.loading = true;
-      this.feedback = '';
-      try {
-        const resp = await fetch('/push/test', { method: 'POST' });
-        const data = await resp.json();
-        if (data.sent) {
-          this._ok('Test notification sent! Check your device.');
-        } else {
-          this._err(data.error || 'Push delivery failed.');
-        }
-      } catch (e) {
-        this._err('Request failed: ' + e.message);
-      } finally {
-        this.loading = false;
-      }
-    },
-
-    _ok(msg) { this.feedback = msg; this.feedbackOk = true; },
-    _err(msg) { this.feedback = msg; this.feedbackOk = false; },
-
-    _urlB64(b64) {
-      const pad = '='.repeat((4 - b64.length % 4) % 4);
-      const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
-      return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
-    },
-  };
-}
-</script>
-{% endblock %}
+{% block scripts %}{% endblock %}

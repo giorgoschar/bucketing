@@ -10,6 +10,7 @@ from slowapi.errors import RateLimitExceeded
 
 from app.config import settings
 from app.database import engine, Base
+from app.auth import CSRFError, COOKIE_NAME, CSRF_COOKIE_NAME, PENDING_COOKIE_NAME
 
 # Import models so Alembic / create_all picks them up
 import app.models  # noqa: F401
@@ -52,6 +53,17 @@ app = FastAPI(
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+@app.exception_handler(CSRFError)
+async def csrf_error_handler(request: Request, exc: CSRFError):
+    """On CSRF failure: wipe all session cookies and redirect to login."""
+    response = RedirectResponse(url="/login?expired=1", status_code=302)
+    response.delete_cookie(COOKIE_NAME, path="/")
+    response.delete_cookie(CSRF_COOKIE_NAME, path="/")
+    response.delete_cookie(PENDING_COOKIE_NAME, path="/")
+    return response
+
 
 # ---------------------------------------------------------------------------
 # Security headers middleware

@@ -44,6 +44,8 @@
   <script src="/static/vendor/htmx.min.js" defer></script>
   <!-- Alpine.js -->
   <script defer src="/static/vendor/alpine.min.js"></script>
+  <!-- Offline helpers — loaded in <head> so hx-boost body swaps don't re-execute it -->
+  <script src="/static/offline.js"></script>
 
   <!-- CSRF token for double-submit validation -->
   <meta name="csrf-token" content="{{ request.cookies.get('csrf_token', '') }}">
@@ -402,8 +404,6 @@
 
   {% block scripts %}{% endblock %}
 
-  <!-- Offline expense queuing helpers -->
-  <script src="/static/offline.js"></script>
   <script>
     // Alpine: shared notification center component
     function notifCenter() {
@@ -427,9 +427,9 @@
             this.hasMore = d.has_more;
             this.offset = offset;
             if (offset === 0 || silent) {
-              this.items = d.items;
+              this.items = d.items || [];
             } else {
-              this.items = [...this.items, ...d.items];
+              this.items = [...this.items, ...(d.items || [])];
             }
           } catch (_) {}
         },
@@ -512,6 +512,115 @@
         Alpine.initTree(evt.detail.target);
       }
     });
+  </script>
+
+  <!-- Push-settings Alpine component — defined globally so hx-boost navigations
+       don't create a timing race between script injection and Alpine.initTree. -->
+  <script>
+  function pushSettings() {
+    return {
+      subStatus: 'pending',
+      statusText: 'Checking\u2026',
+      loading: false,
+      feedback: '',
+      feedbackOk: true,
+      _sub: null,
+
+      async init() {
+        if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+          this.subStatus = 'unsupported';
+          this.statusText = 'Push notifications are not supported in this browser.';
+          return;
+        }
+        try {
+          const reg = await navigator.serviceWorker.ready;
+          this._sub = await reg.pushManager.getSubscription();
+          if (this._sub) {
+            this.subStatus = 'subscribed';
+            this.statusText = 'This device will receive push notifications.';
+          } else {
+            this.subStatus = 'none';
+            this.statusText = 'Push notifications are not enabled on this device.';
+          }
+        } catch (e) {
+          this.subStatus = 'none';
+          this.statusText = 'Could not determine subscription status.';
+        }
+      },
+
+      async subscribe() {
+        this.loading = true;
+        this.feedback = '';
+        try {
+          const reg = await navigator.serviceWorker.ready;
+          const keyResp = await fetch('/push/vapid-public-key');
+          if (!keyResp.ok) { this._err('VAPID keys are not configured on the server.'); return; }
+          const { public_key } = await keyResp.json();
+          const permission = await Notification.requestPermission();
+          if (permission !== 'granted') { this._err('Permission denied. Please allow notifications in browser settings.'); return; }
+          const sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: this._urlB64(public_key),
+          });
+          await fetch('/push/subscribe', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(sub) });
+          this._sub = sub;
+          this.subStatus = 'subscribed';
+          this.statusText = 'This device will receive push notifications.';
+          this._ok('Subscribed! You will now receive push notifications.');
+        } catch (e) {
+          this._err('Failed to subscribe: ' + e.message);
+        } finally {
+          this.loading = false;
+        }
+      },
+
+      async unsubscribe() {
+        this.loading = true;
+        this.feedback = '';
+        try {
+          if (this._sub) {
+            await fetch('/push/subscribe', { method: 'DELETE', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ endpoint: this._sub.endpoint }) });
+            await this._sub.unsubscribe();
+            this._sub = null;
+          }
+          this.subStatus = 'none';
+          this.statusText = 'Push notifications are not enabled on this device.';
+          this._ok('Unsubscribed from push notifications.');
+        } catch (e) {
+          this._err('Failed to unsubscribe: ' + e.message);
+        } finally {
+          this.loading = false;
+        }
+      },
+
+      async sendTest() {
+        this.loading = true;
+        this.feedback = '';
+        try {
+          const resp = await fetch('/push/test', { method: 'POST' });
+          const data = await resp.json();
+          if (data.sent) {
+            this._ok('Test notification sent! Check your device.');
+          } else {
+            this._err(data.error || 'Push delivery failed.');
+          }
+        } catch (e) {
+          this._err('Request failed: ' + e.message);
+        } finally {
+          this.loading = false;
+        }
+      },
+
+      _ok(msg) { this.feedback = msg; this.feedbackOk = true; },
+      _err(msg) { this.feedback = msg; this.feedbackOk = false; },
+
+      _urlB64(b64) {
+        const pad = '='.repeat((4 - b64.length % 4) % 4);
+        const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
+        return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+      },
+    };
+  }
   </script>
 </body>
 </html>

@@ -1,10 +1,78 @@
 <!-- HTMX partial — included in list.html and returned for HTMX refreshes -->
 {% if transactions %}
-<div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden divide-y divide-gray-50 dark:divide-gray-800">
-  {% for txn in transactions %}
-  {% set txn = txn %}
-  {% include "partials/transaction_row.html" %}
-  {% endfor %}
+<div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/60">
+        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide w-28">Date</th>
+        <th class="hidden sm:table-cell text-left px-3 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide w-10">Cat</th>
+        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Description</th>
+        <th class="hidden md:table-cell text-left px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Bucket</th>
+        <th class="text-right px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide w-28">Amount</th>
+        <th class="w-16 px-4 py-3"></th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-50 dark:divide-gray-800">
+      {% for txn in transactions %}
+      <tr class="group hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+        <td class="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">
+          {{ txn.transaction_date.strftime('%d %b %Y') }}
+        </td>
+        <td class="hidden sm:table-cell px-3 py-3">
+          <div class="w-8 h-8 rounded-lg flex items-center justify-center text-base flex-shrink-0"
+               style="background-color: {{ txn.category.color ~ '22' if txn.category else '#6366f122' }}">
+            {{ txn.category.icon if txn.category else '📦' }}
+          </div>
+        </td>
+        <td class="px-4 py-3 min-w-0">
+          <p class="font-medium text-gray-900 dark:text-gray-100 truncate max-w-xs">
+            {{ txn.notes or (txn.category.name if txn.category else 'Expense') }}
+          </p>
+          <div class="flex items-center gap-1.5 mt-0.5 flex-wrap">
+            {% if txn.paid_by_user %}
+            <span class="text-xs" style="color: {{ txn.paid_by_user.avatar_color }}">{{ txn.paid_by_user.display_name }}</span>
+            {% endif %}
+            {% if txn.splits %}
+            <span class="text-xs text-gray-400">· Shared</span>
+            {% endif %}
+            {% if txn.type.value == 'income' %}
+            <span class="text-xs bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded-md font-medium">Income</span>
+            {% elif txn.type.value == 'transfer' %}
+            <span class="text-xs bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded-md font-medium">Transfer</span>
+            {% endif %}
+          </div>
+        </td>
+        <td class="hidden md:table-cell px-4 py-3 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+          {% if txn.bucket %}
+          {{ txn.bucket.icon }} {{ txn.bucket.name }}
+          {% else %}
+          <span class="text-gray-300 dark:text-gray-600">—</span>
+          {% endif %}
+        </td>
+        <td class="px-4 py-3 text-right whitespace-nowrap">
+          <span class="font-semibold {% if txn.type.value == 'income' %}text-emerald-600 dark:text-emerald-400{% elif txn.type.value == 'transfer' %}text-blue-600 dark:text-blue-400{% else %}text-gray-900 dark:text-gray-100{% endif %}">
+            {% if txn.type.value == 'income' %}+{% elif txn.type.value == 'expense' %}-{% endif %}{{ txn.amount | currency(txn.currency) }}
+          </span>
+        </td>
+        <td class="px-3 py-3">
+          <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <a href="/transactions/{{ txn.id }}/edit"
+               class="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="Edit">
+              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+            </a>
+            <button hx-post="/transactions/{{ txn.id }}/delete"
+                    hx-target="closest tr"
+                    hx-swap="outerHTML"
+                    hx-confirm="Delete this transaction?"
+                    class="p-1.5 text-gray-400 hover:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors" title="Delete">
+              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+            </button>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
 </div>
 
 {% if total_pages > 1 %}

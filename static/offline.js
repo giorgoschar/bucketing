@@ -5,9 +5,9 @@
  * Background Sync (tag: "submit-expense") once connectivity returns.
  */
 
-const DB_NAME = 'expenses-offline';
-const DB_VERSION = 1;
-const STORE = 'pending_transactions';
+var DB_NAME = 'expenses-offline';
+var DB_VERSION = 1;
+var STORE = 'pending_transactions';
 
 function _openDB() {
   return new Promise((resolve, reject) => {

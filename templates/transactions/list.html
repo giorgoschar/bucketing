@@ -3,7 +3,14 @@
 {% block header_title %}Search{% endblock %}
 
 {% block content %}
-<div class="max-w-2xl mx-auto space-y-4">
+<div class="max-w-4xl mx-auto space-y-4">
+
+  <!-- Back -->
+  <a href="javascript:history.back()"
+     class="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors">
+    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
+    Back
+  </a>
 
   <!-- Filter bar -->
   <div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-4">
@@ -69,7 +76,7 @@
   </div>
 
   <!-- Result count + export -->
-  {% if total is defined %}
+  {% if total is not none %}
   <div class="flex items-center justify-between px-1">
     <p class="text-sm text-gray-500">
       {{ total }} transaction{{ 's' if total != 1 else '' }} found
