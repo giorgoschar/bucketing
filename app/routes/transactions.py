@@ -550,40 +550,48 @@ def search_transactions(
     user, hh_id = auth
     ctx = _get_context(db, user, hh_id)
 
-    query = db.query(Transaction).filter(Transaction.household_id == hh_id)
+    has_filter = any([q.strip(), category_id, type, from_date, to_date, bucket_id])
 
-    if q.strip():
-        query = query.filter(Transaction.notes.ilike(f"%{q.strip()}%"))
-    if category_id:
-        query = query.filter(Transaction.category_id == category_id)
-    if type:
-        try:
-            query = query.filter(Transaction.type == TransactionType(type))
-        except ValueError:
-            pass
-    if from_date:
-        try:
-            query = query.filter(Transaction.transaction_date >= date.fromisoformat(from_date))
-        except ValueError:
-            pass
-    if to_date:
-        try:
-            query = query.filter(Transaction.transaction_date <= date.fromisoformat(to_date))
-        except ValueError:
-            pass
-    if bucket_id:
-        query = query.filter(Transaction.bucket_id == bucket_id)
+    if has_filter:
+        query = db.query(Transaction).filter(Transaction.household_id == hh_id)
 
-    total = query.count()
-    total_pages = max(1, -(-total // SEARCH_PAGE_SIZE))
-    page = min(page, total_pages)
-    transactions = (
-        query
-        .order_by(Transaction.transaction_date.desc(), Transaction.created_at.desc())
-        .offset((page - 1) * SEARCH_PAGE_SIZE)
-        .limit(SEARCH_PAGE_SIZE)
-        .all()
-    )
+        if q.strip():
+            query = query.filter(Transaction.notes.ilike(f"%{q.strip()}%"))
+        if category_id:
+            query = query.filter(Transaction.category_id == category_id)
+        if type:
+            try:
+                query = query.filter(Transaction.type == TransactionType(type))
+            except ValueError:
+                pass
+        if from_date:
+            try:
+                query = query.filter(Transaction.transaction_date >= date.fromisoformat(from_date))
+            except ValueError:
+                pass
+        if to_date:
+            try:
+                query = query.filter(Transaction.transaction_date <= date.fromisoformat(to_date))
+            except ValueError:
+                pass
+        if bucket_id:
+            query = query.filter(Transaction.bucket_id == bucket_id)
+
+        total = query.count()
+        total_pages = max(1, -(-total // SEARCH_PAGE_SIZE))
+        page = min(page, total_pages)
+        transactions = (
+            query
+            .order_by(Transaction.transaction_date.desc(), Transaction.created_at.desc())
+            .offset((page - 1) * SEARCH_PAGE_SIZE)
+            .limit(SEARCH_PAGE_SIZE)
+            .all()
+        )
+    else:
+        transactions = []
+        total = None
+        total_pages = 1
+        page = 1
 
     ctx.update({
         "request": request,

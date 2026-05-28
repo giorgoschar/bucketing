@@ -3,7 +3,6 @@ Balance and summary calculations for dashboards and bucket views.
 """
 from datetime import date, timedelta
 from collections import defaultdict
-from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy.orm import Session, joinedload
@@ -68,16 +67,16 @@ def get_month_summary(db: Session, household_id: str, year: int, month: int, buc
         q = q.filter(Transaction.bucket_id.in_(bucket_ids))
     txns = q.options(joinedload(Transaction.splits)).all()
 
-    total_spent = sum(t.amount for t in txns)
+    total_spent = sum(float(t.amount) for t in txns)
 
     # Amount paid by each user — use splits when present, else paid_by
-    paid_by: dict[str, float] = defaultdict(Decimal)
+    paid_by: dict[str, float] = defaultdict(float)
     for t in txns:
         if t.splits:
             for s in t.splits:
-                paid_by[s.user_id] += s.amount
+                paid_by[s.user_id] += float(s.amount)
         elif t.paid_by:
-            paid_by[t.paid_by] += t.amount
+            paid_by[t.paid_by] += float(t.amount)
 
     # Load member info
     members = (
@@ -135,16 +134,16 @@ def get_bucket_month_summary(db: Session, bucket_id: str, year: int, month: int)
         .all()
     )
 
-    total_spent = sum(t.amount for t in txns)
+    total_spent = sum(float(t.amount) for t in txns)
 
     # Amount paid by each user — use splits when present, else paid_by
-    paid_by: dict[str, float] = defaultdict(Decimal)
+    paid_by: dict[str, float] = defaultdict(float)
     for t in txns:
         if t.splits:
             for s in t.splits:
-                paid_by[s.user_id] += s.amount
+                paid_by[s.user_id] += float(s.amount)
         elif t.paid_by:
-            paid_by[t.paid_by] += t.amount
+            paid_by[t.paid_by] += float(t.amount)
 
     members = (
         db.query(User)
@@ -187,15 +186,15 @@ def get_all_time_summary(db: Session, household_id: str, bucket_type: str = "", 
     if bucket_ids:
         q = q.filter(Transaction.bucket_id.in_(bucket_ids))
     txns = q.options(joinedload(Transaction.splits)).all()
-    total_spent = sum(t.amount for t in txns)
+    total_spent = sum(float(t.amount) for t in txns)
 
-    paid_by: dict[str, float] = defaultdict(Decimal)
+    paid_by: dict[str, float] = defaultdict(float)
     for t in txns:
         if t.splits:
             for s in t.splits:
-                paid_by[s.user_id] += s.amount
+                paid_by[s.user_id] += float(s.amount)
         elif t.paid_by:
-            paid_by[t.paid_by] += t.amount
+            paid_by[t.paid_by] += float(t.amount)
 
     members = (
         db.query(User)
@@ -352,9 +351,9 @@ def get_category_breakdown(
         q = q.filter(Transaction.bucket_id.in_(bucket_ids))
     txns = q.all()
 
-    totals: dict[str | None, float] = defaultdict(Decimal)
+    totals: dict[str | None, float] = defaultdict(float)
     for t in txns:
-        totals[t.category_id] += t.amount
+        totals[t.category_id] += float(t.amount)
 
     grand = sum(totals.values()) or 1
 
@@ -534,23 +533,23 @@ def get_bucket_settlement(db: Session, bucket_id: str) -> list[dict]:
 
     # actually_paid[uid] = total they fronted
     # owes[uid] = total they should cover
-    actually_paid: dict[str, float] = defaultdict(Decimal)
-    owes: dict[str, float] = defaultdict(Decimal)
+    actually_paid: dict[str, float] = defaultdict(float)
+    owes: dict[str, float] = defaultdict(float)
 
     for t in txns:
         if t.paid_by:
-            actually_paid[t.paid_by] += t.amount
+            actually_paid[t.paid_by] += float(t.amount)
         if t.splits:
             for s in t.splits:
-                owes[s.user_id] += s.amount
+                owes[s.user_id] += float(s.amount)
         else:
             # No splits → split equally among all members who appear in this bucket
-            share = t.amount / len(user_ids)
+            share = float(t.amount) / len(user_ids)
             for uid in user_ids:
                 owes[uid] += share
 
     # net[uid] > 0 → is owed money; net[uid] < 0 → owes money
-    net: dict[str, float] = defaultdict(Decimal)
+    net: dict[str, float] = defaultdict(float)
     for uid in user_ids:
         net[uid] = round(actually_paid[uid] - owes[uid], 2)
 
@@ -660,15 +659,15 @@ def get_insights_summary(
     """Unified summary: total expenses + paid-by breakdown for any date range + filters."""
     q = _build_expense_query(db, household_id, start, end, bucket_type, bucket_ids, category_ids, paid_by)
     txns = q.options(joinedload(Transaction.splits)).all()
-    total_spent = sum(t.amount for t in txns)
+    total_spent = sum(float(t.amount) for t in txns)
 
-    paid_by_acc: dict[str, float] = defaultdict(Decimal)
+    paid_by_acc: dict[str, float] = defaultdict(float)
     for t in txns:
         if t.splits:
             for s in t.splits:
-                paid_by_acc[s.user_id] += s.amount
+                paid_by_acc[s.user_id] += float(s.amount)
         elif t.paid_by:
-            paid_by_acc[t.paid_by] += t.amount
+            paid_by_acc[t.paid_by] += float(t.amount)
 
     members = (
         db.query(User)
@@ -744,9 +743,9 @@ def get_insights_category_breakdown(
     q = _build_expense_query(db, household_id, start, end, bucket_type, bucket_ids, category_ids, paid_by)
     txns = q.all()
 
-    totals: dict[str | None, float] = defaultdict(Decimal)
+    totals: dict[str | None, float] = defaultdict(float)
     for t in txns:
-        totals[t.category_id] += t.amount
+        totals[t.category_id] += float(t.amount)
 
     grand = sum(totals.values()) or 1
     cat_ids = [cid for cid in totals if cid is not None]
@@ -794,7 +793,7 @@ def get_insights_bucket_breakdown(
             category_ids=category_ids,
             paid_by=paid_by,
         )
-        total = sum(t.amount for t in q.all())
+        total = sum(float(t.amount) for t in q.all())
         result.append({
             "bucket": b,
             "total":  round(total, 2),
@@ -846,9 +845,9 @@ def get_insights_category_trend(
         paid_by=paid_by,
     )
     all_txns = all_q.all()
-    cat_totals: dict[str | None, float] = defaultdict(Decimal)
+    cat_totals: dict[str | None, float] = defaultdict(float)
     for t in all_txns:
-        cat_totals[t.category_id] += t.amount
+        cat_totals[t.category_id] += float(t.amount)
 
     # Pick top_n categories
     top_cats = sorted(cat_totals.items(), key=lambda x: -x[1])[:top_n]
@@ -870,10 +869,10 @@ def get_insights_category_trend(
             bucket_ids=bucket_ids,
             paid_by=paid_by,
         ).all()
-        month_by_cat: dict[str | None, float] = defaultdict(Decimal)
+        month_by_cat: dict[str | None, float] = defaultdict(float)
         for t in month_txns:
             if t.category_id in top_cat_ids:
-                month_by_cat[t.category_id] += t.amount
+                month_by_cat[t.category_id] += float(t.amount)
         for cid in top_cat_ids:
             monthly_data[cid].append(round(month_by_cat[cid], 2))
 
