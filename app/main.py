@@ -57,7 +57,17 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 @app.exception_handler(CSRFError)
 async def csrf_error_handler(request: Request, exc: CSRFError):
-    """On CSRF failure: wipe all session cookies and redirect to login."""
+    """On CSRF failure: only wipe session for real browser navigations.
+    Return 403 JSON for background fetch/HTMX requests to avoid unexpected logouts."""
+    accept = request.headers.get("accept", "")
+    is_background = (
+        bool(request.headers.get("HX-Request"))
+        or "application/json" in accept
+        or "text/html" not in accept
+    )
+    if is_background:
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"detail": "CSRF validation failed"}, status_code=403)
     response = RedirectResponse(url="/login?expired=1", status_code=302)
     response.delete_cookie(COOKIE_NAME, path="/")
     response.delete_cookie(CSRF_COOKIE_NAME, path="/")

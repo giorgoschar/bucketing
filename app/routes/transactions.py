@@ -609,8 +609,6 @@ def search_transactions(
         "transaction_types": [t.value for t in TransactionType],
     })
 
-    if request.headers.get("HX-Request"):
-        return templates.TemplateResponse("transactions/search_results.html", ctx)
     return templates.TemplateResponse("transactions/list.html", ctx)
 
 

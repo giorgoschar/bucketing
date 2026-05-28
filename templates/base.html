@@ -45,7 +45,7 @@
   <!-- Alpine.js -->
   <script defer src="/static/vendor/alpine.min.js"></script>
   <!-- Offline helpers — loaded in <head> so hx-boost body swaps don't re-execute it -->
-  <script src="/static/offline.js"></script>
+  <script src="/static/offline.js" defer></script>
 
   <!-- CSRF token for double-submit validation -->
   <meta name="csrf-token" content="{{ request.cookies.get('csrf_token', '') }}">
@@ -70,6 +70,12 @@
     }
     document.addEventListener('DOMContentLoaded', _injectCsrfFields);
     document.addEventListener('htmx:afterSwap', _injectCsrfFields);
+
+    // Helper: read CSRF token from the non-httponly cookie for direct fetch() calls.
+    function _csrfToken() {
+      var m = document.cookie.split('; ').find(function(r) { return r.startsWith('csrf_token='); });
+      return m ? decodeURIComponent(m.split('=').slice(1).join('=')) : '';
+    }
   </script>
 
   <style>
@@ -438,7 +444,7 @@
         },
         async markAllRead() {
           try {
-            await fetch('/notifications/read-all', { method: 'POST' });
+            await fetch('/notifications/read-all', { method: 'POST', headers: { 'X-CSRF-Token': _csrfToken() } });
             this.unread = 0;
             this.items  = this.items.map(n => ({ ...n, is_read: true }));
           } catch (_) {}
@@ -470,7 +476,7 @@
             });
             await fetch('/push/subscribe', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': _csrfToken() },
               body: JSON.stringify(sub),
             });
           } catch (_) {}
@@ -562,7 +568,7 @@
             userVisibleOnly: true,
             applicationServerKey: this._urlB64(public_key),
           });
-          await fetch('/push/subscribe', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(sub) });
+          await fetch('/push/subscribe', { method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRF-Token': _csrfToken()}, body: JSON.stringify(sub) });
           this._sub = sub;
           this.subStatus = 'subscribed';
           this.statusText = 'This device will receive push notifications.';
@@ -579,7 +585,7 @@
         this.feedback = '';
         try {
           if (this._sub) {
-            await fetch('/push/subscribe', { method: 'DELETE', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ endpoint: this._sub.endpoint }) });
+            await fetch('/push/subscribe', { method: 'DELETE', headers: {'Content-Type': 'application/json', 'X-CSRF-Token': _csrfToken()}, body: JSON.stringify({ endpoint: this._sub.endpoint }) });
             await this._sub.unsubscribe();
             this._sub = null;
           }
@@ -597,7 +603,7 @@
         this.loading = true;
         this.feedback = '';
         try {
-          const resp = await fetch('/push/test', { method: 'POST' });
+          const resp = await fetch('/push/test', { method: 'POST', headers: { 'X-CSRF-Token': _csrfToken() } });
           const data = await resp.json();
           if (data.sent) {
             this._ok('Test notification sent! Check your device.');
