@@ -425,12 +425,22 @@
 function openPayModal(occId, billId, isVariable, billName, splits, occAmount) {
   const modal = document.getElementById('pay-modal');
   const form  = document.getElementById('pay-bill-form');
-  form.setAttribute('action',          `/bills/${billId}/occurrences/${occId}/pay`);
-  form.setAttribute('hx-post',         `/bills/${billId}/occurrences/${occId}/pay`);
-  form.setAttribute('hx-target',       '#occ-' + occId);
-  form.setAttribute('hx-swap',         'outerHTML');
-  form.setAttribute('hx-on::after-request', "if(event.detail.successful) document.getElementById('pay-modal').classList.add('hidden')");
+  form.setAttribute('action',    `/bills/${billId}/occurrences/${occId}/pay`);
+  form.setAttribute('hx-post',   `/bills/${billId}/occurrences/${occId}/pay`);
+  form.setAttribute('hx-target', '#occ-' + occId);
+  form.setAttribute('hx-swap',   'outerHTML');
   htmx.process(form);
+
+  // Close modal after a successful HTMX pay request
+  if (form._payCloseHandler) {
+    form.removeEventListener('htmx:afterRequest', form._payCloseHandler);
+  }
+  form._payCloseHandler = function(evt) {
+    if (evt.detail.successful) {
+      document.getElementById('pay-modal').classList.add('hidden');
+    }
+  };
+  form.addEventListener('htmx:afterRequest', form._payCloseHandler);
   const alpineData = Alpine.$data(modal);
   alpineData.occ_id = occId;
   alpineData.bill_id = billId;
