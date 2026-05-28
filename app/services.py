@@ -3,6 +3,7 @@ Balance and summary calculations for dashboards and bucket views.
 """
 from datetime import date, timedelta
 from collections import defaultdict
+from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy.orm import Session, joinedload
@@ -70,7 +71,7 @@ def get_month_summary(db: Session, household_id: str, year: int, month: int, buc
     total_spent = sum(t.amount for t in txns)
 
     # Amount paid by each user — use splits when present, else paid_by
-    paid_by: dict[str, float] = defaultdict(float)
+    paid_by: dict[str, float] = defaultdict(Decimal)
     for t in txns:
         if t.splits:
             for s in t.splits:
@@ -137,7 +138,7 @@ def get_bucket_month_summary(db: Session, bucket_id: str, year: int, month: int)
     total_spent = sum(t.amount for t in txns)
 
     # Amount paid by each user — use splits when present, else paid_by
-    paid_by: dict[str, float] = defaultdict(float)
+    paid_by: dict[str, float] = defaultdict(Decimal)
     for t in txns:
         if t.splits:
             for s in t.splits:
@@ -188,7 +189,7 @@ def get_all_time_summary(db: Session, household_id: str, bucket_type: str = "", 
     txns = q.options(joinedload(Transaction.splits)).all()
     total_spent = sum(t.amount for t in txns)
 
-    paid_by: dict[str, float] = defaultdict(float)
+    paid_by: dict[str, float] = defaultdict(Decimal)
     for t in txns:
         if t.splits:
             for s in t.splits:
@@ -351,7 +352,7 @@ def get_category_breakdown(
         q = q.filter(Transaction.bucket_id.in_(bucket_ids))
     txns = q.all()
 
-    totals: dict[str | None, float] = defaultdict(float)
+    totals: dict[str | None, float] = defaultdict(Decimal)
     for t in txns:
         totals[t.category_id] += t.amount
 
@@ -533,8 +534,8 @@ def get_bucket_settlement(db: Session, bucket_id: str) -> list[dict]:
 
     # actually_paid[uid] = total they fronted
     # owes[uid] = total they should cover
-    actually_paid: dict[str, float] = defaultdict(float)
-    owes: dict[str, float] = defaultdict(float)
+    actually_paid: dict[str, float] = defaultdict(Decimal)
+    owes: dict[str, float] = defaultdict(Decimal)
 
     for t in txns:
         if t.paid_by:
@@ -549,7 +550,7 @@ def get_bucket_settlement(db: Session, bucket_id: str) -> list[dict]:
                 owes[uid] += share
 
     # net[uid] > 0 → is owed money; net[uid] < 0 → owes money
-    net: dict[str, float] = defaultdict(float)
+    net: dict[str, float] = defaultdict(Decimal)
     for uid in user_ids:
         net[uid] = round(actually_paid[uid] - owes[uid], 2)
 
@@ -661,7 +662,7 @@ def get_insights_summary(
     txns = q.options(joinedload(Transaction.splits)).all()
     total_spent = sum(t.amount for t in txns)
 
-    paid_by_acc: dict[str, float] = defaultdict(float)
+    paid_by_acc: dict[str, float] = defaultdict(Decimal)
     for t in txns:
         if t.splits:
             for s in t.splits:
@@ -743,7 +744,7 @@ def get_insights_category_breakdown(
     q = _build_expense_query(db, household_id, start, end, bucket_type, bucket_ids, category_ids, paid_by)
     txns = q.all()
 
-    totals: dict[str | None, float] = defaultdict(float)
+    totals: dict[str | None, float] = defaultdict(Decimal)
     for t in txns:
         totals[t.category_id] += t.amount
 
@@ -845,7 +846,7 @@ def get_insights_category_trend(
         paid_by=paid_by,
     )
     all_txns = all_q.all()
-    cat_totals: dict[str | None, float] = defaultdict(float)
+    cat_totals: dict[str | None, float] = defaultdict(Decimal)
     for t in all_txns:
         cat_totals[t.category_id] += t.amount
 
@@ -869,7 +870,7 @@ def get_insights_category_trend(
             bucket_ids=bucket_ids,
             paid_by=paid_by,
         ).all()
-        month_by_cat: dict[str | None, float] = defaultdict(float)
+        month_by_cat: dict[str | None, float] = defaultdict(Decimal)
         for t in month_txns:
             if t.category_id in top_cat_ids:
                 month_by_cat[t.category_id] += t.amount
