@@ -3,7 +3,7 @@ Background scheduler for auto-pay bills and bill-due notifications.
 Runs a daily job at midnight+5min.
 """
 import logging
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -31,13 +31,17 @@ def auto_mark_paid_job() -> None:
         TransactionType,
     )
     from app.notification_service import create_notification, send_push_for_notification
+    from sqlalchemy.orm import joinedload
 
     db = SessionLocal()
     try:
-        today = date.today()
+        today = datetime.now(timezone.utc).date()
         occs = (
             db.query(BillOccurrence)
             .join(RecurringBill, RecurringBill.id == BillOccurrence.bill_id)
+            .options(
+                joinedload(BillOccurrence.bill).joinedload(RecurringBill.splits)
+            )
             .filter(
                 BillOccurrence.status == OccurrenceStatus.unpaid,
                 BillOccurrence.due_date <= today,
@@ -49,6 +53,18 @@ def auto_mark_paid_job() -> None:
             )
             .all()
         )
+
+        # Batch-fetch household members for all affected households upfront
+        auto_pay_hh_ids = {occ.bill.household_id for occ in occs}
+        auto_pay_members: dict = {}
+        if auto_pay_hh_ids:
+            all_m = (
+                db.query(HouseholdMember)
+                .filter(HouseholdMember.household_id.in_(auto_pay_hh_ids))
+                .all()
+            )
+            for m in all_m:
+                auto_pay_members.setdefault(m.household_id, []).append(m)
 
         count = 0
         for occ in occs:
@@ -84,12 +100,7 @@ def auto_mark_paid_job() -> None:
             count += 1
 
             # Notify all household members about the auto-payment
-            members = (
-                db.query(HouseholdMember)
-                .filter(HouseholdMember.household_id == bill.household_id)
-                .all()
-            )
-            for m in members:
+            for m in auto_pay_members.get(bill.household_id, []):
                 notif = create_notification(
                     db,
                     household_id=bill.household_id,
@@ -112,6 +123,7 @@ def auto_mark_paid_job() -> None:
         due_soon_occs = (
             db.query(BillOccurrence)
             .join(RecurringBill, RecurringBill.id == BillOccurrence.bill_id)
+            .options(joinedload(BillOccurrence.bill))
             .filter(
                 BillOccurrence.status == OccurrenceStatus.unpaid,
                 BillOccurrence.due_date == due_soon_date,
@@ -119,14 +131,19 @@ def auto_mark_paid_job() -> None:
             )
             .all()
         )
-        for occ in due_soon_occs:
-            bill = occ.bill
-            members = (
+        due_soon_hh_ids = {occ.bill.household_id for occ in due_soon_occs}
+        due_soon_members: dict = {}
+        if due_soon_hh_ids:
+            all_m = (
                 db.query(HouseholdMember)
-                .filter(HouseholdMember.household_id == bill.household_id)
+                .filter(HouseholdMember.household_id.in_(due_soon_hh_ids))
                 .all()
             )
-            for m in members:
+            for m in all_m:
+                due_soon_members.setdefault(m.household_id, []).append(m)
+        for occ in due_soon_occs:
+            bill = occ.bill
+            for m in due_soon_members.get(bill.household_id, []):
                 notif = create_notification(
                     db,
                     household_id=bill.household_id,
@@ -144,6 +161,7 @@ def auto_mark_paid_job() -> None:
         overdue_occs = (
             db.query(BillOccurrence)
             .join(RecurringBill, RecurringBill.id == BillOccurrence.bill_id)
+            .options(joinedload(BillOccurrence.bill))
             .filter(
                 BillOccurrence.status == OccurrenceStatus.unpaid,
                 BillOccurrence.due_date < today,
@@ -152,14 +170,19 @@ def auto_mark_paid_job() -> None:
             )
             .all()
         )
-        for occ in overdue_occs:
-            bill = occ.bill
-            members = (
+        overdue_hh_ids = {occ.bill.household_id for occ in overdue_occs}
+        overdue_members: dict = {}
+        if overdue_hh_ids:
+            all_m = (
                 db.query(HouseholdMember)
-                .filter(HouseholdMember.household_id == bill.household_id)
+                .filter(HouseholdMember.household_id.in_(overdue_hh_ids))
                 .all()
             )
-            for m in members:
+            for m in all_m:
+                overdue_members.setdefault(m.household_id, []).append(m)
+        for occ in overdue_occs:
+            bill = occ.bill
+            for m in overdue_members.get(bill.household_id, []):
                 notif = create_notification(
                     db,
                     household_id=bill.household_id,
@@ -184,13 +207,18 @@ def auto_mark_paid_job() -> None:
                 )
                 .all()
             )
-            for bill in expiring_bills:
-                members = (
+            expiring_hh_ids = {b.household_id for b in expiring_bills}
+            expiring_members: dict = {}
+            if expiring_hh_ids:
+                all_m = (
                     db.query(HouseholdMember)
-                    .filter(HouseholdMember.household_id == bill.household_id)
+                    .filter(HouseholdMember.household_id.in_(expiring_hh_ids))
                     .all()
                 )
-                for m in members:
+                for m in all_m:
+                    expiring_members.setdefault(m.household_id, []).append(m)
+            for bill in expiring_bills:
+                for m in expiring_members.get(bill.household_id, []):
                     notif = create_notification(
                         db,
                         household_id=bill.household_id,

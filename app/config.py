@@ -34,11 +34,17 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _guard_production_defaults(self) -> "Settings":
-        if not self.debug and self.app_secret_key == "dev-secret-change-me":
-            raise RuntimeError(
-                "APP_SECRET_KEY must be changed from the default value before running in production. "
-                "Set the APP_SECRET_KEY environment variable."
-            )
+        if not self.debug:
+            if not self.app_secret_key or self.app_secret_key == "dev-secret-change-me":
+                raise RuntimeError(
+                    "APP_SECRET_KEY must be set to a cryptographically random value in production. "
+                    "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+                )
+            if len(self.app_secret_key) < 32:
+                raise RuntimeError(
+                    "APP_SECRET_KEY is too short (minimum 32 characters). "
+                    "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+                )
         return self
 
     class Config:

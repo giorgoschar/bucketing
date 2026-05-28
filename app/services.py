@@ -11,8 +11,30 @@ from sqlalchemy import func, and_, case
 from app.models import (
     Transaction, TransactionSplit, TransactionType,
     BillOccurrence, OccurrenceStatus, RecurringBill,
-    User, HouseholdMember, Bucket, BucketType, Category
+    User, HouseholdMember, Bucket, BucketType, BucketStatus, Category, Household
 )
+
+
+def base_ctx(db: Session, user, hh_id: str) -> dict:
+    """Minimal context shared by every page: current household + switcher list."""
+    household = db.get(Household, hh_id)
+    memberships = db.query(HouseholdMember).filter_by(user_id=user.id).all()
+    households = [db.get(Household, m.household_id) for m in memberships]
+    return {"household": household, "households": households}
+
+
+def full_ctx(db: Session, user, hh_id: str) -> dict:
+    """Extended context including members, categories and active buckets."""
+    ctx = base_ctx(db, user, hh_id)
+    ctx["members"] = (
+        db.query(User)
+        .join(HouseholdMember, HouseholdMember.user_id == User.id)
+        .filter(HouseholdMember.household_id == hh_id)
+        .all()
+    )
+    ctx["categories"] = db.query(Category).filter_by(household_id=hh_id).all()
+    ctx["buckets"] = db.query(Bucket).filter_by(household_id=hh_id, status=BucketStatus.active).all()
+    return ctx
 
 
 def get_month_summary(db: Session, household_id: str, year: int, month: int, bucket_type: str = "", bucket_ids: list | None = None) -> dict:

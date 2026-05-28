@@ -25,6 +25,7 @@ _csrf_serializer = URLSafeSerializer(settings.app_secret_key, salt="csrf")
 
 COOKIE_NAME = "session"
 PENDING_COOKIE_NAME = "session_pending"
+CSRF_COOKIE_NAME = "csrf_token"
 PENDING_MAX_AGE = 60 * 5  # 5 minutes
 
 security_logger = logging.getLogger("security")
@@ -73,6 +74,16 @@ def set_session(response, user_id: str, household_id: str, session_version: int)
     })
     response.set_cookie(COOKIE_NAME, value, **_cookie_kwargs(60 * 60 * 24 * 30))
     response.delete_cookie(PENDING_COOKIE_NAME)
+    # Non-httponly CSRF token cookie — JS reads it for double-submit validation
+    csrf_val = generate_csrf_token(user_id)
+    response.set_cookie(
+        CSRF_COOKIE_NAME,
+        csrf_val,
+        httponly=False,
+        samesite="strict",
+        max_age=60 * 60 * 24 * 30,
+        secure=not settings.debug,
+    )
 
 
 def set_pending_session(response, user_id: str, household_id: str, state: str):
@@ -88,6 +99,7 @@ def set_pending_session(response, user_id: str, household_id: str, state: str):
 def clear_session(response):
     response.delete_cookie(COOKIE_NAME)
     response.delete_cookie(PENDING_COOKIE_NAME)
+    response.delete_cookie(CSRF_COOKIE_NAME)
 
 
 def decode_cookie(cookie: str) -> Optional[dict]:
@@ -171,6 +183,9 @@ def require_auth(request: Request, db: Session = Depends(get_db)):
     if not user.totp_enabled:
         raise HTTPException(status_code=302, headers={"Location": "/settings/2fa/enroll"})
 
+    # Expose CSRF token to templates via request.state
+    request.state.csrf_token = request.cookies.get(CSRF_COOKIE_NAME, "")
+
     return user, session["hh_id"]
 
 
@@ -214,4 +229,52 @@ def require_pending_session(request: Request) -> dict:
     if not pending:
         raise HTTPException(status_code=302, headers={"Location": "/login"})
     return pending
+
+
+async def require_csrf(request: Request) -> None:
+    """
+    Validates the CSRF double-submit cookie for state-changing requests.
+    Skips validation for safe HTTP methods and unauthenticated requests.
+    Accepts the token from X-CSRF-Token header (HTMX) or a _csrf_token
+    hidden form field (traditional form submits).
+    """
+    if request.method not in ("POST", "PUT", "PATCH", "DELETE"):
+        return
+
+    session_cookie = request.cookies.get(COOKIE_NAME)
+    if not session_cookie:
+        return  # Unauthenticated — nothing to protect here
+
+    session = decode_cookie(session_cookie)
+    if not session or session.get("state") != "authenticated":
+        return  # Not fully authenticated
+
+    user_id = session["user_id"]
+    csrf_cookie = request.cookies.get(CSRF_COOKIE_NAME)
+
+    # Try header first (set by HTMX via htmx:configRequest listener in base.html)
+    csrf_token: str = request.headers.get("X-CSRF-Token", "")
+
+    # Fall back to hidden form field (traditional non-HTMX form submits)
+    if not csrf_token:
+        content_type = request.headers.get("content-type", "")
+        if (
+            "application/x-www-form-urlencoded" in content_type
+            or "multipart/form-data" in content_type
+        ):
+            form = await request.form()
+            csrf_token = form.get("_csrf_token", "") or ""
+
+    if (
+        not csrf_cookie
+        or not csrf_token
+        or csrf_cookie != csrf_token
+        or not verify_csrf_token(csrf_token, user_id)
+    ):
+        security_logger.warning(
+            "CSRF validation failed for user %s from %s",
+            user_id,
+            request.client.host if request.client else "unknown",
+        )
+        raise HTTPException(status_code=403, detail="CSRF validation failed")
 

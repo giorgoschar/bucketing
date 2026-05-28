@@ -8,15 +8,16 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.auth import require_auth
+from app.auth import require_auth, require_csrf
 from app.models import (
     Transaction, TransactionType,
     Bucket, BucketStatus, Category, User, HouseholdMember, Household,
 )
 from app.templates import templates
 from app.config import settings
+from app.services import full_ctx as _full_ctx
 
-router = APIRouter(prefix="/income")
+router = APIRouter(prefix="/income", dependencies=[Depends(require_csrf)])
 
 
 @router.get("/new", response_class=HTMLResponse)
@@ -28,6 +29,12 @@ def new_income(
 ):
     user, hh_id = auth
 
+    ctx = _full_ctx(db, user, hh_id)
+    household = ctx["household"]
+    households = ctx["households"]
+    members = ctx["members"]
+    categories = ctx["categories"]
+
     # Only buckets with show_income=True
     buckets = (
         db.query(Bucket)
@@ -35,21 +42,6 @@ def new_income(
         .order_by(Bucket.created_at)
         .all()
     )
-    categories = (
-        db.query(Category)
-        .filter_by(household_id=hh_id)
-        .order_by(Category.is_default.desc(), Category.name)
-        .all()
-    )
-    members = (
-        db.query(User)
-        .join(HouseholdMember, HouseholdMember.user_id == User.id)
-        .filter(HouseholdMember.household_id == hh_id)
-        .all()
-    )
-    household = db.get(Household, hh_id)
-    memberships = db.query(HouseholdMember).filter_by(user_id=user.id).all()
-    households = [db.get(Household, m.household_id) for m in memberships]
 
     # Validate pre-selected bucket belongs to this household and has show_income
     selected_bucket_id = ""

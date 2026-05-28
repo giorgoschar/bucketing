@@ -17,13 +17,13 @@ from app.auth import (
     hash_password, verify_password,
     set_session, set_pending_session, clear_session,
     get_current_session, get_pending_session,
-    security_logger,
+    security_logger, require_csrf,
 )
 from app.config import settings
 from app.seed import seed_categories
 from app.templates import templates
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_csrf)])
 limiter = Limiter(key_func=get_remote_address)
 
 

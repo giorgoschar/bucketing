@@ -190,6 +190,23 @@
     </div>
     {% endif %}
 
+    <!-- Pagination -->
+    {% if not all_time and total_pages > 1 %}
+    <div class="flex items-center justify-between px-5 py-4 border-t border-gray-100 dark:border-gray-800">
+      <span class="text-xs text-gray-400">Page {{ page }} of {{ total_pages }}</span>
+      <div class="flex gap-2">
+        {% if page > 1 %}
+        <a href="?year={{ year }}&month={{ month }}&page={{ page - 1 }}"
+           class="px-3 py-1.5 text-xs rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">← Previous</a>
+        {% endif %}
+        {% if page < total_pages %}
+        <a href="?year={{ year }}&month={{ month }}&page={{ page + 1 }}"
+           class="px-3 py-1.5 text-xs rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">Next →</a>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
   </div>
 
 </div>

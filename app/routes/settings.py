@@ -6,18 +6,19 @@ import io
 import json
 import secrets
 from datetime import datetime, timedelta
-import uuid
 
 import bcrypt as _bcrypt
 import pyotp
 import qrcode
 from fastapi import APIRouter, Depends, Form, Request, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.auth import (
-    require_auth, require_pending_session,
+    require_auth, require_pending_session, require_csrf,
     hash_password, verify_password,
     set_session, get_current_session,
     security_logger,
@@ -27,22 +28,17 @@ from app.models import (
     Household, HouseholdMember, User, Invitation, Category, MemberRole
 )
 from app.seed import seed_categories
+from app.services import base_ctx
 from app.templates import templates
 
-router = APIRouter(prefix="/settings")
+router = APIRouter(prefix="/settings", dependencies=[Depends(require_csrf)])
+limiter = Limiter(key_func=get_remote_address)
 
 AVATAR_COLORS = [
     "#6366f1", "#8b5cf6", "#ec4899", "#ef4444",
     "#f97316", "#f59e0b", "#10b981", "#06b6d4",
     "#3b82f6", "#84cc16",
 ]
-
-
-def _ctx(db, user, hh_id):
-    household = db.get(Household, hh_id)
-    memberships = db.query(HouseholdMember).filter_by(user_id=user.id).all()
-    households = [db.get(Household, m.household_id) for m in memberships]
-    return {"household": household, "households": households}
 
 
 @router.get("", response_class=HTMLResponse)
@@ -52,7 +48,7 @@ def settings_page(
     auth=Depends(require_auth),
 ):
     user, hh_id = auth
-    ctx = _ctx(db, user, hh_id)
+    ctx = base_ctx(db, user, hh_id)
     household = ctx["household"]
 
     members = (
@@ -154,6 +150,7 @@ def update_profile(
 
 
 @router.post("/profile/password", response_class=HTMLResponse)
+@limiter.limit("5/minute")
 def change_password(
     request: Request,
     current_password: str = Form(...),
@@ -163,11 +160,11 @@ def change_password(
 ):
     user, hh_id = auth
     if not verify_password(current_password, user.password_hash):
-        ctx = _ctx(db, user, hh_id)
+        ctx = base_ctx(db, user, hh_id)
         ctx.update({"request": request, "user": user, "pw_error": "Current password is incorrect."})
         return templates.TemplateResponse("settings/index.html", ctx)
     if len(new_password) < 12:
-        ctx = _ctx(db, user, hh_id)
+        ctx = base_ctx(db, user, hh_id)
         ctx.update({"request": request, "user": user, "pw_error": "Password must be at least 12 characters."})
         return templates.TemplateResponse("settings/index.html", ctx)
     user.password_hash = hash_password(new_password)
@@ -182,6 +179,7 @@ def change_password(
 # ---------------------------------------------------------------------------
 
 @router.post("/invite", response_class=HTMLResponse)
+@limiter.limit("10/hour")
 def create_invite(
     request: Request,
     db: Session = Depends(get_db),
@@ -190,7 +188,7 @@ def create_invite(
     user, hh_id = auth
     invite = Invitation(
         household_id=hh_id,
-        token=str(uuid.uuid4()),
+        token=secrets.token_urlsafe(32),
         created_by=user.id,
         expires_at=datetime.utcnow() + timedelta(days=settings.invite_expiry_days),
     )
@@ -365,6 +363,7 @@ def enroll_totp_submit(
 # ---------------------------------------------------------------------------
 
 @router.post("/2fa/disable", response_class=HTMLResponse)
+@limiter.limit("5/minute")
 def disable_totp(
     request: Request,
     current_password: str = Form(...),
@@ -375,12 +374,12 @@ def disable_totp(
     user, hh_id = auth
 
     if not verify_password(current_password, user.password_hash):
-        ctx = _ctx(db, user, hh_id)
+        ctx = base_ctx(db, user, hh_id)
         ctx.update({"request": request, "user": user, "totp_error": "Incorrect password."})
         return templates.TemplateResponse("settings/index.html", ctx)
 
     if not user.totp_secret or not pyotp.TOTP(user.totp_secret).verify(code.strip(), valid_window=1):
-        ctx = _ctx(db, user, hh_id)
+        ctx = base_ctx(db, user, hh_id)
         ctx.update({"request": request, "user": user, "totp_error": "Invalid authenticator code."})
         return templates.TemplateResponse("settings/index.html", ctx)
 
@@ -398,6 +397,7 @@ def disable_totp(
 
 
 @router.post("/2fa/reset/{member_id}", response_class=HTMLResponse)
+@limiter.limit("5/minute")
 def admin_reset_member_totp(
     member_id: str,
     request: Request,

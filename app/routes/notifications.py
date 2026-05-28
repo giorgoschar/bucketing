@@ -8,14 +8,14 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
-from app.auth import require_auth
+from app.auth import require_auth, require_csrf
 from app.database import get_db
 from app.models import Notification, PushSubscription
 from app.notification_service import get_unread_count
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_csrf)])
 
 
 # ---------------------------------------------------------------------------

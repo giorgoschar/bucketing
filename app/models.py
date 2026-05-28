@@ -2,8 +2,8 @@ import uuid
 from datetime import datetime, date
 
 from sqlalchemy import (
-    Column, String, Integer, Float, Boolean, DateTime, Date,
-    ForeignKey, Text, Enum as SAEnum, UniqueConstraint
+    Column, String, Integer, Numeric, Boolean, DateTime, Date,
+    ForeignKey, Text, Enum as SAEnum, UniqueConstraint, Index
 )
 from sqlalchemy.orm import relationship
 import enum
@@ -103,6 +103,10 @@ class Household(Base):
 
 class HouseholdMember(Base):
     __tablename__ = "household_members"
+    __table_args__ = (
+        UniqueConstraint("household_id", "user_id", name="uq_household_member"),
+        Index("ix_household_members_household_id", "household_id"),
+    )
 
     id = Column(String, primary_key=True, default=gen_id)
     household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False)
@@ -135,6 +139,9 @@ class Invitation(Base):
 
 class Category(Base):
     __tablename__ = "categories"
+    __table_args__ = (
+        Index("ix_categories_household_id", "household_id"),
+    )
 
     id = Column(String, primary_key=True, default=gen_id)
     household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=True)  # null = system default
@@ -162,7 +169,7 @@ class Bucket(Base):
     color = Column(String(7), default="#6366f1")
     icon = Column(String(10), default="🪣")
     status = Column(SAEnum(BucketStatus), default=BucketStatus.active, nullable=False)
-    budget = Column(Float, nullable=True)
+    budget = Column(Numeric(12, 4), nullable=True)
     description = Column(Text, nullable=True)
     show_income = Column(Boolean, default=True, nullable=False)
     enable_settlement = Column(Boolean, default=False, nullable=False)
@@ -179,13 +186,17 @@ class Bucket(Base):
 
 class Transaction(Base):
     __tablename__ = "transactions"
+    __table_args__ = (
+        Index("ix_transactions_household_date", "household_id", "transaction_date"),
+        Index("ix_transactions_bucket_id", "bucket_id"),
+    )
 
     id = Column(String, primary_key=True, default=gen_id)
     bucket_id = Column(String, ForeignKey("buckets.id", ondelete="CASCADE"), nullable=False)
     household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False)
-    amount = Column(Float, nullable=False)
+    amount = Column(Numeric(12, 4), nullable=False)
     currency = Column(String(3), default="EUR")
-    exchange_rate = Column(Float, default=1.0)  # rate to household default currency
+    exchange_rate = Column(Numeric(12, 6), default=1.0)  # rate to household default currency
     type = Column(SAEnum(TransactionType), default=TransactionType.expense, nullable=False)
     paid_by = Column(String, ForeignKey("users.id"), nullable=True)
     category_id = Column(String, ForeignKey("categories.id"), nullable=True)
@@ -208,7 +219,7 @@ class TransactionSplit(Base):
     id = Column(String, primary_key=True, default=gen_id)
     transaction_id = Column(String, ForeignKey("transactions.id", ondelete="CASCADE"), nullable=False)
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    amount = Column(Float, nullable=False)  # this person's share
+    amount = Column(Numeric(12, 4), nullable=False)  # this person's share
     is_settled = Column(Boolean, default=False)
     settled_at = Column(DateTime, nullable=True)
 
@@ -227,7 +238,7 @@ class RecurringBill(Base):
     household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False)
     bucket_id = Column(String, ForeignKey("buckets.id"), nullable=True)
     name = Column(String(100), nullable=False)
-    amount = Column(Float, nullable=True)  # null = variable (e.g. electricity)
+    amount = Column(Numeric(12, 4), nullable=True)  # null = variable (e.g. electricity)
     currency = Column(String(3), default="EUR")
     category_id = Column(String, ForeignKey("categories.id"), nullable=True)
     frequency = Column(SAEnum(BillFrequency), default=BillFrequency.monthly, nullable=False)
@@ -251,12 +262,15 @@ class RecurringBill(Base):
 
 class BillOccurrence(Base):
     __tablename__ = "bill_occurrences"
-    __table_args__ = (UniqueConstraint('bill_id', 'due_date', name='uq_bill_occurrence'),)
+    __table_args__ = (
+        UniqueConstraint('bill_id', 'due_date', name='uq_bill_occurrence'),
+        Index("ix_bill_occurrences_bill_status", "bill_id", "due_date", "status"),
+    )
 
     id = Column(String, primary_key=True, default=gen_id)
     bill_id = Column(String, ForeignKey("recurring_bills.id", ondelete="CASCADE"), nullable=False)
     due_date = Column(Date, nullable=False)
-    amount = Column(Float, nullable=True)  # overrides bill.amount for variable bills
+    amount = Column(Numeric(12, 4), nullable=True)  # overrides bill.amount for variable bills
     status = Column(SAEnum(OccurrenceStatus), default=OccurrenceStatus.unpaid, nullable=False)
     paid_at = Column(DateTime, nullable=True)
     paid_by = Column(String, ForeignKey("users.id"), nullable=True)
@@ -272,7 +286,7 @@ class RecurringBillSplit(Base):
     id = Column(String, primary_key=True, default=gen_id)
     bill_id = Column(String, ForeignKey("recurring_bills.id", ondelete="CASCADE"), nullable=False)
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    amount = Column(Float, nullable=False)
+    amount = Column(Numeric(12, 4), nullable=False)
 
     bill = relationship("RecurringBill", back_populates="splits")
     user = relationship("User")

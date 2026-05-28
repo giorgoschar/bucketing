@@ -8,39 +8,19 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.auth import require_auth
+from app.auth import require_auth, require_csrf
 from app.models import (
     RecurringBill, RecurringBillSplit, BillOccurrence, OccurrenceStatus,
     BillFrequency, Transaction, TransactionSplit, TransactionType,
     Bucket, BucketStatus, Category, User, HouseholdMember, Household,
 )
 from app.bills_service import generate_occurrences, delete_future_occurrences
-from app.services import get_upcoming_bills, get_overdue_bills
+from app.services import get_upcoming_bills, get_overdue_bills, full_ctx
 from app.config import settings
 from app.templates import templates
 
-router = APIRouter(prefix="/bills")
+router = APIRouter(prefix="/bills", dependencies=[Depends(require_csrf)])
 
-
-def _ctx(db, user, hh_id):
-    household = db.get(Household, hh_id)
-    memberships = db.query(HouseholdMember).filter_by(user_id=user.id).all()
-    households = [db.get(Household, m.household_id) for m in memberships]
-    members = (
-        db.query(User)
-        .join(HouseholdMember, HouseholdMember.user_id == User.id)
-        .filter(HouseholdMember.household_id == hh_id)
-        .all()
-    )
-    categories = db.query(Category).filter_by(household_id=hh_id).all()
-    buckets = db.query(Bucket).filter_by(household_id=hh_id, status=BucketStatus.active).all()
-    return {
-        "household": household,
-        "households": households,
-        "members": members,
-        "categories": categories,
-        "buckets": buckets,
-    }
 
 
 @router.get("", response_class=HTMLResponse)
@@ -50,7 +30,7 @@ def bills_page(
     auth=Depends(require_auth),
 ):
     user, hh_id = auth
-    ctx = _ctx(db, user, hh_id)
+    ctx = full_ctx(db, user, hh_id)
 
     overdue = get_overdue_bills(db, hh_id)
     upcoming = get_upcoming_bills(db, hh_id, days=settings.upcoming_bills_days)
@@ -116,6 +96,8 @@ async def create_bill(
 
     # Shared bill splits — fields named split_{user_id}
     form_data = await request.form()
+    split_total = 0.0
+    splits = []
     for key, value in form_data.items():
         if key.startswith("split_") and value.strip():
             uid = key[6:]
@@ -124,7 +106,15 @@ async def create_bill(
             except ValueError:
                 continue
             if split_amount > 0:
-                db.add(RecurringBillSplit(bill_id=bill.id, user_id=uid, amount=split_amount))
+                split_total += split_amount
+                splits.append(RecurringBillSplit(bill_id=bill.id, user_id=uid, amount=split_amount))
+
+    bill_amount = float(amount) if amount.strip() else None
+    if splits and bill_amount is not None and round(split_total, 4) != round(bill_amount, 4):
+        raise HTTPException(status_code=400, detail=f"Split amounts ({split_total:.2f}) must sum to the bill amount ({bill_amount:.2f}).")
+
+    for s in splits:
+        db.add(s)
 
     generate_occurrences(db, bill)
     db.commit()
@@ -281,7 +271,7 @@ def edit_bill_page(
     bill = db.get(RecurringBill, bill_id)
     if not bill or bill.household_id != hh_id:
         raise HTTPException(status_code=404)
-    ctx = _ctx(db, user, hh_id)
+    ctx = full_ctx(db, user, hh_id)
     ctx.update({"request": request, "user": user, "bill": bill})
     return templates.TemplateResponse("bills/edit.html", ctx)
 
@@ -330,6 +320,8 @@ async def edit_bill(
     # Replace splits
     db.query(RecurringBillSplit).filter_by(bill_id=bill.id).delete()
     form_data = await request.form()
+    split_total = 0.0
+    splits = []
     for key, value in form_data.items():
         if key.startswith("split_") and value.strip():
             uid = key[6:]
@@ -338,7 +330,14 @@ async def edit_bill(
             except ValueError:
                 continue
             if split_amount > 0:
-                db.add(RecurringBillSplit(bill_id=bill.id, user_id=uid, amount=split_amount))
+                split_total += split_amount
+                splits.append(RecurringBillSplit(bill_id=bill.id, user_id=uid, amount=split_amount))
+
+    if splits and bill.amount is not None and round(split_total, 4) != round(float(bill.amount), 4):
+        raise HTTPException(status_code=400, detail=f"Split amounts ({split_total:.2f}) must sum to the bill amount ({float(bill.amount):.2f}).")
+
+    for s in splits:
+        db.add(s)
 
     # Regenerate future occurrences
     delete_future_occurrences(db, bill.id)

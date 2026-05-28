@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.auth import require_auth
+from app.auth import require_auth, require_csrf
 from app.models import Household, HouseholdMember, Transaction, TransactionType
 from app.services import (
     get_month_summary,
@@ -17,10 +17,11 @@ from app.services import (
     get_upcoming_bills,
     get_overdue_bills,
     get_bucket_spend_this_month,
+    base_ctx,
 )
 from app.templates import templates
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_csrf)])
 
 
 @router.get("/dashboard", response_class=HTMLResponse)
@@ -33,7 +34,9 @@ def dashboard(
     today = date.today()
     year, month = today.year, today.month
 
-    household = db.get(Household, hh_id)
+    ctx = base_ctx(db, user, hh_id)
+    household = ctx["household"]
+    households = ctx["households"]
 
     from app.models import Bucket, BucketStatus
     buckets = (
@@ -58,9 +61,6 @@ def dashboard(
         .limit(10)
         .all()
     )
-
-    memberships = db.query(HouseholdMember).filter_by(user_id=user.id).all()
-    households  = [db.get(Household, m.household_id) for m in memberships]
 
     # Only show income KPI card if there are income-tracked buckets with income this month
     show_income = income_total > 0 or any(b.show_income for b in buckets)

@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.auth import require_auth
+from app.auth import require_auth, require_csrf
 from app.models import Household, HouseholdMember, Bucket, BucketStatus, Category
 from app.services import (
     get_insights_summary,
@@ -23,7 +23,7 @@ from app.services import (
 )
 from app.templates import templates
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_csrf)])
 
 
 def _parse_date(s: str) -> date | None:

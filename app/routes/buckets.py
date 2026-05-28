@@ -6,12 +6,12 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.auth import require_auth
+from app.auth import require_auth, require_csrf
 from app.models import Bucket, BucketType, BucketStatus, Household, HouseholdMember, Transaction, TransactionType
-from app.services import get_bucket_balance, get_bucket_month_summary, get_bucket_settlement
+from app.services import get_bucket_balance, get_bucket_month_summary, get_bucket_settlement, base_ctx
 from app.templates import templates
 
-router = APIRouter(prefix="/buckets")
+router = APIRouter(prefix="/buckets", dependencies=[Depends(require_csrf)])
 
 BUCKET_COLORS = [
     "#6366f1", "#8b5cf6", "#ec4899", "#ef4444",
@@ -29,7 +29,9 @@ def bucket_list(
     auth=Depends(require_auth),
 ):
     user, hh_id = auth
-    household = db.get(Household, hh_id)
+    ctx = base_ctx(db, user, hh_id)
+    household = ctx["household"]
+    households = ctx["households"]
 
     active_buckets = (
         db.query(Bucket)
@@ -43,9 +45,6 @@ def bucket_list(
         .order_by(Bucket.created_at)
         .all()
     )
-
-    memberships = db.query(HouseholdMember).filter_by(user_id=user.id).all()
-    households = [db.get(Household, m.household_id) for m in memberships]
 
     return templates.TemplateResponse(
         "buckets/list.html",
@@ -101,6 +100,7 @@ def bucket_detail(
     year: int = Query(default=None),
     month: int = Query(default=None),
     all_time: bool = Query(default=False),
+    page: int = Query(default=1, ge=1),
     db: Session = Depends(get_db),
     auth=Depends(require_auth),
 ):
@@ -136,28 +136,38 @@ def bucket_detail(
         )
         all_time_total = sum(t.amount for t in transactions if t.type == TransactionType.expense)
         month_summary = None
+        total_pages = 1
     else:
+        PAGE_SIZE = 50
         start = date(year, month, 1)
         end = (
             date(year + 1, 1, 1) - timedelta(days=1)
             if month == 12
             else date(year, month + 1, 1) - timedelta(days=1)
         )
-        transactions = (
+        base_q = (
             db.query(Transaction)
             .filter(
                 Transaction.bucket_id == bucket_id,
                 Transaction.transaction_date >= start,
                 Transaction.transaction_date <= end,
             )
+        )
+        total_count = base_q.count()
+        total_pages = max(1, -(-total_count // PAGE_SIZE))  # ceiling division
+        page = min(page, total_pages)
+        transactions = (
+            base_q
             .order_by(Transaction.transaction_date.desc(), Transaction.created_at.desc())
+            .offset((page - 1) * PAGE_SIZE)
+            .limit(PAGE_SIZE)
             .all()
         )
         all_time_total = None
         month_summary = get_bucket_month_summary(db, bucket_id, year, month)
 
-    memberships = db.query(HouseholdMember).filter_by(user_id=user.id).all()
-    households = [db.get(Household, m.household_id) for m in memberships]
+    ctx = base_ctx(db, user, hh_id)
+    households = ctx["households"]
 
     settlement = get_bucket_settlement(db, bucket_id) if bucket.enable_settlement else []
 
@@ -184,6 +194,8 @@ def bucket_detail(
             "all_time": all_time,
             "all_time_total": all_time_total,
             "settlement": settlement,
+            "page": page,
+            "total_pages": total_pages,
         },
     )
 

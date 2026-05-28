@@ -15,7 +15,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSON
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.auth import require_auth
+from app.auth import require_auth, require_csrf
 from app.models import (
     Transaction, TransactionSplit, TransactionType,
     Bucket, BucketStatus, Category, User, HouseholdMember, Household,
@@ -23,10 +23,13 @@ from app.models import (
 from app.templates import templates
 from app.receipt_parser import parse_receipt_text, match_category, _extract_category_hint
 from app.config import settings
+from app.services import full_ctx as _full_ctx
 
-router = APIRouter(prefix="/transactions")
+router = APIRouter(prefix="/transactions", dependencies=[Depends(require_csrf)])
 
 UPLOADS_DIR = "uploads"
+MAX_RECEIPT_SIZE = 10 * 1024 * 1024  # 10 MB
+ALLOWED_RECEIPT_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".pdf"}
 
 
 # ---------------------------------------------------------------------------
@@ -246,36 +249,10 @@ async def scan_qr(
 
 def _get_context(db: Session, user, hh_id: str) -> dict:
     """Common template context for transaction forms."""
-    buckets = (
-        db.query(Bucket)
-        .filter_by(household_id=hh_id, status=BucketStatus.active)
-        .all()
-    )
-    categories = (
-        db.query(Category)
-        .filter_by(household_id=hh_id)
-        .order_by(Category.is_default.desc(), Category.name)
-        .all()
-    )
-    members = (
-        db.query(User)
-        .join(HouseholdMember, HouseholdMember.user_id == User.id)
-        .filter(HouseholdMember.household_id == hh_id)
-        .all()
-    )
-    household = db.get(Household, hh_id)
-    memberships = db.query(HouseholdMember).filter_by(user_id=user.id).all()
-    households = [db.get(Household, m.household_id) for m in memberships]
-
-    return {
-        "buckets": buckets,
-        "categories": categories,
-        "members": members,
-        "household": household,
-        "households": households,
-        "currencies": settings.currencies,
-        "today": date.today().isoformat(),
-    }
+    ctx = _full_ctx(db, user, hh_id)
+    ctx["currencies"] = settings.currencies
+    ctx["today"] = date.today().isoformat()
+    return ctx
 
 
 # ---------------------------------------------------------------------------
@@ -334,14 +311,21 @@ async def create_transaction(
 
     receipt_path = None
     if receipt and receipt.filename:
+        ext = os.path.splitext(receipt.filename)[1].lower()
+        if ext not in ALLOWED_RECEIPT_EXTENSIONS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported file type '{ext}'. Allowed: {', '.join(ALLOWED_RECEIPT_EXTENSIONS)}",
+            )
         os.makedirs(UPLOADS_DIR, exist_ok=True)
-        ext = os.path.splitext(receipt.filename)[1]
+        content = await receipt.read()
+        if len(content) > MAX_RECEIPT_SIZE:
+            raise HTTPException(status_code=400, detail="File too large. Maximum size is 10 MB.")
         filename = f"{uuid.uuid4()}{ext}"
         filepath = os.path.join(UPLOADS_DIR, filename)
-        content = await receipt.read()
         with open(filepath, "wb") as f:
             f.write(content)
-        receipt_path = filepath
+        receipt_path = filename
 
     txn = Transaction(
         bucket_id=bucket_id,
@@ -356,16 +340,25 @@ async def create_transaction(
         transaction_date=date.fromisoformat(transaction_date),
         receipt_path=receipt_path,
     )
-    db.add(txn)
-    db.flush()
+    try:
+        db.add(txn)
+        db.flush()
 
-    # Handle splits if shared
-    if is_shared == "on":
-        split_data = await _parse_splits(request, txn.id, amount, hh_id, db)
-        for split in split_data:
-            db.add(split)
+        # Handle splits if shared
+        if is_shared == "on":
+            split_data = await _parse_splits(request, txn.id, amount, hh_id, db)
+            for split in split_data:
+                db.add(split)
 
-    db.commit()
+        db.commit()
+    except Exception:
+        db.rollback()
+        if receipt_path:
+            try:
+                os.remove(os.path.join(UPLOADS_DIR, receipt_path))
+            except OSError:
+                pass
+        raise
 
     # HTMX: if triggered from wizard, swap to success partial; else redirect
     if request.headers.get("HX-Request"):
