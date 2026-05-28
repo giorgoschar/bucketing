@@ -327,3 +327,24 @@ class PushSubscription(Base):
     created_at   = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User")
+
+
+# ---------------------------------------------------------------------------
+# API Refresh Tokens (JWT — mobile / external clients)
+# ---------------------------------------------------------------------------
+
+class RefreshToken(Base):
+    __tablename__ = "refresh_tokens"
+    __table_args__ = (
+        Index("ix_refresh_tokens_user_id", "user_id"),
+    )
+
+    id           = Column(String, primary_key=True, default=gen_id)
+    user_id      = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    household_id = Column(String, nullable=False)
+    token_hash   = Column(String, nullable=False, unique=True)  # SHA-256 hex of the raw token
+    expires_at   = Column(DateTime, nullable=False)
+    revoked      = Column(Boolean, default=False, nullable=False)
+    created_at   = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User")

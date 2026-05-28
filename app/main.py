@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, JSONResponse, HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
@@ -18,6 +19,7 @@ import app.models  # noqa: F401
 from app.routes import auth, dashboard, buckets, transactions, income, bills, settings as settings_router
 from app.routes import notifications as notifications_router
 from app.routes import insights as insights_router
+from app.routes.api import router as api_router
 from app.scheduler import start_scheduler, stop_scheduler
 
 import logging
@@ -53,6 +55,20 @@ app = FastAPI(
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# ---------------------------------------------------------------------------
+# CORS — required for mobile apps and browser-based SPA clients.
+# Configure CORS_ALLOWED_ORIGINS env var with space-separated origins in production.
+# In dev, defaults to empty list (same-origin only). Use "*" for local dev if needed.
+# ---------------------------------------------------------------------------
+if settings.cors_origins_list:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins_list,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["Authorization", "Content-Type", "Accept"],
+    )
 
 
 @app.exception_handler(CSRFError)
@@ -138,6 +154,7 @@ app.include_router(bills.router)
 app.include_router(settings_router.router)
 app.include_router(notifications_router.router)
 app.include_router(insights_router.router)
+app.include_router(api_router)
 
 
 @app.get("/sw.js", include_in_schema=False)

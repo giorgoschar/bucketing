@@ -10,6 +10,17 @@ class Settings(BaseSettings):
     app_name: str = "Expenses"
     allow_registration: bool = False
 
+    # JWT — API (mobile / external clients)
+    # Defaults to app_secret_key; set JWT_SECRET_KEY in production for isolation.
+    jwt_secret_key: str = ""
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_minutes: int = 60
+    jwt_refresh_token_expire_days: int = 30
+
+    # CORS — space-separated list of allowed origins, e.g. "https://myapp.com capacitor://localhost"
+    # Empty = no cross-origin requests allowed (safe default).
+    cors_allowed_origins: str = ""
+
     # Supported currencies — single source of truth used across all routes
     currencies: List[str] = [
         "EUR", "USD", "GBP", "CHF", "JPY", "AUD", "CAD", "SEK", "NOK", "DKK"
@@ -46,6 +57,16 @@ class Settings(BaseSettings):
                     "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
                 )
         return self
+
+    @property
+    def effective_jwt_secret(self) -> str:
+        """JWT secret — uses JWT_SECRET_KEY if set, otherwise falls back to APP_SECRET_KEY."""
+        return self.jwt_secret_key or self.app_secret_key
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """Parse space-separated CORS origins into a list."""
+        return [o.strip() for o in self.cors_allowed_origins.split() if o.strip()]
 
     class Config:
         env_file = ".env"
