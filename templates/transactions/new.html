@@ -5,7 +5,16 @@
 {% block content %}
 <div class="max-w-lg mx-auto">
 
-  <div x-data="expenseWizard()" class="space-y-6">
+  {# Config travels in a data attribute: the component is defined in
+     /static/expense-wizard.js (loaded from <head>), so there is no
+     script-ordering race on hx-boost navigations. #}
+  <div x-data="expenseWizard()" class="space-y-6"
+       data-init='{
+         "selectedBucketId": {{ selected_bucket_id | tojson }},
+         "today": {{ today | tojson }},
+         "currency": {{ (household.default_currency if household else "EUR") | tojson }},
+         "buckets": { {% for bucket in buckets %}{{ bucket.id | tojson }}: {{ (bucket.icon ~ " " ~ bucket.name) | tojson }}{% if not loop.last %},{% endif %}{% endfor %} }
+       }'>
 
     <!-- Step indicator -->
     <div class="flex items-center gap-2">
@@ -46,7 +55,10 @@
       <input type="hidden" name="category_id" x-model="form.category_id" />
       <input type="hidden" name="paid_by" x-model="form.paid_by" />
       <input type="hidden" name="notes" x-model="form.notes" />
-      <input type="hidden" name="is_shared" x-model="form.is_shared ? 'on' : 'off'" />
+      {# :value, not x-model — x-model compiles to an assignment and a ternary
+         is not a valid assignment target, which threw "Invalid left-hand side
+         in assignment" and aborted Alpine's setup for this component. #}
+      <input type="hidden" name="is_shared" :value="form.is_shared ? 'on' : 'off'" />
 
       <!-- ===== STEP 1: Bucket + Date ===== -->
       <div x-show="step === 1" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 translate-x-2" x-transition:enter-end="opacity-100 translate-x-0">
@@ -346,97 +358,14 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
-function expenseWizard() {
-  const buckets = {
-    {% for bucket in buckets %}
-    '{{ bucket.id }}': '{{ bucket.icon }} {{ bucket.name }}',
-    {% endfor %}
-  };
-
-  return {
-    step: 1,
-    receiptName: '',
-    duplicates: [],      // advisory only — never blocks submission
-    dupLoading: false,
-    catSearch: '',
-    splits: {},
-    splitTotal: 0,
-    form: {
-      bucket_id: '{{ selected_bucket_id }}',
-      transaction_date: '{{ today }}',
-      amount: '',
-      currency: '{{ household.default_currency if household else "EUR" }}',
-      category_id: '',
-      paid_by: '',
-      notes: '',
-      is_shared: false,
-    },
-
-    stepLabel() {
-      const labels = { 1: 'Bucket & Date', 2: 'Amount', 3: 'Category', 4: 'Details' };
-      return labels[this.step] || '';
-    },
-
-    nextStep() {
-      if (this.step < 4) this.step++;
-      // Reaching the review step is the natural moment to warn about a
-      // possible repeat: the amount and date are known, and the user has not
-      // committed yet.
-      if (this.step === 4) this.checkDuplicates();
-    },
-
-    async checkDuplicates() {
-      this.duplicates = [];
-      if (!this.form.amount || !this.form.transaction_date) return;
-      this.dupLoading = true;
-      try {
-        const params = new URLSearchParams({
-          amount: this.form.amount,
-          transaction_date: this.form.transaction_date,
-          bucket_id: this.form.bucket_id || '',
-        });
-        const resp = await fetch('/transactions/check-duplicate?' + params, {
-          headers: { 'Accept': 'application/json' },
-          credentials: 'same-origin',
-        });
-        if (resp.ok) this.duplicates = (await resp.json()).duplicates || [];
-      } catch (_) {
-        // A failed check must never get in the way of logging an expense.
-      } finally {
-        this.dupLoading = false;
-      }
-    },
-
-    prevStep() {
-      if (this.step > 1) this.step--;
-    },
-
-    bucketName(id) {
-      return buckets[id] || '—';
-    },
-
-    updateSplitTotal() {
-      let total = 0;
-      for (const v of Object.values(this.splits)) {
-        const n = parseFloat(v);
-        if (!isNaN(n)) total += n;
-      }
-      this.splitTotal = total;
-    },
-
-    handleResult(evt) {
-      if (evt.detail.successful) {
-        this.step = 5; // hides all steps, result shown in #wizard-result
-      }
-    }
-  };
-}
-</script>
 
 <script>
 // Intercept form submission when offline — queue in IndexedDB + register Background Sync
-document.getElementById('expense-form').addEventListener('submit', async function(e) {
+// Guarded: on an hx-boost swap this script runs again, and the element may be
+// absent if the swap failed. Without the check this threw and took the rest of
+// the block with it.
+const _expenseForm = document.getElementById('expense-form');
+if (_expenseForm) _expenseForm.addEventListener('submit', async function(e) {
   if (navigator.onLine) return; // let normal submission proceed
   e.preventDefault();
   e.stopImmediatePropagation();
