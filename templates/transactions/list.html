@@ -17,7 +17,7 @@
     <form method="GET" action="/transactions/search" id="search-form">
       <div class="flex gap-2 mb-3">
         <input type="text" name="q" value="{{ q }}"
-               placeholder="Search by notes…"
+               placeholder="Search notes, category, bucket, person or amount…"
                class="flex-1 px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm"
                autofocus />
         <button type="submit"
@@ -65,6 +65,23 @@
           <!-- To date -->
           <input type="date" name="to_date" value="{{ to_date }}"
                  class="px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm focus:border-primary-500 outline-none" />
+
+          <!-- Amount range -->
+          <input type="number" name="min_amount" step="0.01" min="0" value="{{ min_amount }}"
+                 placeholder="Min amount"
+                 class="px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm focus:border-primary-500 outline-none" />
+          <input type="number" name="max_amount" step="0.01" min="0" value="{{ max_amount }}"
+                 placeholder="Max amount"
+                 class="px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm focus:border-primary-500 outline-none" />
+
+          <!-- Person (payer or split participant) -->
+          <select name="paid_by"
+                  class="px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm focus:border-primary-500 outline-none">
+            <option value="">Anyone</option>
+            {% for m in members %}
+            <option value="{{ m.id }}" {% if selected_paid_by == m.id %}selected{% endif %}>{{ m.display_name }}</option>
+            {% endfor %}
+          </select>
 
           <a href="/transactions/search"
              class="px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 text-center transition-colors">

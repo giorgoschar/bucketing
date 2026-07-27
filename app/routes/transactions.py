@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 import httpx
 from fastapi import APIRouter, Depends, Form, Query, Request, HTTPException, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse, StreamingResponse
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
@@ -36,6 +37,15 @@ router = APIRouter(prefix="/transactions", dependencies=[Depends(require_csrf)])
 UPLOADS_DIR = "uploads"
 MAX_RECEIPT_SIZE = 10 * 1024 * 1024  # 10 MB
 ALLOWED_RECEIPT_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".pdf"}
+
+
+def _maybe_number(value: str):
+    """Return the value as a Decimal if it looks like a number, else None."""
+    from decimal import Decimal, InvalidOperation
+    try:
+        return Decimal(value.strip().replace(",", "."))
+    except (InvalidOperation, ValueError, AttributeError):
+        return None
 
 
 def _parse_txn_date(value: str) -> date:
@@ -603,6 +613,9 @@ def search_transactions(
     from_date: str = Query(""),
     to_date: str = Query(""),
     bucket_id: str = Query(""),
+    min_amount: str = Query(""),
+    max_amount: str = Query(""),
+    paid_by: str = Query(""),
     page: int = Query(1, ge=1),
     db: Session = Depends(get_db),
     auth=Depends(require_auth),
@@ -610,13 +623,59 @@ def search_transactions(
     user, hh_id = auth
     ctx = _get_context(db, user, hh_id)
 
-    has_filter = any([q.strip(), category_id, type, from_date, to_date, bucket_id])
+    has_filter = any([q.strip(), category_id, type, from_date, to_date, bucket_id,
+                      min_amount.strip(), max_amount.strip(), paid_by])
 
     if has_filter:
         query = db.query(Transaction).filter(Transaction.household_id == hh_id)
 
         if q.strip():
-            query = query.filter(Transaction.notes.ilike(f"%{q.strip()}%"))
+            # Free text used to match notes only, so a scanned receipt whose
+            # merchant landed in the category or bucket name was unfindable —
+            # and a bare number could not be searched at all.
+            term = f"%{q.strip()}%"
+            conditions = [
+                Transaction.notes.ilike(term),
+                Transaction.category_id.in_(
+                    db.query(Category.id).filter(
+                        Category.household_id == hh_id, Category.name.ilike(term)
+                    ).scalar_subquery()
+                ),
+                Transaction.bucket_id.in_(
+                    db.query(Bucket.id).filter(
+                        Bucket.household_id == hh_id, Bucket.name.ilike(term)
+                    ).scalar_subquery()
+                ),
+                Transaction.paid_by.in_(
+                    db.query(User.id).filter(User.display_name.ilike(term)).scalar_subquery()
+                ),
+            ]
+            # A numeric term also matches the amount exactly, so "42.50" works.
+            exact = _maybe_number(q)
+            if exact is not None:
+                conditions.append(Transaction.amount == exact)
+            query = query.filter(or_(*conditions))
+
+        lo = parse_amount(min_amount, field="Min amount", allow_blank=True, allow_zero=True)
+        if lo is not None:
+            query = query.filter(Transaction.amount >= lo)
+        hi = parse_amount(max_amount, field="Max amount", allow_blank=True, allow_zero=True)
+        if hi is not None:
+            query = query.filter(Transaction.amount <= hi)
+
+        if paid_by:
+            # Match the payer or anyone carrying a split on the transaction.
+            query = query.filter(
+                or_(
+                    Transaction.paid_by == paid_by,
+                    Transaction.id.in_(
+                        db.query(TransactionSplit.transaction_id)
+                        .filter(TransactionSplit.user_id == paid_by)
+                        .scalar_subquery()
+                    ),
+                )
+            )
+
         if category_id:
             query = query.filter(Transaction.category_id == category_id)
         if type:
@@ -663,6 +722,9 @@ def search_transactions(
         "from_date": from_date,
         "to_date": to_date,
         "selected_bucket_id": bucket_id,
+        "min_amount": min_amount,
+        "max_amount": max_amount,
+        "selected_paid_by": paid_by,
         "page": page,
         "total_pages": total_pages,
         "total": total,
