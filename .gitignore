@@ -40,3 +40,9 @@ localhost
 *.pem
 *.key
 *.crt
+
+# Test artifacts
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/

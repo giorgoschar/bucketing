@@ -35,3 +35,11 @@ localhost
 
 # Migration artefacts (run locally, not needed in image)
 migrate_sqlite_to_postgres.py
+
+# Tests (not needed in the runtime image)
+tests/
+pytest.ini
+requirements-dev.txt
+.pytest_cache/
+.coverage
+htmlcov/

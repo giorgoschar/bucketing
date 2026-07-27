@@ -68,16 +68,40 @@ Data is persisted in `./data/` (SQLite) and `./uploads/` (receipts).
 | `DATABASE_URL` | `sqlite:///./expenses.db` | SQLAlchemy DB URL. Use `postgresql://...` for PostgreSQL in production |
 | `APP_SECRET_KEY` | `change-me` | Secret for signing session cookies. **Change in production.** |
 | `DEBUG` | `false` | Enable FastAPI debug mode |
+| `ENABLE_SCHEDULER` | `true` | Run the daily auto-pay / reminder job in this process. Each uvicorn worker starts its own scheduler; the job is idempotent, so this only avoids redundant work |
+| `TRUST_PROXY_HEADERS` | `false` | Honour `X-Forwarded-For`. Enable **only** behind a proxy that overwrites it, otherwise clients can spoof their IP in logs and rate-limit buckets |
+| `RATE_LIMIT_STORAGE_URI` | *(memory)* | e.g. `redis://host:6379`. Without it, login/2FA limits are counted per worker |
+| `JWT_SECRET_KEY` | *(uses `APP_SECRET_KEY`)* | Separate signing key for mobile/API tokens |
+| `CORS_ALLOWED_ORIGINS` | *(none)* | Space-separated allowed origins |
+| `VAPID_PRIVATE_KEY` / `VAPID_PUBLIC_KEY` | *(none)* | Web-push keys; push is silently disabled without them |
+
+See [`.env.example`](.env.example) for a commented template.
 
 ---
 
-## .env.example
+## Tests
 
-```env
-APP_SECRET_KEY=change-me-in-production
-DATABASE_URL=sqlite:///./expenses.db
-DEBUG=false
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+pytest                       # full suite
+pytest --cov=app             # with coverage
+pytest tests/test_scheduler.py -v
 ```
+
+Each test builds its own throwaway SQLite database, so the suite never touches
+your real data. Coverage focuses on the parts where a bug costs money or leaks
+data:
+
+| Suite | Covers |
+|---|---|
+| `test_scheduler.py` | Auto-pay idempotency under concurrent workers and repeated runs; notification de-duplication |
+| `test_isolation.py` | Cross-household access control on every id accepted from a client |
+| `test_auth.py` | Login, TOTP enrollment/re-enrollment, backup codes, session invalidation, CSRF |
+| `test_bills.py` | Occurrence generation limits, double-pay protection, skip/pay guards |
+| `test_transactions.py` | Amount/date/currency validation, CSV formula injection, leap-year export |
+| `test_insights.py` | Date presets, filter consistency across widgets, chart scaling |
+| `test_api.py` | JWT flow, token rotation, API validation and isolation |
+| `test_migrations.py` | Migrations apply from scratch, single head, schema matches models, no data loss |
 
 ---
 
