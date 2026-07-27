@@ -4,13 +4,32 @@ Notification service: create DB notification rows and deliver web push messages.
 import base64
 import json
 import logging
-from datetime import datetime
+import threading
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import Notification, NotificationType, PushSubscription
 
 logger = logging.getLogger(__name__)
+
+# Parsing a VAPID key is comparatively expensive and the key never changes at
+# runtime, so build it once. The scheduler sends one push per member per bill.
+_vapid_cache: dict[str, object] = {}
+_vapid_lock = threading.Lock()
+
+
+def _get_vapid(private_key_str: str):
+    """Cached wrapper around :func:`_build_vapid`."""
+    cached = _vapid_cache.get(private_key_str)
+    if cached is not None:
+        return cached
+    with _vapid_lock:
+        cached = _vapid_cache.get(private_key_str)
+        if cached is None:
+            cached = _build_vapid(private_key_str)
+            _vapid_cache[private_key_str] = cached
+    return cached
 
 
 def _build_vapid(private_key_str: str):
@@ -86,7 +105,15 @@ def create_notification(
     title: str,
     body: str | None = None,
     link: str | None = None,
-) -> Notification:
+    dedupe_key: str | None = None,
+) -> Notification | None:
+    """Create a notification row.
+
+    When ``dedupe_key`` is given, the insert is attempted inside a SAVEPOINT and
+    ``None`` is returned if this user already has a notification with that key.
+    That makes scheduler jobs safe to re-run: restarts, catch-up runs and extra
+    uvicorn workers can no longer produce duplicate notifications.
+    """
     notif = Notification(
         household_id=household_id,
         user_id=user_id,
@@ -94,13 +121,26 @@ def create_notification(
         title=title,
         body=body,
         link=link,
+        dedupe_key=dedupe_key,
     )
-    db.add(notif)
-    db.flush()  # get the id without committing
+
+    if dedupe_key is None:
+        db.add(notif)
+        db.flush()
+        return notif
+
+    try:
+        # Nested transaction so a duplicate-key violation rolls back only this
+        # INSERT, leaving the caller's outer transaction intact.
+        with db.begin_nested():
+            db.add(notif)
+            db.flush()
+    except IntegrityError:
+        return None
     return notif
 
 
-def send_push_for_notification(db: Session, notification: Notification, target_subs=None) -> int:
+def send_push_for_notification(db: Session, notification: Notification | None, target_subs=None) -> int:
     """Send a web push message to subscriptions of notification.user_id.
 
     Pass target_subs to restrict delivery to a specific list of PushSubscription
@@ -109,14 +149,18 @@ def send_push_for_notification(db: Session, notification: Notification, target_s
     """
     from app.config import settings
 
+    # None means create_notification() deduplicated this one away — nothing to send.
+    if notification is None:
+        return 0
+
     if not settings.vapid_private_key or not settings.vapid_public_key:
-        return  # VAPID keys not configured — skip silently
+        return 0  # VAPID keys not configured — skip silently
 
     try:
         from pywebpush import webpush, WebPushException
     except ImportError:
         logger.warning("pywebpush not installed — skipping push delivery")
-        return
+        return 0
 
     if target_subs is not None:
         subs = target_subs
@@ -133,7 +177,7 @@ def send_push_for_notification(db: Session, notification: Notification, target_s
         "link":  notification.link or "/",
     })
 
-    private_key = _build_vapid(settings.vapid_private_key)
+    private_key = _get_vapid(settings.vapid_private_key)
 
     dead_ids: list[str] = []
     sent_count = 0

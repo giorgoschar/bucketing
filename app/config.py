@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import model_validator
 from typing import List
 
@@ -37,6 +37,22 @@ class Settings(BaseSettings):
     # Bills dashboard — how many days ahead to show upcoming bills
     upcoming_bills_days: int = 60
 
+    # Background scheduler (auto-pay + bill reminders).
+    # Each uvicorn worker runs its own scheduler, so with `--workers N` the job
+    # fires N times. The job is idempotent, but set this to false on all but one
+    # worker to avoid the redundant work.
+    enable_scheduler: bool = True
+
+    # Trust X-Forwarded-For for client IPs. Only enable when the app sits behind
+    # a reverse proxy that overwrites the header — otherwise clients can spoof
+    # their IP in security logs and in rate-limit buckets.
+    trust_proxy_headers: bool = False
+
+    # Rate-limit counter storage. Empty = per-process memory, which means limits
+    # are enforced per uvicorn worker. Set to e.g. "redis://localhost:6379" to
+    # share counters across workers.
+    rate_limit_storage_uri: str = ""
+
     # Web Push (VAPID) — set via environment variables in production
     # Generate with: vapid --gen  (after installing pywebpush)
     vapid_private_key: str = ""
@@ -68,8 +84,9 @@ class Settings(BaseSettings):
         """Parse space-separated CORS origins into a list."""
         return [o.strip() for o in self.cors_allowed_origins.split() if o.strip()]
 
-    class Config:
-        env_file = ".env"
+    # ConfigDict rather than the class-based Config, which Pydantic deprecated
+    # in v2 and removes in v3.
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
 settings = Settings()

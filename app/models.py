@@ -300,6 +300,11 @@ class RecurringBillSplit(Base):
 
 class Notification(Base):
     __tablename__ = "notifications"
+    __table_args__ = (
+        # Guarantees a scheduled notification is only ever delivered once per
+        # user, no matter how many times the job runs (restarts, extra workers).
+        UniqueConstraint("user_id", "dedupe_key", name="uq_notification_dedupe"),
+    )
 
     id           = Column(String, primary_key=True, default=gen_id)
     household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -308,6 +313,9 @@ class Notification(Base):
     title        = Column(String(200), nullable=False)
     body         = Column(Text, nullable=True)
     link         = Column(String, nullable=True)
+    # NULL for ad-hoc notifications (NULLs do not collide in a UNIQUE index);
+    # set to a stable key for anything emitted by the scheduler.
+    dedupe_key   = Column(String(200), nullable=True)
     is_read      = Column(Boolean, default=False, nullable=False)
     created_at   = Column(DateTime, default=datetime.utcnow)
 
