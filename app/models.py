@@ -59,7 +59,11 @@ class NotificationType(str, enum.Enum):
     bill_overdue       = "bill_overdue"
     bill_auto_paid     = "bill_auto_paid"
     contract_expiring  = "contract_expiring"
+    bill_drift         = "bill_drift"       # bill cost moved vs its own history
+    budget_warning     = "budget_warning"   # bucket spend crossed a budget threshold
     general            = "general"
+    # NOTE: notifications.type is a plain String column (see the notifications
+    # migration), not a native Postgres ENUM, so new members need no migration.
 
 
 # ---------------------------------------------------------------------------

@@ -36,6 +36,17 @@ OVERDUE_REMINDER_DAYS = (1, 3, 7, 14, 30)
 # Contract-expiry warnings, in days before contract_end_date.
 CONTRACT_WARNING_DAYS = (30, 10)
 
+# Bill drift: how far a charge must move from its own recent average before it
+# is worth mentioning. Both gates must be passed, so a 30% jump on a EUR 3 bill
+# stays quiet.
+DRIFT_PCT_THRESHOLD = 25.0     # percent
+DRIFT_MIN_ABSOLUTE = 5.0       # household currency
+DRIFT_MIN_HISTORY = 3          # prior charges needed to form a baseline
+DRIFT_LOOKBACK_DAYS = 35       # only comment on a recently-landed charge
+
+# Budget warnings, as percentages of a bucket's monthly budget.
+BUDGET_THRESHOLDS = (80, 100)
+
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
@@ -324,6 +335,145 @@ def _notify_contracts_expiring(db, today: date) -> None:
     db.commit()
 
 
+def _notify_bill_drift(db, today: date) -> None:
+    """Flag a bill whose latest charge departs from its own recent history.
+
+    Only variable bills can drift: a fixed bill has no per-occurrence amount, so
+    every occurrence costs bill.amount by definition. The baseline is the mean
+    of the preceding occurrences, which is why at least MIN_HISTORY of them are
+    required before anything is reported.
+    """
+    from app.models import (
+        BillOccurrence, NotificationType, OccurrenceStatus, RecurringBill,
+    )
+
+    lookback_start = today - timedelta(days=DRIFT_LOOKBACK_DAYS)
+
+    bills = (
+        db.query(RecurringBill)
+        .filter(RecurringBill.is_active.is_(True))
+        .all()
+    )
+    members_by_hh = _members_by_household(db, {b.household_id for b in bills})
+
+    for bill in bills:
+        occs = (
+            db.query(BillOccurrence)
+            .filter(
+                BillOccurrence.bill_id == bill.id,
+                BillOccurrence.status == OccurrenceStatus.paid,
+                BillOccurrence.amount.isnot(None),
+            )
+            .order_by(BillOccurrence.due_date)
+            .all()
+        )
+        if len(occs) < DRIFT_MIN_HISTORY + 1:
+            continue
+
+        latest = occs[-1]
+        # Only comment on a charge that actually landed recently, otherwise a
+        # dormant bill would be re-analysed on every run forever.
+        if latest.due_date < lookback_start:
+            continue
+
+        history = [float(o.amount) for o in occs[-(DRIFT_MIN_HISTORY + 1):-1]]
+        baseline = sum(history) / len(history)
+        if baseline <= 0:
+            continue
+
+        current = float(latest.amount)
+        delta = current - baseline
+        pct = delta / baseline * 100
+
+        if abs(pct) < DRIFT_PCT_THRESHOLD or abs(delta) < DRIFT_MIN_ABSOLUTE:
+            continue
+
+        direction = "up" if delta > 0 else "down"
+        _notify_members(
+            db,
+            members_by_hh.get(bill.household_id, []),
+            household_id=bill.household_id,
+            type=NotificationType.bill_drift,
+            title=f"{bill.name} is {abs(pct):.0f}% {direction}",
+            body=(
+                f"{_money(current, bill.currency)} vs "
+                f"{_money(round(baseline, 2), bill.currency)} average "
+                f"over the last {len(history)} charges."
+            ),
+            link="/bills",
+            dedupe_key=f"bill_drift:{latest.id}",
+        )
+    db.commit()
+
+
+def _notify_budget_thresholds(db, today: date) -> None:
+    """Warn when a bucket's spend for the current month crosses its budget."""
+    from app.models import Bucket, BucketStatus, NotificationType
+    from app.services import get_bucket_spend_this_month
+
+    buckets = (
+        db.query(Bucket)
+        .filter(
+            Bucket.budget.isnot(None),
+            Bucket.status == BucketStatus.active,
+        )
+        .all()
+    )
+    if not buckets:
+        return
+
+    members_by_hh = _members_by_household(db, {b.household_id for b in buckets})
+    period = f"{today.year}-{today.month:02d}"
+
+    # One spend query per household rather than per bucket.
+    spend_by_hh = {
+        hh_id: get_bucket_spend_this_month(db, hh_id, today.year, today.month)
+        for hh_id in {b.household_id for b in buckets}
+    }
+
+    for bucket in buckets:
+        budget = float(bucket.budget)
+        if budget <= 0:
+            continue
+        spent = spend_by_hh.get(bucket.household_id, {}).get(bucket.id, 0.0)
+        pct = spent / budget * 100
+
+        # Highest crossed threshold only — no point saying 80% and 100% together.
+        crossed = max((t for t in BUDGET_THRESHOLDS if pct >= t), default=None)
+        if crossed is None:
+            continue
+
+        currency = bucket.household.default_currency if bucket.household else "EUR"
+        if crossed >= 100:
+            title = f"{bucket.name} is over budget"
+            body = (
+                f"{_money(round(spent, 2), currency)} of "
+                f"{_money(budget, currency)} — "
+                f"{_money(round(spent - budget, 2), currency)} over."
+            )
+        else:
+            title = f"{bucket.name} at {pct:.0f}% of budget"
+            body = (
+                f"{_money(round(spent, 2), currency)} of "
+                f"{_money(budget, currency)} — "
+                f"{_money(round(budget - spent, 2), currency)} left this month."
+            )
+
+        _notify_members(
+            db,
+            members_by_hh.get(bucket.household_id, []),
+            household_id=bucket.household_id,
+            type=NotificationType.budget_warning,
+            title=title,
+            body=body,
+            link=f"/buckets/{bucket.id}",
+            # Per bucket, per month, per threshold: crossing 80 then later 100
+            # produces two notices, but neither repeats.
+            dedupe_key=f"budget:{bucket.id}:{period}:{crossed}",
+        )
+    db.commit()
+
+
 # ---------------------------------------------------------------------------
 # Job entry point
 # ---------------------------------------------------------------------------
@@ -343,6 +493,8 @@ def auto_mark_paid_job() -> None:
             _notify_due_soon,
             _notify_overdue,
             _notify_contracts_expiring,
+            _notify_bill_drift,
+            _notify_budget_thresholds,
         ):
             try:
                 stage(db, today)
