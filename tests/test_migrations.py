@@ -124,3 +124,44 @@ def test_downgrade_then_upgrade_round_trips(tmp_path):
     assert down.returncode == 0, down.stderr
     up = _alembic(["upgrade", "head"], db_url)
     assert up.returncode == 0, up.stderr
+
+
+def test_notification_enum_members_are_all_migrated():
+    """Every NotificationType member must exist in the PostgreSQL enum.
+
+    notifications.type is a native ENUM on PostgreSQL, so adding a member to
+    the Python enum without an ALTER TYPE makes inserts fail at runtime with
+    "invalid input value for enum notificationtype". SQLite renders the column
+    as VARCHAR, so no amount of normal testing catches it — this reads the
+    migrations instead.
+    """
+    import re
+
+    from app.models import NotificationType
+
+    migrations = "\n".join(
+        p.read_text() for p in (ROOT / "alembic" / "versions").glob("*.py")
+    )
+
+    # Values in the original CREATE TYPE, plus any added later via ALTER TYPE.
+    created = set()
+    idx = migrations.find("CREATE TYPE notificationtype AS ENUM")
+    if idx != -1:
+        # The statement is built from concatenated Python string literals, so
+        # scan the following window rather than matching a single-line pattern.
+        window = migrations[idx:idx + 400]
+        window = window[:window.find(";")] if ";" in window else window
+        created |= set(re.findall(r"['\"]([a-z_]+)['\"]", window))
+    created |= set(re.findall(
+        r"ALTER TYPE notificationtype ADD VALUE (?:IF NOT EXISTS )?['\"]([a-z_]+)['\"]",
+        migrations,
+    ))
+    # The migration may build the list from a Python tuple.
+    for block in re.findall(r"NEW_VALUES\s*=\s*\(([^)]*)\)", migrations):
+        created |= set(re.findall(r"['\"]([a-z_]+)['\"]", block))
+
+    missing = {t.value for t in NotificationType} - created
+    assert not missing, (
+        f"NotificationType member(s) {sorted(missing)} have no ALTER TYPE migration; "
+        f"inserting them will fail on PostgreSQL"
+    )

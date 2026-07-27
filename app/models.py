@@ -62,8 +62,12 @@ class NotificationType(str, enum.Enum):
     bill_drift         = "bill_drift"       # bill cost moved vs its own history
     budget_warning     = "budget_warning"   # bucket spend crossed a budget threshold
     general            = "general"
-    # NOTE: notifications.type is a plain String column (see the notifications
-    # migration), not a native Postgres ENUM, so new members need no migration.
+    # WARNING: on PostgreSQL this is a native ENUM type (created in migration
+    # 2c1adaf99fa2), so adding a member here REQUIRES a migration running
+    # ALTER TYPE notificationtype ADD VALUE — otherwise inserts fail at runtime
+    # with "invalid input value for enum notificationtype". SQLite renders it as
+    # VARCHAR, so the test suite will not catch a missing one; see
+    # test_migrations.py::test_notification_enum_members_are_all_migrated.
 
 
 # ---------------------------------------------------------------------------
