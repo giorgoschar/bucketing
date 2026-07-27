@@ -15,6 +15,38 @@ from app.models import (
 )
 
 
+# ---------------------------------------------------------------------------
+# Currency normalisation
+#
+# Transaction.amount is stored in Transaction.currency; exchange_rate converts
+# it to the household's default currency. The rate was captured and stored but
+# never applied, so every total silently added raw amounts across currencies —
+# a EUR 50 dinner and a USD 50 dinner summed to "100" of nothing. Aggregate
+# base_amount, never amount.
+# ---------------------------------------------------------------------------
+
+def base_amount_expr():
+    """SQL expression: transaction amount converted to the household currency."""
+    return Transaction.amount * func.coalesce(Transaction.exchange_rate, 1)
+
+
+def to_base(amount, exchange_rate) -> float:
+    """Python equivalent of :func:`base_amount_expr` for loaded ORM objects."""
+    if amount is None:
+        return 0.0
+    rate = 1 if exchange_rate is None else exchange_rate
+    return float(amount) * float(rate)
+
+
+def split_to_base(split, txn) -> float:
+    """A split share converted to the household currency.
+
+    Splits are denominated in the parent transaction's currency, so they take
+    that transaction's rate.
+    """
+    return to_base(split.amount, txn.exchange_rate)
+
+
 def base_ctx(db: Session, user, hh_id: str) -> dict:
     """Minimal context shared by every page: current household + switcher list."""
     household = db.get(Household, hh_id)
@@ -67,16 +99,16 @@ def get_month_summary(db: Session, household_id: str, year: int, month: int, buc
         q = q.filter(Transaction.bucket_id.in_(bucket_ids))
     txns = q.options(joinedload(Transaction.splits)).all()
 
-    total_spent = sum(float(t.amount) for t in txns)
+    total_spent = sum(to_base(t.amount, t.exchange_rate) for t in txns)
 
     # Amount paid by each user — use splits when present, else paid_by
     paid_by: dict[str, float] = defaultdict(float)
     for t in txns:
         if t.splits:
             for s in t.splits:
-                paid_by[s.user_id] += float(s.amount)
+                paid_by[s.user_id] += split_to_base(s, t)
         elif t.paid_by:
-            paid_by[t.paid_by] += float(t.amount)
+            paid_by[t.paid_by] += to_base(t.amount, t.exchange_rate)
 
     # Load member info
     members = (
@@ -134,16 +166,16 @@ def get_bucket_month_summary(db: Session, bucket_id: str, year: int, month: int)
         .all()
     )
 
-    total_spent = sum(float(t.amount) for t in txns)
+    total_spent = sum(to_base(t.amount, t.exchange_rate) for t in txns)
 
     # Amount paid by each user — use splits when present, else paid_by
     paid_by: dict[str, float] = defaultdict(float)
     for t in txns:
         if t.splits:
             for s in t.splits:
-                paid_by[s.user_id] += float(s.amount)
+                paid_by[s.user_id] += split_to_base(s, t)
         elif t.paid_by:
-            paid_by[t.paid_by] += float(t.amount)
+            paid_by[t.paid_by] += to_base(t.amount, t.exchange_rate)
 
     members = (
         db.query(User)
@@ -186,15 +218,15 @@ def get_all_time_summary(db: Session, household_id: str, bucket_type: str = "", 
     if bucket_ids:
         q = q.filter(Transaction.bucket_id.in_(bucket_ids))
     txns = q.options(joinedload(Transaction.splits)).all()
-    total_spent = sum(float(t.amount) for t in txns)
+    total_spent = sum(to_base(t.amount, t.exchange_rate) for t in txns)
 
     paid_by: dict[str, float] = defaultdict(float)
     for t in txns:
         if t.splits:
             for s in t.splits:
-                paid_by[s.user_id] += float(s.amount)
+                paid_by[s.user_id] += split_to_base(s, t)
         elif t.paid_by:
-            paid_by[t.paid_by] += float(t.amount)
+            paid_by[t.paid_by] += to_base(t.amount, t.exchange_rate)
 
     members = (
         db.query(User)
@@ -223,10 +255,10 @@ def get_all_time_summary(db: Session, household_id: str, bucket_type: str = "", 
 def get_bucket_balance(db: Session, bucket_id: str) -> dict:
     """Total income, expenses, and net for a bucket — single SQL aggregation query."""
     income_sum = func.coalesce(
-        func.sum(case((Transaction.type == TransactionType.income, Transaction.amount), else_=0)), 0
+        func.sum(case((Transaction.type == TransactionType.income, base_amount_expr()), else_=0)), 0
     )
     expense_sum = func.coalesce(
-        func.sum(case((Transaction.type == TransactionType.expense, Transaction.amount), else_=0)), 0
+        func.sum(case((Transaction.type == TransactionType.expense, base_amount_expr()), else_=0)), 0
     )
     row = db.query(income_sum, expense_sum).filter(Transaction.bucket_id == bucket_id).one()
     income = float(row[0])
@@ -307,7 +339,7 @@ def get_income_total(db: Session, household_id: str, year: int, month: int) -> f
     """Sum of income transactions for the month, limited to show_income buckets."""
     start, end = _month_range(year, month)
     total = (
-        db.query(func.coalesce(func.sum(Transaction.amount), 0))
+        db.query(func.coalesce(func.sum(base_amount_expr()), 0))
         .join(Bucket, Bucket.id == Transaction.bucket_id)
         .filter(
             Transaction.household_id == household_id,
@@ -337,6 +369,9 @@ def get_bills_due_month_total(db: Session, household_id: str, year: int, month: 
         )
         .all()
     )
+    # NOTE: RecurringBill has a currency but no exchange_rate, so a bill priced
+    # in a non-default currency is counted at face value here. Transactions are
+    # converted (see base_amount_expr); bills would need a rate column to match.
     total = sum(
         float(occ.amount or occ.bill.amount or 0) for occ in occurrences
     )
@@ -372,7 +407,7 @@ def get_category_breakdown(
 
     totals: dict[str | None, float] = defaultdict(float)
     for t in txns:
-        totals[t.category_id] += float(t.amount)
+        totals[t.category_id] += to_base(t.amount, t.exchange_rate)
 
     grand = sum(totals.values()) or 1
 
@@ -458,7 +493,7 @@ def get_forecast(db: Session, household_id: str) -> dict:
         days_in_month = (date(year, month + 1, 1) - start).days
 
     spend_so_far = (
-        db.query(func.coalesce(func.sum(Transaction.amount), 0))
+        db.query(func.coalesce(func.sum(base_amount_expr()), 0))
         .filter(
             Transaction.household_id == household_id,
             Transaction.type == TransactionType.expense,
@@ -501,7 +536,7 @@ def get_bucket_budget_status(db: Session, household_id: str, year: int, month: i
 
     bucket_ids = [b.id for b in buckets]
     rows = (
-        db.query(Transaction.bucket_id, func.sum(Transaction.amount))
+        db.query(Transaction.bucket_id, func.sum(base_amount_expr()))
         .filter(
             Transaction.bucket_id.in_(bucket_ids),
             Transaction.type == TransactionType.expense,
@@ -565,13 +600,13 @@ def get_bucket_settlement(db: Session, bucket_id: str) -> list[dict]:
 
     for t in txns:
         if t.paid_by:
-            actually_paid[t.paid_by] += float(t.amount)
+            actually_paid[t.paid_by] += to_base(t.amount, t.exchange_rate)
         if t.splits:
             for s in t.splits:
-                owes[s.user_id] += float(s.amount)
+                owes[s.user_id] += split_to_base(s, t)
         else:
             # No splits → split equally among all members who appear in this bucket
-            share = float(t.amount) / len(user_ids)
+            share = to_base(t.amount, t.exchange_rate) / len(user_ids)
             for uid in user_ids:
                 owes[uid] += share
 
@@ -620,7 +655,7 @@ def get_bucket_spend_this_month(db: Session, household_id: str, year: int, month
     """Return {bucket_id: spend} for all active buckets in the given month."""
     start, end = _month_range(year, month)
     rows = (
-        db.query(Transaction.bucket_id, func.sum(Transaction.amount))
+        db.query(Transaction.bucket_id, func.sum(base_amount_expr()))
         .filter(
             Transaction.household_id == household_id,
             Transaction.type == TransactionType.expense,
@@ -835,7 +870,7 @@ def _sum_expenses_by(
         # round trip beats a portable-but-chatty per-month query.
         cols = [Transaction.category_id, Transaction.transaction_date]
 
-    rows = q.with_entities(*cols, func.sum(Transaction.amount)).group_by(*cols).all()
+    rows = q.with_entities(*cols, func.sum(base_amount_expr())).group_by(*cols).all()
     for row in rows:
         total = float(row[-1] or 0)
         if group_by == "bucket":
@@ -856,9 +891,9 @@ def _effective_amount(t: Transaction, paid_by: str | None) -> float:
     if paid_by and t.splits:
         for s in t.splits:
             if s.user_id == paid_by:
-                return float(s.amount)
+                return split_to_base(s, t)
         return 0.0
-    return float(t.amount)
+    return to_base(t.amount, t.exchange_rate)
 
 
 def get_insights_summary(
@@ -881,10 +916,10 @@ def get_insights_summary(
         if t.splits:
             for s in t.splits:
                 if paid_by is None or s.user_id == paid_by:
-                    paid_by_acc[s.user_id] += float(s.amount)
+                    paid_by_acc[s.user_id] += split_to_base(s, t)
         elif t.paid_by:
             if paid_by is None or t.paid_by == paid_by:
-                paid_by_acc[t.paid_by] += float(t.amount)
+                paid_by_acc[t.paid_by] += to_base(t.amount, t.exchange_rate)
 
     members = (
         db.query(User)
@@ -923,7 +958,7 @@ def get_insights_income(
 ) -> float:
     """Sum of income transactions in the date range, limited to show_income buckets."""
     q = (
-        db.query(func.coalesce(func.sum(Transaction.amount), 0))
+        db.query(func.coalesce(func.sum(base_amount_expr()), 0))
         .join(Bucket, Bucket.id == Transaction.bucket_id)
         .filter(
             Transaction.household_id == household_id,
@@ -1186,7 +1221,7 @@ def get_insights_budget_status(
 
     ids = [b.id for b in buckets]
     q = (
-        db.query(Transaction.bucket_id, func.sum(Transaction.amount))
+        db.query(Transaction.bucket_id, func.sum(base_amount_expr()))
         .filter(
             Transaction.bucket_id.in_(ids),
             Transaction.type == TransactionType.expense,
