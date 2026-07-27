@@ -8,7 +8,11 @@ from sqlalchemy.orm import Session
 from app.api_auth import require_api_auth
 from app.database import get_db
 from app.models import Bucket, BucketType, BucketStatus, Transaction, TransactionType, HouseholdMember, User
-from app.services import get_bucket_balance, get_bucket_settlement
+from app.services import (
+    get_bucket_balance, get_bucket_settlement,
+    get_bucket_settlement_history, record_bucket_settlement,
+)
+from app.validators import parse_amount, validate_split_users
 
 router = APIRouter(prefix="/buckets", tags=["buckets"])
 
@@ -157,13 +161,13 @@ def archive_bucket(
     return _bucket_dict(bucket)
 
 
-@router.post("/{bucket_id}/settle", status_code=status.HTTP_200_OK)
-def settle_bucket(
+@router.get("/{bucket_id}/settlement", status_code=status.HTTP_200_OK)
+def get_settlement(
     bucket_id: str,
     auth=Depends(require_api_auth),
     db: Session = Depends(get_db),
 ):
-    """Return settlement instructions (who owes whom). Does not create transactions."""
+    """Outstanding balances plus the history of payments already recorded."""
     user, hh_id = auth
     bucket = db.query(Bucket).filter_by(id=bucket_id, household_id=hh_id).first()
     if not bucket:
@@ -171,5 +175,69 @@ def settle_bucket(
     if not bucket.enable_settlement:
         raise HTTPException(status_code=400, detail="Settlement is not enabled for this bucket")
 
-    settlement = get_bucket_settlement(db, bucket_id)
-    return {"bucket_id": bucket_id, "settlements": settlement}
+    return {
+        "bucket_id":   bucket_id,
+        "settlements": get_bucket_settlement(db, bucket_id),
+        "history":     get_bucket_settlement_history(db, bucket_id),
+    }
+
+
+class SettleIn(BaseModel):
+    from_user_id: str | None = None
+    to_user_id:   str | None = None
+    amount:       float | None = None
+    note:         str | None = None
+
+
+@router.post("/{bucket_id}/settle", status_code=status.HTTP_200_OK)
+def settle_bucket(
+    bucket_id: str,
+    body: SettleIn | None = None,
+    auth=Depends(require_api_auth),
+    db: Session = Depends(get_db),
+):
+    """Record that a debt has been paid.
+
+    Empty body clears everything outstanding in the bucket; supplying
+    from/to (and optionally amount) records one possibly-partial payment.
+
+    This endpoint previously only *returned* the computed instructions and
+    recorded nothing, so balances never reset. Use GET /settlement for a
+    read-only view.
+    """
+    user, hh_id = auth
+    bucket = db.query(Bucket).filter_by(id=bucket_id, household_id=hh_id).first()
+    if not bucket:
+        raise HTTPException(status_code=404, detail="Bucket not found")
+    if not bucket.enable_settlement:
+        raise HTTPException(status_code=400, detail="Settlement is not enabled for this bucket")
+
+    body = body or SettleIn()
+    if bool(body.from_user_id) != bool(body.to_user_id):
+        raise HTTPException(status_code=400, detail="Both from_user_id and to_user_id are required")
+    if body.from_user_id and body.from_user_id == body.to_user_id:
+        raise HTTPException(status_code=400, detail="from_user_id and to_user_id must differ")
+    if body.from_user_id:
+        validate_split_users([body.from_user_id, body.to_user_id], hh_id, db)
+    if body.amount is not None:
+        parse_amount(body.amount, field="amount")
+
+    created = record_bucket_settlement(
+        db, bucket_id, hh_id,
+        created_by=user.id,
+        from_user_id=body.from_user_id,
+        to_user_id=body.to_user_id,
+        amount=body.amount,
+        note=body.note,
+    )
+    db.commit()
+
+    return {
+        "bucket_id": bucket_id,
+        "recorded": [
+            {"from_user_id": s.from_user_id, "to_user_id": s.to_user_id,
+             "amount": float(s.amount)}
+            for s in created
+        ],
+        "settlements": get_bucket_settlement(db, bucket_id),
+    }

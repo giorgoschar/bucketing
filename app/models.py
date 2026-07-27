@@ -282,6 +282,40 @@ class BillOccurrence(Base):
     transaction = relationship("Transaction", back_populates="bill_occurrence")
 
 
+class Settlement(Base):
+    """A recorded debt payment between two household members.
+
+    get_bucket_settlement() derives who owes whom from expense splits, but the
+    computed balance never reset because nothing recorded that a debt had
+    actually been paid. Settlements are subtracted from the computed net, so
+    partial payments work and the history stays auditable.
+
+    Scoped to a bucket when bucket_id is set; a NULL bucket_id settles across
+    the whole household.
+    """
+    __tablename__ = "settlements"
+    __table_args__ = (
+        Index("ix_settlements_household_bucket", "household_id", "bucket_id"),
+    )
+
+    id           = Column(String, primary_key=True, default=gen_id)
+    household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False)
+    bucket_id    = Column(String, ForeignKey("buckets.id", ondelete="CASCADE"), nullable=True)
+    from_user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    to_user_id   = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    # Always stored in the household's default currency, matching the balances
+    # it offsets (see services.base_amount_expr).
+    amount       = Column(Numeric(12, 4), nullable=False)
+    note         = Column(Text, nullable=True)
+    created_by   = Column(String, ForeignKey("users.id"), nullable=True)
+    created_at   = Column(DateTime, default=datetime.utcnow)
+
+    household = relationship("Household")
+    bucket    = relationship("Bucket")
+    from_user = relationship("User", foreign_keys=[from_user_id])
+    to_user   = relationship("User", foreign_keys=[to_user_id])
+
+
 class RecurringBillSplit(Base):
     __tablename__ = "recurring_bill_splits"
 

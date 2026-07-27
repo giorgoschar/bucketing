@@ -163,3 +163,57 @@ def test_bad_date_is_400_not_500(client, api):
         "name": "Bad", "amount": 10, "start_date": "31/02/2026",
     })
     assert r.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Settlement
+# ---------------------------------------------------------------------------
+
+def test_settle_endpoint_records_and_clears(client, db, api):
+    """POST /settle used to only return instructions and record nothing."""
+    from datetime import date
+    import pyotp
+    from app.auth import hash_password
+    from app.models import (
+        Bucket, HouseholdMember, MemberRole, Settlement, Transaction,
+        TransactionSplit, TransactionType, User,
+    )
+
+    headers, hh = api
+    partner = User(username="apipartner", display_name="APIPartner",
+                   email="ap@example.com", password_hash=hash_password("x"),
+                   totp_secret=pyotp.random_base32(), totp_enabled=True)
+    db.add(partner)
+    db.flush()
+    db.add(HouseholdMember(household_id=hh.household_id, user_id=partner.id,
+                           role=MemberRole.member))
+    db.get(Bucket, hh.bucket_id).enable_settlement = True
+    txn = Transaction(bucket_id=hh.bucket_id, household_id=hh.household_id,
+                      amount=80, currency="EUR", exchange_rate=1,
+                      type=TransactionType.expense, transaction_date=date.today(),
+                      paid_by=hh.user_id)
+    db.add(txn)
+    db.flush()
+    db.add_all([
+        TransactionSplit(transaction_id=txn.id, user_id=hh.user_id, amount=40),
+        TransactionSplit(transaction_id=txn.id, user_id=partner.id, amount=40),
+    ])
+    db.commit()
+
+    r = client.get(f"/api/v1/buckets/{hh.bucket_id}/settlement", headers=headers)
+    assert r.status_code == 200
+    assert r.json()["settlements"][0]["amount"] == 40.0
+
+    r = client.post(f"/api/v1/buckets/{hh.bucket_id}/settle", headers=headers, json={})
+    assert r.status_code == 200
+    assert r.json()["settlements"] == []
+    assert db.query(Settlement).count() == 1
+
+    hist = client.get(f"/api/v1/buckets/{hh.bucket_id}/settlement", headers=headers).json()
+    assert len(hist["history"]) == 1
+
+
+def test_settle_requires_enabled_bucket(client, api):
+    headers, hh = api
+    r = client.post(f"/api/v1/buckets/{hh.bucket_id}/settle", headers=headers, json={})
+    assert r.status_code == 400

@@ -11,7 +11,8 @@ from sqlalchemy import func, and_, case, or_
 from app.models import (
     Transaction, TransactionSplit, TransactionType,
     BillOccurrence, OccurrenceStatus, RecurringBill,
-    User, HouseholdMember, Bucket, BucketType, BucketStatus, Category, Household
+    User, HouseholdMember, Bucket, BucketType, BucketStatus, Category, Household,
+    Settlement,
 )
 
 
@@ -579,7 +580,12 @@ def get_bucket_settlement(db: Session, bucket_id: str) -> list[dict]:
         .options(joinedload(Transaction.splits))
         .all()
     )
-    if not txns:
+    # Payments already recorded against this bucket (named distinctly from the
+    # `settlements` list of *suggested* transfers built at the end).
+    recorded = (
+        db.query(Settlement).filter(Settlement.bucket_id == bucket_id).all()
+    )
+    if not txns and not recorded:
         return []
 
     # Collect all involved user ids
@@ -589,6 +595,8 @@ def get_bucket_settlement(db: Session, bucket_id: str) -> list[dict]:
             user_ids.add(t.paid_by)
         for s in t.splits:
             user_ids.add(s.user_id)
+    for st in recorded:
+        user_ids.update((st.from_user_id, st.to_user_id))
 
     if len(user_ids) < 2:
         return []
@@ -613,7 +621,19 @@ def get_bucket_settlement(db: Session, bucket_id: str) -> list[dict]:
     # net[uid] > 0 → is owed money; net[uid] < 0 → owes money
     net: dict[str, float] = defaultdict(float)
     for uid in user_ids:
-        net[uid] = round(actually_paid[uid] - owes[uid], 2)
+        net[uid] = actually_paid[uid] - owes[uid]
+
+    # Offset by payments already made. A settlement from A to B means A has
+    # handed over cash, so A owes that much less and B is owed that much less.
+    # Without this the computed balance never reset and the same debt was shown
+    # forever, however many times it had been paid.
+    for st in recorded:
+        amount = float(st.amount)
+        net[st.from_user_id] += amount
+        net[st.to_user_id] -= amount
+
+    for uid in list(net):
+        net[uid] = round(net[uid], 2)
 
     # Load user info
     users = {u.id: u for u in db.query(User).filter(User.id.in_(user_ids)).all()}
@@ -632,6 +652,9 @@ def get_bucket_settlement(db: Session, bucket_id: str) -> list[dict]:
             cu = users.get(cuid)
             du = users.get(duid)
             settlements.append({
+                # ids are needed to record a payment against this suggestion
+                "from_id":    duid,
+                "to_id":      cuid,
                 "from_name":  du.display_name if du else duid,
                 "to_name":    cu.display_name if cu else cuid,
                 "from_color": du.avatar_color if du else "#9ca3af",
@@ -1256,3 +1279,83 @@ def get_insights_budget_status(
         })
     result.sort(key=lambda x: -x["pct_actual"])
     return result
+
+
+def record_bucket_settlement(
+    db: Session,
+    bucket_id: str,
+    household_id: str,
+    *,
+    created_by: str | None = None,
+    from_user_id: str | None = None,
+    to_user_id: str | None = None,
+    amount: float | None = None,
+    note: str | None = None,
+) -> list[Settlement]:
+    """Record debt payment(s) for a bucket and return the rows created.
+
+    With no from/to/amount, settles everything currently outstanding: one row
+    per suggested transfer, clearing the bucket. Passing them records a single
+    (possibly partial) payment instead.
+
+    Callers must commit.
+    """
+    outstanding = get_bucket_settlement(db, bucket_id)
+
+    if from_user_id and to_user_id:
+        if amount is None:
+            # Settle just this pair in full.
+            amount = next(
+                (r["amount"] for r in outstanding
+                 if r["from_id"] == from_user_id and r["to_id"] == to_user_id),
+                None,
+            )
+            if amount is None:
+                return []
+        pairs = [(from_user_id, to_user_id, float(amount))]
+    else:
+        pairs = [(r["from_id"], r["to_id"], r["amount"]) for r in outstanding]
+
+    created = []
+    for payer, payee, value in pairs:
+        if value <= 0:
+            continue
+        row = Settlement(
+            household_id=household_id,
+            bucket_id=bucket_id,
+            from_user_id=payer,
+            to_user_id=payee,
+            amount=value,
+            note=note,
+            created_by=created_by,
+        )
+        db.add(row)
+        created.append(row)
+    return created
+
+
+def get_bucket_settlement_history(db: Session, bucket_id: str) -> list[dict]:
+    """Recorded payments for a bucket, newest first."""
+    rows = (
+        db.query(Settlement)
+        .filter(Settlement.bucket_id == bucket_id)
+        .order_by(Settlement.created_at.desc())
+        .all()
+    )
+    users = {}
+    if rows:
+        ids = {r.from_user_id for r in rows} | {r.to_user_id for r in rows}
+        users = {u.id: u for u in db.query(User).filter(User.id.in_(ids)).all()}
+    return [
+        {
+            "id":         r.id,
+            "from_name":  users[r.from_user_id].display_name if r.from_user_id in users else "?",
+            "to_name":    users[r.to_user_id].display_name if r.to_user_id in users else "?",
+            "from_color": users[r.from_user_id].avatar_color if r.from_user_id in users else "#9ca3af",
+            "to_color":   users[r.to_user_id].avatar_color if r.to_user_id in users else "#6366f1",
+            "amount":     round(float(r.amount), 2),
+            "note":       r.note,
+            "created_at": r.created_at,
+        }
+        for r in rows
+    ]

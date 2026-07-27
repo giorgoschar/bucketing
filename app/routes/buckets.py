@@ -8,9 +8,12 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.auth import require_auth, require_csrf
 from app.models import Bucket, BucketType, BucketStatus, Household, HouseholdMember, Transaction, TransactionType
-from app.services import get_bucket_balance, get_bucket_month_summary, get_bucket_settlement, base_ctx
+from app.services import (
+    get_bucket_balance, get_bucket_month_summary, get_bucket_settlement,
+    get_bucket_settlement_history, record_bucket_settlement, base_ctx,
+)
 from app.templates import templates
-from app.validators import parse_amount, parse_year_month
+from app.validators import parse_amount, parse_year_month, require_member
 
 router = APIRouter(prefix="/buckets", dependencies=[Depends(require_csrf)])
 
@@ -174,6 +177,9 @@ def bucket_detail(
     households = ctx["households"]
 
     settlement = get_bucket_settlement(db, bucket_id) if bucket.enable_settlement else []
+    settlement_history = (
+        get_bucket_settlement_history(db, bucket_id) if bucket.enable_settlement else []
+    )
 
     # Budget progress, clamped to 0..100 for the bar width. Computed here
     # because bucket.budget is a Decimal and balance["expenses"] is a float.
@@ -206,6 +212,7 @@ def bucket_detail(
             "all_time": all_time,
             "all_time_total": all_time_total,
             "settlement": settlement,
+            "settlement_history": settlement_history,
             "budget_pct": budget_pct,
             "page": page,
             "total_pages": total_pages,
@@ -272,3 +279,52 @@ def unarchive_bucket(
     bucket.status = BucketStatus.active
     db.commit()
     return RedirectResponse("/buckets", status_code=302)
+
+
+@router.post("/{bucket_id}/settle", response_class=HTMLResponse)
+def settle_bucket(
+    bucket_id: str,
+    request: Request,
+    from_user_id: str = Form(""),
+    to_user_id: str = Form(""),
+    amount: str = Form(""),
+    note: str = Form(""),
+    db: Session = Depends(get_db),
+    auth=Depends(require_auth),
+):
+    """Record that a debt has been paid.
+
+    With no arguments, clears everything currently outstanding in the bucket.
+    Supplying from/to (and optionally an amount) records a single, possibly
+    partial, payment instead.
+    """
+    user, hh_id = auth
+    bucket = db.get(Bucket, bucket_id)
+    if not bucket or bucket.household_id != hh_id:
+        raise HTTPException(status_code=404)
+    if not bucket.enable_settlement:
+        raise HTTPException(status_code=400, detail="Settlement is not enabled for this bucket.")
+
+    payer = require_member(db, from_user_id, hh_id) if from_user_id else None
+    payee = require_member(db, to_user_id, hh_id) if to_user_id else None
+    if bool(payer) != bool(payee):
+        raise HTTPException(status_code=400, detail="Both payer and payee are required.")
+    if payer and payer == payee:
+        raise HTTPException(status_code=400, detail="Payer and payee must differ.")
+
+    value = parse_amount(amount, field="Amount", allow_blank=True)
+
+    created = record_bucket_settlement(
+        db, bucket_id, hh_id,
+        created_by=user.id,
+        from_user_id=payer,
+        to_user_id=payee,
+        amount=float(value) if value is not None else None,
+        note=note.strip() or None,
+    )
+    db.commit()
+
+    if not created:
+        # Nothing outstanding — treat as a no-op rather than an error.
+        pass
+    return RedirectResponse(f"/buckets/{bucket_id}", status_code=302)
