@@ -42,6 +42,12 @@
 
   <!-- HTMX -->
   <script src="/static/vendor/htmx.min.js" defer></script>
+  <!-- Alpine component factories.
+       MUST load before alpine.min.js: deferred scripts run in document order,
+       and Alpine initialises the tree as soon as it starts, so any x-data
+       factory it needs has to already exist. Living in <head> also means
+       hx-boost body swaps never re-evaluate or race them. -->
+  <script defer src="/static/insights.js"></script>
   <!-- Alpine.js -->
   <script defer src="/static/vendor/alpine.min.js"></script>
   <!-- Offline helpers — loaded in <head> so hx-boost body swaps don't re-execute it -->
@@ -515,9 +521,17 @@
     // re-init any Alpine components that failed because their factory function
     // wasn't yet defined when Alpine's MutationObserver fired.
     document.body.addEventListener('htmx:afterSettle', function(evt) {
-      if (window.Alpine && evt.detail && evt.detail.target) {
-        Alpine.initTree(evt.detail.target);
+      var target = evt.detail && evt.detail.target;
+      if (!window.Alpine || !target) return;
+      // An outerHTML swap replaces the target, so evt.detail.target can be a
+      // detached node by the time this runs. Initialising a detached tree walks
+      // elements with no parent and throws inside Alpine/HTMX. Re-resolve to the
+      // element that is actually in the document.
+      if (!document.contains(target)) {
+        target = (target.id && document.getElementById(target.id)) || null;
+        if (!target) return;
       }
+      Alpine.initTree(target);
     });
   </script>
 

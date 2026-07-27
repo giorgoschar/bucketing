@@ -65,6 +65,19 @@ def dashboard(
     # Only show income KPI card if there are income-tracked buckets with income this month
     show_income = income_total > 0 or any(b.show_income for b in buckets)
 
+    # Budget progress per bucket, clamped to 0..100 for the bar width.
+    # Computed here rather than in the template: bucket.budget is a Decimal and
+    # bucket_spend holds floats, and Jinja cannot divide the two.
+    bucket_budget_pct = {}
+    for b in buckets:
+        if not b.budget:
+            continue
+        budget = float(b.budget)
+        if budget <= 0:
+            continue
+        spent = float(bucket_spend.get(b.id, 0.0))
+        bucket_budget_pct[b.id] = min(max(spent / budget * 100, 0), 100)
+
     return templates.TemplateResponse(
         "dashboard.html",
         {
@@ -80,6 +93,7 @@ def dashboard(
             "overdue_bills":  overdue,
             "buckets":        buckets,
             "bucket_spend":   bucket_spend,
+            "bucket_budget_pct": bucket_budget_pct,
             "recent":         recent,
             "today":          today,
             "month_name":     date(year, month, 1).strftime("%B %Y"),

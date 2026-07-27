@@ -142,7 +142,9 @@
         <p class="text-xs text-gray-400 mt-0.5">{{ spent | currency(household.default_currency) }}</p>
         {% endif %}
         {% if bucket.budget %}
-        {% set pct = [[(spent / bucket.budget * 100), 0] | max, 100] | min %}
+        {# pct is computed in the route: bucket.budget is a Decimal while spent
+           is a float, and Python refuses to divide the two. #}
+        {% set pct = bucket_budget_pct.get(bucket.id, 0) %}
         <div class="mt-2 h-1 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
           <div class="h-full rounded-full {% if pct > 90 %}bg-red-400{% elif pct > 70 %}bg-amber-400{% else %}bg-emerald-400{% endif %}"
                style="width: {{ pct }}%"></div>

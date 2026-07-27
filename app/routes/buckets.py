@@ -175,6 +175,14 @@ def bucket_detail(
 
     settlement = get_bucket_settlement(db, bucket_id) if bucket.enable_settlement else []
 
+    # Budget progress, clamped to 0..100 for the bar width. Computed here
+    # because bucket.budget is a Decimal and balance["expenses"] is a float.
+    budget_pct = 0.0
+    if bucket.budget and float(bucket.budget) > 0:
+        budget_pct = round(
+            min(max(float(balance["expenses"]) / float(bucket.budget) * 100, 0), 100), 1
+        )
+
     return templates.TemplateResponse(
         "buckets/detail.html",
         {
@@ -198,6 +206,7 @@ def bucket_detail(
             "all_time": all_time,
             "all_time_total": all_time_total,
             "settlement": settlement,
+            "budget_pct": budget_pct,
             "page": page,
             "total_pages": total_pages,
         },
