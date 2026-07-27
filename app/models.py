@@ -201,6 +201,8 @@ class Transaction(Base):
     __table_args__ = (
         Index("ix_transactions_household_date", "household_id", "transaction_date"),
         Index("ix_transactions_bucket_id", "bucket_id"),
+        # NULLs do not collide, so only offline submissions are constrained.
+        UniqueConstraint("household_id", "client_id", name="uq_transaction_client_id"),
     )
 
     id = Column(String, primary_key=True, default=gen_id)
@@ -216,6 +218,10 @@ class Transaction(Base):
     transaction_date = Column(Date, default=date.today, nullable=False)
     receipt_path = Column(String, nullable=True)
     exclude_from_forecast = Column(Boolean, default=False, nullable=False)
+    # Client-generated id for offline submissions. A queued expense may be
+    # retried after the response was lost, so the server must recognise the
+    # repeat instead of creating a second transaction.
+    client_id = Column(String(64), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     bucket = relationship("Bucket", back_populates="transactions")

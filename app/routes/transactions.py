@@ -354,6 +354,7 @@ async def create_transaction(
     is_shared: str = Form("off"),
     merchant: str = Form(""),
     remember_rule: str = Form(""),
+    client_id: str = Form(""),
     receipt: UploadFile = File(None),
     db: Session = Depends(get_db),
     auth=Depends(require_auth),
@@ -361,6 +362,26 @@ async def create_transaction(
     user, hh_id = auth
 
     bucket = require_bucket(db, bucket_id, hh_id)
+
+    # Idempotency for offline replays: a queued expense may be retried after
+    # its response was lost, and must not become a second transaction.
+    if client_id.strip():
+        existing = (
+            db.query(Transaction)
+            .filter(
+                Transaction.household_id == hh_id,
+                Transaction.client_id == client_id.strip(),
+            )
+            .first()
+        )
+        if existing:
+            if request.headers.get("HX-Request"):
+                return templates.TemplateResponse(
+                    "partials/transaction_added.html",
+                    {"request": request, "transaction": existing, "bucket": bucket},
+                )
+            return RedirectResponse(f"/buckets/{existing.bucket_id}", status_code=302)
+
     txn_amount   = parse_amount(amount, field="Amount")
     txn_date     = _parse_txn_date(transaction_date)
     txn_currency = _validate_currency(currency)
@@ -399,6 +420,7 @@ async def create_transaction(
         notes=notes.strip() or None,
         transaction_date=txn_date,
         receipt_path=receipt_path,
+        client_id=client_id.strip() or None,
     )
     try:
         db.add(txn)

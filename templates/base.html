@@ -495,24 +495,90 @@
       });
     }
 
-    // Flush queued offline expenses when online and on message from SW sync
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.addEventListener('message', async (evt) => {
-        if (evt.data?.type === 'FLUSH_OFFLINE_EXPENSES' && window.offlineExpenses) {
-          const result = await window.offlineExpenses.flushPendingTransactions();
-          if (result.sent > 0) location.reload();
-        }
-      });
-      // Also flush on reconnect
-      window.addEventListener('online', async () => {
-        if (!window.offlineExpenses) return;
-        const count = await window.offlineExpenses.getPendingCount();
-        if (count > 0) {
-          await window.offlineExpenses.flushPendingTransactions();
-          location.reload();
-        }
-      });
+    /* ---------------------------------------------------------------
+     * Offline queue: sync + visible status.
+     *
+     * Queuing silently is worse than not queuing: the user cannot tell
+     * whether an expense is saved, stuck, or lost. The pill below reports
+     * the queue state and lets them retry by hand.
+     * --------------------------------------------------------------- */
+    function _offlineBanner(text, tone) {
+      let el = document.getElementById('offline-queue-pill');
+      if (!el) {
+        el = document.createElement('button');
+        el.id = 'offline-queue-pill';
+        el.type = 'button';
+        el.className = 'fixed bottom-20 lg:bottom-6 left-1/2 -translate-x-1/2 z-50 ' +
+          'px-4 py-2 rounded-full shadow-lg text-xs font-semibold transition-colors';
+        el.addEventListener('click', () => window.flushOfflineQueue(true));
+        document.body.appendChild(el);
+      }
+      const tones = {
+        pending: 'bg-amber-500 text-white hover:bg-amber-600',
+        syncing: 'bg-gray-800 text-white',
+        done:    'bg-emerald-500 text-white',
+        error:   'bg-red-500 text-white hover:bg-red-600',
+      };
+      el.className = el.className.replace(/bg-\S+|text-\S+|hover:bg-\S+/g, '').trim() +
+        ' ' + (tones[tone] || tones.pending);
+      el.textContent = text;
+      el.style.display = '';
+      return el;
     }
+
+    function _hideOfflineBanner() {
+      const el = document.getElementById('offline-queue-pill');
+      if (el) el.style.display = 'none';
+    }
+
+    window.refreshOfflineBadge = async function () {
+      if (!window.offlineExpenses) return 0;
+      const count = await window.offlineExpenses.getPendingCount();
+      if (count > 0) {
+        _offlineBanner(count + ' expense' + (count === 1 ? '' : 's') +
+                       ' waiting to sync · tap to retry', 'pending');
+      } else {
+        _hideOfflineBanner();
+      }
+      return count;
+    };
+
+    window.flushOfflineQueue = async function (manual) {
+      if (!window.offlineExpenses) return;
+      const count = await window.offlineExpenses.getPendingCount();
+      if (!count) { _hideOfflineBanner(); return; }
+      if (!navigator.onLine) {
+        _offlineBanner(count + ' waiting — still offline', 'pending');
+        return;
+      }
+
+      _offlineBanner('Syncing ' + count + '…', 'syncing');
+      const r = await window.offlineExpenses.flushPendingTransactions();
+
+      if (r.rejected) {
+        _offlineBanner(r.rejected + ' could not be saved and were discarded', 'error');
+      } else if (r.failed) {
+        _offlineBanner(r.failed + ' failed to sync · tap to retry', 'error');
+      } else if (r.sent) {
+        _offlineBanner('Synced ' + r.sent, 'done');
+        setTimeout(() => location.reload(), 900);
+        return;
+      }
+      if (manual && !r.sent) setTimeout(() => window.refreshOfflineBadge(), 2500);
+    };
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', (evt) => {
+        if (evt.data?.type === 'FLUSH_OFFLINE_EXPENSES') window.flushOfflineQueue();
+      });
+      window.addEventListener('online', () => window.flushOfflineQueue());
+      window.addEventListener('offline', () => window.refreshOfflineBadge());
+    }
+    // Show any leftover queue on load, and flush it if we are already online.
+    document.addEventListener('DOMContentLoaded', async () => {
+      const count = await window.refreshOfflineBadge();
+      if (count && navigator.onLine) window.flushOfflineQueue();
+    });
 
     function _urlBase64ToUint8(base64String) {
       const padding = '='.repeat((4 - base64String.length % 4) % 4);
