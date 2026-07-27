@@ -199,6 +199,22 @@
             {% endfor %}
           </div>
           <input type="hidden" name="category_id" :value="result.category_id" />
+          {# The merchant travels separately from notes so a rule keys on the
+             merchant even if the user edits the description. #}
+          <input type="hidden" name="merchant" :value="result.merchant" />
+
+          {# Teach the rule — only meaningful with both a merchant and a category #}
+          <template x-if="result.merchant && result.category_id">
+            <label class="flex items-center gap-2.5 mt-3 cursor-pointer">
+              <input type="checkbox" name="remember_rule" value="on" checked
+                     class="w-4 h-4 rounded border-gray-300 text-primary-500 focus:ring-primary-500" />
+              <span class="text-xs text-gray-600 dark:text-gray-400">
+                Always categorise
+                <span class="font-semibold" x-text="result.merchant"></span>
+                like this
+              </span>
+            </label>
+          </template>
         </div>
 
         <!-- Bucket -->

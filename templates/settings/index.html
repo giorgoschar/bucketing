@@ -290,6 +290,62 @@
     </form>
   </div>
 
+  <!-- ===== Auto-categorisation rules ===== -->
+  <div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
+    <div class="px-6 py-4 border-b border-gray-50 dark:border-gray-800">
+      <p class="text-sm font-semibold">Auto-categorisation</p>
+      <p class="text-xs text-gray-400 mt-0.5">
+        Scanned receipts matching a pattern get the category automatically.
+        Scanning also learns these for you.
+      </p>
+    </div>
+    <div class="px-6 py-5">
+      {% if category_rules %}
+      <div class="space-y-2 mb-5">
+        {% for rule in category_rules %}
+        <div class="flex items-center gap-3 py-1.5">
+          <span class="text-xs text-gray-400 flex-shrink-0">contains</span>
+          <code class="text-xs font-mono bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded truncate">{{ rule.pattern }}</code>
+          <span class="text-gray-300 dark:text-gray-600">→</span>
+          <span class="text-sm flex-1 truncate">
+            {% if rule.category %}{{ rule.category.icon }} {{ rule.category.name }}{% else %}<span class="text-gray-400">deleted category</span>{% endif %}
+          </span>
+          {% if rule.match_count %}
+          <span class="text-[10px] text-gray-400 flex-shrink-0">used {{ rule.match_count }}×</span>
+          {% endif %}
+          <form method="POST" action="/settings/category-rules/{{ rule.id }}/delete" class="flex-shrink-0">
+            <input type="hidden" name="_csrf_token" value="{{ request.state.csrf_token }}">
+            <button type="submit" class="text-gray-300 hover:text-red-500 transition-colors" title="Delete rule">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+          </form>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="text-sm text-gray-400 mb-5">
+        No rules yet. Scan a receipt and tick “Always categorise … like this”, or add one below.
+      </p>
+      {% endif %}
+
+      <form method="POST" action="/settings/category-rules" class="flex flex-wrap gap-2">
+        <input type="hidden" name="_csrf_token" value="{{ request.state.csrf_token }}">
+        <input type="text" name="pattern" required placeholder="Merchant contains…"
+               class="flex-1 min-w-[10rem] px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm outline-none focus:border-primary-500" />
+        <select name="category_id" required
+                class="px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm outline-none focus:border-primary-500">
+          {% for cat in categories %}
+          <option value="{{ cat.id }}">{{ cat.icon }} {{ cat.name }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit"
+                class="px-4 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-semibold rounded-xl text-sm transition-colors">
+          Add rule
+        </button>
+      </form>
+    </div>
+  </div>
+
   <!-- ===== Categories ===== -->
   <div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
     <div class="px-6 py-4 border-b border-gray-50 dark:border-gray-800">

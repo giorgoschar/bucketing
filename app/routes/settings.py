@@ -26,6 +26,8 @@ from app.config import settings
 from app.models import (
     Household, HouseholdMember, User, Invitation, Category, MemberRole
 )
+from app.category_rules import learn_rule, list_rules
+from app.models import CategoryRule
 from app.seed import seed_categories
 from app.services import base_ctx
 from app.templates import templates
@@ -91,6 +93,7 @@ def settings_page(
         "is_owner": my_membership and my_membership.role == MemberRole.owner,
         "avatar_colors": AVATAR_COLORS,
         "currencies": settings.currencies,
+        "category_rules": list_rules(db, hh_id),
     })
     return templates.TemplateResponse("settings/index.html", ctx)
 
@@ -695,3 +698,41 @@ def leave_household(
     response = RedirectResponse("/setup", status_code=302)
     clear_session(response)
     return response
+
+
+# ---------------------------------------------------------------------------
+# Categorisation rules
+# ---------------------------------------------------------------------------
+
+@router.post("/category-rules", response_class=HTMLResponse)
+def create_category_rule(
+    pattern: str = Form(...),
+    category_id: str = Form(...),
+    db: Session = Depends(get_db),
+    auth=Depends(require_auth),
+):
+    """Add a "merchant contains X -> category Y" rule."""
+    user, hh_id = auth
+    rule = learn_rule(db, hh_id, pattern, category_id, created_by=user.id)
+    if rule is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Enter at least 2 characters and pick a category from this household.",
+        )
+    db.commit()
+    return RedirectResponse("/settings", status_code=302)
+
+
+@router.post("/category-rules/{rule_id}/delete", response_class=HTMLResponse)
+def delete_category_rule(
+    rule_id: str,
+    db: Session = Depends(get_db),
+    auth=Depends(require_auth),
+):
+    user, hh_id = auth
+    rule = db.get(CategoryRule, rule_id)
+    if not rule or rule.household_id != hh_id:
+        raise HTTPException(status_code=404)
+    db.delete(rule)
+    db.commit()
+    return RedirectResponse("/settings", status_code=302)

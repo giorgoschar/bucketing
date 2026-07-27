@@ -25,6 +25,7 @@ from app.models import (
 )
 from app.templates import templates
 from app.receipt_parser import parse_receipt_text, match_category, _extract_category_hint
+from app.category_rules import learn_rule, resolve_category
 from app.config import settings
 from app.services import full_ctx as _full_ctx
 from app.services import find_duplicate_candidates, find_household_duplicates
@@ -141,13 +142,14 @@ async def parse_scan(
 
     parsed = parse_receipt_text(text)
 
-    # Map category hint to an actual category in this household
-    categories = (
-        db.query(Category)
-        .filter_by(household_id=hh_id)
-        .all()
+    # Household rules take precedence over the built-in keyword guess.
+    category_id = resolve_category(
+        db, hh_id,
+        merchant=parsed["merchant"],
+        hint=parsed["category_hint"],
+        raw_text=text,
     )
-    category_id = match_category(parsed["category_hint"], categories)
+    db.commit()  # persists match_count bookkeeping
 
     return {
         "amount": parsed["amount"],
@@ -281,8 +283,12 @@ async def scan_qr(
 
     receipt = _parse_aade_html(resp.text)
 
-    categories = db.query(Category).filter_by(household_id=hh_id).all()
-    category_id = match_category(receipt["category_hint"], categories)
+    category_id = resolve_category(
+        db, hh_id,
+        merchant=receipt["merchant"],
+        hint=receipt["category_hint"],
+    )
+    db.commit()
 
     return {
         "amount": receipt["amount"],
@@ -346,6 +352,8 @@ async def create_transaction(
     paid_by: str = Form(""),
     notes: str = Form(""),
     is_shared: str = Form("off"),
+    merchant: str = Form(""),
+    remember_rule: str = Form(""),
     receipt: UploadFile = File(None),
     db: Session = Depends(get_db),
     auth=Depends(require_auth),
@@ -401,6 +409,12 @@ async def create_transaction(
             split_data = await _parse_splits(request, txn.id, txn_amount, hh_id, db)
             for split in split_data:
                 db.add(split)
+
+        # Teach the categorisation rule from a scan: correcting a merchant's
+        # category once makes it stick for next time.
+        if remember_rule == "on" and txn_category:
+            learn_rule(db, hh_id, merchant or notes, txn_category,
+                       created_by=user.id)
 
         db.commit()
     except Exception:

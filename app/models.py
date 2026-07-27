@@ -292,6 +292,33 @@ class BillOccurrence(Base):
     transaction = relationship("Transaction", back_populates="bill_occurrence")
 
 
+class CategoryRule(Base):
+    """User-defined "merchant contains X → category Y" mapping.
+
+    Categorisation previously relied on a hardcoded Greek keyword list in
+    receipt_parser.py plus fuzzy name matching, neither of which could learn.
+    These rules are checked first and can be taught from a scan, so correcting
+    a category once makes it stick.
+    """
+    __tablename__ = "category_rules"
+    __table_args__ = (
+        UniqueConstraint("household_id", "pattern", name="uq_category_rule"),
+        Index("ix_category_rules_household", "household_id"),
+    )
+
+    id           = Column(String, primary_key=True, default=gen_id)
+    household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False)
+    # Case-insensitive substring, stored lowercased.
+    pattern      = Column(String(200), nullable=False)
+    category_id  = Column(String, ForeignKey("categories.id", ondelete="CASCADE"), nullable=False)
+    match_count  = Column(Integer, default=0, nullable=False)
+    created_by   = Column(String, ForeignKey("users.id"), nullable=True)
+    created_at   = Column(DateTime, default=datetime.utcnow)
+
+    household = relationship("Household")
+    category  = relationship("Category")
+
+
 class Settlement(Base):
     """A recorded debt payment between two household members.
 
