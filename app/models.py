@@ -179,6 +179,12 @@ class Bucket(Base):
     description = Column(Text, nullable=True)
     show_income = Column(Boolean, default=True, nullable=False)
     enable_settlement = Column(Boolean, default=False, nullable=False)
+    # Trip buckets: the dates the trip runs. Savings buckets: goal_amount is the
+    # target and end_date the date to hit it by. Both were previously types with
+    # no behaviour attached — only filter labels.
+    start_date = Column(Date, nullable=True)
+    end_date = Column(Date, nullable=True)
+    goal_amount = Column(Numeric(12, 4), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     household = relationship("Household", back_populates="buckets")

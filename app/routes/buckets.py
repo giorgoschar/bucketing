@@ -11,6 +11,7 @@ from app.models import Bucket, BucketType, BucketStatus, Household, HouseholdMem
 from app.services import (
     get_bucket_balance, get_bucket_month_summary, get_bucket_settlement,
     get_bucket_settlement_history, record_bucket_settlement, base_ctx,
+    get_trip_summary, get_savings_summary,
 )
 from app.templates import templates
 from app.validators import parse_amount, parse_year_month, require_member
@@ -24,6 +25,18 @@ BUCKET_COLORS = [
 ]
 
 BUCKET_ICONS = ["🪣", "🏠", "✈️", "🛒", "💡", "🎯", "🏖️", "🚗", "💰", "🎉"]
+
+
+def _optional_date(value: str, field: str):
+    """Parse an optional ISO date from a form field, 400 rather than 500."""
+    from datetime import date as _date
+    value = (value or "").strip()
+    if not value:
+        return None
+    try:
+        return _date.fromisoformat(value)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"{field} must be a valid date (YYYY-MM-DD).")
 
 
 @router.get("", response_class=HTMLResponse)
@@ -77,6 +90,9 @@ def create_bucket(
     description: str = Form(""),
     show_income: str = Form(""),
     enable_settlement: str = Form(""),
+    start_date: str = Form(""),
+    end_date: str = Form(""),
+    goal_amount: str = Form(""),
     db: Session = Depends(get_db),
     auth=Depends(require_auth),
 ):
@@ -91,6 +107,9 @@ def create_bucket(
         description=description.strip() or None,
         show_income=(show_income == "on"),
         enable_settlement=(enable_settlement == "on"),
+        start_date=_optional_date(start_date, "Start date"),
+        end_date=_optional_date(end_date, "End date"),
+        goal_amount=parse_amount(goal_amount, field="Goal amount", allow_blank=True),
     )
     db.add(bucket)
     db.commit()
@@ -176,6 +195,8 @@ def bucket_detail(
     ctx = base_ctx(db, user, hh_id)
     households = ctx["households"]
 
+    trip = get_trip_summary(db, bucket)
+    savings = get_savings_summary(db, bucket)
     settlement = get_bucket_settlement(db, bucket_id) if bucket.enable_settlement else []
     settlement_history = (
         get_bucket_settlement_history(db, bucket_id) if bucket.enable_settlement else []
@@ -211,6 +232,8 @@ def bucket_detail(
             "month_name": date(year, month, 1).strftime("%B %Y"),
             "all_time": all_time,
             "all_time_total": all_time_total,
+            "trip": trip,
+            "savings": savings,
             "settlement": settlement,
             "settlement_history": settlement_history,
             "budget_pct": budget_pct,
@@ -231,6 +254,9 @@ def edit_bucket(
     description: str = Form(""),
     show_income: str = Form(""),
     enable_settlement: str = Form(""),
+    start_date: str = Form(""),
+    end_date: str = Form(""),
+    goal_amount: str = Form(""),
     db: Session = Depends(get_db),
     auth=Depends(require_auth),
 ):
@@ -247,6 +273,9 @@ def edit_bucket(
     bucket.description = description.strip() or None
     bucket.show_income = (show_income == "on")
     bucket.enable_settlement = (enable_settlement == "on")
+    bucket.start_date = _optional_date(start_date, "Start date")
+    bucket.end_date = _optional_date(end_date, "End date")
+    bucket.goal_amount = parse_amount(goal_amount, field="Goal amount", allow_blank=True)
     db.commit()
     return RedirectResponse(f"/buckets/{bucket_id}", status_code=302)
 

@@ -1520,3 +1520,136 @@ def get_bucket_settlement_history(db: Session, bucket_id: str) -> list[dict]:
         }
         for r in rows
     ]
+
+
+# ---------------------------------------------------------------------------
+# Typed bucket behaviour
+#
+# BucketType.trip and BucketType.savings previously existed only as filter
+# labels with no behaviour attached. These give each one the summary that makes
+# the type worth choosing.
+# ---------------------------------------------------------------------------
+
+def get_trip_summary(db: Session, bucket: Bucket) -> dict:
+    """Trip-shaped view of a bucket: duration, burn rate, per-person totals.
+
+    Falls back to the first and last transaction dates when the trip has no
+    explicit range, so an existing trip bucket is useful without being edited.
+    """
+    if bucket.type != BucketType.trip:
+        return {}
+
+    txns = (
+        db.query(Transaction)
+        .filter(
+            Transaction.bucket_id == bucket.id,
+            Transaction.type == TransactionType.expense,
+        )
+        .options(joinedload(Transaction.splits))
+        .all()
+    )
+
+    total = sum(to_base(t.amount, t.exchange_rate) for t in txns)
+    txn_dates = [t.transaction_date for t in txns if t.transaction_date]
+
+    start = bucket.start_date or (min(txn_dates) if txn_dates else None)
+    end = bucket.end_date or (max(txn_dates) if txn_dates else None)
+
+    days = None
+    if start and end:
+        days = (end - start).days + 1
+
+    today = date.today()
+    status, days_until, days_remaining = "none", None, None
+    if bucket.start_date and bucket.end_date:
+        if today < bucket.start_date:
+            status = "upcoming"
+            days_until = (bucket.start_date - today).days
+        elif today > bucket.end_date:
+            status = "past"
+        else:
+            status = "active"
+            days_remaining = (bucket.end_date - today).days + 1
+
+    # Per-person share, using splits when present and the payer otherwise.
+    per_person: dict[str, float] = defaultdict(float)
+    for t in txns:
+        if t.splits:
+            for s in t.splits:
+                per_person[s.user_id] += split_to_base(s, t)
+        elif t.paid_by:
+            per_person[t.paid_by] += to_base(t.amount, t.exchange_rate)
+
+    users = {}
+    if per_person:
+        users = {u.id: u for u in db.query(User).filter(User.id.in_(per_person)).all()}
+
+    return {
+        "total":          round(total, 2),
+        "start":          start,
+        "end":            end,
+        "days":           days,
+        "per_day":        round(total / days, 2) if days and days > 0 else None,
+        "status":         status,
+        "days_until":     days_until,
+        "days_remaining": days_remaining,
+        "budget":         float(bucket.budget) if bucket.budget else None,
+        "remaining":      round(float(bucket.budget) - total, 2) if bucket.budget else None,
+        "transaction_count": len(txns),
+        "per_person": sorted(
+            (
+                {
+                    "user_id": uid,
+                    "name":    users[uid].display_name if uid in users else "Unknown",
+                    "color":   users[uid].avatar_color if uid in users else "#9ca3af",
+                    "amount":  round(amount, 2),
+                }
+                for uid, amount in per_person.items()
+            ),
+            key=lambda r: -r["amount"],
+        ),
+    }
+
+
+def get_savings_summary(db: Session, bucket: Bucket) -> dict:
+    """Savings-goal view: progress toward goal_amount and what it takes to get there."""
+    if bucket.type != BucketType.savings:
+        return {}
+
+    balance = get_bucket_balance(db, bucket.id)
+    saved = balance["net"]          # income minus expenses in this bucket
+    goal = float(bucket.goal_amount) if bucket.goal_amount else None
+
+    result = {
+        "saved":     saved,
+        "goal":      goal,
+        "target_date": bucket.end_date,
+        "income":    balance["income"],
+        "expenses":  balance["expenses"],
+    }
+    if not goal or goal <= 0:
+        result.update({"pct": None, "remaining": None, "per_month": None,
+                       "months_left": None, "on_track": None, "reached": False})
+        return result
+
+    remaining = round(goal - saved, 2)
+    result["pct"] = round(min(max(saved / goal * 100, 0), 100), 1)
+    result["pct_actual"] = round(saved / goal * 100, 1)
+    result["remaining"] = remaining
+    result["reached"] = saved >= goal
+
+    months_left = None
+    if bucket.end_date:
+        today = date.today()
+        months_left = max(
+            (bucket.end_date.year - today.year) * 12 + (bucket.end_date.month - today.month),
+            0,
+        )
+    result["months_left"] = months_left
+    result["per_month"] = (
+        round(remaining / months_left, 2)
+        if months_left and remaining > 0 else None
+    )
+    # Without a deadline there is nothing to be on track against.
+    result["on_track"] = None if not bucket.end_date else (remaining <= 0 or bool(months_left))
+    return result
