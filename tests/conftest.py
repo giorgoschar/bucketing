@@ -182,6 +182,7 @@ def authed(client, make_household, login):
 def make_bill(db):
     """Create a recurring bill (+ optional occurrence) for a household."""
     from app.models import BillOccurrence, OccurrenceStatus, RecurringBill
+    from app.scheduler import today_local
 
     def _make(household_id, bucket_id=None, *, amount=45, auto_pay=True,
               due=None, paid_by=None, occurrence=True, name="Internet",
@@ -192,7 +193,7 @@ def make_bill(db):
             name=name,
             amount=amount,
             currency="EUR",
-            start_date=due or date.today(),
+            start_date=due or today_local(),
             interval_months=interval_months,
             is_auto_pay=auto_pay,
             is_active=True,
@@ -204,7 +205,7 @@ def make_bill(db):
         if occurrence:
             occ = BillOccurrence(
                 bill_id=bill.id,
-                due_date=due or date.today(),
+                due_date=due or today_local(),
                 amount=occ_amount,
                 status=OccurrenceStatus.unpaid,
             )

@@ -1758,3 +1758,109 @@ def find_household_duplicates(
 
     groups.sort(key=lambda g: max(t.transaction_date for t in g["transactions"]), reverse=True)
     return groups
+
+
+def get_person_summary(
+    db: Session,
+    household_id: str,
+    user_id: str,
+    start: date | None = None,
+    end: date | None = None,
+) -> dict:
+    """One member's own financial picture within the household.
+
+    "My share" is what this person is actually responsible for: their split
+    amount where the expense is shared, the full amount where they paid an
+    unsplit expense. That differs from "what I paid out", and the gap between
+    the two is what settlement resolves.
+    """
+    q = (
+        db.query(Transaction)
+        .filter(
+            Transaction.household_id == household_id,
+            Transaction.type == TransactionType.expense,
+        )
+        .options(joinedload(Transaction.splits), joinedload(Transaction.bucket))
+    )
+    if start:
+        q = q.filter(Transaction.transaction_date >= start)
+    if end:
+        q = q.filter(Transaction.transaction_date <= end)
+    txns = q.all()
+
+    paid_out = 0.0      # money this person actually fronted
+    my_share = 0.0      # what they are responsible for
+    shared_count = 0
+    by_bucket: dict[str, float] = defaultdict(float)
+    by_category: dict[str | None, float] = defaultdict(float)
+
+    for t in txns:
+        amount = to_base(t.amount, t.exchange_rate)
+        if t.paid_by == user_id:
+            paid_out += amount
+
+        if t.splits:
+            share = next(
+                (split_to_base(s, t) for s in t.splits if s.user_id == user_id), 0.0
+            )
+            if share:
+                shared_count += 1
+        elif t.paid_by == user_id:
+            share = amount
+        else:
+            share = 0.0
+
+        if share:
+            my_share += share
+            by_bucket[t.bucket_id] += share
+            by_category[t.category_id] += share
+
+    buckets = {}
+    if by_bucket:
+        buckets = {
+            b.id: b for b in db.query(Bucket).filter(Bucket.id.in_(by_bucket)).all()
+        }
+    cat_ids = [c for c in by_category if c]
+    categories = (
+        {c.id: c for c in db.query(Category).filter(Category.id.in_(cat_ids)).all()}
+        if cat_ids else {}
+    )
+
+    # Household-wide net position, reusing the settlement maths.
+    net = next(
+        (b["net"] for b in get_member_balances(db, household_id) if b["user_id"] == user_id),
+        0.0,
+    )
+
+    return {
+        "paid_out":  round(paid_out, 2),
+        "my_share":  round(my_share, 2),
+        # Positive: fronted more than their share. This is the settlement view.
+        "net":       net,
+        "shared_count": shared_count,
+        "transaction_count": len(txns),
+        "by_bucket": sorted(
+            (
+                {
+                    "name":   buckets[bid].name if bid in buckets else "Unknown",
+                    "icon":   buckets[bid].icon if bid in buckets else "🪣",
+                    "color":  buckets[bid].color if bid in buckets else "#9ca3af",
+                    "amount": round(amount, 2),
+                }
+                for bid, amount in by_bucket.items()
+            ),
+            key=lambda r: -r["amount"],
+        ),
+        "by_category": sorted(
+            (
+                {
+                    "name":   categories[cid].name if cid in categories else "Uncategorised",
+                    "icon":   categories[cid].icon if cid in categories else "📦",
+                    "color":  categories[cid].color if cid in categories else "#9ca3af",
+                    "amount": round(amount, 2),
+                }
+                for cid, amount in by_category.items()
+            ),
+            key=lambda r: -r["amount"],
+        )[:8],
+    }

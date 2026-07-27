@@ -1,5 +1,7 @@
 """Bill drift and budget threshold alerts."""
-from datetime import date, timedelta
+from datetime import timedelta
+
+from app.scheduler import today_local
 
 import pytest
 
@@ -23,7 +25,7 @@ def _variable_bill(db, household_id, bucket_id, amounts, *, name="Electricity",
     """A variable bill with one paid occurrence per amount, monthly, most recent last."""
     bill = RecurringBill(
         household_id=household_id, bucket_id=bucket_id, name=name,
-        amount=None, currency=currency, start_date=date.today(),
+        amount=None, currency=currency, start_date=today_local(),
         interval_months=1, is_auto_pay=False, is_active=True,
     )
     db.add(bill)
@@ -32,7 +34,7 @@ def _variable_bill(db, household_id, bucket_id, amounts, *, name="Electricity",
     for i, amount in enumerate(amounts):
         db.add(BillOccurrence(
             bill_id=bill.id,
-            due_date=date.today() - timedelta(days=30 * (n - 1 - i)),
+            due_date=today_local() - timedelta(days=30 * (n - 1 - i)),
             amount=amount,
             status=OccurrenceStatus.paid,
         ))
@@ -98,14 +100,14 @@ def test_fixed_bill_never_drifts(db, authed, run_job):
     """A fixed bill has no per-occurrence amounts, so there is nothing to compare."""
     bill = RecurringBill(
         household_id=authed.household_id, bucket_id=authed.bucket_id,
-        name="Rent", amount=800, currency="EUR", start_date=date.today(),
+        name="Rent", amount=800, currency="EUR", start_date=today_local(),
         interval_months=1, is_active=True, is_auto_pay=False,
     )
     db.add(bill)
     db.flush()
     for i in range(5):
         db.add(BillOccurrence(bill_id=bill.id,
-                              due_date=date.today() - timedelta(days=30 * i),
+                              due_date=today_local() - timedelta(days=30 * i),
                               status=OccurrenceStatus.paid))
     db.commit()
 
@@ -152,7 +154,7 @@ def _spend(db, authed, amount):
     db.add(Transaction(
         bucket_id=authed.bucket_id, household_id=authed.household_id,
         amount=amount, currency="EUR", exchange_rate=1,
-        type=TransactionType.expense, transaction_date=date.today(),
+        type=TransactionType.expense, transaction_date=today_local(),
     ))
     db.commit()
 
@@ -233,7 +235,7 @@ def test_budget_warning_respects_exchange_rate(db, authed, run_job):
     db.add(Transaction(
         bucket_id=authed.bucket_id, household_id=authed.household_id,
         amount=180, currency="USD", exchange_rate=0.5,  # = 90 base
-        type=TransactionType.expense, transaction_date=date.today(),
+        type=TransactionType.expense, transaction_date=today_local(),
     ))
     db.commit()
 

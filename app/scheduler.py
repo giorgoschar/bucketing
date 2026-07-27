@@ -26,7 +26,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 logger = logging.getLogger(__name__)
-scheduler = BackgroundScheduler(timezone="UTC")
+scheduler = BackgroundScheduler()  # timezone applied in start_scheduler()
 
 # How many days past the due date an overdue reminder is sent. Previously a
 # reminder went out on *every* run for *every* overdue bill, which meant an
@@ -48,7 +48,31 @@ DRIFT_LOOKBACK_DAYS = 35       # only comment on a recently-landed charge
 BUDGET_THRESHOLDS = (80, 100)
 
 
+def _tz():
+    """The household calendar timezone, falling back to UTC if misconfigured."""
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+    from app.config import settings
+    try:
+        return ZoneInfo(settings.app_timezone)
+    except (ZoneInfoNotFoundError, ValueError, KeyError):
+        logger.warning("Unknown APP_TIMEZONE %r — falling back to UTC",
+                       settings.app_timezone)
+        return timezone.utc
+
+
+def today_local() -> date:
+    """Today on the household's calendar.
+
+    Bill due dates are timezone-naive calendar dates entered in local time, so
+    comparing them against the UTC date is wrong for any household not on UTC:
+    between local midnight and the UTC offset, a bill due today looked not-yet-due.
+    """
+    return datetime.now(_tz()).date()
+
+
 def _utcnow() -> datetime:
+    """UTC wall clock, for stored timestamps (paid_at, created_at)."""
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
@@ -487,7 +511,7 @@ def auto_mark_paid_job() -> None:
 
     db = SessionLocal()
     try:
-        today = datetime.now(timezone.utc).date()
+        today = today_local()
         for stage in (
             _auto_pay_due_bills,
             _notify_due_soon,
@@ -513,10 +537,11 @@ def start_scheduler() -> None:
         logger.info("Scheduler disabled via ENABLE_SCHEDULER — skipping start")
         return
 
-    # Daily at 00:05 UTC
+    # Just after midnight on the household's calendar, not UTC.
+    scheduler.configure(timezone=_tz())
     scheduler.add_job(
         auto_mark_paid_job,
-        CronTrigger(hour=0, minute=5),
+        CronTrigger(hour=0, minute=5, timezone=_tz()),
         id="auto_mark_paid_daily",
         replace_existing=True,
         coalesce=True,        # collapse missed runs into one

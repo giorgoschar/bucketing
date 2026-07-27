@@ -68,6 +68,7 @@ Data is persisted in `./data/` (SQLite) and `./uploads/` (receipts).
 | `DATABASE_URL` | `sqlite:///./expenses.db` | SQLAlchemy DB URL. Use `postgresql://...` for PostgreSQL in production |
 | `APP_SECRET_KEY` | `change-me` | Secret for signing session cookies. **Change in production.** |
 | `DEBUG` | `false` | Enable FastAPI debug mode |
+| `APP_TIMEZONE` | `UTC` | Calendar timezone for scheduled work. Bill due dates are local calendar dates, so set this to your zone (e.g. `Europe/Athens`) or bills can be judged due a day late |
 | `ENABLE_SCHEDULER` | `true` | Run the daily auto-pay / reminder job in this process. Each uvicorn worker starts its own scheduler; the job is idempotent, so this only avoids redundant work |
 | `TRUST_PROXY_HEADERS` | `false` | Honour `X-Forwarded-For`. Enable **only** behind a proxy that overwrites it, otherwise clients can spoof their IP in logs and rate-limit buckets |
 | `RATE_LIMIT_STORAGE_URI` | *(memory)* | e.g. `redis://host:6379`. Without it, login/2FA limits are counted per worker |

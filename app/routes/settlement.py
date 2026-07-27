@@ -17,7 +17,9 @@ from app.services import (
     get_household_settlement,
     get_household_settlement_history,
     get_member_balances,
+    get_person_summary,
     record_household_settlement,
+    resolve_insight_period,
 )
 from app.templates import templates
 from app.validators import parse_amount, require_member
@@ -87,3 +89,37 @@ def settle_household(
     )
     db.commit()
     return RedirectResponse("/settlement", status_code=302)
+
+
+@router.get("/me", response_class=HTMLResponse)
+def person_page(
+    request: Request,
+    preset: str = "this_month",
+    start_date: str = "",
+    end_date: str = "",
+    member: str = "",
+    db: Session = Depends(get_db),
+    auth=Depends(require_auth),
+):
+    """One member's own view: what they paid, what they owe, where it went.
+
+    Defaults to the signed-in user; household members can look at each other,
+    which is the point of a shared ledger.
+    """
+    user, hh_id = auth
+
+    target_id = require_member(db, member, hh_id) if member else user.id
+    period = resolve_insight_period(preset, start_date, end_date)
+
+    ctx = base_ctx(db, user, hh_id)
+    ctx.update({
+        "request":      request,
+        "user":         user,
+        "summary":      get_person_summary(db, hh_id, target_id,
+                                           period["start"], period["end"]),
+        "members":      get_member_balances(db, hh_id),
+        "target_id":    target_id,
+        "period_label": period["period_label"],
+        "preset":       period["preset"],
+    })
+    return templates.TemplateResponse("person.html", ctx)

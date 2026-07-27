@@ -6,7 +6,9 @@ These cover the duplicate auto-pay bug: `entrypoint.sh` runs
 the daily job and the startup catch-up job can run concurrently and repeatedly.
 """
 import threading
-from datetime import date, timedelta
+from datetime import timedelta
+
+from app.scheduler import today_local
 
 import pytest
 
@@ -108,7 +110,7 @@ def test_variable_bill_uses_preset_occurrence_amount(db, make_household, make_bi
 def test_future_bills_are_not_paid_early(db, make_household, make_bill, run_job):
     hh = make_household()
     make_bill(hh.household_id, hh.bucket_id, amount=45,
-              due=date.today() + timedelta(days=5), paid_by=hh.user_id)
+              due=today_local() + timedelta(days=5), paid_by=hh.user_id)
 
     run_job()
 
@@ -130,7 +132,7 @@ def test_overdue_reminder_does_not_repeat(db, make_household, make_bill, run_job
     """An overdue bill used to re-notify on every run, forever."""
     hh = make_household()
     make_bill(hh.household_id, hh.bucket_id, amount=30, auto_pay=False,
-              due=date.today() - timedelta(days=3))
+              due=today_local() - timedelta(days=3))
 
     for _ in range(4):
         run_job()
@@ -145,12 +147,12 @@ def test_overdue_reminder_repeats_at_next_milestone(db, make_household, make_bil
     """Distinct milestones (3 then 7 days late) are separate reminders."""
     hh = make_household()
     make_bill(hh.household_id, hh.bucket_id, amount=30, auto_pay=False,
-              due=date.today() - timedelta(days=3))
+              due=today_local() - timedelta(days=3))
     run_job()
 
     # Move the due date so "today" is now 7 days past it.
     occ = db.query(BillOccurrence).one()
-    occ.due_date = date.today() - timedelta(days=7)
+    occ.due_date = today_local() - timedelta(days=7)
     db.commit()
     run_job()
 
@@ -161,7 +163,7 @@ def test_overdue_reminder_repeats_at_next_milestone(db, make_household, make_bil
 def test_due_soon_notification_is_sent_once(db, make_household, make_bill, run_job):
     hh = make_household()
     make_bill(hh.household_id, hh.bucket_id, amount=30, auto_pay=False,
-              due=date.today() + timedelta(days=3))
+              due=today_local() + timedelta(days=3))
 
     run_job()
     run_job()
@@ -174,7 +176,7 @@ def test_job_survives_a_bill_with_no_amount_in_notification(db, make_household, 
     """A None amount used to raise TypeError formatting the notification body."""
     hh = make_household()
     make_bill(hh.household_id, hh.bucket_id, amount=None, auto_pay=False,
-              due=date.today() + timedelta(days=3))
+              due=today_local() + timedelta(days=3))
 
     run_job()  # must not raise
 
@@ -196,3 +198,56 @@ def test_bill_splits_are_copied_onto_the_transaction(db, make_household, make_bi
     splits = db.query(TransactionSplit).all()
     assert len(splits) == 1
     assert float(splits[0].amount) == 100.0
+
+
+# ---------------------------------------------------------------------------
+# Calendar timezone
+# ---------------------------------------------------------------------------
+
+def test_today_local_follows_configured_timezone(monkeypatch):
+    """Bill due dates are local calendar dates, so "today" must be local too.
+
+    Using the UTC date meant that between local midnight and the UTC offset a
+    bill due today was not yet considered due.
+    """
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+
+    import app.config as config
+    import app.scheduler as scheduler
+
+    monkeypatch.setattr(config.settings, "app_timezone", "Pacific/Kiritimati")  # UTC+14
+    ahead = scheduler.today_local()
+    monkeypatch.setattr(config.settings, "app_timezone", "Pacific/Midway")      # UTC-11
+    behind = scheduler.today_local()
+
+    assert ahead == datetime.now(ZoneInfo("Pacific/Kiritimati")).date()
+    assert behind == datetime.now(ZoneInfo("Pacific/Midway")).date()
+    # 25 hours apart, so the two zones are never on the same calendar day.
+    assert ahead != behind
+
+
+def test_unknown_timezone_falls_back_to_utc(monkeypatch):
+    from datetime import datetime, timezone
+
+    import app.config as config
+    import app.scheduler as scheduler
+
+    monkeypatch.setattr(config.settings, "app_timezone", "Not/AZone")
+    assert scheduler.today_local() == datetime.now(timezone.utc).date()
+
+
+def test_bill_due_today_local_is_paid(db, make_household, make_bill, run_job, monkeypatch):
+    """Regression: a bill due on the local calendar date must be auto-paid."""
+    import app.config as config
+    from app.models import Transaction
+
+    monkeypatch.setattr(config.settings, "app_timezone", "Europe/Athens")
+
+    from app.scheduler import today_local
+    hh = make_household()
+    make_bill(hh.household_id, hh.bucket_id, amount=45,
+              due=today_local(), paid_by=hh.user_id)
+
+    run_job()
+    assert db.query(Transaction).count() == 1

@@ -37,6 +37,13 @@ class Settings(BaseSettings):
     # Bills dashboard — how many days ahead to show upcoming bills
     upcoming_bills_days: int = 60
 
+    # Calendar timezone for scheduled work. Bill due dates are plain calendar
+    # dates entered in the household's local time, so "is this due today?" must
+    # be answered in that timezone — using UTC meant a bill due today was not
+    # seen as due until UTC caught up, and reminders could land a day out.
+    # e.g. "Europe/Athens". Defaults to UTC.
+    app_timezone: str = "UTC"
+
     # Background scheduler (auto-pay + bill reminders).
     # Each uvicorn worker runs its own scheduler, so with `--workers N` the job
     # fires N times. The job is idempotent, but set this to false on all but one
