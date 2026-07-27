@@ -11,6 +11,8 @@ from app.models import Bucket, BucketType, BucketStatus, Transaction, Transactio
 from app.services import (
     get_bucket_balance, get_bucket_settlement,
     get_bucket_settlement_history, record_bucket_settlement,
+    get_household_settlement, get_household_settlement_history,
+    get_member_balances, record_household_settlement,
 )
 from app.validators import parse_amount, validate_split_users
 
@@ -240,4 +242,66 @@ def settle_bucket(
             for s in created
         ],
         "settlements": get_bucket_settlement(db, bucket_id),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Household-wide settlement
+#
+# Lives on this router (rather than /buckets/{id}) because it nets every
+# settlement-enabled bucket together — members square up once, not per bucket.
+# ---------------------------------------------------------------------------
+
+_household_router = APIRouter(prefix="/settlement", tags=["settlement"])
+
+
+@_household_router.get("")
+def household_settlement(
+    auth=Depends(require_api_auth),
+    db: Session = Depends(get_db),
+):
+    """Outstanding household balances, per-member positions, and payment history."""
+    user, hh_id = auth
+    return {
+        "settlements": get_household_settlement(db, hh_id),
+        "balances":    get_member_balances(db, hh_id),
+        "history":     get_household_settlement_history(db, hh_id),
+    }
+
+
+@_household_router.post("/settle")
+def settle_household(
+    body: SettleIn | None = None,
+    auth=Depends(require_api_auth),
+    db: Session = Depends(get_db),
+):
+    """Record a household-wide payment. Empty body clears everything outstanding."""
+    user, hh_id = auth
+    body = body or SettleIn()
+
+    if bool(body.from_user_id) != bool(body.to_user_id):
+        raise HTTPException(status_code=400, detail="Both from_user_id and to_user_id are required")
+    if body.from_user_id and body.from_user_id == body.to_user_id:
+        raise HTTPException(status_code=400, detail="from_user_id and to_user_id must differ")
+    if body.from_user_id:
+        validate_split_users([body.from_user_id, body.to_user_id], hh_id, db)
+    if body.amount is not None:
+        parse_amount(body.amount, field="amount")
+
+    created = record_household_settlement(
+        db, hh_id,
+        created_by=user.id,
+        from_user_id=body.from_user_id,
+        to_user_id=body.to_user_id,
+        amount=body.amount,
+        note=body.note,
+    )
+    db.commit()
+    return {
+        "recorded": [
+            {"from_user_id": s.from_user_id, "to_user_id": s.to_user_id,
+             "amount": float(s.amount)}
+            for s in created
+        ],
+        "settlements": get_household_settlement(db, hh_id),
     }

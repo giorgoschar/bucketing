@@ -565,11 +565,13 @@ def get_bucket_budget_status(db: Session, household_id: str, year: int, month: i
     return result
 
 
-def get_bucket_settlement(db: Session, bucket_id: str) -> list[dict]:
-    """
-    Who owes whom inside a single bucket (all-time).
-    Uses greedy debt simplification.
-    Returns [] if the bucket has only one payer or no transactions.
+def compute_bucket_net(db: Session, bucket_id: str) -> dict[str, float]:
+    """Per-user net position inside one bucket, before debt simplification.
+
+    net > 0 → is owed money; net < 0 → owes money. Split out from
+    get_bucket_settlement so household-wide settlement can sum raw nets across
+    buckets and simplify once, rather than trying to add up already-simplified
+    per-bucket transfers (which does not compose).
     """
     txns = (
         db.query(Transaction)
@@ -580,13 +582,12 @@ def get_bucket_settlement(db: Session, bucket_id: str) -> list[dict]:
         .options(joinedload(Transaction.splits))
         .all()
     )
-    # Payments already recorded against this bucket (named distinctly from the
-    # `settlements` list of *suggested* transfers built at the end).
+    # Payments already recorded against this bucket.
     recorded = (
         db.query(Settlement).filter(Settlement.bucket_id == bucket_id).all()
     )
     if not txns and not recorded:
-        return []
+        return {}
 
     # Collect all involved user ids
     user_ids: set[str] = set()
@@ -599,7 +600,7 @@ def get_bucket_settlement(db: Session, bucket_id: str) -> list[dict]:
         user_ids.update((st.from_user_id, st.to_user_id))
 
     if len(user_ids) < 2:
-        return []
+        return {}
 
     # actually_paid[uid] = total they fronted
     # owes[uid] = total they should cover
@@ -618,7 +619,6 @@ def get_bucket_settlement(db: Session, bucket_id: str) -> list[dict]:
             for uid in user_ids:
                 owes[uid] += share
 
-    # net[uid] > 0 → is owed money; net[uid] < 0 → owes money
     net: dict[str, float] = defaultdict(float)
     for uid in user_ids:
         net[uid] = actually_paid[uid] - owes[uid]
@@ -632,10 +632,16 @@ def get_bucket_settlement(db: Session, bucket_id: str) -> list[dict]:
         net[st.from_user_id] += amount
         net[st.to_user_id] -= amount
 
-    for uid in list(net):
-        net[uid] = round(net[uid], 2)
+    return dict(net)
 
-    # Load user info
+
+def simplify_debts(db: Session, net: dict[str, float]) -> list[dict]:
+    """Turn per-user net positions into the fewest transfers that clear them."""
+    net = {uid: round(v, 2) for uid, v in net.items()}
+    user_ids = set(net)
+    if len(user_ids) < 2:
+        return []
+
     users = {u.id: u for u in db.query(User).filter(User.id.in_(user_ids)).all()}
 
     # Greedy settlement: pair largest creditor with largest debtor
@@ -672,6 +678,161 @@ def get_bucket_settlement(db: Session, bucket_id: str) -> list[dict]:
             di += 1
 
     return settlements
+
+
+def get_bucket_settlement(db: Session, bucket_id: str) -> list[dict]:
+    """Who owes whom inside a single bucket (all-time), debt-simplified."""
+    return simplify_debts(db, compute_bucket_net(db, bucket_id))
+
+
+def get_household_settlement(db: Session, household_id: str) -> list[dict]:
+    """Who owes whom across the whole household, netted over every bucket.
+
+    Only settlement-enabled buckets count: the equal-split fallback used for
+    transactions without explicit splits would otherwise treat every solo
+    expense in every bucket as shared, which is not what "settle up" means.
+
+    Per-bucket nets are summed *before* simplification, so a debt in one bucket
+    cancels a credit in another and members settle once rather than per bucket.
+    """
+    buckets = (
+        db.query(Bucket.id)
+        .filter(Bucket.household_id == household_id, Bucket.enable_settlement.is_(True))
+        .all()
+    )
+
+    net: dict[str, float] = defaultdict(float)
+    for (bucket_id,) in buckets:
+        for uid, value in compute_bucket_net(db, bucket_id).items():
+            net[uid] += value
+
+    # Household-scoped payments (bucket_id NULL) offset the combined position.
+    for st in (
+        db.query(Settlement)
+        .filter(Settlement.household_id == household_id, Settlement.bucket_id.is_(None))
+        .all()
+    ):
+        amount = float(st.amount)
+        net[st.from_user_id] += amount
+        net[st.to_user_id] -= amount
+
+    return simplify_debts(db, net)
+
+
+def record_household_settlement(
+    db: Session,
+    household_id: str,
+    *,
+    created_by: str | None = None,
+    from_user_id: str | None = None,
+    to_user_id: str | None = None,
+    amount: float | None = None,
+    note: str | None = None,
+) -> list[Settlement]:
+    """Record household-wide debt payment(s). Callers must commit."""
+    outstanding = get_household_settlement(db, household_id)
+
+    if from_user_id and to_user_id:
+        if amount is None:
+            amount = next(
+                (r["amount"] for r in outstanding
+                 if r["from_id"] == from_user_id and r["to_id"] == to_user_id),
+                None,
+            )
+            if amount is None:
+                return []
+        pairs = [(from_user_id, to_user_id, float(amount))]
+    else:
+        pairs = [(r["from_id"], r["to_id"], r["amount"]) for r in outstanding]
+
+    created = []
+    for payer, payee, value in pairs:
+        if value <= 0:
+            continue
+        row = Settlement(
+            household_id=household_id,
+            bucket_id=None,          # household-scoped
+            from_user_id=payer,
+            to_user_id=payee,
+            amount=value,
+            note=note,
+            created_by=created_by,
+        )
+        db.add(row)
+        created.append(row)
+    return created
+
+
+def get_household_settlement_history(db: Session, household_id: str, limit: int = 50) -> list[dict]:
+    """All recorded payments in the household, newest first, bucket or not."""
+    rows = (
+        db.query(Settlement)
+        .filter(Settlement.household_id == household_id)
+        .order_by(Settlement.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    if not rows:
+        return []
+
+    ids = {r.from_user_id for r in rows} | {r.to_user_id for r in rows}
+    users = {u.id: u for u in db.query(User).filter(User.id.in_(ids)).all()}
+    bucket_ids = {r.bucket_id for r in rows if r.bucket_id}
+    buckets = (
+        {b.id: b for b in db.query(Bucket).filter(Bucket.id.in_(bucket_ids)).all()}
+        if bucket_ids else {}
+    )
+
+    return [
+        {
+            "id":          r.id,
+            "from_name":   users[r.from_user_id].display_name if r.from_user_id in users else "?",
+            "to_name":     users[r.to_user_id].display_name if r.to_user_id in users else "?",
+            "from_color":  users[r.from_user_id].avatar_color if r.from_user_id in users else "#9ca3af",
+            "to_color":    users[r.to_user_id].avatar_color if r.to_user_id in users else "#6366f1",
+            "amount":      round(float(r.amount), 2),
+            "note":        r.note,
+            "bucket_name": buckets[r.bucket_id].name if r.bucket_id in buckets else None,
+            "created_at":  r.created_at,
+        }
+        for r in rows
+    ]
+
+
+def get_member_balances(db: Session, household_id: str) -> list[dict]:
+    """Each member's net position across the household, for a per-person view."""
+    net: dict[str, float] = defaultdict(float)
+    for (bucket_id,) in (
+        db.query(Bucket.id)
+        .filter(Bucket.household_id == household_id, Bucket.enable_settlement.is_(True))
+        .all()
+    ):
+        for uid, value in compute_bucket_net(db, bucket_id).items():
+            net[uid] += value
+    for st in (
+        db.query(Settlement)
+        .filter(Settlement.household_id == household_id, Settlement.bucket_id.is_(None))
+        .all()
+    ):
+        net[st.from_user_id] += float(st.amount)
+        net[st.to_user_id] -= float(st.amount)
+
+    members = (
+        db.query(User)
+        .join(HouseholdMember, HouseholdMember.user_id == User.id)
+        .filter(HouseholdMember.household_id == household_id)
+        .order_by(User.display_name)
+        .all()
+    )
+    return [
+        {
+            "user_id": m.id,
+            "name":    m.display_name,
+            "color":   m.avatar_color,
+            "net":     round(net.get(m.id, 0.0), 2),
+        }
+        for m in members
+    ]
 
 
 def get_bucket_spend_this_month(db: Session, household_id: str, year: int, month: int) -> dict[str, float]:

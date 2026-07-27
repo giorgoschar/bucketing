@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}Settle up{% endblock %}
+{% block header_title %}Settle up{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto space-y-4">
+
+  {# ===== Per-member net position ===== #}
+  <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
+    <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Balances</p>
+    {% if not balances %}
+    <p class="text-sm text-gray-400">No members yet.</p>
+    {% else %}
+    <div class="space-y-3">
+      {% for b in balances %}
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
+             style="background-color: {{ b.color }}">{{ b.name | initials }}</div>
+        <span class="text-sm font-medium flex-1 truncate">
+          {{ b.name }}{% if b.user_id == user.id %} <span class="text-gray-400">(you)</span>{% endif %}
+        </span>
+        {% if b.net > 0.005 %}
+        <span class="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+          is owed {{ b.net | currency(household.default_currency) }}
+        </span>
+        {% elif b.net < -0.005 %}
+        <span class="text-sm font-semibold text-orange-500">
+          owes {{ (-b.net) | currency(household.default_currency) }}
+        </span>
+        {% else %}
+        <span class="text-sm text-gray-400">settled</span>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+  {# ===== Suggested transfers ===== #}
+  <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
+    <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Settle up</p>
+
+    {% if not enabled_buckets %}
+    <div class="text-sm text-gray-500 dark:text-gray-400 space-y-2">
+      <p>No buckets are tracking settlement yet.</p>
+      <p class="text-xs text-gray-400">
+        Turn on “Track settlement” on any bucket you share, and its balances will
+        be netted here.
+      </p>
+    </div>
+
+    {% elif not settlement %}
+    <div class="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
+      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+      </svg>
+      <span class="text-sm font-medium">All square — nothing to settle</span>
+    </div>
+
+    {% else %}
+    <div class="space-y-3">
+      {% for row in settlement %}
+      <div class="flex items-center gap-3">
+        <div class="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
+             style="background-color: {{ row.from_color }}">{{ row.from_name | initials }}</div>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm">
+            <span class="font-semibold">{{ row.from_name }}</span>
+            <span class="text-gray-400 mx-1">pays</span>
+            <span class="font-semibold">{{ row.to_name }}</span>
+          </p>
+        </div>
+        <span class="text-sm font-bold text-orange-500 flex-shrink-0">
+          {{ row.amount | currency(household.default_currency) }}
+        </span>
+        <div class="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
+             style="background-color: {{ row.to_color }}">{{ row.to_name | initials }}</div>
+        <form method="POST" action="/settlement/settle" class="flex-shrink-0">
+          <input type="hidden" name="_csrf_token" value="{{ request.state.csrf_token }}">
+          <input type="hidden" name="from_user_id" value="{{ row.from_id }}">
+          <input type="hidden" name="to_user_id" value="{{ row.to_id }}">
+          <input type="hidden" name="amount" value="{{ row.amount }}">
+          <button type="submit"
+                  class="px-2.5 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-[11px] font-semibold transition-colors">
+            Settle
+          </button>
+        </form>
+      </div>
+      {% endfor %}
+
+      {% if settlement | length > 1 %}
+      <form method="POST" action="/settlement/settle" class="pt-1">
+        <input type="hidden" name="_csrf_token" value="{{ request.state.csrf_token }}">
+        <button type="submit"
+                class="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold transition-colors">
+          Settle everything
+        </button>
+      </form>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if enabled_buckets %}
+    <p class="mt-4 text-[11px] text-gray-400">
+      Netted across {{ enabled_buckets | length }}
+      bucket{{ '' if enabled_buckets | length == 1 else 's' }}:
+      {% for b in enabled_buckets %}{{ b.icon }} {{ b.name }}{% if not loop.last %}, {% endif %}{% endfor %}
+    </p>
+    {% endif %}
+  </div>
+
+  {# ===== Payment history ===== #}
+  {% if history %}
+  <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
+    <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Payment history</p>
+    <div class="space-y-2.5">
+      {% for h in history %}
+      <div class="flex items-center justify-between gap-3 text-xs">
+        <span class="text-gray-500 dark:text-gray-400 truncate">
+          <span class="font-medium text-gray-700 dark:text-gray-300">{{ h.from_name }}</span>
+          paid
+          <span class="font-medium text-gray-700 dark:text-gray-300">{{ h.to_name }}</span>
+          {% if h.bucket_name %}<span class="text-gray-400">· {{ h.bucket_name }}</span>{% endif %}
+          {% if h.created_at %}<span class="text-gray-400">· {{ h.created_at.strftime('%d %b %Y') }}</span>{% endif %}
+          {% if h.note %}<span class="text-gray-400">· {{ h.note }}</span>{% endif %}
+        </span>
+        <span class="font-semibold text-emerald-600 dark:text-emerald-400 flex-shrink-0">
+          {{ h.amount | currency(household.default_currency) }}
+        </span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

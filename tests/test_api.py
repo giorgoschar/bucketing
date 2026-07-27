@@ -217,3 +217,48 @@ def test_settle_requires_enabled_bucket(client, api):
     headers, hh = api
     r = client.post(f"/api/v1/buckets/{hh.bucket_id}/settle", headers=headers, json={})
     assert r.status_code == 400
+
+
+def test_household_settlement_api(client, db, api):
+    """Household-wide settle nets buckets together and records the payment."""
+    from datetime import date
+    import pyotp
+    from app.auth import hash_password
+    from app.models import (
+        Bucket, HouseholdMember, MemberRole, Settlement, Transaction,
+        TransactionSplit, TransactionType, User,
+    )
+
+    headers, hh = api
+    partner = User(username="hhpartner", display_name="HHPartner",
+                   email="hp@example.com", password_hash=hash_password("x"),
+                   totp_secret=pyotp.random_base32(), totp_enabled=True)
+    db.add(partner)
+    db.flush()
+    db.add(HouseholdMember(household_id=hh.household_id, user_id=partner.id,
+                           role=MemberRole.member))
+    db.get(Bucket, hh.bucket_id).enable_settlement = True
+    txn = Transaction(bucket_id=hh.bucket_id, household_id=hh.household_id,
+                      amount=100, currency="EUR", exchange_rate=1,
+                      type=TransactionType.expense, transaction_date=date.today(),
+                      paid_by=hh.user_id)
+    db.add(txn)
+    db.flush()
+    db.add_all([
+        TransactionSplit(transaction_id=txn.id, user_id=hh.user_id, amount=50),
+        TransactionSplit(transaction_id=txn.id, user_id=partner.id, amount=50),
+    ])
+    db.commit()
+
+    r = client.get("/api/v1/settlement", headers=headers)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["settlements"][0]["amount"] == 50.0
+    assert round(sum(b["net"] for b in body["balances"]), 2) == 0.0
+
+    r = client.post("/api/v1/settlement/settle", headers=headers, json={})
+    assert r.status_code == 200
+    assert r.json()["settlements"] == []
+
+    assert db.query(Settlement).filter(Settlement.bucket_id.is_(None)).count() == 1
+    assert len(client.get("/api/v1/settlement", headers=headers).json()["history"]) == 1

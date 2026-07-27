@@ -18,6 +18,7 @@ import app.models  # noqa: F401
 from app.routes import auth, dashboard, buckets, transactions, income, bills, settings as settings_router
 from app.routes import notifications as notifications_router
 from app.routes import insights as insights_router
+from app.routes import settlement as settlement_router
 from app.routes.api import router as api_router
 from app.scheduler import start_scheduler, stop_scheduler
 
@@ -151,6 +152,7 @@ app.include_router(bills.router)
 app.include_router(settings_router.router)
 app.include_router(notifications_router.router)
 app.include_router(insights_router.router)
+app.include_router(settlement_router.router)
 app.include_router(api_router)
 
 
