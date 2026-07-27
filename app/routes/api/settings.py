@@ -249,5 +249,15 @@ def delete_category(
         raise HTTPException(status_code=404, detail="Category not found")
     if cat.is_default:
         raise HTTPException(status_code=400, detail="Cannot delete a default category")
+
+    # Detach references first — category_id FKs have no ON DELETE rule, so a
+    # referenced category cannot be deleted outright.
+    from app.models import RecurringBill, Transaction
+    db.query(Transaction).filter_by(category_id=category_id).update(
+        {"category_id": None}, synchronize_session=False
+    )
+    db.query(RecurringBill).filter_by(category_id=category_id).update(
+        {"category_id": None}, synchronize_session=False
+    )
     db.delete(cat)
     db.commit()

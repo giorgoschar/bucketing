@@ -12,8 +12,6 @@ import pyotp
 import qrcode
 from fastapi import APIRouter, Depends, Form, Request, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
@@ -32,14 +30,23 @@ from app.seed import seed_categories
 from app.services import base_ctx
 from app.templates import templates
 
+from app.ratelimit import limiter
+
 router = APIRouter(prefix="/settings", dependencies=[Depends(require_csrf)])
-limiter = Limiter(key_func=get_remote_address)
 
 AVATAR_COLORS = [
     "#6366f1", "#8b5cf6", "#ec4899", "#ef4444",
     "#f97316", "#f59e0b", "#10b981", "#06b6d4",
     "#3b82f6", "#84cc16",
 ]
+
+
+def _require_owner(db: Session, user_id: str, hh_id: str) -> HouseholdMember:
+    """Assert the user owns this household, or raise 403."""
+    membership = db.query(HouseholdMember).filter_by(user_id=user_id, household_id=hh_id).first()
+    if not membership or membership.role != MemberRole.owner:
+        raise HTTPException(status_code=403, detail="Only the household owner can do that.")
+    return membership
 
 
 @router.get("", response_class=HTMLResponse)
@@ -100,6 +107,11 @@ def update_household(
     auth=Depends(require_auth),
 ):
     user, hh_id = auth
+    # Matches the API, which has always been owner-only. The HTML route let any
+    # member rename the household and switch its currency.
+    _require_owner(db, user.id, hh_id)
+    if default_currency not in settings.currencies:
+        raise HTTPException(status_code=400, detail="Unsupported currency.")
     household = db.get(Household, hh_id)
     household.name = name.strip()
     household.default_currency = default_currency
@@ -194,11 +206,23 @@ def change_password(
         ctx = base_ctx(db, user, hh_id)
         ctx.update({"request": request, "user": user, "pw_error": "Password must be at least 12 characters."})
         return templates.TemplateResponse("settings/index.html", ctx)
+    if verify_password(new_password, user.password_hash):
+        ctx = base_ctx(db, user, hh_id)
+        ctx.update({"request": request, "user": user, "pw_error": "New password must differ from the current one."})
+        return templates.TemplateResponse("settings/index.html", ctx)
+
     user.password_hash = hash_password(new_password)
     user.session_version = (user.session_version or 0) + 1
     db.commit()
     security_logger.info("Password changed for '%s'", user.username)
-    return RedirectResponse("/settings?pw_changed=1", status_code=302)
+
+    # Bumping session_version invalidates every existing cookie, including the
+    # one this request arrived on — without re-issuing it the user was bounced
+    # to /login immediately after a successful password change. Other devices
+    # still get logged out, which is the point.
+    response = RedirectResponse("/settings?pw_changed=1", status_code=302)
+    set_session(response, user.id, hh_id, user.session_version)
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -265,6 +289,21 @@ def delete_category(
     cat = db.get(Category, cat_id)
     if not cat or cat.household_id != hh_id:
         raise HTTPException(status_code=404)
+    if cat.is_default:
+        # The API already refuses this; the HTML route did not.
+        raise HTTPException(status_code=400, detail="Cannot delete a default category.")
+
+    # transactions.category_id and recurring_bills.category_id are plain FKs
+    # with no ON DELETE rule. Deleting a category that is still referenced
+    # raises an IntegrityError on Postgres (and now on SQLite too, since foreign
+    # keys are enforced). Detach the references first.
+    from app.models import RecurringBill, Transaction
+    db.query(Transaction).filter_by(category_id=cat_id).update(
+        {"category_id": None}, synchronize_session=False
+    )
+    db.query(RecurringBill).filter_by(category_id=cat_id).update(
+        {"category_id": None}, synchronize_session=False
+    )
     db.delete(cat)
     db.commit()
     return RedirectResponse("/settings", status_code=302)
@@ -273,6 +312,18 @@ def delete_category(
 # ---------------------------------------------------------------------------
 # 2FA — TOTP enroll
 # ---------------------------------------------------------------------------
+
+def _pending_secret(db: Session, user: User) -> str:
+    """Return the user's in-progress TOTP secret, creating one if needed.
+
+    A secret stored while totp_enabled is False is an enrollment in progress:
+    it grants nothing until a valid code confirms it.
+    """
+    if not user.totp_secret:
+        user.totp_secret = pyotp.random_base32()
+        db.commit()
+    return user.totp_secret
+
 
 def _generate_qr_base64(totp_uri: str) -> str:
     img = qrcode.make(totp_uri)
@@ -303,8 +354,13 @@ def enroll_totp_page(request: Request, db: Session = Depends(get_db)):
     if user.totp_enabled:
         return RedirectResponse("/settings", status_code=302)
 
-    # Generate a fresh secret for this enroll attempt
-    secret = pyotp.random_base32()
+    # The secret is held server-side (totp_secret set, totp_enabled still False)
+    # rather than round-tripped through a hidden form field, so the client never
+    # gets to choose which secret the account ends up with. Reusing a pending
+    # secret also means a page reload or the back button keeps showing the same
+    # QR code the user already scanned.
+    secret = _pending_secret(db, user)
+
     totp_uri = pyotp.totp.TOTP(secret).provisioning_uri(
         name=user.username, issuer_name=settings.app_name
     )
@@ -322,13 +378,17 @@ def enroll_totp_page(request: Request, db: Session = Depends(get_db)):
 
 
 @router.post("/2fa/enroll", response_class=HTMLResponse)
+@limiter.limit("10/minute")
 def enroll_totp_submit(
     request: Request,
-    secret: str = Form(...),
     code: str = Form(...),
     db: Session = Depends(get_db),
 ):
-    """Verify the TOTP code against the submitted secret and save."""
+    """Verify the TOTP code against the server-held pending secret and save.
+
+    The secret is deliberately NOT read from the request: it lives on the user
+    row (with totp_enabled=False) from the moment the QR code is rendered.
+    """
     from app.auth import get_pending_session
 
     pending = None
@@ -349,9 +409,25 @@ def enroll_totp_submit(
     if not user:
         return RedirectResponse("/login", status_code=302)
 
+    # Enrollment can only ever move a user from "no 2FA" to "2FA". Without this
+    # check, anyone holding a session cookie could silently re-enroll a secret
+    # they control (and mint fresh backup codes) without knowing the password or
+    # the current TOTP code — a complete 2FA bypass. Rotating an existing secret
+    # goes through /settings/2fa/disable, which demands both.
+    if user.totp_enabled:
+        security_logger.warning(
+            "Rejected TOTP re-enrollment attempt for already-enrolled user '%s'", user.username
+        )
+        return RedirectResponse("/settings", status_code=302)
+
+    secret = user.totp_secret
+    if not secret:
+        # No enrollment in progress (e.g. a stale form) — start a fresh one.
+        return RedirectResponse("/settings/2fa/enroll", status_code=302)
+
     totp = pyotp.TOTP(secret)
     if not totp.verify(code.strip(), valid_window=1):
-        # Regenerate QR for the same secret so user can retry
+        # Re-render the QR for the same secret so the user can retry
         totp_uri = totp.provisioning_uri(name=user.username, issuer_name=settings.app_name)
         qr_b64 = _generate_qr_base64(totp_uri)
         return templates.TemplateResponse(
@@ -369,7 +445,7 @@ def enroll_totp_submit(
     plain_codes = [secrets.token_hex(5).upper() for _ in range(8)]
     hashed_codes = [_bcrypt.hashpw(c.encode(), _bcrypt.gensalt()).decode() for c in plain_codes]
 
-    user.totp_secret = secret
+    # secret is already on the row; confirming it is what flips enrollment on.
     user.totp_enabled = True
     user.totp_backup_codes = json.dumps(hashed_codes)
     db.commit()
@@ -615,7 +691,7 @@ def leave_household(
         set_session(response, user.id, remaining.household_id, user.session_version)
         return response
 
-    # No households left — redirect to setup
-    response = RedirectResponse("/auth/setup", status_code=302)
+    # No households left — redirect to setup (the route is /setup, not /auth/setup)
+    response = RedirectResponse("/setup", status_code=302)
     clear_session(response)
     return response

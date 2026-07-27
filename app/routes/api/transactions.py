@@ -18,6 +18,9 @@ from app.models import (
 )
 from app.receipt_parser import parse_receipt_text, match_category
 from app.config import settings
+from app.validators import (
+    parse_amount, parse_year_month, require_category, require_member, validate_split_users,
+)
 
 UPLOADS_DIR = "uploads"
 MAX_RECEIPT_SIZE = 10 * 1024 * 1024
@@ -78,6 +81,37 @@ def _assert_bucket_in_household(bucket_id: str, hh_id: str, db: Session):
         raise HTTPException(status_code=404, detail="Bucket not found")
 
 
+def _validate_txn_refs(body: "TransactionIn", hh_id: str, db: Session) -> None:
+    """Assert category/payer/split users all belong to the caller's household.
+
+    These ids came straight from the request body, so a client could previously
+    tag a transaction with another household's category or split it onto users
+    outside the household.
+    """
+    require_category(db, body.category_id, hh_id)
+    require_member(db, body.paid_by, hh_id)
+    if body.splits:
+        validate_split_users([s.user_id for s in body.splits], hh_id, db)
+        for s in body.splits:
+            parse_amount(s.amount, field="split amount")
+
+
+def _parse_body_date(value: str) -> date:
+    if not value:
+        return date.today()
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="transaction_date must be an ISO date (YYYY-MM-DD)")
+
+
+def _parse_body_type(value: str) -> TransactionType:
+    try:
+        return TransactionType(value)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Unknown transaction type '{value}'")
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -102,7 +136,11 @@ def list_transactions(
     if category_id:
         q = q.filter(Transaction.category_id == category_id)
     if type:
-        q = q.filter(Transaction.type == TransactionType(type))
+        try:
+            q = q.filter(Transaction.type == TransactionType(type))
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Unknown transaction type '{type}'")
+    parse_year_month(year, month)
     if year and month:
         start = date(year, month, 1)
         end_m = month + 1 if month < 12 else 1
@@ -139,16 +177,17 @@ def create_transaction(
 ):
     user, hh_id = auth
     _assert_bucket_in_household(body.bucket_id, hh_id, db)
+    _validate_txn_refs(body, hh_id, db)
 
-    txn_date = date.fromisoformat(body.transaction_date) if body.transaction_date else date.today()
+    txn_date = _parse_body_date(body.transaction_date)
 
     txn = Transaction(
         bucket_id=body.bucket_id,
         household_id=hh_id,
-        amount=body.amount,
+        amount=parse_amount(body.amount, field="amount"),
         currency=body.currency,
         exchange_rate=body.exchange_rate,
-        type=TransactionType(body.type),
+        type=_parse_body_type(body.type),
         paid_by=body.paid_by or user.id,
         category_id=body.category_id or None,
         notes=body.notes,
@@ -192,18 +231,19 @@ def update_transaction(
         raise HTTPException(status_code=404, detail="Transaction not found")
 
     _assert_bucket_in_household(body.bucket_id, hh_id, db)
+    _validate_txn_refs(body, hh_id, db)
 
     txn.bucket_id    = body.bucket_id
-    txn.amount       = body.amount
+    txn.amount       = parse_amount(body.amount, field="amount")
     txn.currency     = body.currency
     txn.exchange_rate = body.exchange_rate
-    txn.type         = TransactionType(body.type)
+    txn.type         = _parse_body_type(body.type)
     txn.paid_by      = body.paid_by or txn.paid_by
     txn.category_id  = body.category_id or None
     txn.notes        = body.notes
     txn.exclude_from_forecast = body.exclude_from_forecast
     if body.transaction_date:
-        txn.transaction_date = date.fromisoformat(body.transaction_date)
+        txn.transaction_date = _parse_body_date(body.transaction_date)
 
     # Replace splits
     for s in txn.splits:

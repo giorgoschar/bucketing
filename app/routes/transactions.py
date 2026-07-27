@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 import httpx
 from fastapi import APIRouter, Depends, Form, Query, Request, HTTPException, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse, StreamingResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
 from app.auth import require_auth, require_csrf
@@ -26,12 +26,46 @@ from app.templates import templates
 from app.receipt_parser import parse_receipt_text, match_category, _extract_category_hint
 from app.config import settings
 from app.services import full_ctx as _full_ctx
+from app.validators import (
+    parse_amount, parse_year_month, require_bucket, require_category,
+    require_member, validate_split_users,
+)
 
 router = APIRouter(prefix="/transactions", dependencies=[Depends(require_csrf)])
 
 UPLOADS_DIR = "uploads"
 MAX_RECEIPT_SIZE = 10 * 1024 * 1024  # 10 MB
 ALLOWED_RECEIPT_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".pdf"}
+
+
+def _parse_txn_date(value: str) -> date:
+    try:
+        return date.fromisoformat(value.strip())
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=400, detail="Date must be a valid date (YYYY-MM-DD).")
+
+
+def _parse_txn_type(value: str) -> TransactionType:
+    try:
+        return TransactionType(value)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Unknown transaction type '{value}'.")
+
+
+def _validate_currency(value: str) -> str:
+    if value not in settings.currencies:
+        raise HTTPException(status_code=400, detail=f"Unsupported currency '{value}'.")
+    return value
+
+
+def _parse_rate(value) -> float:
+    try:
+        rate = float(value)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Exchange rate must be a number.")
+    if not (0 < rate <= 1_000_000):
+        raise HTTPException(status_code=400, detail="Exchange rate is out of range.")
+    return rate
 
 
 # ---------------------------------------------------------------------------
@@ -307,9 +341,14 @@ async def create_transaction(
 ):
     user, hh_id = auth
 
-    bucket = db.get(Bucket, bucket_id)
-    if not bucket or bucket.household_id != hh_id:
-        raise HTTPException(status_code=400, detail="Invalid bucket")
+    bucket = require_bucket(db, bucket_id, hh_id)
+    txn_amount   = parse_amount(amount, field="Amount")
+    txn_date     = _parse_txn_date(transaction_date)
+    txn_currency = _validate_currency(currency)
+    txn_type     = _parse_txn_type(type)
+    txn_rate     = _parse_rate(exchange_rate)
+    txn_paid_by  = require_member(db, paid_by, hh_id)
+    txn_category = require_category(db, category_id, hh_id)
 
     receipt_path = None
     if receipt and receipt.filename:
@@ -332,14 +371,14 @@ async def create_transaction(
     txn = Transaction(
         bucket_id=bucket_id,
         household_id=hh_id,
-        amount=amount,
-        currency=currency,
-        exchange_rate=exchange_rate,
-        type=TransactionType(type),
-        paid_by=paid_by or None,
-        category_id=category_id or None,
+        amount=txn_amount,
+        currency=txn_currency,
+        exchange_rate=txn_rate,
+        type=txn_type,
+        paid_by=txn_paid_by,
+        category_id=txn_category,
         notes=notes.strip() or None,
-        transaction_date=date.fromisoformat(transaction_date),
+        transaction_date=txn_date,
         receipt_path=receipt_path,
     )
     try:
@@ -348,7 +387,7 @@ async def create_transaction(
 
         # Handle splits if shared
         if is_shared == "on":
-            split_data = await _parse_splits(request, txn.id, amount, hh_id, db)
+            split_data = await _parse_splits(request, txn.id, txn_amount, hh_id, db)
             for split in split_data:
                 db.add(split)
 
@@ -371,23 +410,38 @@ async def create_transaction(
     return RedirectResponse(f"/buckets/{bucket_id}", status_code=302)
 
 
-async def _parse_splits(request: Request, txn_id: str, total: float, hh_id: str, db: Session):
+async def _parse_splits(request: Request, txn_id: str, total, hh_id: str, db: Session):
+    """Build TransactionSplit rows from split_{user_id} form fields.
+
+    Every user id is checked against the household — splits used to accept any
+    user id at all, letting a member attach shares to people outside the
+    household (and corrupting the settlement maths for everyone).
+    """
     form = await request.form()
-    splits = []
+    parsed: list[tuple[str, object]] = []
     for key, value in form.items():
-        if key.startswith("split_"):
-            user_id = key[6:]
-            try:
-                share = float(value)
-                if share > 0:
-                    splits.append(TransactionSplit(
-                        transaction_id=txn_id,
-                        user_id=user_id,
-                        amount=share,
-                    ))
-            except (ValueError, TypeError):
-                pass
-    return splits
+        if not key.startswith("split_") or not str(value).strip():
+            continue
+        share = parse_amount(value, field="Split amount", allow_blank=True)
+        if share and share > 0:
+            parsed.append((key[6:], share))
+
+    if not parsed:
+        return []
+
+    validate_split_users([uid for uid, _ in parsed], hh_id, db)
+
+    split_total = sum(amount for _, amount in parsed)
+    if total is not None and round(float(split_total), 4) > round(float(total), 4):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Split amounts ({float(split_total):.2f}) exceed the transaction total ({float(total):.2f}).",
+        )
+
+    return [
+        TransactionSplit(transaction_id=txn_id, user_id=uid, amount=amount)
+        for uid, amount in parsed
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -437,29 +491,35 @@ async def edit_transaction(
     if not txn or txn.household_id != hh_id:
         raise HTTPException(status_code=404)
 
+    # The target bucket was previously assigned straight from the form, so a
+    # member could move a transaction into any household's bucket by guessing
+    # or leaking an id.
+    require_bucket(db, bucket_id, hh_id)
+
     txn.bucket_id = bucket_id
-    txn.transaction_date = date.fromisoformat(transaction_date)
-    txn.amount = amount
-    txn.currency = currency
-    txn.exchange_rate = exchange_rate
-    txn.type = TransactionType(type)
-    txn.paid_by = paid_by or None
-    txn.category_id = category_id or None
+    txn.transaction_date = _parse_txn_date(transaction_date)
+    txn.amount = parse_amount(amount, field="Amount")
+    txn.currency = _validate_currency(currency)
+    txn.exchange_rate = _parse_rate(exchange_rate)
+    txn.type = _parse_txn_type(type)
+    txn.paid_by = require_member(db, paid_by, hh_id)
+    txn.category_id = require_category(db, category_id, hh_id)
     txn.notes = notes.strip() or None
     txn.exclude_from_forecast = (exclude_from_forecast == "on")
 
     # Replace splits
-    db.query(TransactionSplit).filter_by(transaction_id=txn.id).delete()
+    db.query(TransactionSplit).filter_by(transaction_id=txn.id).delete(synchronize_session=False)
     form_data = await request.form()
+    splits: list[tuple[str, object]] = []
     for key, value in form_data.items():
-        if key.startswith("split_") and value.strip():
-            uid = key[6:]
-            try:
-                split_amount = float(value)
-            except ValueError:
-                continue
-            if split_amount > 0:
-                db.add(TransactionSplit(transaction_id=txn.id, user_id=uid, amount=split_amount))
+        if key.startswith("split_") and str(value).strip():
+            split_amount = parse_amount(value, field="Split amount", allow_blank=True)
+            if split_amount and split_amount > 0:
+                splits.append((key[6:], split_amount))
+    if splits:
+        validate_split_users([uid for uid, _ in splits], hh_id, db)
+        for uid, split_amount in splits:
+            db.add(TransactionSplit(transaction_id=txn.id, user_id=uid, amount=split_amount))
 
     db.commit()
 
@@ -616,6 +676,20 @@ def search_transactions(
 # CSV export
 # ---------------------------------------------------------------------------
 
+def _csv_safe(value) -> str:
+    """Neutralise spreadsheet formula injection.
+
+    Excel/Sheets execute a cell starting with = + - @ (or a leading tab/CR), so
+    an expense note like `=HYPERLINK("http://evil","click")` becomes a live
+    formula in whoever opens the export. Prefixing with an apostrophe keeps the
+    text visible while forcing it to be read as a literal.
+    """
+    text = "" if value is None else str(value)
+    if text[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + text
+    return text
+
+
 @router.get("/export", response_class=StreamingResponse)
 def export_transactions(
     year: int = Query(None),
@@ -625,39 +699,58 @@ def export_transactions(
     auth=Depends(require_auth),
 ):
     user, hh_id = auth
+    parse_year_month(year, month)
 
-    query = db.query(Transaction).filter(Transaction.household_id == hh_id)
+    query = (
+        db.query(Transaction)
+        .filter(Transaction.household_id == hh_id)
+        .options(
+            joinedload(Transaction.bucket),
+            joinedload(Transaction.category),
+            joinedload(Transaction.paid_by_user),
+        )
+    )
     if bucket_id:
+        require_bucket(db, bucket_id, hh_id)
         query = query.filter(Transaction.bucket_id == bucket_id)
     if year:
+        # Half-open range avoids the old end-of-month arithmetic, which used
+        # day 28 for February and so dropped Feb 29 in every leap year.
+        if month:
+            start = date(year, month, 1)
+            end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+        else:
+            start, end = date(year, 1, 1), date(year + 1, 1, 1)
         query = query.filter(
-            Transaction.transaction_date >= date(year, month or 1, 1),
-            Transaction.transaction_date <= date(year, month or 12, 31) if not month else
-                date(year, month, 28 if month == 2 else (30 if month in (4,6,9,11) else 31)),
+            Transaction.transaction_date >= start,
+            Transaction.transaction_date < end,
         )
-    transactions = query.order_by(Transaction.transaction_date.desc()).all()
+
+    # Materialise rows now, not inside the generator. FastAPI closes the
+    # get_db() session before the streaming body is consumed, so touching
+    # txn.bucket lazily at that point raised DetachedInstanceError.
+    rows = [
+        [
+            txn.transaction_date.isoformat(),
+            _csv_safe(txn.bucket.name if txn.bucket else ""),
+            _csv_safe(txn.category.name if txn.category else ""),
+            txn.type.value,
+            float(txn.amount),
+            txn.currency,
+            _csv_safe(txn.paid_by_user.display_name if txn.paid_by_user else ""),
+            _csv_safe(txn.notes or ""),
+        ]
+        for txn in query.order_by(Transaction.transaction_date.desc()).all()
+    ]
 
     def generate():
         buf = io.StringIO()
         writer = csv.writer(buf)
         writer.writerow(["Date", "Bucket", "Category", "Type", "Amount", "Currency", "Paid By", "Notes"])
         yield buf.getvalue()
-        for txn in transactions:
+        for row in rows:
             buf = io.StringIO()
-            writer = csv.writer(buf)
-            bucket_name = txn.bucket.name if txn.bucket else ""
-            category_name = txn.category.name if txn.category else ""
-            paid_by_name = txn.paid_by_user.display_name if txn.paid_by_user else ""
-            writer.writerow([
-                txn.transaction_date.isoformat(),
-                bucket_name,
-                category_name,
-                txn.type.value,
-                float(txn.amount),
-                txn.currency,
-                paid_by_name,
-                txn.notes or "",
-            ])
+            csv.writer(buf).writerow(row)
             yield buf.getvalue()
 
     filename = f"transactions_{year or 'all'}{'_' + str(month) if month else ''}.csv"

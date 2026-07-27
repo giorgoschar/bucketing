@@ -14,12 +14,57 @@ from app.models import (
     BillFrequency, Transaction, TransactionSplit, TransactionType,
     Bucket, BucketStatus, Category, User, HouseholdMember, Household,
 )
-from app.bills_service import generate_occurrences, delete_future_occurrences
+from app.bills_service import generate_occurrences, delete_future_occurrences, normalise_interval_months
 from app.services import get_upcoming_bills, get_overdue_bills, full_ctx
+from app.validators import (
+    parse_amount, require_bucket, require_category, require_member, validate_split_users,
+)
 from app.config import settings
 from app.templates import templates
 
 router = APIRouter(prefix="/bills", dependencies=[Depends(require_csrf)])
+
+
+def _checkbox(value: str) -> bool:
+    """Interpret an HTML checkbox value.
+
+    Unchecked boxes submit nothing; checked ones submit "on". bool() alone was
+    wrong because any non-empty string — including "false" and "off", which some
+    clients send — evaluates truthy.
+    """
+    return str(value).strip().lower() in {"on", "true", "1", "yes"}
+
+
+def _parse_iso_date(value: str, field: str, *, required: bool = True):
+    """Parse an ISO date from a form field, returning HTTP 400 rather than a 500."""
+    value = (value or "").strip()
+    if not value:
+        if required:
+            raise HTTPException(status_code=400, detail=f"{field} is required.")
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"{field} must be a valid date (YYYY-MM-DD).")
+
+
+async def _collect_splits(request: Request, hh_id: str, db: Session) -> tuple[list[tuple[str, float]], float]:
+    """Read split_{user_id} form fields, validating each user is in the household."""
+    form_data = await request.form()
+    splits: list[tuple[str, float]] = []
+    total = 0.0
+    for key, value in form_data.items():
+        if not key.startswith("split_") or not str(value).strip():
+            continue
+        uid = key[6:]
+        amount = parse_amount(value, field="Split amount", allow_blank=True)
+        if amount is None or amount <= 0:
+            continue
+        splits.append((uid, float(amount)))
+        total += float(amount)
+    if splits:
+        validate_split_users([uid for uid, _ in splits], hh_id, db)
+    return splits, total
 
 
 
@@ -78,47 +123,36 @@ async def create_bill(
 ):
     user, hh_id = auth
 
+    bill_amount = parse_amount(amount, field="Bill amount", allow_blank=True)
+    splits, split_total = await _collect_splits(request, hh_id, db)
+    if splits and bill_amount is not None and round(split_total, 4) != round(float(bill_amount), 4):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Split amounts ({split_total:.2f}) must sum to the bill amount ({float(bill_amount):.2f}).",
+        )
+
     bill = RecurringBill(
         household_id=hh_id,
         name=name.strip(),
-        amount=float(amount) if amount.strip() else None,
+        amount=bill_amount,
         currency=currency,
-        category_id=category_id or None,
-        bucket_id=bucket_id or None,
+        category_id=require_category(db, category_id, hh_id),
+        bucket_id=require_bucket(db, bucket_id, hh_id, optional=True).id if bucket_id else None,
         frequency=BillFrequency(frequency),
-        interval_months=interval_months,
-        start_date=date.fromisoformat(start_date),
-        end_date=date.fromisoformat(end_date) if end_date.strip() else None,
-        contract_end_date=date.fromisoformat(contract_end_date) if contract_end_date.strip() else None,
-        total_occurrences=int(total_occurrences) if total_occurrences.strip() else None,
-        paid_by_default=paid_by_default or None,
+        interval_months=normalise_interval_months(interval_months),
+        start_date=_parse_iso_date(start_date, "Start date"),
+        end_date=_parse_iso_date(end_date, "End date", required=False),
+        contract_end_date=_parse_iso_date(contract_end_date, "Contract end date", required=False),
+        total_occurrences=int(total_occurrences) if total_occurrences.strip().isdigit() else None,
+        paid_by_default=require_member(db, paid_by_default, hh_id),
         notes=notes.strip() or None,
-        is_auto_pay=bool(is_auto_pay),
+        is_auto_pay=_checkbox(is_auto_pay),
     )
     db.add(bill)
     db.flush()
 
-    # Shared bill splits — fields named split_{user_id}
-    form_data = await request.form()
-    split_total = 0.0
-    splits = []
-    for key, value in form_data.items():
-        if key.startswith("split_") and value.strip():
-            uid = key[6:]
-            try:
-                split_amount = float(value)
-            except ValueError:
-                continue
-            if split_amount > 0:
-                split_total += split_amount
-                splits.append(RecurringBillSplit(bill_id=bill.id, user_id=uid, amount=split_amount))
-
-    bill_amount = float(amount) if amount.strip() else None
-    if splits and bill_amount is not None and round(split_total, 4) != round(bill_amount, 4):
-        raise HTTPException(status_code=400, detail=f"Split amounts ({split_total:.2f}) must sum to the bill amount ({bill_amount:.2f}).")
-
-    for s in splits:
-        db.add(s)
+    for uid, split_amount in splits:
+        db.add(RecurringBillSplit(bill_id=bill.id, user_id=uid, amount=split_amount))
 
     generate_occurrences(db, bill)
     db.commit()
@@ -142,11 +176,25 @@ async def mark_paid(
         raise HTTPException(status_code=404)
 
     bill = occ.bill
-    pay_amount = float(amount) if amount.strip() else bill.amount
+
+    # Idempotency: a double-click (or a retried request) used to create a second
+    # transaction and orphan the first by overwriting occ.transaction_id.
+    if occ.status == OccurrenceStatus.paid:
+        if request.headers.get("HX-Request"):
+            return templates.TemplateResponse(
+                "partials/bill_occurrence_row.html",
+                {"request": request, "occ": occ, "bill": bill},
+            )
+        return RedirectResponse("/bills", status_code=302)
+
+    explicit_amount = parse_amount(amount, field="Amount", allow_blank=True)
+    # Fall back to the occurrence's pre-set amount (standing-order mode) before
+    # the bill default — the scheduler already resolves it in that order.
+    pay_amount = explicit_amount if explicit_amount is not None else (occ.amount or bill.amount)
     if not pay_amount:
         raise HTTPException(status_code=400, detail="Amount required for variable bills")
 
-    payer = paid_by or bill.paid_by_default or user.id
+    payer = require_member(db, paid_by, hh_id) or bill.paid_by_default or user.id
 
     # Auto-create transaction
     if bill.bucket_id:
@@ -166,25 +214,17 @@ async def mark_paid(
         occ.transaction_id = txn.id
 
         # Create per-member splits — from form overrides first, then bill.splits defaults
-        form_data = await request.form()
-        split_overrides = {}
-        for key, value in form_data.items():
-            if key.startswith("split_") and value.strip():
-                uid = key[6:]
-                try:
-                    split_overrides[uid] = float(value)
-                except ValueError:
-                    pass
+        overrides, _ = await _collect_splits(request, hh_id, db)
+        split_overrides = dict(overrides)
 
         if bill.splits:
             for s in bill.splits:
-                split_amt = split_overrides.get(s.user_id, s.amount)
                 db.add(TransactionSplit(
                     transaction_id=txn.id,
                     user_id=s.user_id,
-                    amount=split_amt,
+                    amount=split_overrides.get(s.user_id, s.amount),
                 ))
-        elif split_overrides:
+        else:
             for uid, split_amt in split_overrides.items():
                 db.add(TransactionSplit(
                     transaction_id=txn.id,
@@ -195,8 +235,8 @@ async def mark_paid(
     occ.status = OccurrenceStatus.paid
     occ.paid_at = datetime.utcnow()
     occ.paid_by = payer
-    if amount.strip():
-        occ.amount = float(amount)
+    if explicit_amount is not None:
+        occ.amount = explicit_amount
 
     db.commit()
 
@@ -227,11 +267,10 @@ async def set_occurrence_amount(
     if not occ or occ.bill.household_id != hh_id:
         raise HTTPException(status_code=404)
 
-    try:
-        occ.amount = float(amount)
-    except (ValueError, TypeError):
-        raise HTTPException(status_code=400, detail="Invalid amount")
+    if occ.status != OccurrenceStatus.unpaid:
+        raise HTTPException(status_code=400, detail="This occurrence is already settled.")
 
+    occ.amount = parse_amount(amount, field="Amount")
     db.commit()
 
     bill = occ.bill
@@ -255,6 +294,11 @@ def skip_occurrence(
     occ = db.get(BillOccurrence, occ_id)
     if not occ or occ.bill.household_id != hh_id:
         raise HTTPException(status_code=404)
+
+    # Skipping a paid occurrence would leave its transaction behind while the
+    # bill history stops reporting it as paid.
+    if occ.status == OccurrenceStatus.paid:
+        raise HTTPException(status_code=400, detail="Cannot skip an occurrence that is already paid.")
 
     occ.status = OccurrenceStatus.skipped
     db.commit()
@@ -310,42 +354,33 @@ async def edit_bill(
     if not bill or bill.household_id != hh_id:
         raise HTTPException(status_code=404)
 
+    bill_amount = parse_amount(amount, field="Bill amount", allow_blank=True)
+    splits, split_total = await _collect_splits(request, hh_id, db)
+    if splits and bill_amount is not None and round(split_total, 4) != round(float(bill_amount), 4):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Split amounts ({split_total:.2f}) must sum to the bill amount ({float(bill_amount):.2f}).",
+        )
+
     bill.name = name.strip()
-    bill.amount = float(amount) if amount.strip() else None
+    bill.amount = bill_amount
     bill.currency = currency
-    bill.category_id = category_id or None
-    bill.bucket_id = bucket_id or None
+    bill.category_id = require_category(db, category_id, hh_id)
+    bill.bucket_id = require_bucket(db, bucket_id, hh_id, optional=True).id if bucket_id else None
     bill.frequency = BillFrequency(frequency)
-    bill.interval_months = interval_months
-    bill.start_date = date.fromisoformat(start_date)
-    bill.end_date = date.fromisoformat(end_date) if end_date.strip() else None
-    bill.contract_end_date = date.fromisoformat(contract_end_date) if contract_end_date.strip() else None
-    bill.total_occurrences = int(total_occurrences) if total_occurrences.strip() else None
-    bill.paid_by_default = paid_by_default or None
+    bill.interval_months = normalise_interval_months(interval_months)
+    bill.start_date = _parse_iso_date(start_date, "Start date")
+    bill.end_date = _parse_iso_date(end_date, "End date", required=False)
+    bill.contract_end_date = _parse_iso_date(contract_end_date, "Contract end date", required=False)
+    bill.total_occurrences = int(total_occurrences) if total_occurrences.strip().isdigit() else None
+    bill.paid_by_default = require_member(db, paid_by_default, hh_id)
     bill.notes = notes.strip() or None
-    bill.is_auto_pay = bool(is_auto_pay)
+    bill.is_auto_pay = _checkbox(is_auto_pay)
 
     # Replace splits
-    db.query(RecurringBillSplit).filter_by(bill_id=bill.id).delete()
-    form_data = await request.form()
-    split_total = 0.0
-    splits = []
-    for key, value in form_data.items():
-        if key.startswith("split_") and value.strip():
-            uid = key[6:]
-            try:
-                split_amount = float(value)
-            except ValueError:
-                continue
-            if split_amount > 0:
-                split_total += split_amount
-                splits.append(RecurringBillSplit(bill_id=bill.id, user_id=uid, amount=split_amount))
-
-    if splits and bill.amount is not None and round(split_total, 4) != round(float(bill.amount), 4):
-        raise HTTPException(status_code=400, detail=f"Split amounts ({split_total:.2f}) must sum to the bill amount ({float(bill.amount):.2f}).")
-
-    for s in splits:
-        db.add(s)
+    db.query(RecurringBillSplit).filter_by(bill_id=bill.id).delete(synchronize_session=False)
+    for uid, split_amount in splits:
+        db.add(RecurringBillSplit(bill_id=bill.id, user_id=uid, amount=split_amount))
 
     # Regenerate future occurrences
     delete_future_occurrences(db, bill.id)

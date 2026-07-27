@@ -5,8 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, JSONResponse, HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from app.config import settings
@@ -26,10 +25,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Rate limiter (shared across routers)
-# ---------------------------------------------------------------------------
-limiter = Limiter(key_func=get_remote_address)
+# Rate limiter — single shared instance (see app/ratelimit.py)
+from app.ratelimit import limiter
 
 
 @asynccontextmanager
@@ -116,11 +113,11 @@ async def security_headers(request: Request, call_next):
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval' cdn.jsdelivr.net fastapi.tiangolo.com cdn.tailwindcss.com; "
-        "style-src 'self' 'unsafe-inline' cdn.jsdelivr.net fastapi.tiangolo.com cdn.tailwindcss.com; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' cdn.jsdelivr.net cdn.tailwindcss.com; "
+        "style-src 'self' 'unsafe-inline' cdn.jsdelivr.net cdn.tailwindcss.com; "
         "worker-src blob: 'self'; "
-        "img-src 'self' data: blob:; "
-        "connect-src 'self' cdn.jsdelivr.net fastapi.tiangolo.com cdn.tailwindcss.com blob:;"
+        "img-src 'self' fastapi.tiangolo.com data: blob:; "
+        "connect-src 'self' cdn.jsdelivr.net cdn.tailwindcss.com blob:;"
     )
     if not settings.debug:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"

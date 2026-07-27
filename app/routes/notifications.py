@@ -129,16 +129,27 @@ async def push_subscribe(
     except (KeyError, ValueError):
         raise HTTPException(status_code=422, detail="Invalid subscription payload")
 
-    # Upsert: update keys if endpoint already stored
+    if not isinstance(endpoint, str) or not endpoint.startswith("https://") or len(endpoint) > 2000:
+        raise HTTPException(status_code=422, detail="Invalid subscription endpoint")
+
+    # Upsert: update keys if this user already registered this endpoint.
+    # Scoping by user_id matters — the previous lookup matched on endpoint
+    # alone, so any authenticated user could re-point somebody else's
+    # subscription at their own account and receive that person's pushes.
     existing = db.query(PushSubscription).filter(
-        PushSubscription.endpoint == endpoint
+        PushSubscription.endpoint == endpoint,
+        PushSubscription.user_id == user.id,
     ).first()
     if existing:
         existing.p256dh       = p256dh
         existing.auth         = auth_key
-        existing.user_id      = user.id
         existing.household_id = hh_id
     else:
+        # A browser endpoint belongs to one profile; if it is registered to a
+        # different user the device was re-provisioned, so retire the old row.
+        db.query(PushSubscription).filter(
+            PushSubscription.endpoint == endpoint
+        ).delete(synchronize_session=False)
         db.add(PushSubscription(
             user_id=user.id,
             household_id=hh_id,
@@ -234,6 +245,8 @@ async def push_test(
             return {"sent": True, "error": None}
         return {"sent": False, "error": "Push was attempted but delivery failed. Check server logs for details."}
     except Exception as exc:
+        # Don't echo the raw exception — VAPID/pywebpush errors can carry key
+        # material and internal endpoints. The details go to the server log.
         logger.exception("push/test failed: %s", exc)
         db.commit()  # still save the in-app notif
-        return {"sent": False, "error": str(exc)}
+        return {"sent": False, "error": "Push delivery failed. Check the server logs for details."}

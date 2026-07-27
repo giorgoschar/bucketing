@@ -7,15 +7,13 @@ from datetime import datetime, timedelta
 import pyotp
 from fastapi import APIRouter, Depends, Form, Request, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
 from app.database import get_db
 from app.models import User, Household, HouseholdMember, Invitation, MemberRole
 from app.auth import (
-    hash_password, verify_password,
+    hash_password, verify_password, verify_password_constant_time,
     set_session, set_pending_session, clear_session,
     get_current_session, get_pending_session,
     security_logger, require_csrf,
@@ -24,8 +22,9 @@ from app.config import settings
 from app.seed import seed_categories
 from app.templates import templates
 
+from app.ratelimit import limiter
+
 router = APIRouter(dependencies=[Depends(require_csrf)])
-limiter = Limiter(key_func=get_remote_address)
 
 
 def _is_first_run(db: Session) -> bool:
@@ -33,9 +32,16 @@ def _is_first_run(db: Session) -> bool:
 
 
 def _client_ip(request: Request) -> str:
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
+    """Best-effort client IP for security logs.
+
+    X-Forwarded-For is only honoured when TRUST_PROXY_HEADERS is set: any client
+    can send that header, so trusting it unconditionally lets an attacker forge
+    the source IP in the audit trail of every failed login.
+    """
+    if settings.trust_proxy_headers:
+        forwarded = request.headers.get("X-Forwarded-For")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
 
 
@@ -153,8 +159,10 @@ def login_submit(
     user = db.query(User).filter(
         or_(User.username == identifier, User.email == identifier)
     ).first()
-    if not user or not verify_password(password, user.password_hash):
-        security_logger.warning("Failed login for '%s' from %s", username.strip().lower(), ip)
+    # Always run bcrypt, even for an unknown identifier, so response time does
+    # not disclose which accounts exist.
+    if not verify_password_constant_time(password, user.password_hash if user else None):
+        security_logger.warning("Failed login for '%s' from %s", identifier, ip)
         return templates.TemplateResponse(
             "auth/login.html",
             {"request": request, "error": "Invalid username or password."},

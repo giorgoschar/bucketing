@@ -55,6 +55,20 @@ def verify_password(plain: str, hashed: str) -> bool:
         return False
 
 
+# A real bcrypt hash used to burn the same CPU time when the account does not
+# exist. Without it, "unknown user" returns in microseconds while "wrong
+# password" takes ~100ms, which reveals which usernames/emails are registered.
+_DUMMY_HASH = _bcrypt.hashpw(_prepare("dummy-password-for-timing-equalisation"), _bcrypt.gensalt()).decode()
+
+
+def verify_password_constant_time(plain: str, hashed: str | None) -> bool:
+    """Verify a password, spending the same time whether or not the user exists."""
+    if not hashed:
+        _bcrypt.checkpw(_prepare(plain), _DUMMY_HASH.encode())
+        return False
+    return verify_password(plain, hashed)
+
+
 # ---------------------------------------------------------------------------
 # Session cookies
 # ---------------------------------------------------------------------------

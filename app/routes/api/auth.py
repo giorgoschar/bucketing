@@ -10,12 +10,13 @@ Flow:
 """
 from fastapi import APIRouter, Depends, HTTPException, status, Body
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 import pyotp
 
-from app.auth import verify_password, security_logger
+from app.auth import verify_password_constant_time, security_logger
 from app.api_auth import (
     create_pending_token,
     create_access_token,
@@ -73,9 +74,13 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
     Step 1: Validate credentials.
     Returns a short-lived pending_token (5 min) that must be exchanged via /totp/verify.
     """
-    user = db.query(User).filter_by(username=body.username).first()
-    if not user or not verify_password(body.password, user.password_hash):
-        security_logger.warning("API login failed for username=%s", body.username)
+    identifier = body.username.strip().lower()
+    user = db.query(User).filter(
+        or_(User.username == identifier, User.email == identifier)
+    ).first()
+    # Constant-time regardless of whether the account exists (see app/auth.py).
+    if not verify_password_constant_time(body.password, user.password_hash if user else None):
+        security_logger.warning("API login failed for username=%s", identifier)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",

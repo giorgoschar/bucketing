@@ -23,7 +23,8 @@
 </details>
 
 <form method="POST" action="/settings/2fa/enroll" class="space-y-4">
-  <input type="hidden" name="secret" value="{{ secret }}" />
+  {# The secret is held server-side for the duration of enrollment; it is
+     deliberately not submitted back, so the client cannot choose it. #}
   <div>
     <label class="block text-sm font-medium text-gray-700 mb-1.5">
       Enter the 6-digit code from your app to confirm

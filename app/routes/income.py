@@ -16,6 +16,7 @@ from app.models import (
 from app.templates import templates
 from app.config import settings
 from app.services import full_ctx as _full_ctx
+from app.validators import parse_amount, require_category, require_member
 
 router = APIRouter(prefix="/income", dependencies=[Depends(require_csrf)])
 
@@ -86,17 +87,24 @@ def create_income(
     if not bucket or bucket.household_id != hh_id:
         raise HTTPException(status_code=400, detail="Invalid bucket")
 
+    if currency not in settings.currencies:
+        raise HTTPException(status_code=400, detail=f"Unsupported currency '{currency}'.")
+    try:
+        txn_date = date.fromisoformat(transaction_date.strip())
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=400, detail="Date must be a valid date (YYYY-MM-DD).")
+
     txn = Transaction(
         bucket_id=bucket_id,
         household_id=hh_id,
-        amount=amount,
+        amount=parse_amount(amount, field="Amount"),
         currency=currency,
         exchange_rate=1.0,
         type=TransactionType.income,
-        paid_by=received_by or None,
-        category_id=category_id or None,
+        paid_by=require_member(db, received_by, hh_id),
+        category_id=require_category(db, category_id, hh_id),
         notes=notes.strip() or None,
-        transaction_date=date.fromisoformat(transaction_date),
+        transaction_date=txn_date,
     )
     db.add(txn)
     db.commit()

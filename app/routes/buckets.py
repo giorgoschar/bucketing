@@ -10,6 +10,7 @@ from app.auth import require_auth, require_csrf
 from app.models import Bucket, BucketType, BucketStatus, Household, HouseholdMember, Transaction, TransactionType
 from app.services import get_bucket_balance, get_bucket_month_summary, get_bucket_settlement, base_ctx
 from app.templates import templates
+from app.validators import parse_amount, parse_year_month
 
 router = APIRouter(prefix="/buckets", dependencies=[Depends(require_csrf)])
 
@@ -83,7 +84,7 @@ def create_bucket(
         type=BucketType(type),
         color=color,
         icon=icon,
-        budget=float(budget) if budget.strip() else None,
+        budget=parse_amount(budget, field="Budget", allow_blank=True),
         description=description.strip() or None,
         show_income=(show_income == "on"),
         enable_settlement=(enable_settlement == "on"),
@@ -109,6 +110,9 @@ def bucket_detail(
     bucket = db.get(Bucket, bucket_id)
     if not bucket or bucket.household_id != hh_id:
         raise HTTPException(status_code=404, detail="Bucket not found")
+
+    # ?month=13 or ?year=0 reached date() unchecked and raised a 500.
+    parse_year_month(year, month)
 
     today = date.today()
     if year is None:
@@ -223,7 +227,7 @@ def edit_bucket(
     bucket.type = BucketType(type)
     bucket.color = color
     bucket.icon = icon
-    bucket.budget = float(budget) if budget.strip() else None
+    bucket.budget = parse_amount(budget, field="Budget", allow_blank=True)
     bucket.description = description.strip() or None
     bucket.show_income = (show_income == "on")
     bucket.enable_settlement = (enable_settlement == "on")
