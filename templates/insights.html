@@ -189,8 +189,31 @@ var _insightsData = {
 
   </div>
 
-  {# ===== Widgets region — #insights-body is the HTMX swap target ===== #}
-  {% include "insights_partial.html" %}
+  {# Inline error if a filter request fails, so a silent no-op is impossible #}
+  <div x-show="failed" x-cloak
+       class="flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+    <span class="text-sm text-red-700 dark:text-red-400">Couldn't update insights.</span>
+    <button type="button" @click="_debounce(0)"
+            class="text-xs font-semibold text-red-700 dark:text-red-400 underline">Retry</button>
+  </div>
+
+  {# ===== Widgets region — #insights-body is the HTMX swap target =====
+     The wrapper dims and blocks clicks while a filter request is in flight;
+     the swap target itself must stay a direct child so outerHTML swaps work. #}
+  <div class="relative transition-opacity duration-150"
+       :class="loading ? 'opacity-40 pointer-events-none' : 'opacity-100'">
+    <div x-show="loading" x-cloak
+         class="absolute inset-x-0 top-6 z-20 flex justify-center pointer-events-none">
+      <span class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-900/85 dark:bg-gray-100/90 text-white dark:text-gray-900 text-xs font-medium shadow-lg">
+        <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
+        </svg>
+        Updating…
+      </span>
+    </div>
+    {% include "insights_partial.html" %}
+  </div>
 
 </div>
 {% endblock %}
@@ -219,7 +242,14 @@ function insightsFilters(initial) {
     openCats:      false,
     openPaidBy:    false,
 
-    _timer: null,
+    // Request state — `loading` dims the widgets so a filter click gives
+    // instant feedback instead of appearing to do nothing for ~half a second.
+    loading:       false,
+    failed:        false,
+
+    _timer:    null,
+    _inflight: false,
+    _pending:  false,
 
     paidByLabel() {
       return (this.paidBy && this.membersMap[this.paidBy]) ? this.membersMap[this.paidBy] : 'Paid by';
@@ -241,7 +271,7 @@ function insightsFilters(initial) {
       if (p !== 'custom') {
         this.startDate = '';
         this.endDate   = '';
-        this._go();
+        this._debounce(0);
       }
     },
 
@@ -249,7 +279,7 @@ function insightsFilters(initial) {
       if (this.startDate && this.endDate) {
         this.preset = 'custom';
         this.openPreset = false;
-        this._go();
+        this._debounce(0);
       }
     },
 
@@ -270,7 +300,7 @@ function insightsFilters(initial) {
     setBucketType(t) {
       this.bucketType = (this.bucketType === t) ? '' : t;
       this.bucketIds  = [];
-      this._go();
+      this._debounce(0);
     },
 
     clearAll() {
@@ -285,7 +315,7 @@ function insightsFilters(initial) {
       this.openBuckets = false;
       this.openCats    = false;
       this.openPaidBy  = false;
-      this._go();
+      this._debounce(0);
     },
 
     hasFilters() {
@@ -293,9 +323,18 @@ function insightsFilters(initial) {
              this.categoryIds.length || this.paidBy;
     },
 
-    _debounce() {
+    /* Every filter mutation funnels through here.
+     *
+     * Previously some actions (preset, bucket type, clear) called _go()
+     * immediately while others went through a 400ms debounce. Two requests
+     * could then be in flight at once and whichever *responded* last won —
+     * so a filter could visibly "not apply" because a slower earlier request
+     * overwrote it. Now there is a single path, and _go() serialises. */
+    _debounce(delay = 180) {
       clearTimeout(this._timer);
-      this._timer = setTimeout(() => this._go(), 400);
+      this.loading = true;            // immediate feedback, before the request
+      this.failed  = false;
+      this._timer = setTimeout(() => this._go(), delay);
     },
 
     _url() {
@@ -309,10 +348,30 @@ function insightsFilters(initial) {
       return '/insights' + p;
     },
 
+    /* Only ever one request in flight. If the user keeps clicking while one is
+     * running we just flag _pending and re-fire once it lands, so the final
+     * render always reflects the final filter state — no out-of-order swaps. */
     _go() {
+      if (this._inflight) { this._pending = true; return; }
+
       const url = this._url();
       history.replaceState({}, '', url);
-      htmx.ajax('GET', url, { target: '#insights-body', swap: 'outerHTML' });
+
+      this._inflight = true;
+      this.loading   = true;
+
+      htmx.ajax('GET', url, { target: '#insights-body', swap: 'outerHTML' })
+        .then(() => { this.failed = false; })
+        .catch(() => { this.failed = true; })
+        .finally(() => {
+          this._inflight = false;
+          if (this._pending) {
+            this._pending = false;
+            this._go();               // coalesce into one trailing request
+          } else {
+            this.loading = false;
+          }
+        });
     },
   };
 }

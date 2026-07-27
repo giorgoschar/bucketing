@@ -200,7 +200,12 @@
             <div class="h-full rounded-full {% if row.pct > 90 %}bg-red-400{% elif row.pct > 70 %}bg-amber-400{% else %}bg-emerald-400{% endif %}"
                  style="width: {{ row.pct }}%"></div>
           </div>
-          <p class="text-xs text-gray-400">{{ row.pct }}% used</p>
+          {# pct is clamped to 100 for the bar width; pct_actual is the true figure #}
+          <p class="text-xs {% if row.over_budget %}text-red-500{% else %}text-gray-400{% endif %}">
+            {{ row.pct_actual }}% used
+            {%- if row.over_budget %} · {{ (-row.remaining) | currency(household.default_currency) }} over
+            {%- else %} · {{ row.remaining | currency(household.default_currency) }} left{% endif %}
+          </p>
         </div>
         {% endfor %}
       </div>

@@ -246,6 +246,8 @@ def get_upcoming_bills(db: Session, household_id: str, days: int = 30) -> list:
     occurrences = (
         db.query(BillOccurrence)
         .join(RecurringBill, RecurringBill.id == BillOccurrence.bill_id)
+        # Templates render occ.bill.name/amount for every row — eager-load it.
+        .options(joinedload(BillOccurrence.bill))
         .filter(
             RecurringBill.household_id == household_id,
             BillOccurrence.status == OccurrenceStatus.unpaid,
@@ -263,6 +265,7 @@ def get_overdue_bills(db: Session, household_id: str) -> list:
     occurrences = (
         db.query(BillOccurrence)
         .join(RecurringBill, RecurringBill.id == BillOccurrence.bill_id)
+        .options(joinedload(BillOccurrence.bill))
         .filter(
             RecurringBill.household_id == household_id,
             BillOccurrence.status == OccurrenceStatus.unpaid,
@@ -277,6 +280,19 @@ def get_overdue_bills(db: Session, household_id: str) -> list:
 # ---------------------------------------------------------------------------
 # New analytics functions
 # ---------------------------------------------------------------------------
+
+def _recent_months(n_months: int, today: date | None = None) -> list[tuple[int, int]]:
+    """The last n_months as (year, month) pairs, oldest → newest."""
+    today = today or date.today()
+    months: list[tuple[int, int]] = []
+    for i in range(n_months - 1, -1, -1):
+        m, y = today.month - i, today.year
+        while m <= 0:
+            m += 12
+            y -= 1
+        months.append((y, m))
+    return months
+
 
 def _month_range(year: int, month: int):
     start = date(year, month, 1)
@@ -311,6 +327,9 @@ def get_bills_due_month_total(db: Session, household_id: str, year: int, month: 
     occurrences = (
         db.query(BillOccurrence)
         .join(RecurringBill, RecurringBill.id == BillOccurrence.bill_id)
+        # Without the eager load, the bill.amount fallback below issues one
+        # SELECT per occurrence on every dashboard render.
+        .options(joinedload(BillOccurrence.bill))
         .filter(
             RecurringBill.household_id == household_id,
             BillOccurrence.due_date >= start,
@@ -374,37 +393,45 @@ def get_category_breakdown(
     return rows
 
 
-def get_monthly_trend(db: Session, household_id: str, n_months: int = 6) -> list[dict]:
-    """Expense totals for the last n_months calendar months (oldest → newest)."""
+def get_monthly_trend(
+    db: Session,
+    household_id: str,
+    n_months: int = 6,
+    bucket_type: str = "",
+    bucket_ids: list | None = None,
+    category_ids: list | None = None,
+    paid_by: str | None = None,
+) -> list[dict]:
+    """Expense totals for the last n_months calendar months (oldest → newest).
+
+    Accepts the insight filters so the trend chart describes the same slice of
+    data as the rest of the page; the dashboard calls it without filters.
+    """
     today = date.today()
-    results = []
-    for i in range(n_months - 1, -1, -1):
-        # Go back i months from current
-        m = today.month - i
-        y = today.year
-        while m <= 0:
-            m += 12
-            y -= 1
-        start, end = _month_range(y, m)
-        total = (
-            db.query(func.coalesce(func.sum(Transaction.amount), 0))
-            .filter(
-                Transaction.household_id == household_id,
-                Transaction.type == TransactionType.expense,
-                Transaction.transaction_date >= start,
-                Transaction.transaction_date <= end,
-                Transaction.exclude_from_forecast == False,  # noqa: E712
-            )
-            .scalar()
-        )
-        results.append({
+    months = _recent_months(n_months, today)
+
+    # One query for the whole window instead of one per month.
+    totals = _sum_expenses_by(
+        db, household_id,
+        _month_range(*months[0])[0],
+        _month_range(*months[-1])[1],
+        group_by="month",
+        bucket_type=bucket_type,
+        bucket_ids=bucket_ids,
+        category_ids=category_ids,
+        paid_by=paid_by,
+    )
+
+    return [
+        {
             "label":      date(y, m, 1).strftime("%b"),
             "year":       y,
             "month":      m,
-            "total":      round(float(total), 2),
+            "total":      round(totals.get((y, m), 0.0), 2),
             "is_current": (y == today.year and m == today.month),
-        })
-    return results
+        }
+        for y, m in months
+    ]
 
 
 def get_forecast(db: Session, household_id: str) -> dict:
@@ -610,6 +637,100 @@ def get_bucket_spend_this_month(db: Session, household_id: str, year: int, month
 # Insights v2 — unified helpers that accept flexible date ranges + new filters
 # ---------------------------------------------------------------------------
 
+INSIGHT_PRESETS = (
+    "this_month", "last_month", "last_3m", "last_6m", "this_year", "all_time", "custom",
+)
+
+
+def _parse_iso(value: str) -> date | None:
+    try:
+        return date.fromisoformat(value.strip()) if value and value.strip() else None
+    except (ValueError, AttributeError):
+        return None
+
+
+def resolve_insight_period(
+    preset: str,
+    start_date: str = "",
+    end_date: str = "",
+    today: date | None = None,
+) -> dict:
+    """Turn a preset (+ optional custom dates) into a concrete date range.
+
+    Shared by the HTML and JSON insights endpoints, which previously carried
+    two hand-maintained copies of this logic that could drift apart.
+    """
+    today = today or date.today()
+    start: date | None = None
+    end: date | None = None
+
+    if preset == "all_time":
+        start, end = None, None
+    elif preset == "last_month":
+        first_of_month = today.replace(day=1)
+        end = first_of_month - timedelta(days=1)
+        start = end.replace(day=1)
+    elif preset in ("last_3m", "last_6m"):
+        months = 3 if preset == "last_3m" else 6
+        end = today
+        m, y = today.month - months, today.year
+        while m <= 0:
+            m += 12
+            y -= 1
+        start = date(y, m, 1)
+    elif preset == "this_year":
+        start = date(today.year, 1, 1)
+        end = today
+    elif preset == "custom":
+        start = _parse_iso(start_date)
+        end = _parse_iso(end_date)
+        # Unparseable custom dates used to fall through as None/None, silently
+        # showing all-time data under a "custom range" label.
+        if start is None and end is None:
+            preset = "this_month"
+            start, end = date(today.year, today.month, 1), today
+        elif start and end and start > end:
+            start, end = end, start
+    else:
+        preset = "this_month"
+        start, end = date(today.year, today.month, 1), today
+
+    all_time = start is None and end is None
+    is_current_month = (
+        not all_time
+        and start == date(today.year, today.month, 1)
+        and end == today
+    )
+
+    if all_time:
+        label = "All time"
+    elif preset == "last_month":
+        label = start.strftime("%B %Y")
+    elif preset == "last_3m":
+        label = "Last 3 months"
+    elif preset == "last_6m":
+        label = "Last 6 months"
+    elif preset == "this_year":
+        label = str(today.year)
+    elif preset == "custom":
+        if start and end:
+            label = f"{start.strftime('%d %b')} – {end.strftime('%d %b %Y')}"
+        elif start:
+            label = f"From {start.strftime('%d %b %Y')}"
+        else:
+            label = f"Until {end.strftime('%d %b %Y')}"
+    else:
+        label = today.strftime("%B %Y")
+
+    return {
+        "preset":           preset,
+        "start":            start,
+        "end":              end,
+        "all_time":         all_time,
+        "is_current_month": is_current_month,
+        "period_label":     label,
+    }
+
 def _build_expense_query(
     db: Session,
     household_id: str,
@@ -645,7 +766,7 @@ def _build_expense_query(
         split_subq = (
             db.query(TransactionSplit.transaction_id)
             .filter(TransactionSplit.user_id == paid_by)
-            .subquery()
+            .scalar_subquery()
         )
         q = q.filter(
             or_(
@@ -654,6 +775,77 @@ def _build_expense_query(
             )
         )
     return q
+
+
+def _sum_expenses_by(
+    db: Session,
+    household_id: str,
+    start: date | None,
+    end: date | None,
+    *,
+    group_by: str,
+    bucket_type: str = "",
+    bucket_ids: list | None = None,
+    category_ids: list | None = None,
+    paid_by: str | None = None,
+) -> dict:
+    """Sum filtered expenses grouped by one dimension, in a single round trip.
+
+    ``group_by`` is "bucket", "category", "month" or "category_month".
+
+    Several insight widgets used to loop and issue one query per bucket / per
+    month, which is what made the filter bar feel sluggish: a single filter
+    change cost ~38 queries. Everything now aggregates in one pass.
+
+    When ``paid_by`` is set the per-user share has to come from the split rows,
+    so the transactions are loaded with their splits and folded in Python;
+    otherwise the database does the aggregation.
+    """
+    q = _build_expense_query(
+        db, household_id, start, end,
+        bucket_type=bucket_type,
+        bucket_ids=bucket_ids,
+        category_ids=category_ids,
+        paid_by=paid_by,
+    )
+
+    def key_for(bucket_id, category_id, txn_date):
+        if group_by == "bucket":
+            return bucket_id
+        if group_by == "category":
+            return category_id
+        if group_by == "month":
+            return (txn_date.year, txn_date.month)
+        return (category_id, txn_date.year, txn_date.month)
+
+    totals: dict = defaultdict(float)
+
+    if paid_by:
+        for t in q.options(joinedload(Transaction.splits)).all():
+            totals[key_for(t.bucket_id, t.category_id, t.transaction_date)] += _effective_amount(t, paid_by)
+        return dict(totals)
+
+    # No split apportioning needed — let SQL do the grouping.
+    if group_by == "bucket":
+        cols = [Transaction.bucket_id]
+    elif group_by == "category":
+        cols = [Transaction.category_id]
+    else:
+        # Group in Python: month bucketing differs per SQL dialect, and one
+        # round trip beats a portable-but-chatty per-month query.
+        cols = [Transaction.category_id, Transaction.transaction_date]
+
+    rows = q.with_entities(*cols, func.sum(Transaction.amount)).group_by(*cols).all()
+    for row in rows:
+        total = float(row[-1] or 0)
+        if group_by == "bucket":
+            totals[row[0]] += total
+        elif group_by == "category":
+            totals[row[0]] += total
+        else:
+            cat_id, d = row[0], row[1]
+            totals[key_for(None, cat_id, d)] += total
+    return dict(totals)
 
 
 def _effective_amount(t: Transaction, paid_by: str | None) -> float:
@@ -753,7 +945,7 @@ def get_insights_income(
         split_subq = (
             db.query(TransactionSplit.transaction_id)
             .filter(TransactionSplit.user_id == paid_by)
-            .subquery()
+            .scalar_subquery()
         )
         q = q.filter(
             or_(
@@ -764,19 +956,42 @@ def get_insights_income(
     return round(float(q.scalar()), 2)
 
 
-def get_insights_bills_due(db: Session, household_id: str, start: date | None, end: date | None) -> float:
-    """Sum of bill occurrence amounts due within the date range."""
+def get_insights_bills_due(
+    db: Session,
+    household_id: str,
+    start: date | None,
+    end: date | None,
+    bucket_type: str = "",
+    bucket_ids: list | None = None,
+    category_ids: list | None = None,
+) -> float:
+    """Sum of bill occurrence amounts due within the date range.
+
+    Honours the same bucket/category filters as the rest of the insights page —
+    it previously always reported the household-wide total, so the "Bills due"
+    tile contradicted every other number whenever a filter was active.
+    """
+    # joinedload avoids one SELECT per occurrence for the bill.amount fallback.
     q = (
         db.query(BillOccurrence)
         .join(RecurringBill, RecurringBill.id == BillOccurrence.bill_id)
+        .options(joinedload(BillOccurrence.bill))
         .filter(RecurringBill.household_id == household_id)
     )
     if start:
         q = q.filter(BillOccurrence.due_date >= start)
     if end:
         q = q.filter(BillOccurrence.due_date <= end)
-    occurrences = q.all()
-    total = sum(float(occ.amount or occ.bill.amount or 0) for occ in occurrences)
+    if bucket_type:
+        q = q.join(Bucket, Bucket.id == RecurringBill.bucket_id).filter(
+            Bucket.type == BucketType(bucket_type)
+        )
+    if bucket_ids:
+        q = q.filter(RecurringBill.bucket_id.in_(bucket_ids))
+    if category_ids:
+        q = q.filter(RecurringBill.category_id.in_(category_ids))
+
+    total = sum(float(occ.amount or occ.bill.amount or 0) for occ in q.all())
     return round(total, 2)
 
 
@@ -822,6 +1037,7 @@ def get_insights_bucket_breakdown(
     start: date | None,
     end: date | None,
     bucket_type: str = "",
+    bucket_ids: list | None = None,
     category_ids: list | None = None,
     paid_by: str | None = None,
 ) -> list[dict]:
@@ -835,22 +1051,34 @@ def get_insights_bucket_breakdown(
     if not buckets:
         return []
 
-    result = []
-    for b in buckets:
-        if bucket_type and b.type.value != bucket_type:
-            continue
-        q = _build_expense_query(
-            db, household_id, start, end,
-            bucket_ids=[b.id],
-            category_ids=category_ids,
-            paid_by=paid_by,
-        )
-        txns = q.options(joinedload(Transaction.splits)).all() if paid_by else q.all()
-        total = sum(_effective_amount(t, paid_by) for t in txns)
-        result.append({
-            "bucket": b,
-            "total":  round(total, 2),
-        })
+    # Respect an explicit bucket filter. This chart used to ignore bucket_ids
+    # entirely, so selecting two buckets still rendered every bucket — and its
+    # percentages disagreed with the filtered total shown above it.
+    selected = set(bucket_ids) if bucket_ids else None
+
+    visible = [
+        b for b in buckets
+        if not (bucket_type and b.type.value != bucket_type)
+        and (selected is None or b.id in selected)
+    ]
+    if not visible:
+        return []
+
+    # One aggregate query for every bucket at once. This used to run a separate
+    # query per bucket, so a household with 10 buckets paid 10 round trips on
+    # every filter change.
+    totals = _sum_expenses_by(
+        db, household_id, start, end,
+        group_by="bucket",
+        bucket_ids=[b.id for b in visible],
+        category_ids=category_ids,
+        paid_by=paid_by,
+    )
+
+    result = [
+        {"bucket": b, "total": round(totals.get(b.id, 0.0), 2)}
+        for b in visible
+    ]
 
     result = [r for r in result if r["total"] > 0]
     result.sort(key=lambda x: -x["total"])
@@ -876,31 +1104,25 @@ def get_insights_category_trend(
     Only includes the top_n categories by total spend across the period.
     """
     today = date.today()
+    month_list = _recent_months(n_months, today)
 
-    # Build month list (oldest → newest)
-    month_list: list[tuple[int, int]] = []
-    for i in range(n_months - 1, -1, -1):
-        m = today.month - i
-        y = today.year
-        while m <= 0:
-            m += 12
-            y -= 1
-        month_list.append((y, m))
-
-    # Determine which categories appear at all
-    all_q = _build_expense_query(
+    # One pass over the whole window, grouped by (category, year, month) —
+    # this previously ran a separate query for every month on top of an
+    # overview query.
+    grid = _sum_expenses_by(
         db, household_id,
-        start=_month_range(month_list[0][0], month_list[0][1])[0],
-        end=_month_range(month_list[-1][0], month_list[-1][1])[1],
+        _month_range(*month_list[0])[0],
+        _month_range(*month_list[-1])[1],
+        group_by="category_month",
         bucket_type=bucket_type,
         bucket_ids=bucket_ids,
         category_ids=category_ids,
         paid_by=paid_by,
     )
-    all_txns = all_q.options(joinedload(Transaction.splits)).all() if paid_by else all_q.all()
+
     cat_totals: dict[str | None, float] = defaultdict(float)
-    for t in all_txns:
-        cat_totals[t.category_id] += _effective_amount(t, paid_by)
+    for (cid, _y, _m), amount in grid.items():
+        cat_totals[cid] += amount
 
     # Pick top_n categories
     top_cats = sorted(cat_totals.items(), key=lambda x: -x[1])[:top_n]
@@ -909,26 +1131,11 @@ def get_insights_category_trend(
     # Load category objects
     cat_objs = {c.id: c for c in db.query(Category).filter(Category.id.in_([c for c in top_cat_ids if c])).all()}
 
-    # Build monthly data per category
-    monthly_data: dict[str | None, list[float]] = {cid: [] for cid in top_cat_ids}
-    labels = []
-
-    for y, m in month_list:
-        start, end = _month_range(y, m)
-        labels.append(date(y, m, 1).strftime("%b"))
-        _month_q = _build_expense_query(
-            db, household_id, start, end,
-            bucket_type=bucket_type,
-            bucket_ids=bucket_ids,
-            paid_by=paid_by,
-        )
-        month_txns = _month_q.options(joinedload(Transaction.splits)).all() if paid_by else _month_q.all()
-        month_by_cat: dict[str | None, float] = defaultdict(float)
-        for t in month_txns:
-            if t.category_id in top_cat_ids:
-                month_by_cat[t.category_id] += _effective_amount(t, paid_by)
-        for cid in top_cat_ids:
-            monthly_data[cid].append(round(month_by_cat[cid], 2))
+    labels = [date(y, m, 1).strftime("%b") for y, m in month_list]
+    monthly_data: dict[str | None, list[float]] = {
+        cid: [round(grid.get((cid, y, m), 0.0), 2) for y, m in month_list]
+        for cid in top_cat_ids
+    }
 
     series = []
     for cid in top_cat_ids:
@@ -940,7 +1147,16 @@ def get_insights_category_trend(
             "values": monthly_data[cid],
         })
 
-    return {"months": labels, "series": series}
+    # The chart plots one bar per (category, month), so the y-axis maximum is
+    # the largest single monthly value. Callers used to derive it from
+    # sum(values) — a whole-period total — which squashed every bar to roughly
+    # a sixth of its correct height.
+    max_value = max(
+        (v for row in series for v in row["values"]),
+        default=0.0,
+    )
+
+    return {"months": labels, "series": series, "max_value": round(max_value, 2)}
 
 
 def get_insights_budget_status(
@@ -948,26 +1164,36 @@ def get_insights_budget_status(
     household_id: str,
     start: date | None,
     end: date | None,
+    bucket_type: str = "",
+    bucket_ids: list | None = None,
 ) -> list[dict]:
     """Spending vs budget for each bucket with a budget, over a date range."""
-    buckets = (
+    bq = (
         db.query(Bucket)
         .filter(
             Bucket.household_id == household_id,
             Bucket.budget.isnot(None),
             Bucket.status == "active",
         )
-        .all()
     )
+    if bucket_type:
+        bq = bq.filter(Bucket.type == BucketType(bucket_type))
+    if bucket_ids:
+        bq = bq.filter(Bucket.id.in_(bucket_ids))
+    buckets = bq.all()
     if not buckets:
         return []
 
-    bucket_ids = [b.id for b in buckets]
+    ids = [b.id for b in buckets]
     q = (
         db.query(Transaction.bucket_id, func.sum(Transaction.amount))
         .filter(
-            Transaction.bucket_id.in_(bucket_ids),
+            Transaction.bucket_id.in_(ids),
             Transaction.type == TransactionType.expense,
+            # Excluded transactions are left out of every other spend figure;
+            # counting them here made a bucket look over budget on the same
+            # page that reported it under.
+            Transaction.exclude_from_forecast == False,  # noqa: E712
         )
     )
     if start:
@@ -981,13 +1207,17 @@ def get_insights_budget_status(
     for b in buckets:
         spent  = round(spend_map.get(b.id, 0.0), 2)
         budget = float(b.budget)
-        pct    = min(round(spent / budget * 100, 1), 100) if budget > 0 else 0
+        raw_pct = round(spent / budget * 100, 1) if budget > 0 else 0
         result.append({
             "bucket":      b,
             "spent":       spent,
             "budget":      budget,
-            "pct":         pct,
+            # pct drives the progress bar width and must stay <= 100; pct_actual
+            # is the true figure so the UI can show "140% of budget".
+            "pct":         min(raw_pct, 100),
+            "pct_actual":  raw_pct,
+            "remaining":   round(budget - spent, 2),
             "over_budget": spent > budget,
         })
-    result.sort(key=lambda x: -x["pct"])
+    result.sort(key=lambda x: -x["pct_actual"])
     return result

@@ -1,16 +1,17 @@
 """
 Insights / Analytics route.
 """
-from datetime import date, timedelta
+from datetime import date
 
 from fastapi import APIRouter, Depends, Request, Query
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.auth import require_auth, require_csrf
-from app.models import Household, HouseholdMember, Bucket, BucketStatus, Category
+from app.auth import require_auth
+from app.models import Bucket, BucketStatus, Category, Household, HouseholdMember, User
 from app.services import (
+    resolve_insight_period,
     get_insights_summary,
     get_insights_income,
     get_insights_bills_due,
@@ -23,14 +24,9 @@ from app.services import (
 )
 from app.templates import templates
 
-router = APIRouter(dependencies=[Depends(require_csrf)])
-
-
-def _parse_date(s: str) -> date | None:
-    try:
-        return date.fromisoformat(s) if s.strip() else None
-    except ValueError:
-        return None
+# GET-only router: require_csrf was a no-op here (it returns early for safe
+# methods) and only added confusion.
+router = APIRouter()
 
 
 @router.get("/insights", response_class=HTMLResponse)
@@ -52,90 +48,44 @@ def insights(
     user, hh_id = auth
     today = date.today()
 
-    # --- Resolve date range ---
-    start: date | None = None
-    end:   date | None = None
+    period = resolve_insight_period(preset, start_date, end_date, today)
+    start, end = period["start"], period["end"]
 
-    if preset == "all_time":
-        start, end = None, None
-    elif preset == "last_month":
-        first_of_month = today.replace(day=1)
-        end   = first_of_month - timedelta(days=1)
-        start = end.replace(day=1)
-    elif preset == "last_3m":
-        end   = today
-        m, y  = today.month - 3, today.year
-        while m <= 0: m += 12; y -= 1  # noqa
-        start = date(y, m, 1)
-    elif preset == "last_6m":
-        end   = today
-        m, y  = today.month - 6, today.year
-        while m <= 0: m += 12; y -= 1  # noqa
-        start = date(y, m, 1)
-    elif preset == "this_year":
-        start = date(today.year, 1, 1)
-        end   = today
-    elif preset == "custom" and start_date and end_date:
-        start = _parse_date(start_date)
-        end   = _parse_date(end_date)
-    else:  # this_month (default)
-        start = date(today.year, today.month, 1)
-        end   = today
-
-    all_time = (start is None and end is None)
-    is_current_month = (
-        not all_time
-        and start == date(today.year, today.month, 1)
-        and end == today
-    )
-
-    selected_bucket_ids  = [b for b in bucket_ids.split(",")   if b.strip()]
+    selected_bucket_ids   = [b for b in bucket_ids.split(",")   if b.strip()]
     selected_category_ids = [c for c in category_ids.split(",") if c.strip()]
 
-    # --- Fetch data ---
-    summary = get_insights_summary(
+    # Every chart below takes the same filter set, so the numbers on the page
+    # all describe the same slice of data.
+    common = {
+        "bucket_type":  bucket_type,
+        "bucket_ids":   selected_bucket_ids or None,
+        "category_ids": selected_category_ids or None,
+        "paid_by":      paid_by or None,
+    }
+
+    summary          = get_insights_summary(db, hh_id, start, end, **common)
+    income_total     = get_insights_income(db, hh_id, start, end, **common)
+    bills_due        = get_insights_bills_due(
         db, hh_id, start, end,
         bucket_type=bucket_type,
         bucket_ids=selected_bucket_ids or None,
         category_ids=selected_category_ids or None,
-        paid_by=paid_by or None,
     )
-    income_total   = get_insights_income(
+    categories       = get_insights_category_breakdown(db, hh_id, start, end, **common)
+    budget_status    = get_insights_budget_status(
         db, hh_id, start, end,
         bucket_type=bucket_type,
         bucket_ids=selected_bucket_ids or None,
-        category_ids=selected_category_ids or None,
-        paid_by=paid_by or None,
     )
-    bills_due      = get_insights_bills_due(db, hh_id, start, end)
-    categories     = get_insights_category_breakdown(
-        db, hh_id, start, end,
-        bucket_type=bucket_type,
-        bucket_ids=selected_bucket_ids or None,
-        category_ids=selected_category_ids or None,
-        paid_by=paid_by or None,
-    )
-    budget_status  = get_insights_budget_status(db, hh_id, start, end)
-    bucket_breakdown = get_insights_bucket_breakdown(
-        db, hh_id, start, end,
-        bucket_type=bucket_type,
-        category_ids=selected_category_ids or None,
-        paid_by=paid_by or None,
-    )
-    category_trend = get_insights_category_trend(
-        db, hh_id, n_months=6,
-        bucket_type=bucket_type,
-        bucket_ids=selected_bucket_ids or None,
-        category_ids=selected_category_ids or None,
-        paid_by=paid_by or None,
-    )
-    forecast       = get_forecast(db, hh_id) if is_current_month else {}
-    trend          = get_monthly_trend(db, hh_id, n_months=6)
-    trend_max      = max((m["total"] for m in trend), default=1) or 1
-    cat_trend_max  = max(
-        (sum(row["values"]) for row in category_trend.get("series", []) if row["values"]),
-        default=1
-    ) or 1
+    bucket_breakdown = get_insights_bucket_breakdown(db, hh_id, start, end, **common)
+    category_trend   = get_insights_category_trend(db, hh_id, n_months=6, **common)
+    trend            = get_monthly_trend(db, hh_id, n_months=6, **common)
+    forecast         = get_forecast(db, hh_id) if period["is_current_month"] else {}
+
+    trend_max = max((m["total"] for m in trend), default=1) or 1
+    # The chart scales each bar against the largest single monthly value, which
+    # the service now reports directly.
+    cat_trend_max = category_trend.get("max_value") or 1
 
     net = round(income_total - summary["total_spent"], 2)
 
@@ -152,33 +102,18 @@ def insights(
         .order_by(Category.name)
         .all()
     )
-    members = (
-        db.query(HouseholdMember)
-        .filter_by(household_id=hh_id)
+    # Single join instead of one db.get() per membership.
+    member_users = (
+        db.query(User)
+        .join(HouseholdMember, HouseholdMember.user_id == User.id)
+        .filter(HouseholdMember.household_id == hh_id)
+        .order_by(User.display_name)
         .all()
     )
-    member_users = [db.get(__import__('app.models', fromlist=['User']).User, m.user_id) for m in members]
-    member_users = [u for u in member_users if u]
 
     household   = db.get(Household, hh_id)
     memberships = db.query(HouseholdMember).filter_by(user_id=user.id).all()
     households  = [db.get(Household, m.household_id) for m in memberships]
-
-    # Human-readable period label
-    if all_time:
-        period_label = "All time"
-    elif preset == "last_month":
-        period_label = start.strftime("%B %Y") if start else "Last month"
-    elif preset == "last_3m":
-        period_label = "Last 3 months"
-    elif preset == "last_6m":
-        period_label = "Last 6 months"
-    elif preset == "this_year":
-        period_label = str(today.year)
-    elif preset == "custom" and start and end:
-        period_label = f"{start.strftime('%d %b')} – {end.strftime('%d %b %Y')}"
-    else:
-        period_label = today.strftime("%B %Y")
 
     is_partial = bool(request.headers.get("HX-Request")) and not request.headers.get("HX-Boosted")
     template = "insights_partial.html" if is_partial else "insights.html"
@@ -206,10 +141,10 @@ def insights(
             "all_categories":       all_categories,
             "member_users":         member_users,
             "today":                today,
-            "all_time":             all_time,
-            "is_current_month":     is_current_month,
-            "period_label":         period_label,
-            "preset":               preset,
+            "all_time":             period["all_time"],
+            "is_current_month":     period["is_current_month"],
+            "period_label":         period["period_label"],
+            "preset":               period["preset"],
             "start_date":           start.isoformat() if start else "",
             "end_date":             end.isoformat() if end else "",
             "bucket_type":          bucket_type,
@@ -218,4 +153,3 @@ def insights(
             "paid_by":              paid_by,
         },
     )
-
