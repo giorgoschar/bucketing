@@ -27,6 +27,7 @@ from app.templates import templates
 from app.receipt_parser import parse_receipt_text, match_category, _extract_category_hint
 from app.config import settings
 from app.services import full_ctx as _full_ctx
+from app.services import find_duplicate_candidates, find_household_duplicates
 from app.validators import (
     parse_amount, parse_year_month, require_bucket, require_category,
     require_member, validate_split_users,
@@ -821,3 +822,69 @@ def export_transactions(
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ---------------------------------------------------------------------------
+# Duplicate detection
+# ---------------------------------------------------------------------------
+
+@router.get("/check-duplicate", response_class=JSONResponse)
+def check_duplicate(
+    amount: str = Query(""),
+    transaction_date: str = Query(""),
+    bucket_id: str = Query(""),
+    exclude_id: str = Query(""),
+    db: Session = Depends(get_db),
+    auth=Depends(require_auth),
+):
+    """Live check used by the add-expense form. Advisory only — never blocks."""
+    user, hh_id = auth
+
+    value = parse_amount(amount, field="Amount", allow_blank=True)
+    if value is None or not transaction_date.strip():
+        return {"duplicates": []}
+
+    try:
+        when = date.fromisoformat(transaction_date.strip())
+    except ValueError:
+        return {"duplicates": []}
+
+    matches = find_duplicate_candidates(
+        db, hh_id,
+        amount=value,
+        transaction_date=when,
+        bucket_id=bucket_id or None,
+        exclude_id=exclude_id or None,
+    )
+    return {
+        "duplicates": [
+            {
+                "id":       t.id,
+                "amount":   float(t.amount),
+                "currency": t.currency,
+                "date":     t.transaction_date.isoformat(),
+                "notes":    t.notes,
+                "bucket":   t.bucket.name if t.bucket else None,
+                "paid_by":  t.paid_by_user.display_name if t.paid_by_user else None,
+                "same_bucket": bool(bucket_id) and t.bucket_id == bucket_id,
+            }
+            for t in matches
+        ]
+    }
+
+
+@router.get("/duplicates", response_class=HTMLResponse)
+def duplicates_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    auth=Depends(require_auth),
+):
+    """Review possible duplicates across recent history."""
+    user, hh_id = auth
+    ctx = _get_context(db, user, hh_id)
+    ctx.update({
+        "request": request,
+        "user": user,
+        "groups": find_household_duplicates(db, hh_id),
+    })
+    return templates.TemplateResponse("transactions/duplicates.html", ctx)

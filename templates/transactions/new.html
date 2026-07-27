@@ -185,6 +185,37 @@
 
       <!-- ===== STEP 4: Who paid + optional ===== -->
       <div x-show="step === 4" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 translate-x-2" x-transition:enter-end="opacity-100 translate-x-0">
+
+        <!-- Possible duplicate warning: advisory, never blocks saving -->
+        <template x-if="duplicates.length">
+          <div class="mb-4 rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-4">
+            <div class="flex items-start gap-2.5">
+              <svg class="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M12 9v2m0 4h.01M5.07 19h13.86a2 2 0 001.74-3L13.74 4a2 2 0 00-3.48 0L3.33 16a2 2 0 001.74 3z"/>
+              </svg>
+              <div class="flex-1 min-w-0">
+                <p class="text-sm font-semibold text-amber-800 dark:text-amber-300">
+                  Already logged?
+                </p>
+                <p class="text-xs text-amber-700 dark:text-amber-400 mt-0.5">
+                  A similar amount was recorded recently. Save anyway if this is a separate expense.
+                </p>
+                <div class="mt-2 space-y-1">
+                  <template x-for="d in duplicates" :key="d.id">
+                    <p class="text-xs text-amber-800 dark:text-amber-300">
+                      <span x-text="d.date"></span>
+                      · <span x-text="d.notes || 'No description'"></span>
+                      <span x-show="d.bucket"> · <span x-text="d.bucket"></span></span>
+                      <span x-show="d.paid_by"> · <span x-text="d.paid_by"></span></span>
+                    </p>
+                  </template>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
+
         <div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-5 space-y-5">
 
           <!-- Who paid -->
@@ -326,6 +357,8 @@ function expenseWizard() {
   return {
     step: 1,
     receiptName: '',
+    duplicates: [],      // advisory only — never blocks submission
+    dupLoading: false,
     catSearch: '',
     splits: {},
     splitTotal: 0,
@@ -347,6 +380,32 @@ function expenseWizard() {
 
     nextStep() {
       if (this.step < 4) this.step++;
+      // Reaching the review step is the natural moment to warn about a
+      // possible repeat: the amount and date are known, and the user has not
+      // committed yet.
+      if (this.step === 4) this.checkDuplicates();
+    },
+
+    async checkDuplicates() {
+      this.duplicates = [];
+      if (!this.form.amount || !this.form.transaction_date) return;
+      this.dupLoading = true;
+      try {
+        const params = new URLSearchParams({
+          amount: this.form.amount,
+          transaction_date: this.form.transaction_date,
+          bucket_id: this.form.bucket_id || '',
+        });
+        const resp = await fetch('/transactions/check-duplicate?' + params, {
+          headers: { 'Accept': 'application/json' },
+          credentials: 'same-origin',
+        });
+        if (resp.ok) this.duplicates = (await resp.json()).duplicates || [];
+      } catch (_) {
+        // A failed check must never get in the way of logging an expense.
+      } finally {
+        this.dupLoading = false;
+      }
     },
 
     prevStep() {

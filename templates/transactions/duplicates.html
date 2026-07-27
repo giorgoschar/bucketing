@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Possible duplicates{% endblock %}
+{% block header_title %}Possible duplicates{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto space-y-4">
+
+  {% if not groups %}
+  <div class="bg-white dark:bg-gray-900 rounded-2xl p-8 border border-gray-100 dark:border-gray-800 text-center">
+    <div class="flex items-center justify-center gap-2 text-emerald-600 dark:text-emerald-400 mb-2">
+      <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+      </svg>
+      <span class="font-medium">Nothing looks duplicated</span>
+    </div>
+    <p class="text-sm text-gray-400">
+      Checked the last 90 days for matching amounts logged within a few days of each other.
+    </p>
+  </div>
+
+  {% else %}
+  <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-2xl p-4">
+    <p class="text-sm text-amber-800 dark:text-amber-300">
+      {{ groups | length }} possible duplicate{{ '' if groups | length == 1 else 's' }}
+      in the last 90 days.
+    </p>
+    <p class="text-xs text-amber-700 dark:text-amber-400 mt-1">
+      These may well be genuine — two coffees on the same day look identical.
+      Nothing is removed automatically.
+    </p>
+  </div>
+
+  {% for group in groups %}
+  <div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
+    <div class="px-5 py-3 border-b border-gray-50 dark:border-gray-800 flex items-center justify-between">
+      <span class="text-sm font-semibold">{{ group.amount | currency(household.default_currency) }}</span>
+      <span class="text-xs text-gray-400">{{ group.transactions | length }} entries</span>
+    </div>
+    <div class="divide-y divide-gray-50 dark:divide-gray-800">
+      {% for t in group.transactions %}
+      <div class="px-5 py-3 flex items-center gap-3">
+        <div class="flex-1 min-w-0">
+          <p class="text-sm truncate">{{ t.notes or 'No description' }}</p>
+          <p class="text-xs text-gray-400 mt-0.5">
+            {{ t.transaction_date.strftime('%d %b %Y') }}
+            {% if t.bucket %}· {{ t.bucket.icon }} {{ t.bucket.name }}{% endif %}
+            {% if t.paid_by_user %}· {{ t.paid_by_user.display_name }}{% endif %}
+          </p>
+        </div>
+        <a href="/transactions/{{ t.id }}/edit"
+           class="px-2.5 py-1 rounded-lg border border-gray-200 dark:border-gray-700 text-xs font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors flex-shrink-0">
+          Review
+        </a>
+        <form method="POST" action="/transactions/{{ t.id }}/delete" class="flex-shrink-0"
+              onsubmit="return confirm('Delete this transaction? This cannot be undone.')">
+          <input type="hidden" name="_csrf_token" value="{{ request.state.csrf_token }}">
+          <button type="submit"
+                  class="px-2.5 py-1 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-xs font-semibold hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors">
+            Delete
+          </button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+  {% endif %}
+
+</div>
+{% endblock %}
