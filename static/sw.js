@@ -1,5 +1,5 @@
-const CACHE_NAME = 'expenses-v4';
-const CDN_CACHE = 'expenses-cdn-v4';
+const CACHE_NAME = 'expenses-v5';
+const CDN_CACHE = 'expenses-cdn-v5';
 
 const STATIC_ASSETS = [
   '/static/manifest.json',
@@ -10,6 +10,7 @@ const STATIC_ASSETS = [
   '/static/offline.js',
   '/static/insights.js',
   '/static/expense-wizard.js',
+  '/static/app-components.js',
   '/static/css/app.css',
 ];
 

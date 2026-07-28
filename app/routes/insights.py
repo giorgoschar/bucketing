@@ -19,6 +19,7 @@ from app.services import (
     get_insights_bucket_breakdown,
     get_insights_category_trend,
     get_insights_budget_status,
+    get_insights_kpis,
     get_monthly_trend,
     get_forecast,
 )
@@ -81,6 +82,7 @@ def insights(
     category_trend   = get_insights_category_trend(db, hh_id, n_months=6, **common)
     trend            = get_monthly_trend(db, hh_id, n_months=6, **common)
     forecast         = get_forecast(db, hh_id) if period["is_current_month"] else {}
+    kpis             = get_insights_kpis(db, hh_id, start, end, **common)
 
     trend_max = max((m["total"] for m in trend), default=1) or 1
     # The chart scales each bar against the largest single monthly value, which
@@ -134,6 +136,7 @@ def insights(
             "bucket_breakdown":     bucket_breakdown,
             "category_trend":       category_trend,
             "cat_trend_max":        cat_trend_max,
+            "kpis":                 kpis,
             "forecast":             forecast,
             "trend":                trend,
             "trend_max":            trend_max,

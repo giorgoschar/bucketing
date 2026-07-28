@@ -4,6 +4,8 @@
   Must stay self-contained so it renders correctly in both contexts.
 #}
 
+{% import "macros/charts.html" as charts %}
+
 <div id="insights-body"
      x-data="widgetToggle()"
      @toggle-widget-panel.window="open = !open"
@@ -81,6 +83,87 @@
 
   </div>
 
+  {# ===== Analysis board — everything here obeys the active filters ===== #}
+  {% if kpis and kpis.count %}
+  <div x-show="show('kpi')" x-cloak
+       class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
+    <div class="px-5 py-3 border-b border-gray-50 dark:border-gray-800 flex items-baseline justify-between">
+      <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Analysis</p>
+      <p class="text-[11px] text-gray-400">
+        {{ kpis.count }} expense{{ '' if kpis.count == 1 else 's' }}
+        {%- if kpis.range_start and kpis.range_end %} ·
+        {{ kpis.range_start | dmy_short }}–{{ kpis.range_end | dmy }}{% endif %}
+      </p>
+    </div>
+
+    <div class="grid grid-cols-2 lg:grid-cols-4 divide-x divide-y lg:divide-y-0 divide-gray-50 dark:divide-gray-800">
+      <div class="px-5 py-4">
+        <p class="text-[11px] uppercase tracking-wider text-gray-400">Avg / month</p>
+        <p class="text-lg font-bold mt-0.5">{{ kpis.avg_per_month | currency(household.default_currency) }}</p>
+        <p class="text-[11px] text-gray-400 mt-0.5">over {{ kpis.months }} month{{ '' if kpis.months == 1 else 's' }}</p>
+      </div>
+      <div class="px-5 py-4">
+        <p class="text-[11px] uppercase tracking-wider text-gray-400">Avg / day</p>
+        <p class="text-lg font-bold mt-0.5">{{ kpis.avg_per_day | currency(household.default_currency) }}</p>
+        <p class="text-[11px] text-gray-400 mt-0.5">over {{ kpis.days }} days</p>
+      </div>
+      <div class="px-5 py-4">
+        <p class="text-[11px] uppercase tracking-wider text-gray-400">Avg / expense</p>
+        <p class="text-lg font-bold mt-0.5">{{ kpis.avg_per_txn | currency(household.default_currency) }}</p>
+        <p class="text-[11px] text-gray-400 mt-0.5">{{ kpis.count }} logged</p>
+      </div>
+      <div class="px-5 py-4">
+        <p class="text-[11px] uppercase tracking-wider text-gray-400">vs previous</p>
+        {% if kpis.change_pct is not none %}
+        <p class="text-lg font-bold mt-0.5 {% if kpis.change_pct > 0 %}text-red-500{% else %}text-emerald-600 dark:text-emerald-400{% endif %}">
+          {% if kpis.change_pct > 0 %}+{% endif %}{{ kpis.change_pct }}%
+        </p>
+        <p class="text-[11px] text-gray-400 mt-0.5">was {{ kpis.previous_total | currency(household.default_currency) }}</p>
+        {% else %}
+        <p class="text-lg font-bold mt-0.5 text-gray-300 dark:text-gray-600">—</p>
+        <p class="text-[11px] text-gray-400 mt-0.5">no prior data</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-50 dark:divide-gray-800 border-t border-gray-50 dark:border-gray-800">
+      <div class="px-5 py-4">
+        <p class="text-[11px] uppercase tracking-wider text-gray-400">Busiest month</p>
+        {% if kpis.busiest_month %}
+        <p class="text-sm font-semibold mt-0.5">{{ kpis.busiest_month.label }}</p>
+        <p class="text-[11px] text-gray-400">{{ kpis.busiest_month.total | currency(household.default_currency) }}</p>
+        {% else %}<p class="text-sm text-gray-400 mt-0.5">—</p>{% endif %}
+      </div>
+      <div class="px-5 py-4">
+        <p class="text-[11px] uppercase tracking-wider text-gray-400">Quietest month</p>
+        {% if kpis.quietest_month %}
+        <p class="text-sm font-semibold mt-0.5">{{ kpis.quietest_month.label }}</p>
+        <p class="text-[11px] text-gray-400">{{ kpis.quietest_month.total | currency(household.default_currency) }}</p>
+        {% else %}<p class="text-sm text-gray-400 mt-0.5">—</p>{% endif %}
+      </div>
+      <div class="px-5 py-4">
+        <p class="text-[11px] uppercase tracking-wider text-gray-400">Largest single</p>
+        {% if kpis.largest %}
+        <p class="text-sm font-semibold mt-0.5">{{ kpis.largest.amount | currency(household.default_currency) }}</p>
+        <p class="text-[11px] text-gray-400 truncate">
+          {{ kpis.largest.notes or kpis.largest.category or 'No description' }}
+          {%- if kpis.largest.date %} · {{ kpis.largest.date | dmy_short }}{% endif %}
+        </p>
+        {% else %}<p class="text-sm text-gray-400 mt-0.5">—</p>{% endif %}
+      </div>
+    </div>
+
+    {% if kpis.savings_rate is not none %}
+    <div class="px-5 py-3 border-t border-gray-50 dark:border-gray-800 flex items-center justify-between">
+      <p class="text-[11px] uppercase tracking-wider text-gray-400">Savings rate</p>
+      <p class="text-sm font-semibold {% if kpis.savings_rate >= 0 %}text-emerald-600 dark:text-emerald-400{% else %}text-red-500{% endif %}">
+        {{ kpis.savings_rate }}% of income kept
+      </p>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
   {# ===== Forecast banner (current month only) ===== #}
   {% if forecast and is_current_month %}
   <div x-show="show('forecast')" x-cloak
@@ -127,24 +210,13 @@
   {% if trend %}
   <div x-show="show('trend')" x-cloak
        class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
-    <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">6-month trend</p>
-    <div class="flex items-end gap-2 h-24">
-      {% for m in trend %}
-      {% set _bp = (m.total / trend_max * 100) if trend_max > 0 else 0 %}
-      {% set bar_pct = _bp if _bp > 2 else 2 %}
-      <div class="flex-1 flex flex-col items-center gap-1">
-        <span class="text-[10px] text-gray-400 leading-none {% if m.total == 0 %}invisible{% endif %}">
-          {{ m.total | currency(household.default_currency) }}
-        </span>
-        <div class="w-full rounded-t-lg transition-all
-          {% if m.is_current %}bg-primary-500{% else %}bg-gray-200 dark:bg-gray-700{% endif %}"
-             style="height: {{ bar_pct }}%"></div>
-        <span class="text-[10px] {% if m.is_current %}text-primary-600 dark:text-primary-400 font-semibold{% else %}text-gray-400{% endif %} leading-none">
-          {{ m.label }}
-        </span>
-      </div>
-      {% endfor %}
+    <div class="flex items-baseline justify-between mb-3">
+      <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400">6-month trend</p>
+      {% if kpis and kpis.avg_per_month %}
+      <p class="text-[11px] text-gray-400">avg {{ kpis.avg_per_month | currency(household.default_currency) }}/mo</p>
+      {% endif %}
     </div>
+    {{ charts.line_chart(trend, household.default_currency) }}
   </div>
   {% endif %}
 
@@ -255,23 +327,8 @@
       </div>
       {% endfor %}
     </div>
-    {# Grouped bar chart: each month is a group of bars (one per category) #}
-    <div class="flex items-end gap-3">
-      {% for i in range(category_trend.months | length) %}
-      {% set month_label = category_trend.months[i] %}
-      <div class="flex-1 flex flex-col gap-1">
-        <div class="flex items-end gap-0.5 h-20">
-          {% for s in category_trend.series %}
-          {% set val = s['values'][i] %}
-          {% set _raw = (val / cat_trend_max * 100) if cat_trend_max > 0 else 0 %}
-          {% set bar_h = _raw if _raw > 2 else 2 %}
-          <div class="flex-1 rounded-t-sm transition-all" style="height: {{ bar_h }}%; background-color: {{ s.color }}" title="{{ s.name }}: {{ val | currency(household.default_currency) }}"></div>
-          {% endfor %}
-        </div>
-        <span class="text-[10px] text-gray-400 text-center leading-none">{{ month_label }}</span>
-      </div>
-      {% endfor %}
-    </div>
+    {{ charts.grouped_bars(category_trend.months, category_trend.series,
+                           cat_trend_max, household.default_currency) }}
   </div>
   {% endif %}
 

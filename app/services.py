@@ -1906,3 +1906,116 @@ def get_person_summary(
             key=lambda r: -r["amount"],
         )[:8],
     }
+
+
+# ---------------------------------------------------------------------------
+# Insight KPIs
+# ---------------------------------------------------------------------------
+
+def _months_spanned(start: date, end: date) -> int:
+    """Calendar months touched by the range, inclusive. Never zero."""
+    return max((end.year - start.year) * 12 + (end.month - start.month) + 1, 1)
+
+
+def get_insights_kpis(
+    db: Session,
+    household_id: str,
+    start: date | None,
+    end: date | None,
+    bucket_type: str = "",
+    bucket_ids: list | None = None,
+    category_ids: list | None = None,
+    paid_by: str | None = None,
+) -> dict:
+    """Headline numbers for the insights board, under the active filters.
+
+    Everything here answers "for the slice I am currently looking at", so the
+    same filter set drives the KPIs, the charts and the totals — the previous
+    version of this page mixed filtered and unfiltered figures.
+    """
+    q = _build_expense_query(
+        db, household_id, start, end,
+        bucket_type=bucket_type, bucket_ids=bucket_ids,
+        category_ids=category_ids, paid_by=paid_by,
+    )
+    txns = q.options(joinedload(Transaction.splits), joinedload(Transaction.category)).all()
+
+    amounts = [(t, _effective_amount(t, paid_by)) for t in txns]
+    amounts = [(t, a) for t, a in amounts if a]
+    total = sum(a for _, a in amounts)
+    count = len(amounts)
+
+    # Range bounds: fall back to the data when the period is open-ended.
+    dates = [t.transaction_date for t, _ in amounts if t.transaction_date]
+    range_start = start or (min(dates) if dates else None)
+    range_end = end or (max(dates) if dates else None)
+
+    months = _months_spanned(range_start, range_end) if range_start and range_end else 1
+    days = ((range_end - range_start).days + 1) if range_start and range_end else 1
+
+    # Per-month totals, for the busiest/quietest month and the average.
+    by_month: dict[tuple[int, int], float] = defaultdict(float)
+    for t, a in amounts:
+        if t.transaction_date:
+            by_month[(t.transaction_date.year, t.transaction_date.month)] += a
+
+    def _month_row(item):
+        (y, m), value = item
+        return {"label": date(y, m, 1).strftime("%b %Y"), "total": round(value, 2)}
+
+    busiest = _month_row(max(by_month.items(), key=lambda kv: kv[1])) if by_month else None
+    quietest = _month_row(min(by_month.items(), key=lambda kv: kv[1])) if by_month else None
+
+    largest = None
+    if amounts:
+        t, a = max(amounts, key=lambda pair: pair[1])
+        largest = {
+            "amount": round(a, 2),
+            "notes": t.notes,
+            "date": t.transaction_date,
+            "category": t.category.name if t.category else None,
+        }
+
+    # Same-length window immediately before this one, for a like-for-like delta.
+    previous_total = None
+    change_pct = None
+    if range_start and range_end:
+        span = (range_end - range_start).days + 1
+        prev_end = range_start - timedelta(days=1)
+        prev_start = prev_end - timedelta(days=span - 1)
+        prev_q = _build_expense_query(
+            db, household_id, prev_start, prev_end,
+            bucket_type=bucket_type, bucket_ids=bucket_ids,
+            category_ids=category_ids, paid_by=paid_by,
+        )
+        prev_txns = prev_q.options(joinedload(Transaction.splits)).all()
+        previous_total = round(sum(_effective_amount(t, paid_by) for t in prev_txns), 2)
+        if previous_total > 0:
+            change_pct = round((total - previous_total) / previous_total * 100, 1)
+
+    income = get_insights_income(
+        db, household_id, start, end,
+        bucket_type=bucket_type, bucket_ids=bucket_ids,
+        category_ids=category_ids, paid_by=paid_by,
+    )
+
+    return {
+        "total":          round(total, 2),
+        "count":          count,
+        "months":         months,
+        "days":           days,
+        "avg_per_month":  round(total / months, 2) if months else 0.0,
+        "avg_per_day":    round(total / days, 2) if days else 0.0,
+        "avg_per_txn":    round(total / count, 2) if count else 0.0,
+        "busiest_month":  busiest,
+        "quietest_month": quietest,
+        "largest":        largest,
+        "previous_total": previous_total,
+        "change_pct":     change_pct,
+        "income":         income,
+        "net":            round(income - total, 2),
+        # Share of income kept. Only meaningful when income is actually tracked.
+        "savings_rate":   round((income - total) / income * 100, 1) if income > 0 else None,
+        "range_start":    range_start,
+        "range_end":      range_end,
+    }

@@ -1,0 +1,148 @@
+{#
+  Server-rendered SVG charts.
+
+  Deliberately not a JavaScript charting library. These live inside
+  #insights-body, which is replaced wholesale on every filter change, so a JS
+  chart would have to be torn down and re-instantiated on each swap — the same
+  lifecycle problem that repeatedly broke the Alpine components here. SVG from
+  the server has no lifecycle, needs no CDN, and works offline in the PWA.
+
+  Tooltips use native <title>, so hovering works without a line of script.
+  Colours come through `currentColor` and Tailwind classes so light/dark mode
+  follow the rest of the UI for free.
+#}
+
+{# ---------------------------------------------------------------------------
+   Line + area chart, for a value over time.
+   points: [{label, total}], newest last.
+--------------------------------------------------------------------------- #}
+{% macro line_chart(points, currency='EUR', height=140, id='') %}
+  {% set W = 560 %}
+  {% set H = height %}
+  {% set PAD_L = 4 %}
+  {% set PAD_B = 18 %}
+  {% set vals = points | map(attribute='total') | list %}
+  {% set vmax = vals | max if vals else 0 %}
+  {% set top = vmax if vmax > 0 else 1 %}
+  {% set n = points | length %}
+
+  {# No preserveAspectRatio override: "none" stretches text and squashes the
+     point markers into ellipses when the SVG is wider than its viewBox. #}
+  <svg viewBox="0 0 {{ W }} {{ H }}" class="w-full h-auto" role="img"
+       aria-label="Spending over time">
+    {# horizontal guides at 0/50/100% of the peak #}
+    {% for frac in [0, 0.5, 1] %}
+    {% set y = PAD_B + (H - PAD_B - 6) * frac %}
+    <line x1="0" y1="{{ y }}" x2="{{ W }}" y2="{{ y }}"
+          class="stroke-gray-200 dark:stroke-gray-800" stroke-width="1"
+          stroke-dasharray="{{ '0' if frac == 0 else '3 3' }}" />
+    {% endfor %}
+
+    {% if n > 1 %}
+      {% set step = (W - PAD_L * 2) / (n - 1) %}
+      {% set coords = [] %}
+      {% for p in points %}
+        {% set x = PAD_L + step * loop.index0 %}
+        {% set y = (H - PAD_B) - (H - PAD_B - 8) * (p.total / top) %}
+        {% set _ = coords.append((x, y)) %}
+      {% endfor %}
+
+      <polygon class="fill-primary-500/10"
+               points="{{ coords[0][0] }},{{ H - PAD_B }} {% for c in coords %}{{ c[0] }},{{ c[1] }} {% endfor %}{{ coords[-1][0] }},{{ H - PAD_B }}" />
+      <polyline fill="none" class="stroke-primary-500" stroke-width="2"
+                stroke-linejoin="round" stroke-linecap="round"
+                points="{% for c in coords %}{{ c[0] }},{{ c[1] }} {% endfor %}" />
+
+      {% for p in points %}
+      {% set c = coords[loop.index0] %}
+      <g>
+        <circle cx="{{ c[0] }}" cy="{{ c[1] }}" r="{{ 4 if p.is_current else 3 }}"
+                class="{{ 'fill-primary-600' if p.is_current else 'fill-primary-500' }}" />
+        {# invisible wide target so the tooltip is easy to hit #}
+        <rect x="{{ c[0] - step / 2 }}" y="0" width="{{ step }}" height="{{ H }}" fill="transparent">
+          <title>{{ p.label }}: {{ p.total | currency(currency) }}</title>
+        </rect>
+      </g>
+      {% endfor %}
+    {% endif %}
+
+    {% for p in points %}
+    {% set x = PAD_L + ((W - PAD_L * 2) / (n - 1) * loop.index0 if n > 1 else W / 2) %}
+    {# Anchor the outermost labels inward so they cannot spill past the edge. #}
+    {% set anchor = 'start' if loop.first and n > 1 else ('end' if loop.last and n > 1 else 'middle') %}
+    <text x="{{ 0 if anchor == 'start' else (W if anchor == 'end' else x) }}"
+          y="{{ H - 4 }}" text-anchor="{{ anchor }}"
+          class="fill-gray-400" style="font-size: 10px">{{ p.label }}</text>
+    {% endfor %}
+  </svg>
+{% endmacro %}
+
+
+{# ---------------------------------------------------------------------------
+   Donut, for a share-of-total breakdown.
+   rows: [{name, amount, pct, color, icon}]
+--------------------------------------------------------------------------- #}
+{% macro donut(rows, currency='EUR', size=150) %}
+  {% set R = 60 %}
+  {% set C = 2 * 3.14159265 * R %}
+  {% set cx = 80 %}
+  {% set total = rows | sum(attribute='amount') %}
+
+  <svg viewBox="0 0 160 160" class="flex-shrink-0" style="width: {{ size }}px; height: {{ size }}px"
+       role="img" aria-label="Breakdown by share">
+    <circle cx="{{ cx }}" cy="80" r="{{ R }}" fill="none" stroke-width="22"
+            class="stroke-gray-100 dark:stroke-gray-800" />
+    {% set ns = namespace(offset=0) %}
+    {% for row in rows %}
+      {% set frac = (row.amount / total) if total > 0 else 0 %}
+      {% set dash = C * frac %}
+      <circle cx="{{ cx }}" cy="80" r="{{ R }}" fill="none" stroke-width="22"
+              stroke="{{ row.color }}"
+              stroke-dasharray="{{ dash }} {{ C - dash }}"
+              stroke-dashoffset="{{ -ns.offset }}"
+              transform="rotate(-90 {{ cx }} 80)">
+        <title>{{ row.icon }} {{ row.name }}: {{ row.amount | currency(currency) }} ({{ row.pct }}%)</title>
+      </circle>
+      {% set ns.offset = ns.offset + dash %}
+    {% endfor %}
+    <text x="{{ cx }}" y="76" text-anchor="middle" class="fill-gray-900 dark:fill-gray-100"
+          style="font-size: 20px; font-weight: 700">{{ rows | length }}</text>
+    <text x="{{ cx }}" y="94" text-anchor="middle" class="fill-gray-400"
+          style="font-size: 10px; text-transform: uppercase; letter-spacing: .08em">shown</text>
+  </svg>
+{% endmacro %}
+
+
+{# ---------------------------------------------------------------------------
+   Grouped bars, for several series across the same buckets of time.
+   series: [{name, color, icon, values: []}], labels: []
+--------------------------------------------------------------------------- #}
+{% macro grouped_bars(labels, series, vmax, currency='EUR', height=120) %}
+  {% set H = height %}
+  {% set W = 560 %}
+  {% set PAD_B = 16 %}
+  {% set groups = labels | length %}
+  {% set top = vmax if vmax and vmax > 0 else 1 %}
+  {% set gw = W / groups %}
+  {% set bw = (gw - 8) / (series | length if series else 1) %}
+
+  <svg viewBox="0 0 {{ W }} {{ H }}" class="w-full h-auto"
+       role="img" aria-label="Category trend">
+    <line x1="0" y1="{{ H - PAD_B }}" x2="{{ W }}" y2="{{ H - PAD_B }}"
+          class="stroke-gray-200 dark:stroke-gray-800" stroke-width="1" />
+    {% for i in range(groups) %}
+      {% for s in series %}
+        {% set v = s['values'][i] %}
+        {% set h = ((H - PAD_B - 6) * (v / top)) if v > 0 else 0 %}
+        <rect x="{{ i * gw + 4 + loop.index0 * bw }}"
+              y="{{ H - PAD_B - h }}"
+              width="{{ bw - 1.5 }}" height="{{ h if h > 0 else 0 }}"
+              rx="1.5" fill="{{ s.color }}">
+          <title>{{ s.icon }} {{ s.name }} · {{ labels[i] }}: {{ v | currency(currency) }}</title>
+        </rect>
+      {% endfor %}
+      <text x="{{ i * gw + gw / 2 }}" y="{{ H - 3 }}" text-anchor="middle"
+            class="fill-gray-400" style="font-size: 10px">{{ labels[i] }}</text>
+    {% endfor %}
+  </svg>
+{% endmacro %}

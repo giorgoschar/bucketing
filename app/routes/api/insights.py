@@ -15,6 +15,7 @@ from app.services import (
     get_insights_bucket_breakdown,
     get_insights_category_trend,
     get_insights_budget_status,
+    get_insights_kpis,
     get_monthly_trend,
     get_forecast,
 )
@@ -89,6 +90,7 @@ def insights(
     category_trend   = get_insights_category_trend(db, hh_id, n_months=6, **common)
     trend            = get_monthly_trend(db, hh_id, n_months=6, **common)
     forecast         = get_forecast(db, hh_id) if period["is_current_month"] else {}
+    kpis             = get_insights_kpis(db, hh_id, start, end, **common)
 
     return {
         "preset":          period["preset"],
@@ -100,6 +102,7 @@ def insights(
         "bills_due_total": bills_due,
         "net":             round(income_total - summary["total_spent"], 2),
         "paid_by":         summary.get("paid_by", {}),
+        "kpis":            kpis,
         "categories":      categories,
         "budget_status":   [
             _bucket_row(row, {

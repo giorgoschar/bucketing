@@ -23,6 +23,8 @@ HEAD_LOADED = {
     "insightsFilters": "static/insights.js",
     "widgetToggle": "static/insights.js",
     "expenseWizard": "static/expense-wizard.js",
+    "notifCenter": "static/app-components.js",
+    "pushSettings": "static/app-components.js",
 }
 
 
@@ -91,16 +93,23 @@ def test_global_listeners_are_registered_once():
     made the app get slower the more tabs you changed.
     """
     base = Path("templates/base.html").read_text()
-    for guard in ("__csrfWired", "__csrfFieldsWired", "__offlineWired",
-                  "__alpineReinitWired"):
+    # __alpineReinitWired is deliberately gone: every Alpine factory now loads
+    # from <head>, so Alpine's own observer handles swapped nodes and the
+    # htmx:afterSettle initTree() fallback (which double-initialised trees) was
+    # removed along with it.
+    for guard in ("__csrfWired", "__csrfFieldsWired", "__offlineWired"):
         assert guard in base, f"missing one-time guard {guard}"
+    assert "__alpineReinitWired" not in base, (
+        "the initTree fallback is back; it re-initialises trees Alpine already "
+        "claimed and makes it throw during teardown"
+    )
 
 
 def test_notification_poller_keeps_a_single_timer():
     """setInterval lives on window, so a per-component timer leaks on each swap."""
-    base = Path("templates/base.html").read_text()
-    assert "window.__notifTimer" in base
-    assert "clearInterval(window.__notifTimer)" in base
+    js = Path("static/app-components.js").read_text()
+    assert "window.__notifTimer" in js
+    assert "clearInterval(window.__notifTimer)" in js
 
 
 def test_no_duplicate_form_field_names_in_a_form():
@@ -220,3 +229,37 @@ def test_inline_scripts_are_syntactically_balanced():
             assert body.count("(") == body.count(")"), (
                 f"{tpl} script at line {line}: unbalanced parentheses"
             )
+
+
+# ---------------------------------------------------------------------------
+# Charts
+# ---------------------------------------------------------------------------
+
+def test_charts_need_no_javascript_library():
+    """Charts sit inside #insights-body, which is replaced on every filter
+    change. A JS charting library would need tearing down and re-instantiating
+    on each swap — the lifecycle problem that repeatedly broke Alpine here."""
+    for name in ("chart.js", "chartjs", "apexcharts", "echarts", "vega", "plotly"):
+        for tpl in TEMPLATES.rglob("*.html"):
+            assert name not in tpl.read_text().lower(), f"{name} referenced in {tpl}"
+
+
+def test_chart_macros_exist():
+    macros = Path("templates/macros/charts.html").read_text()
+    for m in ("line_chart", "donut", "grouped_bars"):
+        assert f"macro {m}(" in macros
+
+
+def test_charts_do_not_distort_text():
+    """preserveAspectRatio="none" stretches labels and turns point markers into
+    ellipses when the SVG is wider than its viewBox."""
+    macros = Path("templates/macros/charts.html").read_text()
+    assert 'preserveAspectRatio="none"' not in macros
+
+
+def test_axis_labels_are_anchored_inside_the_viewbox():
+    """Centring the first and last labels on their points pushed them past the
+    edge — "Feb" rendered as "eb" and "Jul" as "Ju"."""
+    macros = Path("templates/macros/charts.html").read_text()
+    assert "'start' if loop.first" in macros
+    assert "'end' if loop.last" in macros
