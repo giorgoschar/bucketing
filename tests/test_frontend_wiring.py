@@ -137,3 +137,86 @@ def test_dates_render_day_first():
         if "strftime('%d %b" in p.read_text() or 'strftime("%d %b' in p.read_text()
     ]
     assert not offenders, f"day-month strftime left in {offenders}"
+
+
+# ---------------------------------------------------------------------------
+# Tailwind build
+# ---------------------------------------------------------------------------
+
+def test_no_template_loads_the_tailwind_cdn():
+    """cdn.tailwindcss.com ships a JIT compiler that generates CSS in the
+    browser on every page load. It is explicitly not for production."""
+    # Match the tag, not prose: base.html explains in a comment why the CDN was
+    # removed, and that mention must not trip this.
+    offenders = [
+        str(p) for p in TEMPLATES.rglob("*.html")
+        if 'src="https://cdn.tailwindcss.com"' in p.read_text()
+    ]
+    assert not offenders, f"Tailwind CDN still loaded in {offenders}"
+
+
+def test_built_stylesheet_exists_and_is_substantial():
+    css = Path("static/css/app.css")
+    assert css.exists(), "run: npm run css"
+    assert css.stat().st_size > 20_000, "stylesheet looks truncated — rebuild it"
+
+
+def test_every_base_template_links_the_stylesheet():
+    for base in ("templates/base.html", "templates/auth/base_auth.html"):
+        assert '/static/css/app.css' in Path(base).read_text(), f"{base} has no stylesheet"
+
+
+def test_tailwind_scans_the_static_js():
+    """base.html and the component files build class strings at runtime (the
+    offline pill picks its colour by state). Those never appear in markup, so
+    without scanning the JS they get purged and the element renders unstyled."""
+    config = Path("tailwind.config.js").read_text()
+    assert "./static/*.js" in config
+    assert "./templates/**/*.html" in config
+
+
+@pytest.mark.parametrize("cls", [
+    # built at runtime in JS, so only present if the JS is scanned
+    "bg-amber-500", "bg-red-500", "bg-emerald-500",
+    # arbitrary values, only present with JIT-style scanning
+    r"text-\[11px\]", r"w-\[10rem\]",
+    # dark mode and the custom palette
+    r"dark\:bg-gray-900", "bg-primary-500",
+    # migrated from the old inline <style>
+    "x-cloak", "htmx-indicator",
+])
+def test_critical_classes_survived_purging(cls):
+    assert cls in Path("static/css/app.css").read_text(), (
+        f"{cls} was purged — check tailwind.config.js content globs, then npm run css"
+    )
+
+
+@pytest.mark.parametrize("shade", ["300", "400", "900"])
+def test_primary_shades_used_in_templates_are_defined(shade):
+    """Templates referenced primary-300/-400/-900, which the old inline config
+    never defined — those classes silently produced nothing.
+
+    Checks the built CSS rather than the config, since that is what actually
+    reaches the browser."""
+    css = Path("static/css/app.css").read_text()
+    assert f"primary-{shade}" in css, (
+        f"primary-{shade} is used in templates but absent from the built CSS"
+    )
+
+
+def test_inline_scripts_are_syntactically_balanced():
+    """A stray brace in base.html kills the whole script block, and every
+    Alpine component with it — silently, since no server test executes JS."""
+    import re
+
+    for tpl in ("templates/base.html", "templates/transactions/new.html"):
+        html = Path(tpl).read_text()
+        for i, m in enumerate(re.finditer(r"<script>(.*?)</script>", html, re.S)):
+            body = m.group(1)
+            line = html[:m.start()].count("\n") + 1
+            assert body.count("{") == body.count("}"), (
+                f"{tpl} script at line {line}: unbalanced braces"
+            )
+            assert body.count("(") == body.count(")"), (
+                f"{tpl} script at line {line}: unbalanced parentheses"
+            )

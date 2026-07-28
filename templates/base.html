@@ -11,35 +11,17 @@
   <meta name="apple-mobile-web-app-title" content="{{ household.name if household else 'Expenses' }}" />
   <link rel="manifest" href="/static/manifest.json" />
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
-  <!-- Resource hints: start CDN connections early -->
-  <link rel="preconnect" href="https://cdn.tailwindcss.com" />
+  <!-- Resource hint for the receipt-scanner libraries, the only remaining CDN -->
   <link rel="preconnect" href="https://cdn.jsdelivr.net" />
   <link rel="dns-prefetch" href="https://cdn.jsdelivr.net" />
   <title>{% block title %}{{ household.name if household else 'Expenses' }}{% endblock %}</title>
 
-  <!-- Tailwind CSS (CDN for simplicity; swap for PostCSS build in prod) -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          colors: {
-            primary: {
-              50:  '#eef2ff',
-              100: '#e0e7ff',
-              500: '#6366f1',
-              600: '#4f46e5',
-              700: '#4338ca',
-            }
-          },
-          fontFamily: {
-            sans: ['-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
-          }
-        }
-      }
-    }
-  </script>
+  <!-- Tailwind, built ahead of time (npm run css).
+       Previously cdn.tailwindcss.com, which ships a JIT compiler that parses
+       the DOM and generates CSS in the browser on every single page load —
+       explicitly not for production, and the largest thing on the critical
+       path here. Config now lives in tailwind.config.js. -->
+  <link rel="stylesheet" href="/static/css/app.css" />
 
   <!-- HTMX -->
   <script src="/static/vendor/htmx.min.js" defer></script>
@@ -97,16 +79,6 @@
     _injectCsrfFields();   // run for the markup just swapped in
   </script>
 
-  <style>
-    [x-cloak] { display: none !important; }
-    .htmx-indicator { opacity: 0; transition: opacity 200ms ease-in; }
-    .htmx-request .htmx-indicator { opacity: 1; }
-    .htmx-request.htmx-indicator { opacity: 1; }
-
-    /* hx-boost page transition — fade the main content area on navigation */
-    main.htmx-swapping { opacity: 0; transition: opacity 120ms ease-out; }
-    main { transition: opacity 120ms ease-in; }
-  </style>
 </head>
 <body class="h-full bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 font-sans antialiased"
       hx-boost="true">
@@ -462,10 +434,23 @@
           }
         },
         async fetchNotifs(offset = 0, silent = false) {
+          /* Two bells exist (desktop sidebar + mobile bar) and both re-init on
+             every hx-boost swap, so an uncached fetch here cost several
+             /notifications requests per tab change. Share one recent result
+             across components and navigations; the 60s poller and any explicit
+             open still refresh it. */
+          if (offset === 0 && !silent && window.__notifCache &&
+              Date.now() - window.__notifCache.at < 20000) {
+            const d = window.__notifCache.data;
+            this.unread = d.unread; this.items = d.items;
+            this.hasMore = d.has_more; this.offset = d.offset;
+            return;
+          }
           try {
             const r = await fetch(`/notifications?offset=${offset}`, { headers: { 'Accept': 'application/json' } });
             if (!r.ok) return;
             const d = await r.json();
+            if (offset === 0) window.__notifCache = { at: Date.now(), data: d };
             this.unread = d.unread;
             this.hasMore = d.has_more;
             this.offset = offset;
@@ -631,8 +616,16 @@
         target = (target.id && document.getElementById(target.id)) || null;
         if (!target) return;
       }
+      /* Alpine's own MutationObserver already initialises nodes inserted by a
+         swap. Re-initialising a tree it has claimed corrupts its internal
+         state and throws "Cannot convert undefined or null to object" from
+         Alpine's teardown. Only handle components it missed — which happens
+         when a factory is defined in a body script that HTMX evaluates after
+         insertion. */
+      if (target._x_dataStack) return;
       Alpine.initTree(target);
-    });
+      });
+    }
   </script>
 
   <!-- Push-settings Alpine component — defined globally so hx-boost navigations

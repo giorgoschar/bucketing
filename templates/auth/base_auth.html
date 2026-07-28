@@ -1,20 +1,10 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full">
+<html lang="en-GB" class="h-full">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>{% block title %}Sign In{% endblock %} — Expenses</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: { primary: { 500: '#6366f1', 600: '#4f46e5' } },
-          fontFamily: { sans: ['-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'] }
-        }
-      }
-    }
-  </script>
+  <link rel="stylesheet" href="/static/css/app.css" />
 </head>
 <body class="h-full bg-gray-50 font-sans antialiased flex items-center justify-center p-4">
   <div class="w-full max-w-sm">

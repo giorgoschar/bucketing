@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* App styles that previously sat in an inline <style> block in base.html. */
+
+[x-cloak] { display: none !important; }
+
+.htmx-indicator { opacity: 0; transition: opacity 200ms ease-in; }
+.htmx-request .htmx-indicator { opacity: 1; }
+.htmx-request.htmx-indicator { opacity: 1; }
+
+/* hx-boost page transition — fade the main content area on navigation */
+main.htmx-swapping { opacity: 0; transition: opacity 120ms ease-out; }
+main { transition: opacity 120ms ease-in; }

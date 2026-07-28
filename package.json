@@ -1,0 +1,12 @@
+{
+  "name": "expenses-ui",
+  "private": true,
+  "description": "Tailwind build for the Expenses app. See `npm run css` after changing classes in templates or static JS.",
+  "scripts": {
+    "css": "tailwindcss -i ./static/src/app.css -o ./static/css/app.css --minify",
+    "css:watch": "tailwindcss -i ./static/src/app.css -o ./static/css/app.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.17"
+  }
+}

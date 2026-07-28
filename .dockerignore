@@ -43,3 +43,10 @@ requirements-dev.txt
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Tailwind build tooling — static/css/app.css is prebuilt and committed
+node_modules/
+package.json
+package-lock.json
+tailwind.config.js
+static/src/

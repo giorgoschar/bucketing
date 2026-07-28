@@ -46,3 +46,6 @@ localhost
 .coverage
 coverage.xml
 htmlcov/
+
+# Node (Tailwind build tooling only — the built CSS IS committed)
+node_modules/

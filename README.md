@@ -80,6 +80,28 @@ See [`.env.example`](.env.example) for a commented template.
 
 ---
 
+## Front-end build
+
+Tailwind is compiled ahead of time; the built stylesheet is committed, so
+deploys need no Node toolchain.
+
+```bash
+npm install          # once
+npm run css          # rebuild static/css/app.css
+npm run css:watch    # rebuild on change while developing
+```
+
+**Rebuild whenever you add or change Tailwind classes** in `templates/` or
+`static/*.js`, and commit the result. `tailwind.config.js` scans both, because
+some class names are constructed at runtime in JavaScript (the offline-queue
+pill picks its colour by state) and would otherwise be purged.
+
+`tests/test_frontend_wiring.py` guards the build: it fails if the CDN comes
+back, if the stylesheet is missing or truncated, or if a class known to be
+runtime-constructed has been purged.
+
+---
+
 ## Tests
 
 ```bash
@@ -115,7 +137,7 @@ data:
 | ORM | SQLAlchemy 2.0 + Alembic |
 | Database | SQLite (dev) / PostgreSQL (prod) |
 | Auth | `itsdangerous` signed cookies + `passlib[bcrypt]` |
-| Frontend | HTMX 1.9 + Alpine.js 3 + TailwindCSS CDN |
+| Frontend | HTMX 1.9 + Alpine.js 3 + TailwindCSS (prebuilt, no CDN) |
 
 ---
 

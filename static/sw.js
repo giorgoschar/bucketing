@@ -1,5 +1,5 @@
-const CACHE_NAME = 'expenses-v3';
-const CDN_CACHE = 'expenses-cdn-v3';
+const CACHE_NAME = 'expenses-v4';
+const CDN_CACHE = 'expenses-cdn-v4';
 
 const STATIC_ASSETS = [
   '/static/manifest.json',
@@ -8,11 +8,14 @@ const STATIC_ASSETS = [
   '/static/vendor/htmx.min.js',
   '/static/vendor/alpine.min.js',
   '/static/offline.js',
+  '/static/insights.js',
+  '/static/expense-wizard.js',
+  '/static/css/app.css',
 ];
 
 // CDN origins to cache with stale-while-revalidate
 const CDN_ORIGINS = [
-  'cdn.tailwindcss.com',
+  // Tailwind is now a precached local asset, not a CDN script.
   'cdn.jsdelivr.net',
   'unpkg.com',
 ];

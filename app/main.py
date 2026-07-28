@@ -112,13 +112,17 @@ async def security_headers(request: Request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    # Tailwind is a local stylesheet now, so cdn.tailwindcss.com is gone from
+    # every directive. jsdelivr stays: the receipt scanner loads qr-scanner,
+    # tesseract.js and pdf.js from it. 'unsafe-eval' stays because Alpine
+    # compiles its expressions with new Function().
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval' cdn.jsdelivr.net cdn.tailwindcss.com; "
-        "style-src 'self' 'unsafe-inline' cdn.jsdelivr.net cdn.tailwindcss.com; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline'; "
         "worker-src blob: 'self'; "
-        "img-src 'self' fastapi.tiangolo.com data: blob:; "
-        "connect-src 'self' cdn.jsdelivr.net cdn.tailwindcss.com blob:;"
+        "img-src 'self' data: blob:; "
+        "connect-src 'self' cdn.jsdelivr.net blob:;"
     )
     if not settings.debug:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
