@@ -207,3 +207,43 @@ def test_api_exposes_kpis(client, db, spread, make_household):
                       headers={"Authorization": f"Bearer {tok}"}).json()
     assert "kpis" in body
     assert body["kpis"]["avg_per_month"] == 100.0
+
+
+# ---------------------------------------------------------------------------
+# Quietest month must only consider months that actually finished
+# ---------------------------------------------------------------------------
+
+def test_quietest_month_ignores_the_current_month(db, authed):
+    """A month in progress always looks cheapest — less of it has happened."""
+    today = date.today()
+    this_month = today.replace(day=1)
+    prev_month = (this_month - timedelta(days=1)).replace(day=1)
+    two_back = (prev_month - timedelta(days=1)).replace(day=1)
+
+    _expense(db, authed, 400, two_back + timedelta(days=5))
+    _expense(db, authed, 300, prev_month + timedelta(days=5))
+    _expense(db, authed, 5,   this_month)          # partial month, tiny so far
+
+    k = _kpis(db, authed, two_back, today)
+    assert k["quietest_month"]["total"] == 300.0
+    # The partial month still counts towards spending and can still be busiest.
+    assert k["total"] == 705.0
+
+
+def test_quietest_month_ignores_a_month_clipped_by_the_filter(db, authed):
+    """Jan is only half covered by the range, so its total is not comparable."""
+    _expense(db, authed, 40,  date(2026, 1, 20))   # range starts 15 Jan
+    _expense(db, authed, 200, date(2026, 2, 10))
+    _expense(db, authed, 300, date(2026, 3, 10))
+
+    k = _kpis(db, authed, date(2026, 1, 15), date(2026, 3, 31))
+    assert k["quietest_month"]["label"] == "Feb 2026"
+
+
+def test_no_finished_month_means_no_quietest(db, authed):
+    today = date.today()
+    _expense(db, authed, 25, today)
+
+    k = _kpis(db, authed, today.replace(day=1), today)
+    assert k["quietest_month"] is None
+    assert k["busiest_month"] is not None      # busiest is still well-defined

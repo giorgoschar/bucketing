@@ -1,6 +1,15 @@
 {% extends "base.html" %}
-{% block title %}My money{% endblock %}
-{% block header_title %}My money{% endblock %}
+{% block title %}{{ 'My money' if is_self else target_name ~ "'s money" }}{% endblock %}
+{% block header_title %}{{ 'My money' if is_self else target_name ~ "'s money" }}{% endblock %}
+
+{% import "macros/charts.html" as charts %}
+
+{# Possessive for every label on the page. Reading "their share" on your own
+   page is jarring, and it was part of why these figures were hard to read. #}
+{% set whose = 'Your' if is_self else target_name ~ "'s" %}
+{# Mid-sentence form: a name keeps its capital, "your" does not. #}
+{% set whose_mid = 'your' if is_self else target_name ~ "'s" %}
+{% set they = 'you' if is_self else 'they' %}
 
 {% block content %}
 <div class="max-w-2xl mx-auto space-y-4">
@@ -28,21 +37,56 @@
     </div>
   </div>
 
-  {# Headline figures #}
+  {# Headline figures.
+
+     These two are easy to confuse, so the card says what each one means rather
+     than assuming: "paid out" is cash that left this person's pocket, "my
+     share" is the slice of the spending they are actually responsible for. #}
   <div class="grid grid-cols-2 gap-3">
     <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
       <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Paid out</p>
       <p class="text-2xl font-bold mt-1">{{ summary.paid_out | currency(household.default_currency) }}</p>
-      <p class="text-[11px] text-gray-400 mt-1">Money fronted · {{ period_label }}</p>
+      <p class="text-[11px] text-gray-400 mt-1">Money {{ they }} actually handed over · {{ period_label }}</p>
     </div>
     <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
-      <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400">My share</p>
+      <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400">{{ "My share" if is_self else target_name ~ "'s share" }}</p>
       <p class="text-2xl font-bold mt-1">{{ summary.my_share | currency(household.default_currency) }}</p>
       <p class="text-[11px] text-gray-400 mt-1">
-        Actually theirs to cover
-        {% if summary.shared_count %}· {{ summary.shared_count }} shared{% endif %}
+        {{ whose }} part of the cost
+        {%- if summary.share_pct is not none %} · {{ summary.share_pct }}% of household spend{% endif %}
       </p>
     </div>
+  </div>
+
+  {# The bridge between the two figures above #}
+  <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
+    <div class="flex items-baseline justify-between gap-3">
+      <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+        Paid out − {{ whose_mid }} share
+      </p>
+      <p class="text-lg font-bold
+                {% if summary.balance > 0.005 %}text-emerald-600 dark:text-emerald-400
+                {% elif summary.balance < -0.005 %}text-orange-500{% else %}text-gray-400{% endif %}">
+        {{ summary.balance | currency(household.default_currency) }}
+      </p>
+    </div>
+    <p class="text-xs text-gray-400 mt-1.5">
+      {% if summary.balance > 0.005 %}
+        Fronted {{ summary.balance | currency(household.default_currency) }} more than
+        {{ 'your' if is_self else 'their' }} own share in this period — money spent on the
+        household's behalf.
+      {% elif summary.balance < -0.005 %}
+        {{ whose }} share came to {{ (-summary.balance) | currency(household.default_currency) }} more
+        than {{ they }} paid — someone else covered the difference.
+      {% else %}
+        What {{ they }} paid matches what {{ they }} owe for this period.
+      {% endif %}
+      {% if summary.shared_count %}
+      <span class="block mt-0.5">{{ summary.shared_count }} shared
+        expense{{ '' if summary.shared_count == 1 else 's' }} of
+        {{ summary.transaction_count }} in the period.</span>
+      {% endif %}
+    </p>
   </div>
 
   {# Settlement position — all-time, independent of the period filter #}
@@ -52,7 +96,7 @@
     <p class="text-xl font-bold text-emerald-600 dark:text-emerald-400">
       Owed {{ summary.net | currency(household.default_currency) }}
     </p>
-    <p class="text-xs text-gray-400 mt-1">Fronted more than their share across shared buckets.</p>
+    <p class="text-xs text-gray-400 mt-1">Fronted more than {{ whose_mid }} share across shared buckets.</p>
     {% elif summary.net < -0.005 %}
     <p class="text-xl font-bold text-orange-500">
       Owes {{ (-summary.net) | currency(household.default_currency) }}
@@ -66,13 +110,38 @@
     </a>
     <p class="text-[11px] text-gray-400 mt-2">
       All-time across settlement-enabled buckets, not affected by the period above.
+      Unlike the figures above it also treats unsplit expenses in those buckets
+      as shared equally, which is the household convention there.
     </p>
   </div>
+
+  {# Their share month by month — same chart macro as insights #}
+  {% if summary.trend | length > 1 %}
+  <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
+    <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-3">
+      {{ whose }} share by month
+    </p>
+    {{ charts.line_chart(summary.trend, household.default_currency, 120) }}
+  </div>
+  {% endif %}
+
+  {% if summary.largest %}
+  <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
+    <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Biggest single share</p>
+    <p class="text-xl font-bold mt-1">
+      {{ summary.largest.amount | currency(household.default_currency) }}
+    </p>
+    <p class="text-xs text-gray-400 mt-1">
+      {{ summary.largest.notes or 'No description' }}
+      {% if summary.largest.date %}· {{ summary.largest.date | dmy }}{% endif %}
+    </p>
+  </div>
+  {% endif %}
 
   {# Where their share went #}
   {% if summary.by_bucket %}
   <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
-    <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Their share by bucket</p>
+    <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">{{ whose }} share by bucket</p>
     <div class="space-y-3">
       {% for row in summary.by_bucket %}
       <div class="flex items-center gap-3">
@@ -91,7 +160,7 @@
 
   {% if summary.by_category %}
   <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
-    <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Their share by category</p>
+    <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">{{ whose }} share by category</p>
     <div class="space-y-2.5">
       {% for row in summary.by_category %}
       <div class="flex items-center gap-3">

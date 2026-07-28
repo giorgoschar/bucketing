@@ -222,6 +222,10 @@ class Transaction(Base):
     transaction_date = Column(Date, default=date.today, nullable=False)
     receipt_path = Column(String, nullable=True)
     exclude_from_forecast = Column(Boolean, default=False, nullable=False)
+    # Keep this expense out of the settle-up maths while still counting it as
+    # household spending. For costs that are shared with people outside the
+    # household, or that both members already consider square.
+    exclude_from_settlement = Column(Boolean, default=False, nullable=False)
     # Client-generated id for offline submissions. A queued expense may be
     # retried after the response was lost, so the server must recognise the
     # repeat instead of creating a second transaction.

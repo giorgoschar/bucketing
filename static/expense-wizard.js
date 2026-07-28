@@ -22,6 +22,11 @@ function expenseWizard() {
       this.form.bucket_id = cfg.selectedBucketId || '';
       this.form.transaction_date = cfg.today || '';
       this.form.currency = cfg.currency || 'EUR';
+      // Default the payer to whoever is logged in. Leaving it blank saved the
+      // expense with no payer at all, which settle-up cannot use: the shares
+      // were charged to members but the money was credited to nobody, so both
+      // members appeared to owe a third party who does not exist.
+      this.form.paid_by = cfg.currentUserId || '';
     },
 
     buckets: {},

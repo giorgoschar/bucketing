@@ -7,7 +7,12 @@
   lifecycle problem that repeatedly broke the Alpine components here. SVG from
   the server has no lifecycle, needs no CDN, and works offline in the PWA.
 
-  Tooltips use native <title>, so hovering works without a line of script.
+  Hover/tap/focus values come from `data-tip`, read by a single delegated
+  listener in static/chart-tooltip.js. That replaced SVG <title>, whose native
+  tooltip took about a second to appear and never showed on a phone. Every
+  interactive shape is also tabbable and carries an aria-label, so the numbers
+  are reachable by keyboard and screen reader too.
+
   Colours come through `currentColor` and Tailwind classes so light/dark mode
   follow the rest of the UI for free.
 #}
@@ -55,13 +60,16 @@
 
       {% for p in points %}
       {% set c = coords[loop.index0] %}
+      {% set tip = p.label ~ ': ' ~ (p.total | currency(currency)) %}
       <g>
         <circle cx="{{ c[0] }}" cy="{{ c[1] }}" r="{{ 4 if p.is_current else 3 }}"
                 class="{{ 'fill-primary-600' if p.is_current else 'fill-primary-500' }}" />
-        {# invisible wide target so the tooltip is easy to hit #}
-        <rect x="{{ c[0] - step / 2 }}" y="0" width="{{ step }}" height="{{ H }}" fill="transparent">
-          <title>{{ p.label }}: {{ p.total | currency(currency) }}</title>
-        </rect>
+        {# Invisible full-height band so the whole column is a hit target: the
+           dot alone is a 3px circle, which is unusable with a thumb. Drawn
+           after the dot so it sits on top and receives the pointer. #}
+        <rect x="{{ c[0] - step / 2 }}" y="0" width="{{ step }}" height="{{ H }}"
+              fill="transparent" tabindex="0" role="img"
+              aria-label="{{ tip }}" data-tip="{{ tip }}" />
       </g>
       {% endfor %}
     {% endif %}
@@ -100,9 +108,10 @@
               stroke="{{ row.color }}"
               stroke-dasharray="{{ dash }} {{ C - dash }}"
               stroke-dashoffset="{{ -ns.offset }}"
-              transform="rotate(-90 {{ cx }} 80)">
-        <title>{{ row.icon }} {{ row.name }}: {{ row.amount | currency(currency) }} ({{ row.pct }}%)</title>
-      </circle>
+              transform="rotate(-90 {{ cx }} 80)"
+              tabindex="0" role="img"
+              aria-label="{{ row.icon }} {{ row.name }}: {{ row.amount | currency(currency) }} ({{ row.pct }}%)"
+              data-tip="{{ row.icon }} {{ row.name }}: {{ row.amount | currency(currency) }} ({{ row.pct }}%)" />
       {% set ns.offset = ns.offset + dash %}
     {% endfor %}
     <text x="{{ cx }}" y="76" text-anchor="middle" class="fill-gray-900 dark:fill-gray-100"
@@ -134,12 +143,17 @@
       {% for s in series %}
         {% set v = s['values'][i] %}
         {% set h = ((H - PAD_B - 6) * (v / top)) if v > 0 else 0 %}
-        <rect x="{{ i * gw + 4 + loop.index0 * bw }}"
-              y="{{ H - PAD_B - h }}"
+        {% set x = i * gw + 4 + loop.index0 * bw %}
+        {% set tip = s.icon ~ ' ' ~ s.name ~ ' · ' ~ labels[i] ~ ': ' ~ (v | currency(currency)) %}
+        <rect x="{{ x }}" y="{{ H - PAD_B - h }}"
               width="{{ bw - 1.5 }}" height="{{ h if h > 0 else 0 }}"
-              rx="1.5" fill="{{ s.color }}">
-          <title>{{ s.icon }} {{ s.name }} · {{ labels[i] }}: {{ v | currency(currency) }}</title>
-        </rect>
+              rx="1.5" fill="{{ s.color }}" />
+        {# Full-height hit target per bar. A quiet month draws a 2px bar that
+           cannot be hovered, let alone tapped, yet its value is the one worth
+           reading. Transparent overlays sit above every bar in the group. #}
+        <rect x="{{ x }}" y="0" width="{{ bw - 1.5 }}" height="{{ H - PAD_B }}"
+              fill="transparent" tabindex="0" role="img"
+              aria-label="{{ tip }}" data-tip="{{ tip }}" />
       {% endfor %}
       <text x="{{ i * gw + gw / 2 }}" y="{{ H - 3 }}" text-anchor="middle"
             class="fill-gray-400" style="font-size: 10px">{{ labels[i] }}</text>

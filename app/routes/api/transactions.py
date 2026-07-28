@@ -49,6 +49,7 @@ class TransactionIn(BaseModel):
     notes:        str | None = None
     transaction_date: str   = ""   # ISO date; defaults to today
     exclude_from_forecast: bool = False
+    exclude_from_settlement: bool = False
     splits:       list[SplitIn] = []
 
 
@@ -67,6 +68,7 @@ def _txn_dict(t: Transaction) -> dict:
         "transaction_date": t.transaction_date.isoformat() if t.transaction_date else None,
         "receipt_path":   t.receipt_path,
         "exclude_from_forecast": t.exclude_from_forecast,
+        "exclude_from_settlement": t.exclude_from_settlement,
         "created_at":     t.created_at.isoformat() if t.created_at else None,
         "splits": [
             {"user_id": s.user_id, "amount": float(s.amount), "is_settled": s.is_settled}
@@ -193,6 +195,7 @@ def create_transaction(
         notes=body.notes,
         transaction_date=txn_date,
         exclude_from_forecast=body.exclude_from_forecast,
+        exclude_from_settlement=body.exclude_from_settlement,
     )
     db.add(txn)
     db.flush()
@@ -242,6 +245,7 @@ def update_transaction(
     txn.category_id  = body.category_id or None
     txn.notes        = body.notes
     txn.exclude_from_forecast = body.exclude_from_forecast
+    txn.exclude_from_settlement = body.exclude_from_settlement
     if body.transaction_date:
         txn.transaction_date = _parse_body_date(body.transaction_date)
 

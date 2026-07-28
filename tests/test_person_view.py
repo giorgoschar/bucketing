@@ -198,3 +198,74 @@ def test_period_presets_render(client, pair):
 
 def test_page_requires_auth(client):
     assert client.get("/me").status_code == 302
+
+
+# ---------------------------------------------------------------------------
+# Figures added to make "paid out" and "my share" legible
+# ---------------------------------------------------------------------------
+
+def test_balance_bridges_the_two_headline_figures(db, pair):
+    """The number that explains the pair: fronted minus owed, for the period."""
+    _shared(db, pair, 100, pair.user_id,
+            {pair.user_id: 30, pair.partner_id: 70})
+
+    mine = get_person_summary(db, pair.household_id, pair.user_id)
+    assert mine["paid_out"] == 100.0
+    assert mine["my_share"] == 30.0
+    assert mine["balance"] == 70.0
+
+    theirs = get_person_summary(db, pair.household_id, pair.partner_id)
+    assert theirs["balance"] == -70.0
+
+
+def test_balances_across_members_cancel(db, pair):
+    _shared(db, pair, 100, pair.user_id, {pair.user_id: 50, pair.partner_id: 50})
+    _shared(db, pair, 40, pair.partner_id, {pair.user_id: 20, pair.partner_id: 20})
+
+    total = sum(
+        get_person_summary(db, pair.household_id, uid)["balance"]
+        for uid in (pair.user_id, pair.partner_id)
+    )
+    assert round(total, 2) == 0.0
+
+
+def test_share_of_household_spend(db, pair):
+    _shared(db, pair, 100, pair.user_id, {pair.user_id: 25, pair.partner_id: 75})
+    assert get_person_summary(db, pair.household_id, pair.user_id)["share_pct"] == 25.0
+
+
+def test_share_pct_is_none_with_no_spending(db, pair):
+    assert get_person_summary(db, pair.household_id, pair.user_id)["share_pct"] is None
+
+
+def test_biggest_single_share_is_the_share_not_the_total(db, pair):
+    """A 1000 dinner split 100/900 is not this person's biggest expense."""
+    _shared(db, pair, 1000, pair.user_id,
+            {pair.user_id: 100, pair.partner_id: 900})
+    _solo(db, pair, 400, pair.user_id)
+
+    largest = get_person_summary(db, pair.household_id, pair.user_id)["largest"]
+    assert largest["amount"] == 400.0
+
+
+def test_trend_is_one_point_per_month(db, pair):
+    _solo(db, pair, 100, pair.user_id, date(2026, 1, 5))
+    _solo(db, pair, 50,  pair.user_id, date(2026, 1, 20))
+    _solo(db, pair, 70,  pair.user_id, date(2026, 2, 3))
+
+    trend = get_person_summary(db, pair.household_id, pair.user_id,
+                               date(2026, 1, 1), date(2026, 2, 28))["trend"]
+    assert [r["total"] for r in trend] == [150.0, 70.0]
+
+
+def test_page_addresses_you_in_the_second_person(client, pair):
+    r = client.get("/me")
+    assert r.status_code == 200
+    assert "Your part of the cost" in r.text
+    assert "Their part of the cost" not in r.text
+
+
+def test_another_members_page_uses_their_name(client, pair):
+    r = client.get(f"/me?member={pair.partner_id}")
+    assert r.status_code == 200
+    assert "Partner&#39;s share" in r.text or "Partner's share" in r.text

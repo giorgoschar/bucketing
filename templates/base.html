@@ -33,6 +33,9 @@
   <script defer src="/static/insights.js"></script>
   <script defer src="/static/expense-wizard.js"></script>
   <script defer src="/static/app-components.js"></script>
+  <!-- Chart tooltips: one delegated listener on document, registered once, so
+       it keeps working across hx-boost swaps and insights filter changes. -->
+  <script defer src="/static/chart-tooltip.js"></script>
   <!-- Alpine.js -->
   <script defer src="/static/vendor/alpine.min.js"></script>
   <!-- Offline helpers — loaded in <head> so hx-boost body swaps don't re-execute it -->

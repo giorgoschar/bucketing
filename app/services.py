@@ -635,11 +635,17 @@ def compute_bucket_net(db: Session, bucket_id: str) -> dict[str, float]:
     if not txns and not recorded:
         return {}
 
+    # Only expenses that can actually create a debt take part. An expense with
+    # no payer recorded has nobody to owe: charging its shares to members while
+    # crediting nobody invented a phantom creditor outside the household, so
+    # both members showed as owing money to no one. Skipping it leaves the
+    # spending in every other report and only keeps it out of settle-up.
+    txns = [t for t in txns if t.paid_by and not t.exclude_from_settlement]
+
     # Collect all involved user ids
     user_ids: set[str] = set()
     for t in txns:
-        if t.paid_by:
-            user_ids.add(t.paid_by)
+        user_ids.add(t.paid_by)
         for s in t.splits:
             user_ids.add(s.user_id)
     for st in recorded:
@@ -654,8 +660,7 @@ def compute_bucket_net(db: Session, bucket_id: str) -> dict[str, float]:
     owes: dict[str, float] = defaultdict(float)
 
     for t in txns:
-        if t.paid_by:
-            actually_paid[t.paid_by] += to_base(t.amount, t.exchange_rate)
+        actually_paid[t.paid_by] += to_base(t.amount, t.exchange_rate)
         # shares_for() always accounts for the full amount, including any part
         # not covered by explicit splits, so the nets below sum to zero.
         for uid, share in shares_for(t, user_ids).items():
@@ -725,6 +730,46 @@ def simplify_debts(db: Session, net: dict[str, float]) -> list[dict]:
 def get_bucket_settlement(db: Session, bucket_id: str) -> list[dict]:
     """Who owes whom inside a single bucket (all-time), debt-simplified."""
     return simplify_debts(db, compute_bucket_net(db, bucket_id))
+
+
+def get_settlement_exclusions(db: Session, household_id: str) -> dict:
+    """Spending inside settlement-enabled buckets that settle-up ignores.
+
+    Two reasons an expense sits out: no payer was recorded (there is nobody to
+    owe, so it cannot produce a debt), or it was explicitly excluded. Both are
+    invisible in the balances themselves, and an unexplained gap between "we
+    spent this" and "we owe this" is exactly what makes settle-up look broken.
+    """
+    rows = (
+        db.query(
+            Transaction.exclude_from_settlement,
+            func.count(Transaction.id),
+            func.sum(base_amount_expr()),
+        )
+        .join(Bucket, Bucket.id == Transaction.bucket_id)
+        .filter(
+            Transaction.household_id == household_id,
+            Transaction.type == TransactionType.expense,
+            Bucket.enable_settlement.is_(True),
+            or_(
+                Transaction.paid_by.is_(None),
+                Transaction.exclude_from_settlement.is_(True),
+            ),
+        )
+        .group_by(Transaction.exclude_from_settlement)
+        .all()
+    )
+
+    out = {
+        "no_payer_count": 0, "no_payer_total": 0.0,
+        "excluded_count": 0, "excluded_total": 0.0,
+    }
+    for excluded, count, total in rows:
+        prefix = "excluded" if excluded else "no_payer"
+        out[f"{prefix}_count"] = int(count or 0)
+        out[f"{prefix}_total"] = round(float(total or 0), 2)
+    out["any"] = bool(out["no_payer_count"] or out["excluded_count"])
+    return out
 
 
 def get_household_settlement(db: Session, household_id: str) -> list[dict]:
@@ -1839,15 +1884,21 @@ def get_person_summary(
     shared_count = 0
     by_bucket: dict[str, float] = defaultdict(float)
     by_category: dict[str | None, float] = defaultdict(float)
+    by_month: dict[tuple[int, int], float] = defaultdict(float)
+    household_total = 0.0
+    largest = None
 
     for t in txns:
         amount = to_base(t.amount, t.exchange_rate)
+        household_total += amount
         if t.paid_by == user_id:
             paid_out += amount
 
-        # Same accounting as settlement: an expense whose splits do not cover
-        # the full amount leaves the remainder with the payer, so "my share"
-        # here agrees with the settlement position below.
+        # Splits win where they exist; an expense whose splits do not cover the
+        # full amount leaves the remainder with whoever paid. Note this is not
+        # identical to the settlement view, which additionally treats an unsplit
+        # expense in a settlement-enabled bucket as shared equally — that is the
+        # household convention there, and "net" below comes from that maths.
         share = shares_for(t).get(user_id, 0.0)
         if t.splits and any(s.user_id == user_id for s in t.splits):
             shared_count += 1
@@ -1856,6 +1907,14 @@ def get_person_summary(
             my_share += share
             by_bucket[t.bucket_id] += share
             by_category[t.category_id] += share
+            if t.transaction_date:
+                by_month[(t.transaction_date.year, t.transaction_date.month)] += share
+            if largest is None or share > largest["amount"]:
+                largest = {
+                    "amount": share,
+                    "notes":  t.notes,
+                    "date":   t.transaction_date,
+                }
 
     buckets = {}
     if by_bucket:
@@ -1874,11 +1933,26 @@ def get_person_summary(
         0.0,
     )
 
+    if largest:
+        largest["amount"] = round(largest["amount"], 2)
+
     return {
         "paid_out":  round(paid_out, 2),
         "my_share":  round(my_share, 2),
+        # The gap between the two headline figures, for this period only. This
+        # is what makes them legible: fronting EUR 600 against a EUR 400 share
+        # means EUR 200 went out on someone else's behalf.
+        "balance":   round(paid_out - my_share, 2),
         # Positive: fronted more than their share. This is the settlement view.
         "net":       net,
+        "household_total": round(household_total, 2),
+        # How much of the household's spending this person carries.
+        "share_pct": round(my_share / household_total * 100, 1) if household_total else None,
+        "largest":   largest,
+        "trend": [
+            {"label": date(y, m, 1).strftime("%b"), "total": round(v, 2)}
+            for (y, m), v in sorted(by_month.items())
+        ],
         "shared_count": shared_count,
         "transaction_count": len(txns),
         "by_bucket": sorted(
@@ -1915,6 +1989,15 @@ def get_person_summary(
 def _months_spanned(start: date, end: date) -> int:
     """Calendar months touched by the range, inclusive. Never zero."""
     return max((end.year - start.year) * 12 + (end.month - start.month) + 1, 1)
+
+
+def _month_start(year: int, month: int) -> date:
+    return date(year, month, 1)
+
+
+def _month_end(year: int, month: int) -> date:
+    """Last calendar day of the month."""
+    return (date(year + month // 12, month % 12 + 1, 1) - timedelta(days=1))
 
 
 def get_insights_kpis(
@@ -1963,8 +2046,20 @@ def get_insights_kpis(
         (y, m), value = item
         return {"label": date(y, m, 1).strftime("%b %Y"), "total": round(value, 2)}
 
+    # "Quietest" is only meaningful for months that actually finished, and that
+    # the filter covers end to end. A month still in progress — or clipped by
+    # the range — always looks cheapest simply because less of it has happened.
+    today = date.today()
+    complete = {
+        (y, m): value
+        for (y, m), value in by_month.items()
+        if _month_start(y, m) >= range_start
+        and _month_end(y, m) <= range_end
+        and _month_end(y, m) < today
+    } if range_start and range_end else {}
+
     busiest = _month_row(max(by_month.items(), key=lambda kv: kv[1])) if by_month else None
-    quietest = _month_row(min(by_month.items(), key=lambda kv: kv[1])) if by_month else None
+    quietest = _month_row(min(complete.items(), key=lambda kv: kv[1])) if complete else None
 
     largest = None
     if amounts:

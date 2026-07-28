@@ -107,6 +107,33 @@
       {% for b in enabled_buckets %}{{ b.icon }} {{ b.name }}{% if not loop.last %}, {% endif %}{% endfor %}
     </p>
     {% endif %}
+
+    {# Spending these balances deliberately ignore. Left unexplained, the gap
+       between "we spent this" and "we owe this" makes settle-up look wrong. #}
+    {% if exclusions and exclusions.any %}
+    <div class="mt-3 rounded-xl border border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-900/10 p-3 space-y-1.5">
+      {% if exclusions.no_payer_count %}
+      <p class="text-xs text-amber-800 dark:text-amber-300">
+        <a href="/transactions/search?missing_payer=1" class="font-semibold underline">
+          {{ exclusions.no_payer_count }} expense{{ '' if exclusions.no_payer_count == 1 else 's' }}
+          ({{ exclusions.no_payer_total | currency(household.default_currency) }})
+        </a>
+        {{ 'has' if exclusions.no_payer_count == 1 else 'have' }} no payer recorded, so
+        {{ 'it is' if exclusions.no_payer_count == 1 else 'they are' }} left out — with nobody
+        having fronted the money there is no debt to settle. Set who paid to include
+        {{ 'it' if exclusions.no_payer_count == 1 else 'them' }}.
+      </p>
+      {% endif %}
+      {% if exclusions.excluded_count %}
+      <p class="text-xs text-amber-800 dark:text-amber-300">
+        {{ exclusions.excluded_count }} expense{{ '' if exclusions.excluded_count == 1 else 's' }}
+        ({{ exclusions.excluded_total | currency(household.default_currency) }})
+        {{ 'is' if exclusions.excluded_count == 1 else 'are' }} marked “exclude from settle-up”.
+        Still counted as household spending.
+      </p>
+      {% endif %}
+    </div>
+    {% endif %}
   </div>
 
   {# ===== Payment history ===== #}

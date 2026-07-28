@@ -18,6 +18,7 @@ from app.services import (
     get_household_settlement_history,
     get_member_balances,
     get_person_summary,
+    get_settlement_exclusions,
     record_household_settlement,
     resolve_insight_period,
 )
@@ -50,6 +51,7 @@ def settlement_page(
         "balances":    get_member_balances(db, hh_id),
         "history":     get_household_settlement_history(db, hh_id),
         "enabled_buckets": enabled_buckets,
+        "exclusions":  get_settlement_exclusions(db, hh_id),
     })
     return templates.TemplateResponse("settlement.html", ctx)
 
@@ -112,13 +114,22 @@ def person_page(
     period = resolve_insight_period(preset, start_date, end_date)
 
     ctx = base_ctx(db, user, hh_id)
+    members = get_member_balances(db, hh_id)
+    target_name = next(
+        (m["name"] for m in members if m["user_id"] == target_id), user.display_name
+    )
     ctx.update({
         "request":      request,
         "user":         user,
         "summary":      get_person_summary(db, hh_id, target_id,
                                            period["start"], period["end"]),
-        "members":      get_member_balances(db, hh_id),
+        "members":      members,
         "target_id":    target_id,
+        "target_name":  target_name,
+        # Labels read "your share" on your own page and "Georgia's share" on
+        # someone else's. The page used to say "their" either way, which is a
+        # strange thing to read about yourself on a page titled "My money".
+        "is_self":      target_id == user.id,
         "period_label": period["period_label"],
         "preset":       period["preset"],
     })

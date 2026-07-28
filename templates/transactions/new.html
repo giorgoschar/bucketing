@@ -13,6 +13,7 @@
          "selectedBucketId": {{ selected_bucket_id | tojson }},
          "today": {{ today | tojson }},
          "currency": {{ (household.default_currency if household else "EUR") | tojson }},
+         "currentUserId": {{ user.id | tojson }},
          "buckets": { {% for bucket in buckets %}{{ bucket.id | tojson }}: {{ (bucket.icon ~ " " ~ bucket.name) | tojson }}{% if not loop.last %},{% endif %}{% endfor %} }
        }'>
 
@@ -249,6 +250,11 @@
               </button>
               {% endfor %}
             </div>
+            {# Without a payer there is nobody to owe, so settle-up has to skip
+               the expense entirely. Say so rather than saving a dead entry. #}
+            <p x-show="!form.paid_by" class="text-xs text-amber-600 dark:text-amber-400 mt-2">
+              Pick who paid, or this expense is left out of settle-up.
+            </p>
           </div>
 
           <!-- Shared toggle -->

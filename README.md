@@ -8,6 +8,7 @@ A self-hosted PWA for tracking household expenses, shared bills, and budgets. No
 - **Fast expense entry** — 4-step wizard optimized for mobile
 - **Recurring bills** — fixed and variable, monthly or custom interval, with pay/skip tracking
 - **Shared expenses** — split any transaction by amount or percentage per person, track who owes whom
+- **Settle up** — household-wide balances netted across every settlement-enabled bucket, with a payment history
 - **Multi-household** — switch between households from the nav (e.g. personal + parents)
 - **Multi-currency** — EUR default, per-transaction currency for travel
 - **PWA** — installable on iOS/Android, works offline for browsing
@@ -125,6 +126,28 @@ data:
 | `test_insights.py` | Date presets, filter consistency across widgets, chart scaling |
 | `test_api.py` | JWT flow, token rotation, API validation and isolation |
 | `test_migrations.py` | Migrations apply from scratch, single head, schema matches models, no data loss |
+| `test_settlement_balance.py` | Per-member nets always sum to zero, whatever the split shape |
+| `test_settlement_exclusions.py` | Expenses settle-up must skip, and the report that explains why |
+
+---
+
+## What settle-up counts
+
+Balances are computed only from expenses that can actually create a debt, in
+buckets with **Track settlement** on:
+
+| Expense | Counted? |
+|---|---|
+| Split between members | Yes — each member takes their split |
+| Split covering only part of the total | Yes — the payer absorbs the remainder |
+| No splits | Yes — divided equally among the bucket's participants |
+| **No payer recorded** | **No** — nobody fronted the money, so there is no debt |
+| **Marked "exclude from settle-up"** | **No** — still counted as household spending |
+
+The last two are listed on the settle-up page with their totals, so the gap
+between what was spent and what is owed is never unexplained. An expense with
+no payer used to have its shares charged to members while the money was
+credited to nobody, which made both members appear to owe an outsider.
 
 ---
 

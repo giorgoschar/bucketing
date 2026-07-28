@@ -390,6 +390,14 @@ async def create_transaction(
     txn_paid_by  = require_member(db, paid_by, hh_id)
     txn_category = require_category(db, category_id, hh_id)
 
+    # A shared expense with no payer is unusable: settle-up would charge the
+    # shares to members with nobody credited for fronting the money, so the
+    # household appeared to owe an outsider. The submitter is the only sensible
+    # default, and the wizard now preselects them — this covers offline replays
+    # and API clients that omit the field.
+    if txn_type == TransactionType.expense and not txn_paid_by and is_shared == "on":
+        txn_paid_by = user.id
+
     receipt_path = None
     if receipt and receipt.filename:
         ext = os.path.splitext(receipt.filename)[1].lower()
@@ -530,6 +538,7 @@ async def edit_transaction(
     paid_by: str = Form(""),
     notes: str = Form(""),
     exclude_from_forecast: str = Form(""),
+    exclude_from_settlement: str = Form(""),
     db: Session = Depends(get_db),
     auth=Depends(require_auth),
 ):
@@ -553,6 +562,7 @@ async def edit_transaction(
     txn.category_id = require_category(db, category_id, hh_id)
     txn.notes = notes.strip() or None
     txn.exclude_from_forecast = (exclude_from_forecast == "on")
+    txn.exclude_from_settlement = (exclude_from_settlement == "on")
 
     # Replace splits
     db.query(TransactionSplit).filter_by(transaction_id=txn.id).delete(synchronize_session=False)
@@ -622,6 +632,7 @@ def duplicate_transaction(
         notes=src.notes,
         transaction_date=date.today(),
         exclude_from_forecast=src.exclude_from_forecast,
+        exclude_from_settlement=src.exclude_from_settlement,
     )
     db.add(new_txn)
     db.commit()
@@ -653,6 +664,7 @@ def search_transactions(
     min_amount: str = Query(""),
     max_amount: str = Query(""),
     paid_by: str = Query(""),
+    missing_payer: str = Query(""),
     page: int = Query(1, ge=1),
     db: Session = Depends(get_db),
     auth=Depends(require_auth),
@@ -660,8 +672,12 @@ def search_transactions(
     user, hh_id = auth
     ctx = _get_context(db, user, hh_id)
 
+    # Settle-up links here to show exactly which expenses it had to skip.
+    want_missing_payer = missing_payer in ("1", "on", "true")
+
     has_filter = any([q.strip(), category_id, type, from_date, to_date, bucket_id,
-                      min_amount.strip(), max_amount.strip(), paid_by])
+                      min_amount.strip(), max_amount.strip(), paid_by,
+                      want_missing_payer])
 
     if has_filter:
         query = db.query(Transaction).filter(Transaction.household_id == hh_id)
@@ -732,6 +748,11 @@ def search_transactions(
                 pass
         if bucket_id:
             query = query.filter(Transaction.bucket_id == bucket_id)
+        if want_missing_payer:
+            query = query.filter(
+                Transaction.paid_by.is_(None),
+                Transaction.type == TransactionType.expense,
+            )
 
         total = query.count()
         total_pages = max(1, -(-total // SEARCH_PAGE_SIZE))
@@ -762,6 +783,7 @@ def search_transactions(
         "min_amount": min_amount,
         "max_amount": max_amount,
         "selected_paid_by": paid_by,
+        "missing_payer": want_missing_payer,
         "page": page,
         "total_pages": total_pages,
         "total": total,

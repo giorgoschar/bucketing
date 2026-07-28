@@ -263,3 +263,61 @@ def test_axis_labels_are_anchored_inside_the_viewbox():
     macros = Path("templates/macros/charts.html").read_text()
     assert "'start' if loop.first" in macros
     assert "'end' if loop.last" in macros
+
+
+def _chart_markup() -> str:
+    """The macro file with its Jinja comments stripped.
+
+    The header comment explains why native <title> was dropped, and matching on
+    the raw text made the guard below pass on its own documentation.
+    """
+    src = Path("templates/macros/charts.html").read_text()
+    return re.sub(r"\{#.*?#\}", "", src, flags=re.S)
+
+
+def test_every_chart_shape_carries_a_tooltip():
+    """Native SVG <title> took about a second to appear and showed nothing at
+    all on touch. Every interactive shape must instead expose data-tip, which
+    the delegated listener in static/chart-tooltip.js reads."""
+    macros = _chart_markup()
+    assert "<title>" not in macros, "native <title> tooltips are back"
+    # line points, both grouped-bar hit targets, donut segments
+    assert macros.count("data-tip=") >= 3
+
+
+def test_chart_shapes_are_reachable_without_a_mouse():
+    """A tooltip that only responds to hover is unusable by keyboard, and the
+    <title> it replaced was at least announced by screen readers."""
+    macros = _chart_markup()
+    tips = macros.count("data-tip=")
+    assert macros.count("aria-label=") >= tips
+    assert macros.count('tabindex="0"') >= tips
+
+
+def test_tooltip_listener_is_delegated_and_registered_once():
+    """Binding per chart element would have to be redone after every HTMX swap
+    — the leak that made navigation slow down. One listener on document."""
+    src = (STATIC / "chart-tooltip.js").read_text()
+    assert "window.__chartTipWired" in src
+    assert "document.addEventListener" in src
+    # It is loaded from <head>, where document.body does not exist yet.
+    assert "document.body.addEventListener" not in src
+
+
+def test_head_loads_the_tooltip_listener():
+    head = Path("templates/base.html").read_text().split("</head>")[0]
+    assert "/static/chart-tooltip.js" in head
+
+
+def test_tooltip_style_is_hand_written_not_purgeable_tailwind():
+    """The element is created in JavaScript, so Tailwind's content scan would
+    never see its classes."""
+    css = Path("static/src/app.css").read_text()
+    assert ".chart-tip" in css
+    built = Path("static/css/app.css").read_text()
+    assert ".chart-tip" in built, "rebuild the stylesheet: npm run css"
+
+
+def test_service_worker_precaches_the_tooltip_listener():
+    sw = (STATIC / "sw.js").read_text()
+    assert "/static/chart-tooltip.js" in sw
