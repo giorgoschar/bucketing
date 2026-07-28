@@ -1,5 +1,6 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full">
+<!-- lang drives the native date-picker format; en-GB is day-first like el-GR -->
+<html lang="en-GB" class="h-full">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -66,10 +67,16 @@
 
     // Send CSRF token on every HTMX request (reads cookie, not meta tag, so
     // it stays correct even after the cookie is refreshed mid-session).
-    document.addEventListener('htmx:configRequest', function (evt) {
-      var token = _csrfToken();
-      if (token) evt.detail.headers['X-CSRF-Token'] = token;
-    });
+    /* Guarded: this whole script block re-executes on every boosted body swap,
+       and listeners on `document` survive the swap, so an unguarded
+       addEventListener accumulates one duplicate handler per navigation. */
+    if (!window.__csrfWired) {
+      window.__csrfWired = true;
+      document.addEventListener('htmx:configRequest', function (evt) {
+        var token = _csrfToken();
+        if (token) evt.detail.headers['X-CSRF-Token'] = token;
+      });
+    }
     // Inject hidden field into traditional (non-HTMX) POST forms
     function _injectCsrfFields() {
       var val = _csrfToken();
@@ -82,8 +89,12 @@
         }
       });
     }
-    document.addEventListener('DOMContentLoaded', _injectCsrfFields);
-    document.addEventListener('htmx:afterSwap', _injectCsrfFields);
+    if (!window.__csrfFieldsWired) {
+      window.__csrfFieldsWired = true;
+      document.addEventListener('DOMContentLoaded', _injectCsrfFields);
+      document.addEventListener('htmx:afterSwap', _injectCsrfFields);
+    }
+    _injectCsrfFields();   // run for the markup just swapped in
   </script>
 
   <style>
@@ -434,7 +445,21 @@
         _timer: null,
         async init() {
           await this.fetchNotifs(0);
-          this._timer = setInterval(() => this.fetchNotifs(0, true), 60000);
+          /* hx-boost swaps the <body> on every navigation, so this component
+             re-initialises each time. setInterval lives on window, not the DOM,
+             so the previous timer survived the swap and kept polling — after a
+             few tab changes the app was firing several /notifications requests
+             a minute and climbing. Keep exactly one, on window. */
+          if (window.__notifTimer) clearInterval(window.__notifTimer);
+          window.__notifTimer = setInterval(() => this.fetchNotifs(0, true), 60000);
+          this._timer = window.__notifTimer;
+        },
+
+        destroy() {
+          if (window.__notifTimer) {
+            clearInterval(window.__notifTimer);
+            window.__notifTimer = null;
+          }
         },
         async fetchNotifs(offset = 0, silent = false) {
           try {
@@ -568,18 +593,20 @@
       if (manual && !r.sent) setTimeout(() => window.refreshOfflineBadge(), 2500);
     };
 
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.addEventListener('message', (evt) => {
-        if (evt.data?.type === 'FLUSH_OFFLINE_EXPENSES') window.flushOfflineQueue();
+    if (!window.__offlineWired) {
+      window.__offlineWired = true;
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.addEventListener('message', (evt) => {
+          if (evt.data?.type === 'FLUSH_OFFLINE_EXPENSES') window.flushOfflineQueue();
+        });
+        window.addEventListener('online', () => window.flushOfflineQueue());
+        window.addEventListener('offline', () => window.refreshOfflineBadge());
+      }
+      // Show any leftover queue on load, and flush it if we are already online.
+      window.refreshOfflineBadge().then((count) => {
+        if (count && navigator.onLine) window.flushOfflineQueue();
       });
-      window.addEventListener('online', () => window.flushOfflineQueue());
-      window.addEventListener('offline', () => window.refreshOfflineBadge());
     }
-    // Show any leftover queue on load, and flush it if we are already online.
-    document.addEventListener('DOMContentLoaded', async () => {
-      const count = await window.refreshOfflineBadge();
-      if (count && navigator.onLine) window.flushOfflineQueue();
-    });
 
     function _urlBase64ToUint8(base64String) {
       const padding = '='.repeat((4 - base64String.length % 4) % 4);
@@ -591,7 +618,9 @@
     // Fix Alpine + hx-boost timing: after HTMX settles (scripts evaluated),
     // re-init any Alpine components that failed because their factory function
     // wasn't yet defined when Alpine's MutationObserver fired.
-    document.body.addEventListener('htmx:afterSettle', function(evt) {
+    if (!window.__alpineReinitWired) {
+      window.__alpineReinitWired = true;
+      document.body.addEventListener('htmx:afterSettle', function(evt) {
       var target = evt.detail && evt.detail.target;
       if (!window.Alpine || !target) return;
       // An outerHTML swap replaces the target, so evt.detail.target can be a

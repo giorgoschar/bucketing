@@ -107,7 +107,7 @@
           <p class="text-xs {% if days_away <= 7 %}text-amber-500{% else %}text-gray-400{% endif %}">
             {% if days_away == 0 %}Due today
             {% elif days_away == 1 %}Tomorrow
-            {% else %}{{ occ.due_date.strftime('%d %b') }} · in {{ days_away }} days{% endif %}
+            {% else %}{{ occ.due_date | dmy_short }} · in {{ days_away }} days{% endif %}
           </p>
         </div>
         <span class="text-sm font-semibold text-gray-700 dark:text-gray-300 flex-shrink-0">
@@ -181,7 +181,7 @@
             {{ txn.notes or (txn.category.name if txn.category else ('Income' if txn.type.value == 'income' else 'Expense')) }}
           </p>
           <div class="flex items-center gap-1.5 mt-0.5">
-            <span class="text-xs text-gray-400">{{ txn.transaction_date.strftime('%d %b') }}</span>
+            <span class="text-xs text-gray-400">{{ txn.transaction_date | dmy_short }}</span>
             {% if txn.bucket %}
             <span class="text-gray-200 dark:text-gray-700">·</span>
             <span class="text-xs text-gray-400 truncate">{{ txn.bucket.icon }} {{ txn.bucket.name }}</span>

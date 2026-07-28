@@ -42,7 +42,7 @@
         <div class="flex-1 min-w-0">
           <p class="text-sm truncate">{{ t.notes or 'No description' }}</p>
           <p class="text-xs text-gray-400 mt-0.5">
-            {{ t.transaction_date.strftime('%d %b %Y') }}
+            {{ t.transaction_date | dmy }}
             {% if t.bucket %}· {{ t.bucket.icon }} {{ t.bucket.name }}{% endif %}
             {% if t.paid_by_user %}· {{ t.paid_by_user.display_name }}{% endif %}
           </p>

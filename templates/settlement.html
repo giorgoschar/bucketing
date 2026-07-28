@@ -121,7 +121,7 @@
           paid
           <span class="font-medium text-gray-700 dark:text-gray-300">{{ h.to_name }}</span>
           {% if h.bucket_name %}<span class="text-gray-400">· {{ h.bucket_name }}</span>{% endif %}
-          {% if h.created_at %}<span class="text-gray-400">· {{ h.created_at.strftime('%d %b %Y') }}</span>{% endif %}
+          {% if h.created_at %}<span class="text-gray-400">· {{ h.created_at | dmy }}</span>{% endif %}
           {% if h.note %}<span class="text-gray-400">· {{ h.note }}</span>{% endif %}
         </span>
         <span class="font-semibold text-emerald-600 dark:text-emerald-400 flex-shrink-0">

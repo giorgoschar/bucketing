@@ -26,7 +26,7 @@
       <tbody class="divide-y divide-gray-50 dark:divide-gray-800">
         {% for occ in occurrences %}
         <tr class="group">
-          <td class="py-2.5 text-gray-700 dark:text-gray-300">{{ occ.due_date.strftime('%d %b %Y') }}</td>
+          <td class="py-2.5 text-gray-700 dark:text-gray-300">{{ occ.due_date | dmy }}</td>
           <td class="py-2.5 font-medium text-gray-900 dark:text-gray-100">
             {{ occ.amount | currency(bill.currency) if occ.amount else bill.amount | currency(bill.currency) }}
           </td>
@@ -42,7 +42,7 @@
             {% else %}—{% endif %}
           </td>
           <td class="py-2.5 text-gray-400 text-xs">
-            {% if occ.paid_at %}{{ occ.paid_at.strftime('%d %b %Y') }}{% else %}—{% endif %}
+            {% if occ.paid_at %}{{ occ.paid_at | dmy }}{% else %}—{% endif %}
           </td>
         </tr>
         {% endfor %}

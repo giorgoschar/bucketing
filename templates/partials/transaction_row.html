@@ -8,7 +8,7 @@
       {{ txn.notes or (txn.category.name if txn.category else 'Expense') }}
     </p>
     <div class="flex items-center gap-1.5 mt-0.5 flex-wrap">
-      <span class="text-xs text-gray-400">{{ txn.transaction_date.strftime('%d %b %Y') }}</span>
+      <span class="text-xs text-gray-400">{{ txn.transaction_date | dmy }}</span>
       {% if txn.paid_by_user %}
       <span class="text-gray-200 dark:text-gray-700">·</span>
       <span class="text-xs" style="color: {{ txn.paid_by_user.avatar_color }}">{{ txn.paid_by_user.display_name }}</span>

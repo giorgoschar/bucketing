@@ -74,8 +74,8 @@
         <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Trip</p>
         {% if trip.start and trip.end %}
         <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
-          {{ trip.start.strftime('%d %b') }} – {{ trip.end.strftime('%d %b %Y') }}
-          {% if trip.days %}<span class="text-gray-400">· {{ trip.days }} day{{ '' if trip.days == 1 else 's' }}</span>{% endif %}
+          {{ trip.start | dmy_short }} – {{ trip.end | dmy }}
+          {% if trip.days %}<span class="text-gray-400">· {{ trip.days }} day{{ '' if trip.days == 1 else 's' }}{% if trip.nights %} / {{ trip.nights }} night{{ '' if trip.nights == 1 else 's' }}{% endif %}</span>{% endif %}
         </p>
         {% else %}
         <p class="text-sm text-gray-400 mt-1">Set trip dates to see daily spend</p>
@@ -160,7 +160,7 @@
       {% endif %}
     </div>
     {% if savings.target_date and not savings.reached %}
-    <p class="text-[11px] text-gray-400 mt-2">Target: {{ savings.target_date.strftime('%d %b %Y') }}</p>
+    <p class="text-[11px] text-gray-400 mt-2">Target: {{ savings.target_date | dmy }}</p>
     {% endif %}
     {% endif %}
   </div>
@@ -316,7 +316,7 @@
               <span class="font-medium text-gray-700 dark:text-gray-300">{{ h.from_name }}</span>
               paid
               <span class="font-medium text-gray-700 dark:text-gray-300">{{ h.to_name }}</span>
-              {% if h.created_at %}· {{ h.created_at.strftime('%d %b %Y') }}{% endif %}
+              {% if h.created_at %}· {{ h.created_at | dmy }}{% endif %}
             </span>
             <span class="font-semibold text-emerald-600 dark:text-emerald-400 flex-shrink-0">
               {{ h.amount | currency(household.default_currency) }}
@@ -422,12 +422,17 @@
       <div x-show="type === 'trip'" x-cloak class="grid grid-cols-2 gap-3 py-2">
         <div>
           <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Trip starts</label>
-          <input type="date" name="start_date" value="{{ bucket.start_date.isoformat() if bucket.start_date else '' }}"
+          <input type="date" name="start_date" :disabled="type !== 'trip'"
+                 value="{{ bucket.start_date.isoformat() if bucket.start_date else '' }}"
                  class="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm outline-none focus:border-primary-500">
         </div>
         <div>
           <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Trip ends</label>
-          <input type="date" name="end_date" value="{{ bucket.end_date.isoformat() if bucket.end_date else '' }}"
+          {# Disabled when hidden: x-show only sets display:none, so the field
+             still submits, and FastAPI takes the LAST duplicate — the empty
+             savings end_date below was silently wiping the trip end date. #}
+          <input type="date" name="end_date" :disabled="type !== 'trip'"
+                 value="{{ bucket.end_date.isoformat() if bucket.end_date else '' }}"
                  class="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm outline-none focus:border-primary-500">
         </div>
       </div>
@@ -436,12 +441,14 @@
         <div>
           <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Goal amount</label>
           <input type="number" name="goal_amount" step="0.01" min="0" placeholder="0.00"
+                 :disabled="type !== 'savings'"
                  value="{{ bucket.goal_amount or '' }}"
                  class="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm outline-none focus:border-primary-500">
         </div>
         <div>
           <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Target date</label>
-          <input type="date" name="end_date" value="{{ bucket.end_date.isoformat() if bucket.end_date else '' }}"
+          <input type="date" name="end_date" :disabled="type !== 'savings'"
+                 value="{{ bucket.end_date.isoformat() if bucket.end_date else '' }}"
                  class="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm outline-none focus:border-primary-500">
         </div>
       </div>

@@ -39,6 +39,52 @@ def to_base(amount, exchange_rate) -> float:
     return float(amount) * float(rate)
 
 
+def shares_for(txn, member_ids: set[str] | None = None) -> dict[str, float]:
+    """Who is responsible for how much of this expense, in household currency.
+
+    Three cases, and the middle one is the reason this helper exists:
+
+    * **Explicit splits covering the total** — each user takes their split.
+    * **Explicit splits covering only part of it** — the payer absorbs the
+      remainder. Logging a EUR 100 dinner as a single EUR 50 split for the
+      other person is the natural way to record "you owe me half", but the
+      other EUR 50 used to be attributed to nobody. Balances then failed to sum
+      to zero, inflating the payer's credit and making the settle-up figures
+      wrong.
+    * **No splits** — divided equally among ``member_ids`` when given (the
+      shared-bucket convention), otherwise borne entirely by the payer.
+
+    The returned shares always sum to the transaction total, which is what
+    guarantees household balances net to zero.
+    """
+    total = to_base(txn.amount, txn.exchange_rate)
+    shares: dict[str, float] = defaultdict(float)
+
+    if txn.splits:
+        assigned = 0.0
+        for s in txn.splits:
+            value = split_to_base(s, txn)
+            shares[s.user_id] += value
+            assigned += value
+        remainder = total - assigned
+        if abs(remainder) > 0.005:
+            if txn.paid_by:
+                shares[txn.paid_by] += remainder
+            elif member_ids:
+                per = remainder / len(member_ids)
+                for uid in member_ids:
+                    shares[uid] += per
+        return dict(shares)
+
+    if member_ids:
+        per = total / len(member_ids)
+        for uid in member_ids:
+            shares[uid] += per
+    elif txn.paid_by:
+        shares[txn.paid_by] += total
+    return dict(shares)
+
+
 def split_to_base(split, txn) -> float:
     """A split share converted to the household currency.
 
@@ -610,14 +656,10 @@ def compute_bucket_net(db: Session, bucket_id: str) -> dict[str, float]:
     for t in txns:
         if t.paid_by:
             actually_paid[t.paid_by] += to_base(t.amount, t.exchange_rate)
-        if t.splits:
-            for s in t.splits:
-                owes[s.user_id] += split_to_base(s, t)
-        else:
-            # No splits → split equally among all members who appear in this bucket
-            share = to_base(t.amount, t.exchange_rate) / len(user_ids)
-            for uid in user_ids:
-                owes[uid] += share
+        # shares_for() always accounts for the full amount, including any part
+        # not covered by explicit splits, so the nets below sum to zero.
+        for uid, share in shares_for(t, user_ids).items():
+            owes[uid] += share
 
     net: dict[str, float] = defaultdict(float)
     for uid in user_ids:
@@ -1555,9 +1597,13 @@ def get_trip_summary(db: Session, bucket: Bucket) -> dict:
     start = bucket.start_date or (min(txn_dates) if txn_dates else None)
     end = bucket.end_date or (max(txn_dates) if txn_dates else None)
 
-    days = None
+    # Inclusive day count: 7 Aug to 15 Aug is 9 days and 8 nights. Both are
+    # reported because "how long was the trip" is genuinely ambiguous, and the
+    # per-day figure below divides by days.
+    days = nights = None
     if start and end:
         days = (end - start).days + 1
+        nights = max(days - 1, 0)
 
     today = date.today()
     status, days_until, days_remaining = "none", None, None
@@ -1572,13 +1618,12 @@ def get_trip_summary(db: Session, bucket: Bucket) -> dict:
             days_remaining = (bucket.end_date - today).days + 1
 
     # Per-person share, using splits when present and the payer otherwise.
+    # shares_for() accounts for the whole amount, so these add up to the trip
+    # total even when splits only cover part of an expense.
     per_person: dict[str, float] = defaultdict(float)
     for t in txns:
-        if t.splits:
-            for s in t.splits:
-                per_person[s.user_id] += split_to_base(s, t)
-        elif t.paid_by:
-            per_person[t.paid_by] += to_base(t.amount, t.exchange_rate)
+        for uid, share in shares_for(t).items():
+            per_person[uid] += share
 
     users = {}
     if per_person:
@@ -1589,6 +1634,7 @@ def get_trip_summary(db: Session, bucket: Bucket) -> dict:
         "start":          start,
         "end":            end,
         "days":           days,
+        "nights":         nights,
         "per_day":        round(total / days, 2) if days and days > 0 else None,
         "status":         status,
         "days_until":     days_until,
@@ -1799,16 +1845,12 @@ def get_person_summary(
         if t.paid_by == user_id:
             paid_out += amount
 
-        if t.splits:
-            share = next(
-                (split_to_base(s, t) for s in t.splits if s.user_id == user_id), 0.0
-            )
-            if share:
-                shared_count += 1
-        elif t.paid_by == user_id:
-            share = amount
-        else:
-            share = 0.0
+        # Same accounting as settlement: an expense whose splits do not cover
+        # the full amount leaves the remainder with the payer, so "my share"
+        # here agrees with the settlement position below.
+        share = shares_for(t).get(user_id, 0.0)
+        if t.splits and any(s.user_id == user_id for s in t.splits):
+            shared_count += 1
 
         if share:
             my_share += share

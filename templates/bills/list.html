@@ -46,7 +46,7 @@
       <div id="occ-{{ occ.id }}" class="px-5 py-4 flex items-center gap-3">
         <div class="flex-1 min-w-0">
           <p class="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{{ bill.name }}</p>
-          <p class="text-xs text-amber-500 mt-0.5">Due {{ occ.due_date.strftime('%d %b %Y') }} · Enter amount to record</p>
+          <p class="text-xs text-amber-500 mt-0.5">Due {{ occ.due_date | dmy }} · Enter amount to record</p>
         </div>
         {% include "partials/pay_bill_button.html" %}
       </div>
@@ -67,7 +67,7 @@
       <div id="occ-{{ occ.id }}" class="px-5 py-4 flex items-center gap-3">
         <div class="flex-1 min-w-0">
           <p class="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{{ bill.name }}</p>
-          <p class="text-xs text-red-400 mt-0.5">Due {{ occ.due_date.strftime('%d %b %Y') }}</p>
+          <p class="text-xs text-red-400 mt-0.5">Due {{ occ.due_date | dmy }}</p>
         </div>
         <span class="text-sm font-bold text-gray-900 dark:text-gray-100 flex-shrink-0">
           {% if occ.amount %}{{ occ.amount | currency(bill.currency) }}
@@ -94,7 +94,7 @@
         <div class="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0 mt-1"></div>
         <div class="flex-1 min-w-0">
           <p class="text-sm font-medium truncate">{{ bill.name }}</p>
-          <p class="text-xs text-gray-400 mt-0.5">{{ occ.due_date.strftime('%d %b %Y') }}
+          <p class="text-xs text-gray-400 mt-0.5">{{ occ.due_date | dmy }}
             {% set days_left = (occ.due_date - today).days %}
             {% if days_left == 0 %} · <span class="text-amber-500 font-medium">Today</span>
             {% elif days_left == 1 %} · <span class="text-amber-500 font-medium">Tomorrow</span>

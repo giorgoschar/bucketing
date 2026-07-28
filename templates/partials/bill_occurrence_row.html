@@ -6,7 +6,7 @@
   </div>
   <div class="flex-1 min-w-0">
     <p class="text-sm font-medium">{{ bill.name }}</p>
-    <p class="text-xs text-gray-400">{{ occ.due_date.strftime('%d %b %Y') }}
+    <p class="text-xs text-gray-400">{{ occ.due_date | dmy }}
       {% if occ.status.value == 'paid' %} · <span class="text-emerald-500 font-medium">Paid</span>
       {% elif occ.status.value == 'skipped' %} · <span class="text-gray-400">Skipped</span>
       {% elif bill.is_auto_pay and occ.amount %} · <span class="text-indigo-500 font-medium">Auto-pay set ✓</span>

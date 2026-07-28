@@ -16,7 +16,7 @@
       {% for txn in transactions %}
       <tr class="group hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
         <td class="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">
-          {{ txn.transaction_date.strftime('%d %b %Y') }}
+          {{ txn.transaction_date | dmy }}
         </td>
         <td class="hidden sm:table-cell px-3 py-3">
           <div class="w-8 h-8 rounded-lg flex items-center justify-center text-base flex-shrink-0"

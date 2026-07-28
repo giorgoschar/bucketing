@@ -287,3 +287,37 @@ def test_invalid_date_is_rejected(client, authed, trip):
         "name": "Trip", "type": "trip", "start_date": "not-a-date",
     }, headers=authed.headers)
     assert r.status_code == 400
+
+
+def test_trip_end_date_survives_a_save(client, db, authed, trip):
+    """Regression: two inputs named end_date meant the hidden savings field
+    (empty) overwrote the trip value, because FastAPI takes the last duplicate
+    and x-show does not stop a field submitting."""
+    r = client.post(f"/buckets/{trip.id}/edit", data={
+        "name": "Florence 2026", "type": "trip",
+        "start_date": "2026-08-07", "end_date": "2026-08-15",
+    }, headers=authed.headers)
+    assert r.status_code == 302
+
+    db.expire_all()
+    b = db.get(Bucket, trip.id)
+    assert b.start_date == date(2026, 8, 7)
+    assert b.end_date == date(2026, 8, 15), "trip end date was not saved"
+
+
+def test_trip_reports_days_and_nights(db, trip):
+    trip.start_date = date(2026, 8, 7)
+    trip.end_date = date(2026, 8, 15)
+    db.commit()
+
+    s = get_trip_summary(db, trip)
+    assert s["days"] == 9      # inclusive
+    assert s["nights"] == 8
+
+
+def test_single_day_trip(db, trip):
+    trip.start_date = trip.end_date = date(2026, 8, 7)
+    db.commit()
+    s = get_trip_summary(db, trip)
+    assert s["days"] == 1
+    assert s["nights"] == 0
