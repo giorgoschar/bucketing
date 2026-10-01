@@ -15,7 +15,17 @@ if [ "${BACKUP_BEFORE_MIGRATE:-true}" = "true" ] \
             echo "Backing up database to $dump..."
             # libpq rejects SQLAlchemy's "postgresql+driver://" scheme.
             pg_url=$(printf '%s' "$DATABASE_URL" | sed -E 's#^postgres(ql)?\+[^:]*://#postgresql://#')
-            pg_dump "$pg_url" | gzip > "$dump.partial"
+            if ! pg_dump "$pg_url" | gzip > "$dump.partial"; then
+                rm -f "$dump.partial"
+                {
+                    echo "ERROR: the pre-migration backup failed; refusing to migrate without a safety dump."
+                    echo "  client: $(pg_dump --version 2>&1)"
+                    echo "  A 'server version mismatch' means pg_dump is older than the database server:"
+                    echo "  install a pg_dump whose major version is >= the server's."
+                    echo "  Set BACKUP_BEFORE_MIGRATE=false to skip the dump (not recommended) or fix the client version."
+                } >&2
+                exit 1
+            fi
             mv "$dump.partial" "$dump"
             ;;
     esac

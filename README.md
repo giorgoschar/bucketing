@@ -95,6 +95,8 @@ Restore steps are in [`docs/DEPLOY-COOLIFY.md`](docs/DEPLOY-COOLIFY.md#5-restore
 
 ### Deploying on Coolify
 
+Production runs as a Coolify Dockerfile app + managed PostgreSQL: see [`docs/DEPLOY-COOLIFY.md`](docs/DEPLOY-COOLIFY.md#deploying-as-a-dockerfile-application-with-a-coolify-managed-postgresql-how-production-runs).
+
 See [`docs/DEPLOY-COOLIFY.md`](docs/DEPLOY-COOLIFY.md) for the full guide,
 including every production environment variable.
 

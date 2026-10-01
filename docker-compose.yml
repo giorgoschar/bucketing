@@ -27,7 +27,7 @@ services:
       - ./uploads:/app/uploads
       - backups:/backups
     environment:
-      - DATABASE_URL=${DATABASE_URL:-postgresql://expenses_user:${POSTGRES_PASSWORD:-localdevpassword}@db:5432/expenses}
+      - DATABASE_URL=postgresql://expenses_user:${POSTGRES_PASSWORD:-localdevpassword}@db:5432/expenses
       - APP_SECRET_KEY=${APP_SECRET_KEY:?set APP_SECRET_KEY}
       - FIELD_ENCRYPTION_KEY=${FIELD_ENCRYPTION_KEY:-}
       - DEBUG=false
@@ -67,7 +67,7 @@ services:
     command: ["redis-server", "--save", "", "--appendonly", "no"]
 
   # Daily pg_dump + uploads tarball into the `backups` volume. Runs from the
-  # app image: its pg_dump (v17) can dump a 16 or 17 server, and the script is
+  # app image: its pg_dump (v18) can dump a 16, 17 or 18 server, and the script is
   # baked in (no relative ./scripts bind that Coolify may not provide).
   # Drop this service when the database is a Coolify-managed Postgres with
   # Coolify's own scheduled backups enabled (see docs/DEPLOY-COOLIFY.md).
@@ -78,7 +78,7 @@ services:
     # Override the image entrypoint (which would run migrations + uvicorn).
     entrypoint: ["sh", "-c", "while true; do /app/scripts/backup.sh || echo 'BACKUP FAILED' >&2; sleep 86400; done"]
     environment:
-      - DATABASE_URL=${DATABASE_URL:-postgresql://expenses_user:${POSTGRES_PASSWORD:-localdevpassword}@db:5432/expenses}
+      - DATABASE_URL=postgresql://expenses_user:${POSTGRES_PASSWORD:-localdevpassword}@db:5432/expenses
       - BACKUP_KEEP_DAYS=${BACKUP_KEEP_DAYS:-30}
     volumes:
       - ./uploads:/app/uploads:ro

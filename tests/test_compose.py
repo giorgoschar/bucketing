@@ -55,3 +55,13 @@ def test_every_documented_variable_reaches_the_app():
     for name in ("ALLOW_REGISTRATION", "CORS_ALLOWED_ORIGINS", "POSOKANEI_BASE_URL",
                  "JWT_SECRET_KEY", "BACKUP_BEFORE_MIGRATE"):
         assert name in documented, f"{name} missing from the DEPLOY-COOLIFY.md table"
+
+
+def test_database_url_is_hardcoded_to_the_bundled_db():
+    """A stray DATABASE_URL (.env.example's localhost, a sqlite URL) must not
+    silently replace the bundled db for the app or backup service."""
+    for name in ("app", "backup"):
+        env = SERVICES[name]["environment"]
+        url = next(e for e in env if e.startswith("DATABASE_URL="))
+        assert "${DATABASE_URL" not in url
+        assert re.search(r"@db:5432/", url), url

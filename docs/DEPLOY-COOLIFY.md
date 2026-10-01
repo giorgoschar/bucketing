@@ -3,6 +3,48 @@
 The app ships as a Docker Compose stack (`docker-compose.yml`): `db` (Postgres 16),
 `app` (FastAPI/uvicorn), and `backup` (daily `pg_dump` + uploads tarball).
 
+## Deploying as a Dockerfile application with a Coolify-managed PostgreSQL (how production runs)
+
+Production is **not** the compose stack: it is one Coolify *Dockerfile* application
+(built from this repo's `Dockerfile`) plus a separate Coolify-managed PostgreSQL
+(currently **18**). The image ships the PGDG `pg_dump` 18, which can dump 16, 17
+and 18 servers (Debian's own client is 17 and refuses a PG 18 server, which would
+abort the pre-migrate backup and therefore the deploy).
+
+**Environment Variables** (Coolify app → Environment Variables):
+
+- `DATABASE_URL`: the managed database's *internal* URL in plain `postgresql://user:pass@host:5432/db` form (not `postgres://` with extra options, no `+driver`).
+- `APP_SECRET_KEY`: keep the existing production value.
+- `APP_BASE_URL`: the public https URL (invite links, ingest URL).
+- `FIELD_ENCRYPTION_KEY`: optional; if set it must be a valid Fernet key (a malformed one stops the app at startup).
+- `DEBUG=false`, `TRUST_PROXY_HEADERS=true` (Traefik sets `X-Forwarded-*`), `APP_TIMEZONE=Europe/Athens`.
+- `VAPID_PRIVATE_KEY`, `VAPID_PUBLIC_KEY`, `VAPID_CLAIMS_EMAIL` for web push.
+- `POSOKANEI_ENABLED=false` while the PosoKanei API returns 403.
+- `RATE_LIMIT_STORAGE_URI`: optional (e.g. a Coolify Redis).
+
+**Persistent storage** (Coolify app → Storage):
+
+- Mount a volume at `/app/uploads`. Without it every receipt is lost on each redeploy.
+- Optionally mount one at `/backups` so pre-migrate dumps survive redeploys.
+- The container runs as uid `10001`. If the storage already holds root-owned files, fix it once on the Coolify server (use the real volume name or host path from the Storage tab):
+  ```sh
+  docker run --rm -v <volume-name>:/data alpine chown -R 10001 /data
+  # or, for a host bind mount: sudo chown -R 10001 /path/to/uploads
+  ```
+
+**Backups**: enable scheduled backups on the managed database in Coolify (that is the
+real backup). In addition, `entrypoint.sh` takes a dump into `/backups` before every
+migration. `/backups` is writable inside the image but ephemeral unless mounted, so
+mount a volume if you want those dumps to outlive the container. The dump is
+fail-closed: if it fails, the migration does not run. `BACKUP_BEFORE_MIGRATE=false`
+skips it (not recommended).
+
+Follow the section 0 upgrade checklist as well (manual dump, receipts tarball, unpaid-bill
+check), adapting the dump command to the managed database, e.g.
+`pg_dump "$DATABASE_URL" | gzip > expenses-pre-v2.sql.gz` with a pg_dump 18 client.
+
+The sections below describe the compose stack, for local and self-hosted use.
+
 ## 0. Upgrading an existing v1 deployment (first v2 deploy) — checklist
 
 Do these **before** pressing Deploy:
