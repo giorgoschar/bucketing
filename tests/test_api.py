@@ -472,3 +472,19 @@ def test_insights_money_fields_stay_json_numbers(client, db, api):
     row = body["budget_status"][0]
     assert all(isinstance(row[k], float) for k in ("spent", "budget", "remaining"))
     assert isinstance(body["categories"][0]["amount"], float)
+
+
+def test_insights_paid_by_shape_has_paid_share_and_amount_alias(client, db, api):
+    from app.clock import local_today
+    from app.models import Transaction, TransactionType
+
+    headers, hh = api
+    db.add(Transaction(
+        bucket_id=hh.bucket_id, household_id=hh.household_id, amount=40,
+        currency="EUR", exchange_rate=1, type=TransactionType.expense,
+        transaction_date=local_today(), paid_by=hh.user_id,
+    ))
+    db.commit()
+    entry = client.get("/api/v1/insights", headers=headers).json()["paid_by"][hh.user_id]
+    assert set(entry) == {"name", "color", "paid", "share", "amount"}
+    assert entry["paid"] == entry["amount"] == 40.0 and entry["share"] == 40.0

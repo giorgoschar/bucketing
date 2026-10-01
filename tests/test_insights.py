@@ -1,13 +1,15 @@
 """Insights: date presets, filter consistency and chart scaling."""
 from datetime import date, timedelta
+from decimal import Decimal
 
 import pytest
 
 from app.clock import local_today
-from app.models import Bucket, Category, Transaction
+from app.models import Bucket, Category, Transaction, TransactionSplit
 from app.services import (
     get_insights_bucket_breakdown,
     get_insights_budget_status,
+    get_insights_category_breakdown,
     get_insights_category_trend,
     get_insights_summary,
     resolve_insight_period,
@@ -166,6 +168,77 @@ def test_budget_status_excludes_forecast_excluded_rows(db, data):
     row = next(r for r in get_insights_budget_status(db, data.household_id, None, None)
                if r["bucket"].id == data.bucket_id)
     assert row["spent"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Who paid
+# ---------------------------------------------------------------------------
+
+@pytest.fixture()
+def duo(db, authed):
+    from tests.test_household_settlement import _add_member
+    partner = _add_member(db, authed.household_id, "partner")
+    db.commit()
+    authed.partner_id = partner.id
+    return authed
+
+
+def _paid(db, ctx, amount, splits=(), payer="__me__"):
+    t = Transaction(
+        bucket_id=ctx.bucket_id, household_id=ctx.household_id, amount=amount,
+        currency="EUR", type="expense", transaction_date=local_today(),
+        paid_by=ctx.user_id if payer == "__me__" else payer,
+    )
+    db.add(t)
+    db.flush()
+    for uid, amt in splits:
+        db.add(TransactionSplit(transaction_id=t.id, user_id=uid, amount=amt))
+    db.commit()
+    return t
+
+
+def test_who_paid_credits_the_full_amount_to_the_payer(db, duo):
+    a, b = duo.user_id, duo.partner_id
+    _paid(db, duo, 100, [(a, 50), (b, 50)])
+    s = get_insights_summary(db, duo.household_id, None, None)
+    assert s["total_spent"] == Decimal("100")
+    assert s["paid_by"][a]["paid"] == Decimal("100")
+    assert s["paid_by"][a]["share"] == Decimal("50")
+    assert s["paid_by"][b]["paid"] == Decimal("0")
+    assert s["paid_by"][b]["share"] == Decimal("50")
+    assert s["paid_by"][a]["amount"] == s["paid_by"][a]["paid"]
+
+
+def test_partial_split_remainder_is_the_payers_share(db, duo):
+    a, b = duo.user_id, duo.partner_id
+    _paid(db, duo, 100, [(b, 50)])
+    s = get_insights_summary(db, duo.household_id, None, None)
+    assert (s["paid_by"][a]["paid"], s["paid_by"][a]["share"]) == (Decimal("100"), Decimal("50"))
+    assert (s["paid_by"][b]["paid"], s["paid_by"][b]["share"]) == (Decimal("0"), Decimal("50"))
+
+
+def test_paid_sums_to_total_spent_including_unassigned(db, duo):
+    a, b = duo.user_id, duo.partner_id
+    _paid(db, duo, 100, [(a, 50), (b, 50)])
+    _paid(db, duo, 30, payer=b)
+    _paid(db, duo, 20, payer=None)
+    s = get_insights_summary(db, duo.household_id, None, None)
+    assert s["total_spent"] == Decimal("150")
+    assert sum(d["paid"] for d in s["paid_by"].values()) == s["total_spent"]
+    assert s["paid_by"]["unassigned"]["name"] == "Unassigned"
+    assert s["paid_by"]["unassigned"]["paid"] == Decimal("20")
+
+
+def test_paid_by_filter_means_payer_everywhere(db, duo):
+    a, b = duo.user_id, duo.partner_id
+    _paid(db, duo, 100, [(a, 50), (b, 50)])          # A paid, B owes a share
+    s = get_insights_summary(db, duo.household_id, None, None, paid_by=b)
+    assert s["total_spent"] == Decimal("0")
+    s = get_insights_summary(db, duo.household_id, None, None, paid_by=a)
+    assert s["total_spent"] == Decimal("100")
+    assert get_insights_category_breakdown(db, duo.household_id, None, None, paid_by=b) == []
+    rows = get_insights_category_breakdown(db, duo.household_id, None, None, paid_by=a)
+    assert sum(r["amount"] for r in rows) == Decimal("100")
 
 
 # ---------------------------------------------------------------------------

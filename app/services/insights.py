@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
 
-from sqlalchemy import func, or_
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from app.clock import local_today
@@ -18,12 +18,13 @@ from app.models import (
     HouseholdMember,
     RecurringBill,
     Transaction,
-    TransactionSplit,
     TransactionType,
     User,
 )
 from app.money import TENTH, ZERO, quantize, to_decimal
-from app.services.money import base_amount_expr, split_to_base, to_base
+from app.services.money import base_amount_expr, shares_for, to_base
+
+UNASSIGNED_PAYER = "unassigned"
 
 # ---------------------------------------------------------------------------
 # New analytics functions
@@ -318,17 +319,8 @@ def _build_expense_query(
     if category_ids:
         q = q.filter(Transaction.category_id.in_(category_ids))
     if paid_by:
-        split_subq = (
-            db.query(TransactionSplit.transaction_id)
-            .filter(TransactionSplit.user_id == paid_by)
-            .scalar_subquery()
-        )
-        q = q.filter(
-            or_(
-                Transaction.paid_by == paid_by,
-                Transaction.id.in_(split_subq),
-            )
-        )
+        # "Paid by" means the payer: who fronted the money, not who owes a share.
+        q = q.filter(Transaction.paid_by == paid_by)
     return q
 
 
@@ -352,9 +344,7 @@ def _sum_expenses_by(
     month, which is what made the filter bar feel sluggish: a single filter
     change cost ~38 queries. Everything now aggregates in one pass.
 
-    When ``paid_by`` is set the per-user share has to come from the split rows,
-    so the transactions are loaded with their splits and folded in Python;
-    otherwise the database does the aggregation.
+    ``paid_by`` filters on the payer, so the database does the aggregation.
     """
     q = _build_expense_query(
         db, household_id, start, end,
@@ -375,12 +365,7 @@ def _sum_expenses_by(
 
     totals: dict = defaultdict(Decimal)
 
-    if paid_by:
-        for t in q.options(joinedload(Transaction.splits)).all():
-            totals[key_for(t.bucket_id, t.category_id, t.transaction_date)] += _effective_amount(t, paid_by)
-        return dict(totals)
-
-    # No split apportioning needed — let SQL do the grouping.
+    # The payer filter is a plain column filter, so SQL does the grouping.
     if group_by == "bucket":
         cols = [Transaction.bucket_id]
     elif group_by == "category":
@@ -403,16 +388,12 @@ def _sum_expenses_by(
     return dict(totals)
 
 
-def _effective_amount(t: Transaction, paid_by: str | None) -> Decimal:
-    """When a paid_by filter is active, return only that user's share of the transaction.
-    For split transactions: returns the user's split amount (0 if they have no split).
-    Without a filter: returns the full transaction amount.
+def _effective_amount(t: Transaction, paid_by: str | None = None) -> Decimal:
+    """The full amount of the transaction in household currency.
+
+    ``paid_by`` filters by payer upstream, so there is nothing to apportion
+    here; the argument is kept so existing callers stay unchanged.
     """
-    if paid_by and t.splits:
-        for s in t.splits:
-            if s.user_id == paid_by:
-                return split_to_base(s, t)
-        return ZERO
     return to_base(t.amount, t.exchange_rate)
 
 
@@ -431,15 +412,14 @@ def get_insights_summary(
     txns = q.options(joinedload(Transaction.splits)).all()
     total_spent = sum(_effective_amount(t, paid_by) for t in txns)
 
-    paid_by_acc: dict[str, Decimal] = defaultdict(Decimal)
+    paid_acc: dict[str, Decimal] = defaultdict(Decimal)
+    share_acc: dict[str, Decimal] = defaultdict(Decimal)
     for t in txns:
-        if t.splits:
-            for s in t.splits:
-                if paid_by is None or s.user_id == paid_by:
-                    paid_by_acc[s.user_id] += split_to_base(s, t)
-        elif t.paid_by:
-            if paid_by is None or t.paid_by == paid_by:
-                paid_by_acc[t.paid_by] += to_base(t.amount, t.exchange_rate)
+        # Full amount is credited to whoever fronted it; expenses with no payer
+        # go to an "Unassigned" row so the bars still sum to total_spent.
+        paid_acc[t.paid_by or UNASSIGNED_PAYER] += to_base(t.amount, t.exchange_rate)
+        for uid, share in shares_for(t).items():
+            share_acc[uid] += share
 
     members = (
         db.query(User)
@@ -449,14 +429,23 @@ def get_insights_summary(
     )
     member_map = {m.id: m for m in members}
     paid_by_detail = {}
-    for uid, amount in paid_by_acc.items():
-        u = member_map.get(uid)
-        if u:
-            paid_by_detail[uid] = {
-                "name":   u.display_name,
-                "color":  u.avatar_color,
-                "amount": quantize(amount),
-            }
+    for uid in sorted(set(paid_acc) | set(share_acc), key=lambda k: (-paid_acc.get(k, ZERO), k)):
+        paid = paid_acc.get(uid, ZERO)
+        if uid == UNASSIGNED_PAYER:
+            name, color = "Unassigned", "#9ca3af"
+        else:
+            u = member_map.get(uid)
+            if not u:
+                continue
+            name, color = u.display_name, u.avatar_color
+        paid_q = quantize(paid)
+        paid_by_detail[uid] = {
+            "name":   name,
+            "color":  color,
+            "paid":   paid_q,
+            "share":  quantize(share_acc.get(uid, ZERO)),
+            "amount": paid_q,  # alias of ``paid``, kept for one release
+        }
 
     return {
         "total_spent": quantize(total_spent),
@@ -498,17 +487,7 @@ def get_insights_income(
     if category_ids:
         q = q.filter(Transaction.category_id.in_(category_ids))
     if paid_by:
-        split_subq = (
-            db.query(TransactionSplit.transaction_id)
-            .filter(TransactionSplit.user_id == paid_by)
-            .scalar_subquery()
-        )
-        q = q.filter(
-            or_(
-                Transaction.paid_by == paid_by,
-                Transaction.id.in_(split_subq),
-            )
-        )
+        q = q.filter(Transaction.paid_by == paid_by)
     return quantize(q.scalar())
 
 
