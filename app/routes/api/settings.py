@@ -8,7 +8,14 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api_auth import require_api_auth, revoke_member_access
-from app.auth import hash_password, invalidate_user_sessions, security_logger, verify_password
+from app.auth import (
+    hash_password,
+    invalidate_user_sessions,
+    is_locked,
+    register_failed_login,
+    security_logger,
+    verify_password,
+)
 from app.clock import utcnow_naive
 from app.config import settings
 from app.database import get_db
@@ -97,7 +104,10 @@ def change_password(
     db: Session = Depends(get_db),
 ):
     user, hh_id = auth
+    if is_locked(user):  # shares the login lockout: no unlimited guesses
+        raise HTTPException(status_code=429, detail="Too many failed attempts; try again later")
     if not verify_password(body.current_password, user.password_hash):
+        register_failed_login(db, user)
         raise HTTPException(status_code=400, detail="Current password is incorrect")
     if len(body.new_password) < 12:
         raise HTTPException(status_code=400, detail="Password must be at least 12 characters")

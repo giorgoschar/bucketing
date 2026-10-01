@@ -21,6 +21,8 @@ from app.auth import (
     get_current_session,
     hash_password,
     invalidate_user_sessions,
+    is_locked,
+    register_failed_login,
     require_auth,
     require_csrf,
     security_logger,
@@ -54,6 +56,9 @@ AVATAR_COLORS = [
     "#f97316", "#f59e0b", "#10b981", "#06b6d4",
     "#3b82f6", "#84cc16",
 ]
+
+
+LOCKED_MESSAGE = "Too many failed attempts: the account is temporarily locked. Try again later."
 
 
 def _require_owner(db: Session, user_id: str, hh_id: str) -> HouseholdMember:
@@ -214,7 +219,14 @@ def change_password(
     auth=Depends(require_auth),
 ):
     user, hh_id = auth
+    # A session holder must not get unlimited guesses at the password: these
+    # checks share the login lockout.
+    if is_locked(user):
+        ctx = base_ctx(db, user, hh_id)
+        ctx.update({"request": request, "user": user, "pw_error": LOCKED_MESSAGE})
+        return templates.TemplateResponse("settings/index.html", ctx)
     if not verify_password(current_password, user.password_hash):
+        register_failed_login(db, user)
         ctx = base_ctx(db, user, hh_id)
         ctx.update({"request": request, "user": user, "pw_error": "Current password is incorrect."})
         return templates.TemplateResponse("settings/index.html", ctx)
@@ -519,12 +531,19 @@ def disable_totp(
 ):
     user, hh_id = auth
 
+    if is_locked(user):
+        ctx = base_ctx(db, user, hh_id)
+        ctx.update({"request": request, "user": user, "totp_error": LOCKED_MESSAGE})
+        return templates.TemplateResponse("settings/index.html", ctx)
+
     if not verify_password(current_password, user.password_hash):
+        register_failed_login(db, user)
         ctx = base_ctx(db, user, hh_id)
         ctx.update({"request": request, "user": user, "totp_error": "Incorrect password."})
         return templates.TemplateResponse("settings/index.html", ctx)
 
     if not user.totp_secret or not verify_totp(db, user, code):
+        register_failed_login(db, user)
         ctx = base_ctx(db, user, hh_id)
         ctx.update({"request": request, "user": user, "totp_error": "Invalid authenticator code."})
         return templates.TemplateResponse("settings/index.html", ctx)

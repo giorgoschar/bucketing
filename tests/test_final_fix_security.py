@@ -111,3 +111,75 @@ def test_self_disable_then_re_enroll_in_same_browser(client, db, authed):
     db.expire_all()
     assert db.get(User, authed.user_id).totp_enabled is True
     assert client.get("/dashboard").status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# A11: current-password checks count towards the account lockout
+# ---------------------------------------------------------------------------
+
+def _almost_locked(db, user_id):
+    from app.auth import LOCKOUT_THRESHOLD
+
+    u = db.get(User, user_id)
+    u.failed_logins = LOCKOUT_THRESHOLD - 1
+    db.commit()
+
+
+def _assert_locked(db, user_id):
+    db.expire_all()
+    assert db.get(User, user_id).locked_until is not None
+
+
+def test_html_password_change_wrong_password_locks(client, db, authed):
+    _almost_locked(db, authed.user_id)
+    r = client.post("/settings/profile/password", headers=authed.headers, data={
+        "current_password": "wrong-password-xx", "new_password": "another-long-password"})
+    assert r.status_code == 200
+    _assert_locked(db, authed.user_id)
+    before = db.get(User, authed.user_id).password_hash
+    # Locked: even the right password is refused now.
+    r = client.post("/settings/profile/password", headers=authed.headers, data={
+        "current_password": PASSWORD, "new_password": "another-long-password"})
+    assert r.status_code == 200
+    assert "locked" in r.text.lower()
+    db.expire_all()
+    assert db.get(User, authed.user_id).password_hash == before
+
+
+def test_html_2fa_disable_wrong_password_locks(client, db, authed):
+    _almost_locked(db, authed.user_id)
+    r = client.post("/settings/2fa/disable", headers=authed.headers, data={
+        "current_password": "wrong-password-xx", "code": _next_totp(authed.secret)})
+    assert r.status_code == 200
+    _assert_locked(db, authed.user_id)
+    r = client.post("/settings/2fa/disable", headers=authed.headers, data={
+        "current_password": PASSWORD, "code": pyotp.TOTP(authed.secret).at(time.time() + 60)})
+    assert r.status_code == 200
+    assert "locked" in r.text.lower()
+    db.expire_all()
+    assert db.get(User, authed.user_id).totp_enabled is True
+
+
+def test_html_2fa_disable_wrong_code_counts(client, db, authed):
+    _almost_locked(db, authed.user_id)
+    r = client.post("/settings/2fa/disable", headers=authed.headers, data={
+        "current_password": PASSWORD, "code": "000000"})
+    assert r.status_code == 200
+    _assert_locked(db, authed.user_id)
+
+
+def test_api_password_change_wrong_password_locks(client, db, make_household):
+    hh = make_household()
+    r = client.post("/api/v1/auth/login", json={"username": hh.username, "password": PASSWORD})
+    r = client.post("/api/v1/auth/totp/verify",
+                    json={"pending_token": r.json()["pending_token"],
+                          "code": pyotp.TOTP(hh.secret).now()})
+    headers = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    _almost_locked(db, hh.user_id)
+    r = client.post("/api/v1/settings/profile/password", headers=headers, json={
+        "current_password": "wrong-password-xx", "new_password": "another-long-password"})
+    assert r.status_code == 400
+    _assert_locked(db, hh.user_id)
+    r = client.post("/api/v1/settings/profile/password", headers=headers, json={
+        "current_password": PASSWORD, "new_password": "another-long-password"})
+    assert r.status_code == 429
