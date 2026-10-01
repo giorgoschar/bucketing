@@ -2,6 +2,7 @@
 Bills routes: recurring bills + occurrences.
 """
 from datetime import date
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -10,8 +11,10 @@ from sqlalchemy.orm import Session
 from app.auth import require_auth, require_csrf
 from app.bills_service import (
     delete_future_occurrences,
+    effective_overrides,
     generate_occurrences,
     normalise_interval_months,
+    settle_occurrence,
 )
 from app.clock import local_today, utcnow_naive
 from app.config import settings
@@ -22,9 +25,6 @@ from app.models import (
     OccurrenceStatus,
     RecurringBill,
     RecurringBillSplit,
-    Transaction,
-    TransactionSplit,
-    TransactionType,
 )
 from app.services import full_ctx, get_overdue_bills, get_upcoming_bills
 from app.templates import templates
@@ -210,46 +210,20 @@ async def mark_paid(
 
     payer = require_member(db, paid_by, hh_id) or bill.paid_by_default or user.id
 
-    # Auto-create transaction
-    if bill.bucket_id:
-        txn = Transaction(
-            bucket_id=bill.bucket_id,
-            household_id=hh_id,
+    # Form overrides replace the bill's default (scaled) splits.
+    overrides, _ = await _collect_splits(request, hh_id, db)
+    try:
+        paid = settle_occurrence(
+            db, occ,
             amount=pay_amount,
-            currency=bill.currency,
-            type=TransactionType.expense,
             paid_by=payer,
-            category_id=bill.category_id,
-            notes=f"Bill: {bill.name}",
-            transaction_date=occ.due_date,
+            paid_on=utcnow_naive(),
+            split_overrides=effective_overrides(bill, {uid: Decimal(str(a)) for uid, a in overrides}),
         )
-        db.add(txn)
-        db.flush()
-        occ.transaction_id = txn.id
-
-        # Create per-member splits — from form overrides first, then bill.splits defaults
-        overrides, _ = await _collect_splits(request, hh_id, db)
-        split_overrides = dict(overrides)
-
-        if bill.splits:
-            for s in bill.splits:
-                db.add(TransactionSplit(
-                    transaction_id=txn.id,
-                    user_id=s.user_id,
-                    amount=split_overrides.get(s.user_id, s.amount),
-                ))
-        else:
-            for uid, split_amt in split_overrides.items():
-                db.add(TransactionSplit(
-                    transaction_id=txn.id,
-                    user_id=uid,
-                    amount=split_amt,
-                ))
-
-    occ.status = OccurrenceStatus.paid
-    occ.paid_at = utcnow_naive()
-    occ.paid_by = payer
-    if explicit_amount is not None:
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    if paid and explicit_amount is not None:
         occ.amount = explicit_amount
 
     db.commit()

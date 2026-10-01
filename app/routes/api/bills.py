@@ -2,6 +2,7 @@
 API bills routes — CRUD for recurring bills + pay/skip occurrences.
 """
 from datetime import date
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
@@ -10,8 +11,10 @@ from sqlalchemy.orm import Session
 from app.api_auth import require_api_auth
 from app.bills_service import (
     delete_future_occurrences,
+    effective_overrides,
     generate_occurrences,
     normalise_interval_months,
+    settle_occurrence,
 )
 from app.clock import utcnow_naive
 from app.database import get_db
@@ -21,9 +24,6 @@ from app.models import (
     OccurrenceStatus,
     RecurringBill,
     RecurringBillSplit,
-    Transaction,
-    TransactionSplit,
-    TransactionType,
 )
 from app.services import get_overdue_bills, get_upcoming_bills
 from app.validators import (
@@ -332,36 +332,18 @@ def pay_occurrence(
         validate_split_users([s.user_id for s in body.splits], hh_id, db)
     payer = require_member(db, body.paid_by, hh_id) or bill.paid_by_default or user.id
 
-    if bill.bucket_id:
-        txn = Transaction(
-            bucket_id=bill.bucket_id,
-            household_id=hh_id,
+    try:
+        paid = settle_occurrence(
+            db, occ,
             amount=pay_amount,
-            currency=bill.currency,
-            type=TransactionType.expense,
             paid_by=payer,
-            category_id=bill.category_id,
-            notes=f"Bill: {bill.name}",
-            transaction_date=occ.due_date,
+            paid_on=utcnow_naive(),
+            split_overrides=effective_overrides(bill, {s.user_id: Decimal(str(s.amount)) for s in body.splits}),
         )
-        db.add(txn)
-        db.flush()
-        occ.transaction_id = txn.id
-
-        # Apply splits: body overrides first, then bill default splits
-        split_map = {s.user_id: s.amount for s in body.splits}
-        if bill.splits:
-            for s in bill.splits:
-                amt = split_map.get(s.user_id, float(s.amount))
-                db.add(TransactionSplit(transaction_id=txn.id, user_id=s.user_id, amount=amt))
-        elif split_map:
-            for uid, amt in split_map.items():
-                db.add(TransactionSplit(transaction_id=txn.id, user_id=uid, amount=amt))
-
-    occ.status  = OccurrenceStatus.paid
-    occ.paid_at = utcnow_naive()
-    occ.paid_by = payer
-    if explicit_amount is not None:
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    if paid and explicit_amount is not None:
         occ.amount = explicit_amount
 
     db.commit()
