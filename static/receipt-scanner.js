@@ -10,10 +10,9 @@
  * qr-scanner and tesseract.min.js are loaded by <script> tags on the scan page;
  * pdf.js is imported on first use. Per-page defaults come from data-init.
  */
-var TESS_BASE = location.origin + '/static/vendor/tesseract';
-var PDFJS_BASE = '/static/vendor/pdfjs';
-
 function receiptScanner() {
+  const TESS_BASE = location.origin + '/static/vendor/tesseract';
+  const PDFJS_BASE = '/static/vendor/pdfjs';
   return {
     // --- state ---
     file: null,

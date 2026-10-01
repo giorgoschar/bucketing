@@ -699,3 +699,20 @@ def test_service_worker_precaches_new_static_files():
     sw = (STATIC / "sw.js").read_text()
     assert "/static/receipt-scanner.js" in sw
     assert "expenses-v7'" not in sw
+
+
+def test_offline_save_failure_is_reported_not_swallowed():
+    """The submit is cancelled before the IndexedDB save; if the save throws the
+    expense is neither sent nor queued, so the user must be told."""
+    js = (STATIC / "expense-wizard.js").read_text()
+    save = js.index("await window.offlineExpenses.saveOfflineTransaction")
+    assert js[:save].rstrip().endswith("try {")
+    catch = js.index("catch (err)", save)
+    assert "NOT saved" in js[catch:catch + 800] and "return;" in js[catch:catch + 800]
+    # success state only after the try/catch
+    assert js.index("this.step = 5; // hide", catch) > catch
+
+
+def test_scanner_base_paths_are_not_globals():
+    js = (STATIC / "receipt-scanner.js").read_text()
+    assert not re.search(r"^(var|let|const)\s", js, re.M)

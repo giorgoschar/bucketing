@@ -46,7 +46,17 @@ function expenseWizard() {
           alert('Offline support is loading. Please try again in a moment.');
           return;
         }
-        await window.offlineExpenses.saveOfflineTransaction(new FormData(form));
+        try {
+          await window.offlineExpenses.saveOfflineTransaction(new FormData(form));
+        } catch (err) {
+          // IndexedDB unavailable / quota / private mode: the submit was already
+          // cancelled, so say plainly that nothing was saved and keep the form
+          // (and the user's input) exactly as it is.
+          console.error('offline save failed', err);
+          alert("Couldn't save offline \u2014 your expense was NOT saved. " +
+                'Please keep this page open and retry when online.');
+          return;
+        }
         if ('serviceWorker' in navigator && 'SyncManager' in window) {
           const reg = await navigator.serviceWorker.ready;
           await reg.sync.register('submit-expense').catch(() => {});
