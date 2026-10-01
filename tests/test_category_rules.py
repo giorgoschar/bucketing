@@ -255,6 +255,23 @@ def test_saving_a_scan_learns_the_rule(client, db, cats):
     assert rule.category_id == cats.groceries_id
 
 
+def test_rule_learning_failure_never_fails_a_saved_expense(client, db, cats, monkeypatch):
+    from app.models import Transaction
+
+    def boom(*a, **kw):
+        raise RuntimeError("rule store down")
+
+    monkeypatch.setattr("app.routes.transactions.learn_rule", boom)
+    r = client.post("/transactions", data={
+        "bucket_id": cats.bucket_id, "transaction_date": "2026-07-20",
+        "amount": "42.50", "type": "expense",
+        "category_id": cats.groceries_id,
+        "merchant": "Sklavenitis", "remember_rule": "on",
+    }, headers=cats.headers)
+    assert r.status_code == 302
+    assert db.query(Transaction).count() == 1
+
+
 def test_saving_without_the_toggle_learns_nothing(client, db, cats):
     r = client.post("/transactions", data={
         "bucket_id": cats.bucket_id, "transaction_date": "2026-07-20",

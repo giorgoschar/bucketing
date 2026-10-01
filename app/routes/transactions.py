@@ -3,9 +3,8 @@ Transactions routes: add expense wizard + CRUD.
 """
 import csv
 import io
-import os
+import logging
 import re
-import uuid
 from datetime import date
 from html.parser import HTMLParser
 from pathlib import Path
@@ -20,8 +19,10 @@ from fastapi.responses import (
     RedirectResponse,
     StreamingResponse,
 )
+from pydantic import ValidationError
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
+from starlette.concurrency import run_in_threadpool
 
 from app.auth import require_auth, require_csrf
 from app.category_rules import learn_rule, resolve_category
@@ -37,8 +38,15 @@ from app.models import (
     User,
 )
 from app.receipt_parser import _extract_category_hint, parse_receipt_text
+from app.schemas import TransactionCreate
+from app.services import (
+    DeletedTransactionReplay,
+    DuplicateTransaction,
+    find_duplicate_candidates,
+    find_household_duplicates,
+)
+from app.services import create_transaction as create_transaction_service
 from app.services import delete_transaction as delete_transaction_soft
-from app.services import find_duplicate_candidates, find_household_duplicates
 from app.services import full_ctx as _full_ctx
 from app.templates import templates
 from app.validators import (
@@ -47,9 +55,11 @@ from app.validators import (
     require_bucket,
     require_category,
     require_member,
-    require_receipt_content,
+    validate_currency,
     validate_split_users,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/transactions", dependencies=[Depends(require_csrf)])
 
@@ -79,12 +89,6 @@ def _parse_txn_type(value: str) -> TransactionType:
         return TransactionType(value)
     except ValueError:
         raise HTTPException(status_code=400, detail=f"Unknown transaction type '{value}'.") from None
-
-
-def _validate_currency(value: str) -> str:
-    if value not in settings.currencies:
-        raise HTTPException(status_code=400, detail=f"Unsupported currency '{value}'.")
-    return value
 
 
 def _parse_rate(value) -> float:
@@ -362,9 +366,9 @@ async def create_transaction(
     request: Request,
     bucket_id: str = Form(...),
     transaction_date: str = Form(...),
-    amount: float = Form(...),
+    amount: str = Form(...),
     currency: str = Form("EUR"),
-    exchange_rate: float = Form(1.0),
+    exchange_rate: str = Form("1"),
     type: str = Form("expense"),
     category_id: str = Form(""),
     paid_by: str = Form(""),
@@ -380,106 +384,61 @@ async def create_transaction(
     user, hh_id = auth
 
     bucket = require_bucket(db, bucket_id, hh_id)
+    shared = is_shared == "on"
 
-    # Idempotency for offline replays: a queued expense may be retried after
-    # its response was lost, and must not become a second transaction.
-    if client_id.strip():
-        existing = (
-            db.query(Transaction)
-            .filter(
-                Transaction.household_id == hh_id,
-                Transaction.client_id == client_id.strip(),
-            )
-            .first()
-        )
-        if existing and existing.deleted_at is not None:
-            # Do not silently resurrect or duplicate a deleted expense.
-            raise HTTPException(
-                status_code=409,
-                detail="This expense was already submitted and has since been deleted.",
-            )
-        if existing:
-            if request.headers.get("HX-Request"):
-                return templates.TemplateResponse(
-                    "partials/transaction_added.html",
-                    {"request": request, "transaction": existing, "bucket": bucket},
-                )
-            return RedirectResponse(f"/buckets/{existing.bucket_id}", status_code=302)
-
-    txn_amount   = parse_amount(amount, field="Amount")
-    txn_date     = _parse_txn_date(transaction_date)
-    txn_currency = _validate_currency(currency)
-    txn_type     = _parse_txn_type(type)
-    txn_rate     = _parse_rate(exchange_rate)
-    txn_paid_by  = require_member(db, paid_by, hh_id)
-    txn_category = require_category(db, category_id, hh_id)
-
-    # A shared expense with no payer is unusable: settle-up would charge the
-    # shares to members with nobody credited for fronting the money, so the
-    # household appeared to owe an outsider. The submitter is the only sensible
-    # default, and the wizard now preselects them — this covers offline replays
-    # and API clients that omit the field.
-    if txn_type == TransactionType.expense and not txn_paid_by and is_shared == "on":
-        txn_paid_by = user.id
-
-    receipt_path = None
-    if receipt and receipt.filename:
-        ext = os.path.splitext(receipt.filename)[1].lower()
-        if ext not in ALLOWED_RECEIPT_EXTENSIONS:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Unsupported file type '{ext}'. Allowed: {', '.join(ALLOWED_RECEIPT_EXTENSIONS)}",
-            )
-        os.makedirs(UPLOADS_DIR, exist_ok=True)
-        content = await receipt.read(MAX_RECEIPT_SIZE + 1)
-        if len(content) > MAX_RECEIPT_SIZE:
-            raise HTTPException(status_code=400, detail="File too large. Maximum size is 10 MB.")
-        require_receipt_content(ext, content)
-        filename = f"{uuid.uuid4()}{ext}"
-        filepath = os.path.join(UPLOADS_DIR, filename)
-        with open(filepath, "wb") as f:
-            f.write(content)
-        receipt_path = filename
-
-    txn = Transaction(
-        bucket_id=bucket_id,
-        household_id=hh_id,
-        amount=txn_amount,
-        currency=txn_currency,
-        exchange_rate=txn_rate,
-        type=txn_type,
-        paid_by=txn_paid_by,
-        category_id=txn_category,
-        notes=notes.strip() or None,
-        transaction_date=txn_date,
-        receipt_path=receipt_path,
-        client_id=client_id.strip() or None,
-    )
+    splits = await _parse_split_fields(request) if shared else []
     try:
-        db.add(txn)
-        db.flush()
+        data = TransactionCreate(
+            bucket_id=bucket_id,
+            amount=amount,
+            currency=currency,
+            exchange_rate=exchange_rate,
+            type=type,
+            paid_by=paid_by,
+            category_id=category_id,
+            notes=notes,
+            transaction_date=transaction_date,
+            splits=splits,
+            client_id=client_id,
+        )
+    except ValidationError as exc:
+        # Keep the form's user-facing error rendering (HTTPException handler).
+        raise HTTPException(status_code=400, detail=_first_error(exc)) from None
 
-        # Handle splits if shared
-        if is_shared == "on":
-            split_data = await _parse_splits(request, txn.id, txn_amount, hh_id, db)
-            for split in split_data:
-                db.add(split)
+    try:
+        # Sync DB + upload I/O: keep it off the event loop.
+        txn = await run_in_threadpool(
+            create_transaction_service,
+            db, household_id=hh_id, bucket=bucket, user=user,
+            data=data, receipt=receipt, is_shared=shared,
+        )
+    except DeletedTransactionReplay:
+        # Do not silently resurrect or duplicate a deleted expense.
+        raise HTTPException(
+            status_code=409,
+            detail="This expense was already submitted and has since been deleted.",
+        ) from None
+    except DuplicateTransaction as dup:
+        # Offline replay after a lost response: answer as if it just succeeded.
+        txn = dup.existing
+        if request.headers.get("HX-Request"):
+            return templates.TemplateResponse(
+                "partials/transaction_added.html",
+                {"request": request, "transaction": txn, "bucket": bucket},
+            )
+        return RedirectResponse(f"/buckets/{txn.bucket_id}", status_code=302)
 
-        # Teach the categorisation rule from a scan: correcting a merchant's
-        # category once makes it stick for next time.
-        if remember_rule == "on" and txn_category:
-            learn_rule(db, hh_id, merchant or notes, txn_category,
+    # Teach the categorisation rule from a scan: correcting a merchant's
+    # category once makes it stick for next time.
+    if remember_rule == "on" and txn.category_id:
+        try:
+            learn_rule(db, hh_id, merchant or notes, txn.category_id,
                        created_by=user.id)
-
-        db.commit()
-    except Exception:
-        db.rollback()
-        if receipt_path:
-            try:
-                os.remove(os.path.join(UPLOADS_DIR, receipt_path))
-            except OSError:
-                pass
-        raise
+            db.commit()
+        except Exception:
+            # A convenience rule must never fail an expense that is already saved.
+            db.rollback()
+            logger.warning("Could not learn categorisation rule", exc_info=True)
 
     # HTMX: if triggered from wizard, swap to success partial; else redirect
     if request.headers.get("HX-Request"):
@@ -490,38 +449,27 @@ async def create_transaction(
     return RedirectResponse(f"/buckets/{bucket_id}", status_code=302)
 
 
-async def _parse_splits(request: Request, txn_id: str, total, hh_id: str, db: Session):
-    """Build TransactionSplit rows from split_{user_id} form fields.
+def _first_error(exc: ValidationError) -> str:
+    msg = exc.errors()[0]["msg"]
+    return msg.removeprefix("Value error, ")
 
-    Every user id is checked against the household — splits used to accept any
-    user id at all, letting a member attach shares to people outside the
-    household (and corrupting the settlement maths for everyone).
+
+async def _parse_split_fields(request: Request) -> list[dict]:
+    """Collect split_{user_id} form fields as SplitIn-shaped dicts.
+
+    Blank and zero shares are skipped. Household membership and the
+    "splits must not exceed the total" rule are enforced by the shared
+    TransactionCreate model / create_transaction service.
     """
     form = await request.form()
-    parsed: list[tuple[str, object]] = []
+    parsed: list[dict] = []
     for key, value in form.items():
         if not key.startswith("split_") or not str(value).strip():
             continue
         share = parse_amount(value, field="Split amount", allow_blank=True)
         if share and share > 0:
-            parsed.append((key[6:], share))
-
-    if not parsed:
-        return []
-
-    validate_split_users([uid for uid, _ in parsed], hh_id, db)
-
-    split_total = sum(amount for _, amount in parsed)
-    if total is not None and round(float(split_total), 4) > round(float(total), 4):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Split amounts ({float(split_total):.2f}) exceed the transaction total ({float(total):.2f}).",
-        )
-
-    return [
-        TransactionSplit(transaction_id=txn_id, user_id=uid, amount=amount)
-        for uid, amount in parsed
-    ]
+            parsed.append({"user_id": key[6:], "amount": share})
+    return parsed
 
 
 # ---------------------------------------------------------------------------
@@ -580,7 +528,7 @@ async def edit_transaction(
     txn.bucket_id = bucket_id
     txn.transaction_date = _parse_txn_date(transaction_date)
     txn.amount = parse_amount(amount, field="Amount")
-    txn.currency = _validate_currency(currency)
+    txn.currency = validate_currency(currency)
     txn.exchange_rate = _parse_rate(exchange_rate)
     txn.type = _parse_txn_type(type)
     txn.paid_by = require_member(db, paid_by, hh_id)
