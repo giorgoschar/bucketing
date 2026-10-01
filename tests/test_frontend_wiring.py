@@ -717,3 +717,15 @@ def test_offline_save_failure_is_reported_not_swallowed():
 def test_scanner_base_paths_are_not_globals():
     js = (STATIC / "receipt-scanner.js").read_text()
     assert not re.search(r"^(var|let|const)\s", js, re.M)
+
+
+def test_stock_is_in_both_navs_and_mobile_nav_stays_at_seven():
+    """The bottom bar only fits seven items; Stock replaced Settle there
+    (settle up stays in the sidebar and on the My money page)."""
+    base = Path("templates/base.html").read_text()
+    side = base[base.index("{% set nav = ["):base.index("] %}", base.index("{% set nav = ["))]
+    mobile = base[base.index("{% set mobile_nav = ["):base.index("] %}", base.index("{% set mobile_nav = ["))]
+    assert "('/stock'" in side and "('/settlement'" in side
+    assert "('/stock'" in mobile
+    assert mobile.count("('/") <= 7
+    assert 'href="/settlement"' in Path("templates/person.html").read_text()

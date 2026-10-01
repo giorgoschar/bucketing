@@ -324,7 +324,7 @@ def _trend_pct_30d(daily: dict[date, Decimal], today: date) -> Decimal | None:
 def _advice_from(snaps: list[PriceSnapshot], today: date) -> dict:
     out = {"advice": "unknown", "reason": "Not enough price history yet",
            "current_min": None, "median_30d": None, "min_90d": None,
-           "trend_pct_30d": None, "is_discount": False}
+           "trend_pct_30d": None, "is_discount": False, "as_of": None}
     recent = [s for s in snaps if 0 <= (today - s.snapshot_date).days < 90]
     if not recent:
         return out
@@ -342,7 +342,7 @@ def _advice_from(snaps: list[PriceSnapshot], today: date) -> dict:
     min_90d = min(daily.values())
     trend = _trend_pct_30d(daily, today)
     out.update(current_min=current, median_30d=median_30d, min_90d=min_90d,
-               trend_pct_30d=trend, is_discount=is_discount)
+               trend_pct_30d=trend, is_discount=is_discount, as_of=latest)
     if len(daily) < ADVICE_MIN_DAYS or median_30d is None:
         return out
 

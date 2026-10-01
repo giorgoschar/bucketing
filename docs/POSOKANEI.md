@@ -41,6 +41,31 @@ price_stats(min, max, avg), history)`. Money is `Decimal`.
 - `POSOKANEI_ENABLED=false` turns every lookup into `PosokaneiUnavailable`
   without any network traffic.
 
+## Daily refresh and alerts (`app/scheduler.py`)
+
+Two stages run in the daily job (after the budget warnings):
+
+- `_refresh_tracked_prices` — for every non-archived product with a
+  `posokanei_id` whose stock item has `track_price`, call `get()` and store
+  today's `price_snapshots` (skipped when a snapshot for today already
+  exists). After 3 consecutive `PosokaneiUnavailable` errors it logs and
+  stops for the day; the rest of the job still runs.
+- `_notify_stock_and_prices` — `stock_low` (dedupe
+  `stock_low:{item.id}:{today}`) when an item crossed down to its minimum
+  since the start of yesterday; `price_drop` (dedupe
+  `price_drop:{product.id}:{today}`) when today's cheapest price is ≤ 90 % of
+  the 30-day median of daily minimums (needs ≥ 7 days of history).
+
+## Price advice (estimates)
+
+`app/services/stock.py` derives, per product, from the stored snapshots:
+`buy_now` (within 2 % of the 90-day low, or on offer ≥ 10 % under the 30-day
+median), `wait` (≥ 8 % above the 30-day median), else `neutral`; `unknown`
+with fewer than 7 distinct snapshot days. A least-squares trend over the last
+30 days gives "prices rising N %/month". Run-out prediction uses the last 60
+days of "use" movements (≥ 2 needed, ≥ 7 days observed). All of this is
+shown as an estimate.
+
 ## Observed behaviour (2026-10-01)
 
 From the development machine (Greek IP), every request — `POST

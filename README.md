@@ -101,6 +101,7 @@ dates (bill due dates, "today") are evaluated in `APP_TIMEZONE`.
 | `DEBUG` | `false` | Enable FastAPI debug mode |
 | `APP_TIMEZONE` | `UTC` | Calendar timezone for scheduled work. Bill due dates are local calendar dates, so set this to your zone (e.g. `Europe/Athens`) or bills can be judged due a day late |
 | `ENABLE_SCHEDULER` | `true` | Run the daily auto-pay / reminder job. On PostgreSQL only one worker holds the advisory lock and runs it; on SQLite the process always does |
+| `POSOKANEI_ENABLED` | `true` | Look up supermarket prices on PosoKanei for `/stock` (unofficial API; see `docs/POSOKANEI.md`). `false` = no outbound requests, stock pages still work |
 | `TRUST_PROXY_HEADERS` | `false` | Honour `X-Forwarded-For`. Enable **only** behind a proxy that overwrites it, otherwise clients can spoof their IP in logs and rate-limit buckets |
 | `RATE_LIMIT_STORAGE_URI` | *(memory)* | e.g. `redis://host:6379`. Without it, login/2FA limits are counted per worker |
 | `JWT_SECRET_KEY` | *(uses `APP_SECRET_KEY`)* | Separate signing key for mobile/API tokens |

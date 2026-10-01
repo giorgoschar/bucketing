@@ -84,6 +84,8 @@ class NotificationType(str, enum.Enum):
     bill_drift         = "bill_drift"       # bill cost moved vs its own history
     budget_warning     = "budget_warning"   # bucket spend crossed a budget threshold
     general            = "general"
+    stock_low          = "stock_low"        # a stock item fell to its minimum
+    price_drop         = "price_drop"       # tracked product ≥10% under its 30-day median
     # WARNING: on PostgreSQL this is a native ENUM type (created in migration
     # 2c1adaf99fa2), so adding a member here REQUIRES a migration running
     # ALTER TYPE notificationtype ADD VALUE — otherwise inserts fail at runtime
