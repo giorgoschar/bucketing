@@ -345,7 +345,7 @@ class _FakeAsyncClient:
 
 
 def _patch_httpx(response=None, exc=None):
-    return patch("app.routes.transactions.httpx.AsyncClient",
+    return patch("app.routes.scan.httpx.AsyncClient",
                  lambda **kw: _FakeAsyncClient(response, exc))
 
 
@@ -370,7 +370,7 @@ def test_scan_qr_parses_receipt(client, authed):
     "x" * 501,
 ])
 def test_scan_qr_blocks_disallowed_urls_without_fetching(client, authed, url):
-    with patch("app.routes.transactions.httpx.AsyncClient") as ac:
+    with patch("app.routes.scan.httpx.AsyncClient") as ac:
         r = _scan(client, authed, url)
     assert r.status_code == 400
     ac.assert_not_called()

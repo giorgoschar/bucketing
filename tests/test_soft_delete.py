@@ -329,7 +329,7 @@ def test_trash_retention_counts_from_deletion_not_upload(db, make_household):
 
 
 def test_move_failure_keeps_row_deleted_and_file_in_uploads(db, make_household, monkeypatch):
-    import app.services as services
+    import app.services.transactions as services
     hh = make_household()
     _receipt("keep.jpg")
     t = _txn(db, hh, "x", receipt_path="keep.jpg")

@@ -15,7 +15,16 @@ from app.auth import COOKIE_NAME, CSRF_COOKIE_NAME, PENDING_COOKIE_NAME, CSRFErr
 from app.config import settings
 from app.database import Base, engine
 from app.ratelimit import limiter  # single shared instance
-from app.routes import auth, bills, buckets, dashboard, income, transactions
+from app.routes import (
+    auth,
+    bills,
+    buckets,
+    dashboard,
+    income,
+    scan,
+    transactions,
+    transactions_search,
+)
 from app.routes import insights as insights_router
 from app.routes import notifications as notifications_router
 from app.routes import settings as settings_router
@@ -159,6 +168,8 @@ app.include_router(auth.router)
 app.include_router(dashboard.router)
 app.include_router(buckets.router)
 app.include_router(transactions.router)
+app.include_router(scan.router)
+app.include_router(transactions_search.router)
 app.include_router(income.router)
 app.include_router(bills.router)
 app.include_router(settings_router.router)

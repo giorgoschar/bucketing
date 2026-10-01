@@ -419,8 +419,8 @@ def test_api_client_id_of_deleted_transaction_is_409(client, db, api):
 
 def test_api_client_id_race_returns_existing_row(client, db, api, monkeypatch):
     """Two creates both pass the lookup; the loser must get the idempotent reply."""
-    from app import services
     from app.models import Transaction
+    from app.services import transactions as services
 
     headers, hh = api
     body = {"bucket_id": hh.bucket_id, "amount": 10, "type": "expense",

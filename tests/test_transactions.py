@@ -4,7 +4,7 @@ from datetime import date
 import pytest
 
 from app.models import Transaction, TransactionSplit
-from app.routes.transactions import _csv_safe
+from app.routes.transactions_search import _csv_safe
 
 # ---------------------------------------------------------------------------
 # Validation
@@ -164,3 +164,17 @@ def test_comma_decimal_amount_is_stored_exactly(client, db, authed):
     assert r.status_code in (200, 302)
     txn = db.query(Transaction).one()
     assert float(txn.amount) == 12.5
+
+
+def test_split_routers_still_resolve_static_paths(client, authed):
+    """/transactions/search and /scan live in their own routers; they must still
+    win over the parameterised /{txn_id}/... routes and keep their URLs."""
+    assert client.get("/transactions/search").status_code == 200
+    assert client.get("/transactions/scan").status_code == 200
+
+    from app.main import app
+    paths = [getattr(r, "path", "") for r in app.routes]
+    for p in ("/transactions/search", "/transactions/scan", "/transactions/scan/parse",
+              "/transactions/scan/qr", "/transactions/export",
+              "/transactions/check-duplicate", "/transactions/duplicates"):
+        assert p in paths
