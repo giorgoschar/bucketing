@@ -448,3 +448,27 @@ def test_api_unknown_currency_is_422(client, api):
         "bucket_id": hh.bucket_id, "amount": 10, "type": "expense", "currency": "XX",
     })
     assert r.status_code == 422
+
+
+def test_insights_money_fields_stay_json_numbers(client, db, api):
+    """Services return Decimal now; the API must still emit JSON numbers (floats)."""
+    from app.clock import local_today
+    from app.models import Bucket, Transaction, TransactionType
+
+    headers, hh = api
+    db.get(Bucket, hh.bucket_id).budget = 100
+    for amount in (0.10, 0.15):
+        db.add(Transaction(
+            bucket_id=hh.bucket_id, household_id=hh.household_id, amount=amount,
+            currency="EUR", exchange_rate=1, type=TransactionType.expense,
+            transaction_date=local_today(), paid_by=hh.user_id,
+        ))
+    db.commit()
+
+    body = client.get("/api/v1/insights", headers=headers).json()
+    assert body["total_spent"] == 0.25 and isinstance(body["total_spent"], float)
+    assert isinstance(body["net"], float)
+    assert body["kpis"]["avg_per_txn"] == 0.13          # 0.125 rounded half up
+    row = body["budget_status"][0]
+    assert all(isinstance(row[k], float) for k in ("spent", "budget", "remaining"))
+    assert isinstance(body["categories"][0]["amount"], float)

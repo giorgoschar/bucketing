@@ -86,7 +86,7 @@ def settle_household(
         created_by=user.id,
         from_user_id=payer,
         to_user_id=payee,
-        amount=float(value) if value is not None else None,
+        amount=value,
         note=note.strip() or None,
     )
     db.commit()

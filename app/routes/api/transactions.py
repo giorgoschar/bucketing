@@ -3,6 +3,7 @@ API transactions routes — full CRUD + receipt scan.
 """
 import uuid
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
@@ -19,6 +20,7 @@ from app.models import (
     TransactionSplit,
     TransactionType,
 )
+from app.money import quantize
 from app.receipt_parser import match_category, parse_receipt_text
 from app.schemas import TransactionCreate
 from app.services import DeletedTransactionReplay, DuplicateTransaction
@@ -47,14 +49,14 @@ router = APIRouter(prefix="/transactions", tags=["transactions"])
 
 class SplitIn(BaseModel):
     user_id: str
-    amount:  float
+    amount:  Decimal
 
 
 class TransactionIn(BaseModel):
     bucket_id:    str
-    amount:       float
+    amount:       Decimal
     currency:     str   = "EUR"
-    exchange_rate: float = 1.0
+    exchange_rate: Decimal = Decimal("1")
     type:         str   = "expense"
     paid_by:      str | None = None
     category_id:  str | None = None
@@ -70,7 +72,7 @@ def _txn_dict(t: Transaction) -> dict:
         "id":             t.id,
         "bucket_id":      t.bucket_id,
         "household_id":   t.household_id,
-        "amount":         float(t.amount),
+        "amount":         quantize(t.amount),
         "currency":       t.currency,
         "exchange_rate":  float(t.exchange_rate or 1),
         "type":           t.type.value,
@@ -83,7 +85,7 @@ def _txn_dict(t: Transaction) -> dict:
         "exclude_from_settlement": t.exclude_from_settlement,
         "created_at":     t.created_at.isoformat() if t.created_at else None,
         "splits": [
-            {"user_id": s.user_id, "amount": float(s.amount), "is_settled": s.is_settled}
+            {"user_id": s.user_id, "amount": quantize(s.amount), "is_settled": s.is_settled}
             for s in (t.splits or [])
         ],
     }

@@ -175,8 +175,7 @@
         {{ balance.expenses | currency(household.default_currency) }} of {{ bucket.budget | currency(household.default_currency) }}
       </span>
     </div>
-    {# Computed in the route: bucket.budget is a Decimal and balance.expenses a
-       float, and Python refuses to divide the two. #}
+    {# Computed in the route (clamped to 0..100 for the bar width). #}
     {% set pct = budget_pct %}
     <div class="h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
       <div class="h-full rounded-full transition-all {% if pct > 90 %}bg-red-400{% elif pct > 70 %}bg-amber-400{% else %}bg-emerald-400{% endif %}"

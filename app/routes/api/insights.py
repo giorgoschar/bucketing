@@ -6,19 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.api_auth import require_api_auth
 from app.database import get_db
-from app.services import (
-    get_forecast,
-    get_insights_bills_due,
-    get_insights_bucket_breakdown,
-    get_insights_budget_status,
-    get_insights_category_breakdown,
-    get_insights_category_trend,
-    get_insights_income,
-    get_insights_kpis,
-    get_insights_summary,
-    get_monthly_trend,
-    resolve_insight_period,
-)
+from app.services import InsightFilters, build_insights
 
 router = APIRouter(prefix="/insights", tags=["insights"])
 
@@ -58,39 +46,14 @@ def insights(
     """
     user, hh_id = auth
 
-    # Shared with the HTML route so both endpoints resolve ranges identically.
-    period = resolve_insight_period(preset, start_date, end_date)
-    start, end = period["start"], period["end"]
-
-    selected_bucket_ids   = [b for b in bucket_ids.split(",")   if b.strip()]
-    selected_category_ids = [c for c in category_ids.split(",") if c.strip()]
-
-    common = {
-        "bucket_type":  bucket_type,
-        "bucket_ids":   selected_bucket_ids or None,
-        "category_ids": selected_category_ids or None,
-        "paid_by":      paid_by or None,
-    }
-
-    summary          = get_insights_summary(db, hh_id, start, end, **common)
-    income_total     = get_insights_income(db, hh_id, start, end, **common)
-    bills_due        = get_insights_bills_due(
-        db, hh_id, start, end,
-        bucket_type=bucket_type,
-        bucket_ids=selected_bucket_ids or None,
-        category_ids=selected_category_ids or None,
-    )
-    categories       = get_insights_category_breakdown(db, hh_id, start, end, **common)
-    budget_status    = get_insights_budget_status(
-        db, hh_id, start, end,
-        bucket_type=bucket_type,
-        bucket_ids=selected_bucket_ids or None,
-    )
-    bucket_breakdown = get_insights_bucket_breakdown(db, hh_id, start, end, **common)
-    category_trend   = get_insights_category_trend(db, hh_id, n_months=6, **common)
-    trend            = get_monthly_trend(db, hh_id, n_months=6, **common)
-    forecast         = get_forecast(db, hh_id) if period["is_current_month"] else {}
-    kpis             = get_insights_kpis(db, hh_id, start, end, **common)
+    # Shared with the HTML route so both endpoints compute identical figures.
+    data = build_insights(db, hh_id, InsightFilters(
+        preset=preset, start_date=start_date, end_date=end_date,
+        bucket_type=bucket_type, bucket_ids=bucket_ids,
+        category_ids=category_ids, paid_by=paid_by,
+    ))
+    period, start, end = data["period"], data["start"], data["end"]
+    summary = data["summary"]
 
     return {
         "preset":          period["preset"],
@@ -98,12 +61,12 @@ def insights(
         "start_date":      start.isoformat() if start else None,
         "end_date":        end.isoformat()   if end   else None,
         "total_spent":     summary["total_spent"],
-        "income_total":    income_total,
-        "bills_due_total": bills_due,
-        "net":             round(income_total - summary["total_spent"], 2),
+        "income_total":    data["income_total"],
+        "bills_due_total": data["bills_due"],
+        "net":             data["net"],
         "paid_by":         summary.get("paid_by", {}),
-        "kpis":            kpis,
-        "categories":      categories,
+        "kpis":            data["kpis"],
+        "categories":      data["categories"],
         "budget_status":   [
             _bucket_row(row, {
                 "spent":       row["spent"],
@@ -112,13 +75,13 @@ def insights(
                 "remaining":   row["remaining"],
                 "over_budget": row["over_budget"],
             })
-            for row in budget_status
+            for row in data["budget_status"]
         ],
         "bucket_breakdown": [
             _bucket_row(row, {"total": row["total"], "pct": row["pct"]})
-            for row in bucket_breakdown
+            for row in data["bucket_breakdown"]
         ],
-        "category_trend":  category_trend,
-        "monthly_trend":   trend,
-        "forecast":        forecast,
+        "category_trend":  data["category_trend"],
+        "monthly_trend":   data["trend"],
+        "forecast":        data["forecast"],
     }

@@ -96,7 +96,7 @@ def _money(amount, currency: str | None) -> str:
 
     if amount is None:
         return "Amount not set"
-    return format_currency(float(amount), currency or "EUR")
+    return format_currency(amount, currency or "EUR")
 
 
 def _notify_members(db, user_ids, *, household_id, type, title, body, link, dedupe_key):
@@ -390,7 +390,7 @@ def _notify_bill_drift(db, today: date) -> None:
             title=f"{bill.name} is {abs(pct):.0f}% {direction}",
             body=(
                 f"{_money(current, bill.currency)} vs "
-                f"{_money(round(baseline, 2), bill.currency)} average "
+                f"{_money(baseline, bill.currency)} average "
                 f"over the last {len(history)} charges."
             ),
             link="/bills",
@@ -402,6 +402,7 @@ def _notify_bill_drift(db, today: date) -> None:
 def _notify_budget_thresholds(db, today: date) -> None:
     """Warn when a bucket's spend for the current month crosses its budget."""
     from app.models import Bucket, BucketStatus, NotificationType
+    from app.money import ZERO, to_decimal
     from app.services import get_bucket_spend_this_month
 
     buckets = (
@@ -425,10 +426,10 @@ def _notify_budget_thresholds(db, today: date) -> None:
     }
 
     for bucket in buckets:
-        budget = float(bucket.budget)
+        budget = to_decimal(bucket.budget)
         if budget <= 0:
             continue
-        spent = spend_by_hh.get(bucket.household_id, {}).get(bucket.id, 0.0)
+        spent = spend_by_hh.get(bucket.household_id, {}).get(bucket.id, ZERO)
         pct = spent / budget * 100
 
         # Highest crossed threshold only — no point saying 80% and 100% together.
@@ -440,16 +441,16 @@ def _notify_budget_thresholds(db, today: date) -> None:
         if crossed >= 100:
             title = f"{bucket.name} is over budget"
             body = (
-                f"{_money(round(spent, 2), currency)} of "
+                f"{_money(spent, currency)} of "
                 f"{_money(budget, currency)} — "
-                f"{_money(round(spent - budget, 2), currency)} over."
+                f"{_money(spent - budget, currency)} over."
             )
         else:
             title = f"{bucket.name} at {pct:.0f}% of budget"
             body = (
-                f"{_money(round(spent, 2), currency)} of "
+                f"{_money(spent, currency)} of "
                 f"{_money(budget, currency)} — "
-                f"{_money(round(budget - spent, 2), currency)} left this month."
+                f"{_money(budget - spent, currency)} left this month."
             )
 
         _notify_members(

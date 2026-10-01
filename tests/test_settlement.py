@@ -23,7 +23,7 @@ from app.models import (
 from app.services import (
     get_bucket_settlement,
     get_bucket_settlement_history,
-    record_bucket_settlement,
+    record_household_settlement,
 )
 from tests.conftest import PASSWORD
 
@@ -74,8 +74,8 @@ def test_debt_is_computed_before_settling(db, shared):
 
 
 def test_recording_a_settlement_clears_the_balance(db, shared):
-    record_bucket_settlement(db, shared.bucket_id, shared.household_id,
-                             created_by=shared.user_id)
+    record_household_settlement(db, shared.household_id, bucket_id=shared.bucket_id,
+                                created_by=shared.user_id)
     db.commit()
 
     assert get_bucket_settlement(db, shared.bucket_id) == []
@@ -83,8 +83,8 @@ def test_recording_a_settlement_clears_the_balance(db, shared):
 
 
 def test_partial_settlement_leaves_the_remainder(db, shared):
-    record_bucket_settlement(
-        db, shared.bucket_id, shared.household_id,
+    record_household_settlement(
+        db, shared.household_id, bucket_id=shared.bucket_id,
         created_by=shared.user_id,
         from_user_id=shared.partner_id, to_user_id=shared.user_id, amount=20,
     )
@@ -96,10 +96,10 @@ def test_partial_settlement_leaves_the_remainder(db, shared):
 
 
 def test_settling_twice_does_not_go_negative(db, shared):
-    record_bucket_settlement(db, shared.bucket_id, shared.household_id)
+    record_household_settlement(db, shared.household_id, bucket_id=shared.bucket_id)
     db.commit()
     # Second call has nothing outstanding to record.
-    created = record_bucket_settlement(db, shared.bucket_id, shared.household_id)
+    created = record_household_settlement(db, shared.household_id, bucket_id=shared.bucket_id)
     db.commit()
 
     assert created == []
@@ -107,7 +107,7 @@ def test_settling_twice_does_not_go_negative(db, shared):
 
 
 def test_new_expense_after_settling_creates_new_debt(db, shared):
-    record_bucket_settlement(db, shared.bucket_id, shared.household_id)
+    record_household_settlement(db, shared.household_id, bucket_id=shared.bucket_id)
     db.commit()
     assert get_bucket_settlement(db, shared.bucket_id) == []
 
@@ -134,8 +134,8 @@ def test_new_expense_after_settling_creates_new_debt(db, shared):
 
 
 def test_history_records_who_paid_whom(db, shared):
-    record_bucket_settlement(db, shared.bucket_id, shared.household_id,
-                             created_by=shared.user_id, note="cash")
+    record_household_settlement(db, shared.household_id, bucket_id=shared.bucket_id,
+                                created_by=shared.user_id, note="cash")
     db.commit()
 
     history = get_bucket_settlement_history(db, shared.bucket_id)

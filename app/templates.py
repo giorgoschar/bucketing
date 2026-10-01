@@ -3,6 +3,7 @@ from pathlib import Path
 from fastapi.templating import Jinja2Templates
 
 from app.auth import form_csrf_token
+from app.money import quantize
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
 
@@ -14,7 +15,8 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templa
 def format_currency(amount, currency="EUR") -> str:
     symbols = {"EUR": "€", "USD": "$", "GBP": "£", "CHF": "CHF ", "JPY": "¥"}
     symbol = symbols.get(currency, currency + " ")
-    return f"{symbol}{amount:,.2f}"
+    # Round half up first: f"{0.125:,.2f}" alone gives "0.12".
+    return f"{symbol}{quantize(amount or 0):,.2f}"
 
 
 def dmy(value, with_year: bool = True) -> str:

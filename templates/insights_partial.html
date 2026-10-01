@@ -188,7 +188,7 @@
     {% set _e = (forecast.days_elapsed / forecast.days_in_month * 100) %}
     {% set elapsed_pct = _e if _e < 100 else 100 %}
     {% set _denom = forecast.projected if forecast.projected > 0.01 else 0.01 %}
-    {% set _s = (forecast.spend_so_far / _denom * 100) %}
+    {% set _s = ((forecast.spend_so_far | float) / (_denom | float) * 100) %}
     {% set spend_pct = _s if _s < 100 else 100 %}
     <div class="mt-4 space-y-1">
       <div class="flex items-center justify-between text-xs text-gray-400">

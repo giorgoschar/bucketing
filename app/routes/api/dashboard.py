@@ -9,6 +9,7 @@ from app.api_auth import require_api_auth
 from app.clock import local_today
 from app.config import settings
 from app.database import get_db
+from app.money import quantize
 from app.services import get_income_total, get_month_summary, get_overdue_bills, get_upcoming_bills
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -41,7 +42,7 @@ def dashboard_summary(
             "bill_id":  o.bill_id,
             "bill_name": o.bill.name if o.bill else None,
             "due_date": o.due_date.isoformat(),
-            "amount":   float(o.amount or o.bill.amount or 0) if o.bill else float(o.amount or 0),
+            "amount":   quantize(o.amount or (o.bill.amount if o.bill else None)),
             "currency": o.bill.currency if o.bill else None,
             "status":   o.status.value,
         }

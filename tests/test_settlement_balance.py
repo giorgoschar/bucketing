@@ -20,6 +20,7 @@ from app.models import (
     TransactionType,
     User,
 )
+from app.money import quantize
 from app.services import (
     compute_bucket_net,
     get_bucket_settlement,
@@ -106,7 +107,7 @@ def test_shares_always_sum_to_the_total(db, pair):
     ]:
         resolved = [(pair.partner_id if uid is None else uid, amt) for uid, amt in splits]
         t = _expense(db, pair, amount, pair.user_id, resolved)
-        assert round(sum(shares_for(t).values()), 2) == round(amount, 2)
+        assert quantize(sum(shares_for(t).values())) == quantize(amount)
 
 
 # ---------------------------------------------------------------------------

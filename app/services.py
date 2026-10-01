@@ -6,7 +6,9 @@ import os
 import shutil
 import uuid
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import date, timedelta
+from decimal import Decimal
 
 from fastapi import HTTPException, UploadFile
 from sqlalchemy import case, func, or_
@@ -30,6 +32,7 @@ from app.models import (
     TransactionType,
     User,
 )
+from app.money import TENTH, ZERO, percent, quantize, to_decimal
 from app.schemas import TransactionCreate
 from app.validators import (
     require_category,
@@ -53,15 +56,18 @@ def base_amount_expr():
     return Transaction.amount * func.coalesce(Transaction.exchange_rate, 1)
 
 
-def to_base(amount, exchange_rate) -> float:
-    """Python equivalent of :func:`base_amount_expr` for loaded ORM objects."""
+def to_base(amount, exchange_rate) -> Decimal:
+    """Python equivalent of :func:`base_amount_expr` for loaded ORM objects.
+
+    Unrounded: callers sum first and :func:`app.money.quantize` the result.
+    """
     if amount is None:
-        return 0.0
+        return ZERO
     rate = 1 if exchange_rate is None else exchange_rate
-    return float(amount) * float(rate)
+    return to_decimal(amount) * to_decimal(rate)
 
 
-def shares_for(txn, member_ids: set[str] | None = None) -> dict[str, float]:
+def shares_for(txn, member_ids: set[str] | None = None) -> dict[str, Decimal]:
     """Who is responsible for how much of this expense, in household currency.
 
     Three cases, and the middle one is the reason this helper exists:
@@ -80,16 +86,16 @@ def shares_for(txn, member_ids: set[str] | None = None) -> dict[str, float]:
     guarantees household balances net to zero.
     """
     total = to_base(txn.amount, txn.exchange_rate)
-    shares: dict[str, float] = defaultdict(float)
+    shares: dict[str, Decimal] = defaultdict(Decimal)
 
     if txn.splits:
-        assigned = 0.0
+        assigned = ZERO
         for s in txn.splits:
             value = split_to_base(s, txn)
             shares[s.user_id] += value
             assigned += value
         remainder = total - assigned
-        if abs(remainder) > 0.005:
+        if abs(remainder) > Decimal("0.005"):
             if txn.paid_by:
                 shares[txn.paid_by] += remainder
             elif member_ids:
@@ -107,7 +113,7 @@ def shares_for(txn, member_ids: set[str] | None = None) -> dict[str, float]:
     return dict(shares)
 
 
-def split_to_base(split, txn) -> float:
+def split_to_base(split, txn) -> Decimal:
     """A split share converted to the household currency.
 
     Splits are denominated in the parent transaction's currency, so they take
@@ -178,7 +184,7 @@ def get_month_summary(db: Session, household_id: str, year: int, month: int, buc
     """
     Returns:
       - total_spent: total expense amount for the month
-      - paid_by: {user_id: {"name": str, "color": str, "amount": float}}
+      - paid_by: {user_id: {"name": str, "color": str, "amount": Decimal}}
       - balance: who owes whom (simplified two-person logic + multi-person)
     """
     start = date(year, month, 1)
@@ -208,7 +214,7 @@ def get_month_summary(db: Session, household_id: str, year: int, month: int, buc
     total_spent = sum(to_base(t.amount, t.exchange_rate) for t in txns)
 
     # Amount paid by each user — use splits when present, else paid_by
-    paid_by: dict[str, float] = defaultdict(float)
+    paid_by: dict[str, Decimal] = defaultdict(Decimal)
     for t in txns:
         if t.splits:
             for s in t.splits:
@@ -232,11 +238,11 @@ def get_month_summary(db: Session, household_id: str, year: int, month: int, buc
             paid_by_detail[uid] = {
                 "name": user.display_name,
                 "color": user.avatar_color,
-                "amount": amount,
+                "amount": quantize(amount),
             }
 
     return {
-        "total_spent": round(total_spent, 2),
+        "total_spent": quantize(total_spent),
         "paid_by": paid_by_detail,
         "period_start": start,
         "period_end": end,
@@ -276,7 +282,7 @@ def get_bucket_month_summary(db: Session, bucket_id: str, year: int, month: int)
     total_spent = sum(to_base(t.amount, t.exchange_rate) for t in txns)
 
     # Amount paid by each user — use splits when present, else paid_by
-    paid_by: dict[str, float] = defaultdict(float)
+    paid_by: dict[str, Decimal] = defaultdict(Decimal)
     for t in txns:
         if t.splits:
             for s in t.splits:
@@ -299,11 +305,11 @@ def get_bucket_month_summary(db: Session, bucket_id: str, year: int, month: int)
             paid_by_detail[uid] = {
                 "name": user.display_name,
                 "color": user.avatar_color,
-                "amount": round(amount, 2),
+                "amount": quantize(amount),
             }
 
     return {
-        "total_spent": round(total_spent, 2),
+        "total_spent": quantize(total_spent),
         "paid_by": paid_by_detail,
         "period_start": start,
         "period_end": end,
@@ -328,7 +334,7 @@ def get_all_time_summary(db: Session, household_id: str, bucket_type: str = "", 
     txns = q.options(joinedload(Transaction.splits)).all()
     total_spent = sum(to_base(t.amount, t.exchange_rate) for t in txns)
 
-    paid_by: dict[str, float] = defaultdict(float)
+    paid_by: dict[str, Decimal] = defaultdict(Decimal)
     for t in txns:
         if t.splits:
             for s in t.splits:
@@ -351,11 +357,11 @@ def get_all_time_summary(db: Session, household_id: str, bucket_type: str = "", 
             paid_by_detail[uid] = {
                 "name": user.display_name,
                 "color": user.avatar_color,
-                "amount": round(amount, 2),
+                "amount": quantize(amount),
             }
 
     return {
-        "total_spent": round(total_spent, 2),
+        "total_spent": quantize(total_spent),
         "paid_by": paid_by_detail,
     }
 
@@ -373,12 +379,12 @@ def get_bucket_balance(db: Session, bucket_id: str) -> dict:
         .filter(Transaction.active(), Transaction.bucket_id == bucket_id)
         .one()
     )
-    income = float(row[0])
-    expenses = float(row[1])
+    income = to_decimal(row[0])
+    expenses = to_decimal(row[1])
     return {
-        "income": round(income, 2),
-        "expenses": round(expenses, 2),
-        "net": round(income - expenses, 2),
+        "income": quantize(income),
+        "expenses": quantize(expenses),
+        "net": quantize(income - expenses),
     }
 
 
@@ -447,7 +453,7 @@ def _month_range(year: int, month: int):
     return start, end
 
 
-def get_income_total(db: Session, household_id: str, year: int, month: int) -> float:
+def get_income_total(db: Session, household_id: str, year: int, month: int) -> Decimal:
     """Sum of income transactions for the month, limited to show_income buckets."""
     start, end = _month_range(year, month)
     total = (
@@ -463,10 +469,10 @@ def get_income_total(db: Session, household_id: str, year: int, month: int) -> f
         )
         .scalar()
     )
-    return round(float(total), 2)
+    return quantize(total)
 
 
-def get_bills_due_month_total(db: Session, household_id: str, year: int, month: int) -> float:
+def get_bills_due_month_total(db: Session, household_id: str, year: int, month: int) -> Decimal:
     """Sum of amounts for bill occurrences due within the given calendar month."""
     start, end = _month_range(year, month)
     occurrences = (
@@ -486,60 +492,9 @@ def get_bills_due_month_total(db: Session, household_id: str, year: int, month: 
     # in a non-default currency is counted at face value here. Transactions are
     # converted (see base_amount_expr); bills would need a rate column to match.
     total = sum(
-        float(occ.amount or occ.bill.amount or 0) for occ in occurrences
+        to_decimal(occ.amount or occ.bill.amount or 0) for occ in occurrences
     )
-    return round(total, 2)
-
-
-def get_category_breakdown(
-    db: Session,
-    household_id: str,
-    year: int,
-    month: int,
-    bucket_type: str = "",
-    bucket_ids: list | None = None,
-    limit: int = 6,
-) -> list[dict]:
-    """Top spending categories for the month, sorted by amount desc."""
-    start, end = _month_range(year, month)
-    q = (
-        db.query(Transaction)
-        .filter(
-            Transaction.active(),
-            Transaction.household_id == household_id,
-            Transaction.type == TransactionType.expense,
-            Transaction.transaction_date >= start,
-            Transaction.transaction_date <= end,
-            Transaction.exclude_from_forecast == False,  # noqa: E712
-        )
-    )
-    if bucket_type:
-        q = q.join(Bucket, Bucket.id == Transaction.bucket_id).filter(Bucket.type == BucketType(bucket_type))
-    if bucket_ids:
-        q = q.filter(Transaction.bucket_id.in_(bucket_ids))
-    txns = q.all()
-
-    totals: dict[str | None, float] = defaultdict(float)
-    for t in txns:
-        totals[t.category_id] += to_base(t.amount, t.exchange_rate)
-
-    grand = sum(totals.values()) or 1
-
-    # Load category objects
-    cat_ids = [cid for cid in totals if cid is not None]
-    cats = {c.id: c for c in db.query(Category).filter(Category.id.in_(cat_ids)).all()}
-
-    rows = []
-    for cat_id, amount in sorted(totals.items(), key=lambda x: -x[1])[:limit]:
-        cat = cats.get(cat_id) if cat_id else None
-        rows.append({
-            "name":   cat.name  if cat else "Uncategorised",
-            "icon":   cat.icon  if cat else "📦",
-            "color":  cat.color if cat else "#9ca3af",
-            "amount": round(amount, 2),
-            "pct":    round(amount / grand * 100, 1),
-        })
-    return rows
+    return quantize(total)
 
 
 def get_monthly_trend(
@@ -576,7 +531,7 @@ def get_monthly_trend(
             "label":      date(y, m, 1).strftime("%b"),
             "year":       y,
             "month":      m,
-            "total":      round(totals.get((y, m), 0.0), 2),
+            "total":      quantize(totals.get((y, m), ZERO)),
             "is_current": (y == today.year and m == today.month),
         }
         for y, m in months
@@ -596,7 +551,7 @@ def get_forecast(db: Session, household_id: str) -> dict:
     past = [m for m in trend if not m["is_current"]]
     if len(past) < 3:
         return {}
-    baseline = round(sum(m["total"] for m in past[-3:]) / 3, 2)
+    baseline = quantize(sum(m["total"] for m in past[-3:]) / 3)
 
     year, month = today.year, today.month
     start, _ = _month_range(year, month)
@@ -618,10 +573,10 @@ def get_forecast(db: Session, household_id: str) -> dict:
         )
         .scalar()
     )
-    spend_so_far = float(spend_so_far)
+    spend_so_far = to_decimal(spend_so_far)
     daily_rate  = spend_so_far / days_elapsed if days_elapsed > 0 else 0
-    projected   = round(daily_rate * days_in_month, 2)
-    delta       = round(projected - baseline, 2)
+    projected   = quantize(daily_rate * days_in_month)
+    delta       = quantize(projected - baseline)
 
     return {
         "baseline":        baseline,
@@ -630,57 +585,11 @@ def get_forecast(db: Session, household_id: str) -> dict:
         "above_trend":     delta > 0,
         "days_elapsed":    days_elapsed,
         "days_in_month":   days_in_month,
-        "spend_so_far":    round(spend_so_far, 2),
+        "spend_so_far":    quantize(spend_so_far),
     }
 
 
-def get_bucket_budget_status(db: Session, household_id: str, year: int, month: int) -> list[dict]:
-    """Spending vs budget for each bucket that has a budget set."""
-    start, end = _month_range(year, month)
-    buckets = (
-        db.query(Bucket)
-        .filter(
-            Bucket.household_id == household_id,
-            Bucket.budget.isnot(None),
-            Bucket.status == "active",
-        )
-        .all()
-    )
-    if not buckets:
-        return []
-
-    bucket_ids = [b.id for b in buckets]
-    rows = (
-        db.query(Transaction.bucket_id, func.sum(base_amount_expr()))
-        .filter(
-            Transaction.active(),
-            Transaction.bucket_id.in_(bucket_ids),
-            Transaction.type == TransactionType.expense,
-            Transaction.transaction_date >= start,
-            Transaction.transaction_date <= end,
-        )
-        .group_by(Transaction.bucket_id)
-        .all()
-    )
-    spend_map = {bid: float(total) for bid, total in rows}
-
-    result = []
-    for b in buckets:
-        spent  = round(spend_map.get(b.id, 0.0), 2)
-        budget = float(b.budget)
-        pct    = min(round(spent / budget * 100, 1), 100) if budget > 0 else 0
-        result.append({
-            "bucket":       b,
-            "spent":        spent,
-            "budget":       budget,
-            "pct":          pct,
-            "over_budget":  spent > budget,
-        })
-    result.sort(key=lambda x: -x["pct"])
-    return result
-
-
-def compute_bucket_net(db: Session, bucket_id: str) -> dict[str, float]:
+def compute_bucket_net(db: Session, bucket_id: str) -> dict[str, Decimal]:
     """Per-user net position inside one bucket, before debt simplification.
 
     net > 0 → is owed money; net < 0 → owes money. Split out from
@@ -726,8 +635,8 @@ def compute_bucket_net(db: Session, bucket_id: str) -> dict[str, float]:
 
     # actually_paid[uid] = total they fronted
     # owes[uid] = total they should cover
-    actually_paid: dict[str, float] = defaultdict(float)
-    owes: dict[str, float] = defaultdict(float)
+    actually_paid: dict[str, Decimal] = defaultdict(Decimal)
+    owes: dict[str, Decimal] = defaultdict(Decimal)
 
     for t in txns:
         actually_paid[t.paid_by] += to_base(t.amount, t.exchange_rate)
@@ -736,7 +645,7 @@ def compute_bucket_net(db: Session, bucket_id: str) -> dict[str, float]:
         for uid, share in shares_for(t, user_ids).items():
             owes[uid] += share
 
-    net: dict[str, float] = defaultdict(float)
+    net: dict[str, Decimal] = defaultdict(Decimal)
     for uid in user_ids:
         net[uid] = actually_paid[uid] - owes[uid]
 
@@ -745,16 +654,16 @@ def compute_bucket_net(db: Session, bucket_id: str) -> dict[str, float]:
     # Without this the computed balance never reset and the same debt was shown
     # forever, however many times it had been paid.
     for st in recorded:
-        amount = float(st.amount)
+        amount = to_decimal(st.amount)
         net[st.from_user_id] += amount
         net[st.to_user_id] -= amount
 
     return dict(net)
 
 
-def simplify_debts(db: Session, net: dict[str, float]) -> list[dict]:
+def simplify_debts(db: Session, net: dict[str, Decimal]) -> list[dict]:
     """Turn per-user net positions into the fewest transfers that clear them."""
-    net = {uid: round(v, 2) for uid, v in net.items()}
+    net = {uid: quantize(v) for uid, v in net.items()}
     user_ids = set(net)
     if len(user_ids) < 2:
         return []
@@ -762,16 +671,16 @@ def simplify_debts(db: Session, net: dict[str, float]) -> list[dict]:
     users = {u.id: u for u in db.query(User).filter(User.id.in_(user_ids)).all()}
 
     # Greedy settlement: pair largest creditor with largest debtor
-    creditors = sorted([(uid, v) for uid, v in net.items() if v > 0.005], key=lambda x: -x[1])
-    debtors   = sorted([(uid, -v) for uid, v in net.items() if v < -0.005], key=lambda x: -x[1])
+    creditors = sorted([(uid, v) for uid, v in net.items() if v > Decimal("0.005")], key=lambda x: -x[1])
+    debtors   = sorted([(uid, -v) for uid, v in net.items() if v < Decimal("-0.005")], key=lambda x: -x[1])
 
     settlements = []
     ci, di = 0, 0
     while ci < len(creditors) and di < len(debtors):
         cuid, camt = creditors[ci]
         duid, damt = debtors[di]
-        amount = round(min(camt, damt), 2)
-        if amount > 0.01:
+        amount = quantize(min(camt, damt))
+        if amount > Decimal("0.01"):
             cu = users.get(cuid)
             du = users.get(duid)
             settlements.append({
@@ -785,10 +694,10 @@ def simplify_debts(db: Session, net: dict[str, float]) -> list[dict]:
                 "amount":     amount,
             })
         if camt > damt:
-            creditors[ci] = (cuid, round(camt - damt, 2))
+            creditors[ci] = (cuid, quantize(camt - damt))
             di += 1
         elif damt > camt:
-            debtors[di] = (duid, round(damt - camt, 2))
+            debtors[di] = (duid, quantize(damt - camt))
             ci += 1
         else:
             ci += 1
@@ -832,13 +741,13 @@ def get_settlement_exclusions(db: Session, household_id: str) -> dict:
     )
 
     out = {
-        "no_payer_count": 0, "no_payer_total": 0.0,
-        "excluded_count": 0, "excluded_total": 0.0,
+        "no_payer_count": 0, "no_payer_total": ZERO,
+        "excluded_count": 0, "excluded_total": ZERO,
     }
     for excluded, count, total in rows:
         prefix = "excluded" if excluded else "no_payer"
         out[f"{prefix}_count"] = int(count or 0)
-        out[f"{prefix}_total"] = round(float(total or 0), 2)
+        out[f"{prefix}_total"] = quantize(total or 0)
     out["any"] = bool(out["no_payer_count"] or out["excluded_count"])
     return out
 
@@ -859,7 +768,7 @@ def get_household_settlement(db: Session, household_id: str) -> list[dict]:
         .all()
     )
 
-    net: dict[str, float] = defaultdict(float)
+    net: dict[str, Decimal] = defaultdict(Decimal)
     for (bucket_id,) in buckets:
         for uid, value in compute_bucket_net(db, bucket_id).items():
             net[uid] += value
@@ -870,7 +779,7 @@ def get_household_settlement(db: Session, household_id: str) -> list[dict]:
         .filter(Settlement.household_id == household_id, Settlement.bucket_id.is_(None))
         .all()
     ):
-        amount = float(st.amount)
+        amount = to_decimal(st.amount)
         net[st.from_user_id] += amount
         net[st.to_user_id] -= amount
 
@@ -881,14 +790,26 @@ def record_household_settlement(
     db: Session,
     household_id: str,
     *,
+    bucket_id: str | None = None,
     created_by: str | None = None,
     from_user_id: str | None = None,
     to_user_id: str | None = None,
-    amount: float | None = None,
+    amount: Decimal | None = None,
     note: str | None = None,
 ) -> list[Settlement]:
-    """Record household-wide debt payment(s). Callers must commit."""
-    outstanding = get_household_settlement(db, household_id)
+    """Record debt payment(s) and return the rows created. Callers must commit.
+
+    Household-wide by default; pass ``bucket_id`` to settle a single bucket's
+    balance instead (the rows are then recorded against that bucket).
+
+    With no from/to/amount, settles everything currently outstanding: one row
+    per suggested transfer. Passing them records a single (possibly partial)
+    payment instead.
+    """
+    outstanding = (
+        get_bucket_settlement(db, bucket_id) if bucket_id
+        else get_household_settlement(db, household_id)
+    )
 
     if from_user_id and to_user_id:
         if amount is None:
@@ -899,7 +820,7 @@ def record_household_settlement(
             )
             if amount is None:
                 return []
-        pairs = [(from_user_id, to_user_id, float(amount))]
+        pairs = [(from_user_id, to_user_id, to_decimal(amount))]
     else:
         pairs = [(r["from_id"], r["to_id"], r["amount"]) for r in outstanding]
 
@@ -909,7 +830,7 @@ def record_household_settlement(
             continue
         row = Settlement(
             household_id=household_id,
-            bucket_id=None,          # household-scoped
+            bucket_id=bucket_id,     # None: household-scoped
             from_user_id=payer,
             to_user_id=payee,
             amount=value,
@@ -948,7 +869,7 @@ def get_household_settlement_history(db: Session, household_id: str, limit: int 
             "to_name":     users[r.to_user_id].display_name if r.to_user_id in users else "?",
             "from_color":  users[r.from_user_id].avatar_color if r.from_user_id in users else "#9ca3af",
             "to_color":    users[r.to_user_id].avatar_color if r.to_user_id in users else "#6366f1",
-            "amount":      round(float(r.amount), 2),
+            "amount":      quantize(r.amount),
             "note":        r.note,
             "bucket_name": buckets[r.bucket_id].name if r.bucket_id in buckets else None,
             "created_at":  r.created_at,
@@ -959,7 +880,7 @@ def get_household_settlement_history(db: Session, household_id: str, limit: int 
 
 def get_member_balances(db: Session, household_id: str) -> list[dict]:
     """Each member's net position across the household, for a per-person view."""
-    net: dict[str, float] = defaultdict(float)
+    net: dict[str, Decimal] = defaultdict(Decimal)
     for (bucket_id,) in (
         db.query(Bucket.id)
         .filter(Bucket.household_id == household_id, Bucket.enable_settlement.is_(True))
@@ -972,8 +893,8 @@ def get_member_balances(db: Session, household_id: str) -> list[dict]:
         .filter(Settlement.household_id == household_id, Settlement.bucket_id.is_(None))
         .all()
     ):
-        net[st.from_user_id] += float(st.amount)
-        net[st.to_user_id] -= float(st.amount)
+        net[st.from_user_id] += to_decimal(st.amount)
+        net[st.to_user_id] -= to_decimal(st.amount)
 
     members = (
         db.query(User)
@@ -987,13 +908,13 @@ def get_member_balances(db: Session, household_id: str) -> list[dict]:
             "user_id": m.id,
             "name":    m.display_name,
             "color":   m.avatar_color,
-            "net":     round(net.get(m.id, 0.0), 2),
+            "net":     quantize(net.get(m.id, ZERO)),
         }
         for m in members
     ]
 
 
-def get_bucket_spend_this_month(db: Session, household_id: str, year: int, month: int) -> dict[str, float]:
+def get_bucket_spend_this_month(db: Session, household_id: str, year: int, month: int) -> dict[str, Decimal]:
     """Return {bucket_id: spend} for all active buckets in the given month."""
     start, end = _month_range(year, month)
     rows = (
@@ -1008,7 +929,7 @@ def get_bucket_spend_this_month(db: Session, household_id: str, year: int, month
         .group_by(Transaction.bucket_id)
         .all()
     )
-    return {bid: round(float(total), 2) for bid, total in rows}
+    return {bid: quantize(total) for bid, total in rows}
 
 
 # ---------------------------------------------------------------------------
@@ -1197,7 +1118,7 @@ def _sum_expenses_by(
             return (txn_date.year, txn_date.month)
         return (category_id, txn_date.year, txn_date.month)
 
-    totals: dict = defaultdict(float)
+    totals: dict = defaultdict(Decimal)
 
     if paid_by:
         for t in q.options(joinedload(Transaction.splits)).all():
@@ -1216,7 +1137,7 @@ def _sum_expenses_by(
 
     rows = q.with_entities(*cols, func.sum(base_amount_expr())).group_by(*cols).all()
     for row in rows:
-        total = float(row[-1] or 0)
+        total = to_decimal(row[-1] or 0)
         if group_by == "bucket":
             totals[row[0]] += total
         elif group_by == "category":
@@ -1227,16 +1148,16 @@ def _sum_expenses_by(
     return dict(totals)
 
 
-def _effective_amount(t: Transaction, paid_by: str | None) -> float:
+def _effective_amount(t: Transaction, paid_by: str | None) -> Decimal:
     """When a paid_by filter is active, return only that user's share of the transaction.
-    For split transactions: returns the user's split amount (0.0 if they have no split).
+    For split transactions: returns the user's split amount (0 if they have no split).
     Without a filter: returns the full transaction amount.
     """
     if paid_by and t.splits:
         for s in t.splits:
             if s.user_id == paid_by:
                 return split_to_base(s, t)
-        return 0.0
+        return ZERO
     return to_base(t.amount, t.exchange_rate)
 
 
@@ -1255,7 +1176,7 @@ def get_insights_summary(
     txns = q.options(joinedload(Transaction.splits)).all()
     total_spent = sum(_effective_amount(t, paid_by) for t in txns)
 
-    paid_by_acc: dict[str, float] = defaultdict(float)
+    paid_by_acc: dict[str, Decimal] = defaultdict(Decimal)
     for t in txns:
         if t.splits:
             for s in t.splits:
@@ -1279,11 +1200,11 @@ def get_insights_summary(
             paid_by_detail[uid] = {
                 "name":   u.display_name,
                 "color":  u.avatar_color,
-                "amount": round(amount, 2),
+                "amount": quantize(amount),
             }
 
     return {
-        "total_spent": round(total_spent, 2),
+        "total_spent": quantize(total_spent),
         "paid_by":     paid_by_detail,
         "period_start": start,
         "period_end":   end,
@@ -1299,7 +1220,7 @@ def get_insights_income(
     bucket_ids: list | None = None,
     category_ids: list | None = None,
     paid_by: str | None = None,
-) -> float:
+) -> Decimal:
     """Sum of income transactions in the date range, limited to show_income buckets."""
     q = (
         db.query(func.coalesce(func.sum(base_amount_expr()), 0))
@@ -1333,7 +1254,7 @@ def get_insights_income(
                 Transaction.id.in_(split_subq),
             )
         )
-    return round(float(q.scalar()), 2)
+    return quantize(q.scalar())
 
 
 def get_insights_bills_due(
@@ -1344,7 +1265,7 @@ def get_insights_bills_due(
     bucket_type: str = "",
     bucket_ids: list | None = None,
     category_ids: list | None = None,
-) -> float:
+) -> Decimal:
     """Sum of bill occurrence amounts due within the date range.
 
     Honours the same bucket/category filters as the rest of the insights page —
@@ -1371,8 +1292,8 @@ def get_insights_bills_due(
     if category_ids:
         q = q.filter(RecurringBill.category_id.in_(category_ids))
 
-    total = sum(float(occ.amount or occ.bill.amount or 0) for occ in q.all())
-    return round(total, 2)
+    total = sum(to_decimal(occ.amount or occ.bill.amount or 0) for occ in q.all())
+    return quantize(total)
 
 
 def get_insights_category_breakdown(
@@ -1390,7 +1311,7 @@ def get_insights_category_breakdown(
     q = _build_expense_query(db, household_id, start, end, bucket_type, bucket_ids, category_ids, paid_by)
     txns = q.options(joinedload(Transaction.splits)).all() if paid_by else q.all()
 
-    totals: dict[str | None, float] = defaultdict(float)
+    totals: dict[str | None, Decimal] = defaultdict(Decimal)
     for t in txns:
         totals[t.category_id] += _effective_amount(t, paid_by)
 
@@ -1405,8 +1326,8 @@ def get_insights_category_breakdown(
             "name":   cat.name  if cat else "Uncategorised",
             "icon":   cat.icon  if cat else "📦",
             "color":  cat.color if cat else "#9ca3af",
-            "amount": round(amount, 2),
-            "pct":    round(amount / grand * 100, 1),
+            "amount": quantize(amount),
+            "pct":    quantize(amount / grand * 100, TENTH),
         })
     return rows
 
@@ -1456,7 +1377,7 @@ def get_insights_bucket_breakdown(
     )
 
     result = [
-        {"bucket": b, "total": round(totals.get(b.id, 0.0), 2)}
+        {"bucket": b, "total": quantize(totals.get(b.id, ZERO))}
         for b in visible
     ]
 
@@ -1464,7 +1385,7 @@ def get_insights_bucket_breakdown(
     result.sort(key=lambda x: -x["total"])
     grand = sum(r["total"] for r in result) or 1
     for r in result:
-        r["pct"] = round(r["total"] / grand * 100, 1)
+        r["pct"] = quantize(r["total"] / grand * 100, TENTH)
     return result
 
 
@@ -1480,7 +1401,7 @@ def get_insights_category_trend(
 ) -> dict:
     """
     Per-category expense totals for each of the last n_months calendar months.
-    Returns {months: [label,...], series: [{name, color, icon, values: [float,...]}]}
+    Returns {months: [label,...], series: [{name, color, icon, values: [Decimal,...]}]}
     Only includes the top_n categories by total spend across the period.
     """
     today = local_today()
@@ -1500,7 +1421,7 @@ def get_insights_category_trend(
         paid_by=paid_by,
     )
 
-    cat_totals: dict[str | None, float] = defaultdict(float)
+    cat_totals: dict[str | None, Decimal] = defaultdict(Decimal)
     for (cid, _y, _m), amount in grid.items():
         cat_totals[cid] += amount
 
@@ -1512,8 +1433,8 @@ def get_insights_category_trend(
     cat_objs = {c.id: c for c in db.query(Category).filter(Category.id.in_([c for c in top_cat_ids if c])).all()}
 
     labels = [date(y, m, 1).strftime("%b") for y, m in month_list]
-    monthly_data: dict[str | None, list[float]] = {
-        cid: [round(grid.get((cid, y, m), 0.0), 2) for y, m in month_list]
+    monthly_data: dict[str | None, list[Decimal]] = {
+        cid: [quantize(grid.get((cid, y, m), ZERO)) for y, m in month_list]
         for cid in top_cat_ids
     }
 
@@ -1533,10 +1454,10 @@ def get_insights_category_trend(
     # a sixth of its correct height.
     max_value = max(
         (v for row in series for v in row["values"]),
-        default=0.0,
+        default=ZERO,
     )
 
-    return {"months": labels, "series": series, "max_value": round(max_value, 2)}
+    return {"months": labels, "series": series, "max_value": quantize(max_value)}
 
 
 def get_insights_budget_status(
@@ -1582,13 +1503,13 @@ def get_insights_budget_status(
     if end:
         q = q.filter(Transaction.transaction_date <= end)
     rows = q.group_by(Transaction.bucket_id).all()
-    spend_map = {bid: float(total) for bid, total in rows}
+    spend_map = {bid: to_decimal(total) for bid, total in rows}
 
     result = []
     for b in buckets:
-        spent  = round(spend_map.get(b.id, 0.0), 2)
-        budget = float(b.budget)
-        raw_pct = round(spent / budget * 100, 1) if budget > 0 else 0
+        spent  = quantize(spend_map.get(b.id, ZERO))
+        budget = to_decimal(b.budget)
+        raw_pct = quantize(spent / budget * 100, TENTH) if budget > 0 else 0
         result.append({
             "bucket":      b,
             "spent":       spent,
@@ -1597,64 +1518,91 @@ def get_insights_budget_status(
             # is the true figure so the UI can show "140% of budget".
             "pct":         min(raw_pct, 100),
             "pct_actual":  raw_pct,
-            "remaining":   round(budget - spent, 2),
+            "remaining":   quantize(budget - spent),
             "over_budget": spent > budget,
         })
     result.sort(key=lambda x: -x["pct_actual"])
     return result
 
 
-def record_bucket_settlement(
-    db: Session,
-    bucket_id: str,
-    household_id: str,
-    *,
-    created_by: str | None = None,
-    from_user_id: str | None = None,
-    to_user_id: str | None = None,
-    amount: float | None = None,
-    note: str | None = None,
-) -> list[Settlement]:
-    """Record debt payment(s) for a bucket and return the rows created.
+@dataclass(frozen=True)
+class InsightFilters:
+    """The insights filter bar, as sent by both the HTML page and the API.
 
-    With no from/to/amount, settles everything currently outstanding: one row
-    per suggested transfer, clearing the bucket. Passing them records a single
-    (possibly partial) payment instead.
-
-    Callers must commit.
+    ``bucket_ids`` / ``category_ids`` are the raw comma-separated query
+    strings; ``today`` pins "this month" (defaults to the local date).
     """
-    outstanding = get_bucket_settlement(db, bucket_id)
+    preset:       str = "this_month"
+    start_date:   str = ""
+    end_date:     str = ""
+    bucket_type:  str = ""
+    bucket_ids:   str = ""
+    category_ids: str = ""
+    paid_by:      str = ""
+    today:        date | None = None
 
-    if from_user_id and to_user_id:
-        if amount is None:
-            # Settle just this pair in full.
-            amount = next(
-                (r["amount"] for r in outstanding
-                 if r["from_id"] == from_user_id and r["to_id"] == to_user_id),
-                None,
-            )
-            if amount is None:
-                return []
-        pairs = [(from_user_id, to_user_id, float(amount))]
-    else:
-        pairs = [(r["from_id"], r["to_id"], r["amount"]) for r in outstanding]
 
-    created = []
-    for payer, payee, value in pairs:
-        if value <= 0:
-            continue
-        row = Settlement(
-            household_id=household_id,
-            bucket_id=bucket_id,
-            from_user_id=payer,
-            to_user_id=payee,
-            amount=value,
-            note=note,
-            created_by=created_by,
-        )
-        db.add(row)
-        created.append(row)
-    return created
+def build_insights(db: Session, household_id: str, filters: InsightFilters) -> dict:
+    """Every figure on the insights board, for the HTML page and the JSON API.
+
+    The two endpoints used to orchestrate these calls separately; they now
+    share this so they cannot drift apart. Every chart takes the same filter
+    set, so the numbers all describe the same slice of data.
+    """
+    period = resolve_insight_period(
+        filters.preset, filters.start_date, filters.end_date, filters.today,
+    )
+    start, end = period["start"], period["end"]
+
+    selected_bucket_ids   = [b for b in filters.bucket_ids.split(",")   if b.strip()]
+    selected_category_ids = [c for c in filters.category_ids.split(",") if c.strip()]
+    bucket_type = filters.bucket_type
+
+    common = {
+        "bucket_type":  bucket_type,
+        "bucket_ids":   selected_bucket_ids or None,
+        "category_ids": selected_category_ids or None,
+        "paid_by":      filters.paid_by or None,
+    }
+
+    summary          = get_insights_summary(db, household_id, start, end, **common)
+    income_total     = get_insights_income(db, household_id, start, end, **common)
+    bills_due        = get_insights_bills_due(
+        db, household_id, start, end,
+        bucket_type=bucket_type,
+        bucket_ids=selected_bucket_ids or None,
+        category_ids=selected_category_ids or None,
+    )
+    categories       = get_insights_category_breakdown(db, household_id, start, end, **common)
+    budget_status    = get_insights_budget_status(
+        db, household_id, start, end,
+        bucket_type=bucket_type,
+        bucket_ids=selected_bucket_ids or None,
+    )
+    bucket_breakdown = get_insights_bucket_breakdown(db, household_id, start, end, **common)
+    category_trend   = get_insights_category_trend(db, household_id, n_months=6, **common)
+    trend            = get_monthly_trend(db, household_id, n_months=6, **common)
+    forecast         = get_forecast(db, household_id) if period["is_current_month"] else {}
+    kpis             = get_insights_kpis(db, household_id, start, end, **common)
+
+    return {
+        "period":                period,
+        "start":                 start,
+        "end":                   end,
+        "selected_bucket_ids":   selected_bucket_ids,
+        "selected_category_ids": selected_category_ids,
+        "summary":               summary,
+        "income_total":          income_total,
+        "bills_due":             bills_due,
+        "net":                   quantize(income_total - summary["total_spent"]),
+        "categories":            categories,
+        "budget_status":         budget_status,
+        "bucket_breakdown":      bucket_breakdown,
+        "category_trend":        category_trend,
+        "trend":                 trend,
+        "forecast":              forecast,
+        "kpis":                  kpis,
+    }
 
 
 def get_bucket_settlement_history(db: Session, bucket_id: str) -> list[dict]:
@@ -1676,7 +1624,7 @@ def get_bucket_settlement_history(db: Session, bucket_id: str) -> list[dict]:
             "to_name":    users[r.to_user_id].display_name if r.to_user_id in users else "?",
             "from_color": users[r.from_user_id].avatar_color if r.from_user_id in users else "#9ca3af",
             "to_color":   users[r.to_user_id].avatar_color if r.to_user_id in users else "#6366f1",
-            "amount":     round(float(r.amount), 2),
+            "amount":     quantize(r.amount),
             "note":       r.note,
             "created_at": r.created_at,
         }
@@ -1712,7 +1660,7 @@ def get_trip_summary(db: Session, bucket: Bucket) -> dict:
         .all()
     )
 
-    total = sum(to_base(t.amount, t.exchange_rate) for t in txns)
+    total = sum((to_base(t.amount, t.exchange_rate) for t in txns), ZERO)
     txn_dates = [t.transaction_date for t in txns if t.transaction_date]
 
     start = bucket.start_date or (min(txn_dates) if txn_dates else None)
@@ -1741,7 +1689,7 @@ def get_trip_summary(db: Session, bucket: Bucket) -> dict:
     # Per-person share, using splits when present and the payer otherwise.
     # shares_for() accounts for the whole amount, so these add up to the trip
     # total even when splits only cover part of an expense.
-    per_person: dict[str, float] = defaultdict(float)
+    per_person: dict[str, Decimal] = defaultdict(Decimal)
     for t in txns:
         for uid, share in shares_for(t).items():
             per_person[uid] += share
@@ -1751,17 +1699,17 @@ def get_trip_summary(db: Session, bucket: Bucket) -> dict:
         users = {u.id: u for u in db.query(User).filter(User.id.in_(per_person)).all()}
 
     return {
-        "total":          round(total, 2),
+        "total":          quantize(total),
         "start":          start,
         "end":            end,
         "days":           days,
         "nights":         nights,
-        "per_day":        round(total / days, 2) if days and days > 0 else None,
+        "per_day":        quantize(total / days) if days and days > 0 else None,
         "status":         status,
         "days_until":     days_until,
         "days_remaining": days_remaining,
-        "budget":         float(bucket.budget) if bucket.budget else None,
-        "remaining":      round(float(bucket.budget) - total, 2) if bucket.budget else None,
+        "budget":         to_decimal(bucket.budget) if bucket.budget else None,
+        "remaining":      quantize(to_decimal(bucket.budget) - total) if bucket.budget else None,
         "transaction_count": len(txns),
         "per_person": sorted(
             (
@@ -1769,7 +1717,7 @@ def get_trip_summary(db: Session, bucket: Bucket) -> dict:
                     "user_id": uid,
                     "name":    users[uid].display_name if uid in users else "Unknown",
                     "color":   users[uid].avatar_color if uid in users else "#9ca3af",
-                    "amount":  round(amount, 2),
+                    "amount":  quantize(amount),
                 }
                 for uid, amount in per_person.items()
             ),
@@ -1785,7 +1733,7 @@ def get_savings_summary(db: Session, bucket: Bucket) -> dict:
 
     balance = get_bucket_balance(db, bucket.id)
     saved = balance["net"]          # income minus expenses in this bucket
-    goal = float(bucket.goal_amount) if bucket.goal_amount else None
+    goal = to_decimal(bucket.goal_amount) if bucket.goal_amount else None
 
     result = {
         "saved":     saved,
@@ -1799,9 +1747,9 @@ def get_savings_summary(db: Session, bucket: Bucket) -> dict:
                        "months_left": None, "on_track": None, "reached": False})
         return result
 
-    remaining = round(goal - saved, 2)
-    result["pct"] = round(min(max(saved / goal * 100, 0), 100), 1)
-    result["pct_actual"] = round(saved / goal * 100, 1)
+    remaining = quantize(goal - saved)
+    result["pct_actual"] = percent(saved, goal)
+    result["pct"] = min(max(result["pct_actual"], 0), 100)
     result["remaining"] = remaining
     result["reached"] = saved >= goal
 
@@ -1814,7 +1762,7 @@ def get_savings_summary(db: Session, bucket: Bucket) -> dict:
         )
     result["months_left"] = months_left
     result["per_month"] = (
-        round(remaining / months_left, 2)
+        quantize(remaining / months_left)
         if months_left and remaining > 0 else None
     )
     # Without a deadline there is nothing to be on track against.
@@ -1832,7 +1780,7 @@ def get_savings_summary(db: Session, bucket: Bucket) -> dict:
 # ---------------------------------------------------------------------------
 
 DUPLICATE_WINDOW_DAYS = 3
-DUPLICATE_AMOUNT_TOLERANCE = 0.01
+DUPLICATE_AMOUNT_TOLERANCE = Decimal("0.01")
 
 
 def find_duplicate_candidates(
@@ -1854,7 +1802,7 @@ def find_duplicate_candidates(
     if amount is None or transaction_date is None:
         return []
 
-    target = float(amount)
+    target = to_decimal(amount)
     lo, hi = target - DUPLICATE_AMOUNT_TOLERANCE, target + DUPLICATE_AMOUNT_TOLERANCE
 
     q = (
@@ -1907,9 +1855,9 @@ def find_household_duplicates(
         .all()
     )
 
-    by_amount: dict[float, list[Transaction]] = defaultdict(list)
+    by_amount: dict[Decimal, list[Transaction]] = defaultdict(list)
     for t in txns:
-        by_amount[round(float(t.amount), 2)].append(t)
+        by_amount[quantize(t.amount)].append(t)
 
     groups: list[dict] = []
     for amount, rows in by_amount.items():
@@ -1958,13 +1906,13 @@ def get_person_summary(
         q = q.filter(Transaction.transaction_date <= end)
     txns = q.all()
 
-    paid_out = 0.0      # money this person actually fronted
-    my_share = 0.0      # what they are responsible for
+    paid_out = ZERO      # money this person actually fronted
+    my_share = ZERO      # what they are responsible for
     shared_count = 0
-    by_bucket: dict[str, float] = defaultdict(float)
-    by_category: dict[str | None, float] = defaultdict(float)
-    by_month: dict[tuple[int, int], float] = defaultdict(float)
-    household_total = 0.0
+    by_bucket: dict[str, Decimal] = defaultdict(Decimal)
+    by_category: dict[str | None, Decimal] = defaultdict(Decimal)
+    by_month: dict[tuple[int, int], Decimal] = defaultdict(Decimal)
+    household_total = ZERO
     largest = None
 
     for t in txns:
@@ -1978,7 +1926,7 @@ def get_person_summary(
         # identical to the settlement view, which additionally treats an unsplit
         # expense in a settlement-enabled bucket as shared equally — that is the
         # household convention there, and "net" below comes from that maths.
-        share = shares_for(t).get(user_id, 0.0)
+        share = shares_for(t).get(user_id, ZERO)
         if t.splits and any(s.user_id == user_id for s in t.splits):
             shared_count += 1
 
@@ -2009,27 +1957,27 @@ def get_person_summary(
     # Household-wide net position, reusing the settlement maths.
     net = next(
         (b["net"] for b in get_member_balances(db, household_id) if b["user_id"] == user_id),
-        0.0,
+        ZERO,
     )
 
     if largest:
-        largest["amount"] = round(largest["amount"], 2)
+        largest["amount"] = quantize(largest["amount"])
 
     return {
-        "paid_out":  round(paid_out, 2),
-        "my_share":  round(my_share, 2),
+        "paid_out":  quantize(paid_out),
+        "my_share":  quantize(my_share),
         # The gap between the two headline figures, for this period only. This
         # is what makes them legible: fronting EUR 600 against a EUR 400 share
         # means EUR 200 went out on someone else's behalf.
-        "balance":   round(paid_out - my_share, 2),
+        "balance":   quantize(paid_out - my_share),
         # Positive: fronted more than their share. This is the settlement view.
         "net":       net,
-        "household_total": round(household_total, 2),
+        "household_total": quantize(household_total),
         # How much of the household's spending this person carries.
-        "share_pct": round(my_share / household_total * 100, 1) if household_total else None,
+        "share_pct": quantize(my_share / household_total * 100, TENTH) if household_total else None,
         "largest":   largest,
         "trend": [
-            {"label": date(y, m, 1).strftime("%b"), "total": round(v, 2)}
+            {"label": date(y, m, 1).strftime("%b"), "total": quantize(v)}
             for (y, m), v in sorted(by_month.items())
         ],
         "shared_count": shared_count,
@@ -2040,7 +1988,7 @@ def get_person_summary(
                     "name":   buckets[bid].name if bid in buckets else "Unknown",
                     "icon":   buckets[bid].icon if bid in buckets else "🪣",
                     "color":  buckets[bid].color if bid in buckets else "#9ca3af",
-                    "amount": round(amount, 2),
+                    "amount": quantize(amount),
                 }
                 for bid, amount in by_bucket.items()
             ),
@@ -2052,7 +2000,7 @@ def get_person_summary(
                     "name":   categories[cid].name if cid in categories else "Uncategorised",
                     "icon":   categories[cid].icon if cid in categories else "📦",
                     "color":  categories[cid].color if cid in categories else "#9ca3af",
-                    "amount": round(amount, 2),
+                    "amount": quantize(amount),
                 }
                 for cid, amount in by_category.items()
             ),
@@ -2104,7 +2052,7 @@ def get_insights_kpis(
 
     amounts = [(t, _effective_amount(t, paid_by)) for t in txns]
     amounts = [(t, a) for t, a in amounts if a]
-    total = sum(a for _, a in amounts)
+    total = sum((a for _, a in amounts), ZERO)
     count = len(amounts)
 
     # Range bounds: fall back to the data when the period is open-ended.
@@ -2116,14 +2064,14 @@ def get_insights_kpis(
     days = ((range_end - range_start).days + 1) if range_start and range_end else 1
 
     # Per-month totals, for the busiest/quietest month and the average.
-    by_month: dict[tuple[int, int], float] = defaultdict(float)
+    by_month: dict[tuple[int, int], Decimal] = defaultdict(Decimal)
     for t, a in amounts:
         if t.transaction_date:
             by_month[(t.transaction_date.year, t.transaction_date.month)] += a
 
     def _month_row(item):
         (y, m), value = item
-        return {"label": date(y, m, 1).strftime("%b %Y"), "total": round(value, 2)}
+        return {"label": date(y, m, 1).strftime("%b %Y"), "total": quantize(value)}
 
     # "Quietest" is only meaningful for months that actually finished, and that
     # the filter covers end to end. A month still in progress — or clipped by
@@ -2144,7 +2092,7 @@ def get_insights_kpis(
     if amounts:
         t, a = max(amounts, key=lambda pair: pair[1])
         largest = {
-            "amount": round(a, 2),
+            "amount": quantize(a),
             "notes": t.notes,
             "date": t.transaction_date,
             "category": t.category.name if t.category else None,
@@ -2163,9 +2111,9 @@ def get_insights_kpis(
             category_ids=category_ids, paid_by=paid_by,
         )
         prev_txns = prev_q.options(joinedload(Transaction.splits)).all()
-        previous_total = round(sum(_effective_amount(t, paid_by) for t in prev_txns), 2)
+        previous_total = quantize(sum(_effective_amount(t, paid_by) for t in prev_txns))
         if previous_total > 0:
-            change_pct = round((total - previous_total) / previous_total * 100, 1)
+            change_pct = quantize((total - previous_total) / previous_total * 100, TENTH)
 
     income = get_insights_income(
         db, household_id, start, end,
@@ -2174,22 +2122,22 @@ def get_insights_kpis(
     )
 
     return {
-        "total":          round(total, 2),
+        "total":          quantize(total),
         "count":          count,
         "months":         months,
         "days":           days,
-        "avg_per_month":  round(total / months, 2) if months else 0.0,
-        "avg_per_day":    round(total / days, 2) if days else 0.0,
-        "avg_per_txn":    round(total / count, 2) if count else 0.0,
+        "avg_per_month":  quantize(total / months) if months else ZERO,
+        "avg_per_day":    quantize(total / days) if days else ZERO,
+        "avg_per_txn":    quantize(total / count) if count else ZERO,
         "busiest_month":  busiest,
         "quietest_month": quietest,
         "largest":        largest,
         "previous_total": previous_total,
         "change_pct":     change_pct,
         "income":         income,
-        "net":            round(income - total, 2),
+        "net":            quantize(income - total),
         # Share of income kept. Only meaningful when income is actually tracked.
-        "savings_rate":   round((income - total) / income * 100, 1) if income > 0 else None,
+        "savings_rate":   quantize((income - total) / income * 100, TENTH) if income > 0 else None,
         "range_start":    range_start,
         "range_end":      range_end,
     }

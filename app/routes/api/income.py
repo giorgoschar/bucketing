@@ -3,6 +3,7 @@ API income route — create income transactions.
 Income is a thin wrapper over the transactions API with type forced to 'income'.
 """
 from datetime import date
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -12,15 +13,16 @@ from app.api_auth import require_api_auth
 from app.clock import local_today
 from app.database import get_db
 from app.models import Bucket, Transaction, TransactionType
+from app.money import quantize
 
 router = APIRouter(prefix="/income", tags=["income"])
 
 
 class IncomeIn(BaseModel):
     bucket_id:        str
-    amount:           float
+    amount:           Decimal
     currency:         str        = "EUR"
-    exchange_rate:    float      = 1.0
+    exchange_rate:    Decimal    = Decimal("1")
     category_id:      str | None = None
     notes:            str | None = None
     transaction_date: str        = ""   # ISO date; defaults to today
@@ -60,7 +62,7 @@ def create_income(
         "id":               txn.id,
         "bucket_id":        txn.bucket_id,
         "household_id":     txn.household_id,
-        "amount":           float(txn.amount),
+        "amount":           quantize(txn.amount),
         "currency":         txn.currency,
         "type":             txn.type.value,
         "paid_by":          txn.paid_by,

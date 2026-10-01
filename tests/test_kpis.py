@@ -5,6 +5,7 @@ Every figure must obey the same filters as the rest of the page — the previous
 version mixed filtered and unfiltered numbers on one screen.
 """
 from datetime import date, timedelta
+from decimal import Decimal
 
 import pytest
 
@@ -52,7 +53,7 @@ def test_average_per_month(db, spread):
 def test_average_per_day(db, spread):
     k = _kpis(db, spread)
     assert k["days"] == 90          # 1 Jan to 31 Mar inclusive
-    assert k["avg_per_day"] == round(300 / 90, 2)
+    assert k["avg_per_day"] == Decimal("3.33")
 
 
 def test_average_per_expense(db, spread):
@@ -251,3 +252,30 @@ def test_no_finished_month_means_no_quietest(db, authed):
     k = _kpis(db, authed, today.replace(day=1), today)
     assert k["quietest_month"] is None
     assert k["busiest_month"] is not None      # busiest is still well-defined
+
+
+# ---------------------------------------------------------------------------
+# Rounding: half up, never banker's rounding
+# ---------------------------------------------------------------------------
+
+def test_quantize_rounds_half_up():
+    from app.money import quantize
+    assert quantize(0.125) == Decimal("0.13")      # round(0.125, 2) == 0.12
+    assert quantize(2.675) == Decimal("2.68")      # round(2.675, 2) == 2.67
+    assert quantize(Decimal("-0.125")) == Decimal("-0.13")
+
+
+def test_currency_filter_rounds_half_up():
+    from app.templates import format_currency
+    assert format_currency(0.125) == "€0.13"
+    assert format_currency(Decimal("0.125"), "USD") == "$0.13"
+    assert format_currency(Decimal("1234.5")) == "€1,234.50"
+
+
+def test_kpi_average_rounds_half_up(db, authed):
+    """0.25 over two expenses is 0.125 each: shown as 0.13, not 0.12."""
+    _expense(db, authed, 0.10, date(2026, 1, 10))
+    _expense(db, authed, 0.15, date(2026, 1, 11))
+    k = _kpis(db, authed, start=date(2026, 1, 1), end=date(2026, 1, 31))
+    assert k["avg_per_txn"] == Decimal("0.13")
+    assert isinstance(k["total"], Decimal)

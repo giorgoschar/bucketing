@@ -25,6 +25,7 @@ from app.models import (
     RecurringBill,
     RecurringBillSplit,
 )
+from app.money import quantize
 from app.services import get_overdue_bills, get_upcoming_bills
 from app.validators import (
     parse_amount,
@@ -74,12 +75,12 @@ def _parse_frequency(value: str) -> BillFrequency:
 
 class BillSplitIn(BaseModel):
     user_id: str
-    amount:  float
+    amount:  Decimal
 
 
 class BillIn(BaseModel):
     name:              str
-    amount:            float | None = None
+    amount:            Decimal | None = None
     currency:          str          = "EUR"
     category_id:       str | None   = None
     bucket_id:         str | None   = None
@@ -96,7 +97,7 @@ class BillIn(BaseModel):
 
 
 class PayOccurrenceIn(BaseModel):
-    amount:   float | None = None
+    amount:   Decimal | None = None
     paid_by:  str | None   = None
     splits:   list[BillSplitIn] = []
 
@@ -106,7 +107,7 @@ def _bill_dict(b: RecurringBill) -> dict:
         "id":               b.id,
         "household_id":     b.household_id,
         "name":             b.name,
-        "amount":           float(b.amount) if b.amount is not None else None,
+        "amount":           quantize(b.amount) if b.amount is not None else None,
         "currency":         b.currency,
         "category_id":      b.category_id,
         "bucket_id":        b.bucket_id,
@@ -121,7 +122,7 @@ def _bill_dict(b: RecurringBill) -> dict:
         "is_auto_pay":      b.is_auto_pay,
         "is_active":        b.is_active,
         "splits": [
-            {"user_id": s.user_id, "amount": float(s.amount)} for s in b.splits
+            {"user_id": s.user_id, "amount": quantize(s.amount)} for s in b.splits
         ],
     }
 
@@ -131,7 +132,7 @@ def _occ_dict(o: BillOccurrence) -> dict:
         "id":             o.id,
         "bill_id":        o.bill_id,
         "due_date":       o.due_date.isoformat(),
-        "amount":         float(o.amount) if o.amount is not None else None,
+        "amount":         quantize(o.amount) if o.amount is not None else None,
         "status":         o.status.value,
         "paid_at":        o.paid_at.isoformat() if o.paid_at else None,
         "paid_by":        o.paid_by,
@@ -205,7 +206,7 @@ def create_bill(
 
     if body.splits:
         split_total = sum(s.amount for s in body.splits)
-        if amount is not None and round(split_total, 4) != round(float(amount), 4):
+        if amount is not None and round(split_total, 4) != round(amount, 4):
             raise HTTPException(
                 status_code=400,
                 detail=f"Split amounts ({split_total:.2f}) must sum to the bill amount ({float(amount):.2f})",
@@ -253,7 +254,7 @@ def update_bill(
 
     if body.splits:
         split_total = sum(s.amount for s in body.splits)
-        if amount is not None and round(split_total, 4) != round(float(amount), 4):
+        if amount is not None and round(split_total, 4) != round(amount, 4):
             raise HTTPException(
                 status_code=400,
                 detail=f"Split amounts ({split_total:.2f}) must sum to the bill amount ({float(amount):.2f})",

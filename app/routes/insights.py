@@ -10,19 +10,7 @@ from app.auth import require_auth
 from app.clock import local_today
 from app.database import get_db
 from app.models import Bucket, BucketStatus, Category, Household, HouseholdMember, User
-from app.services import (
-    get_forecast,
-    get_insights_bills_due,
-    get_insights_bucket_breakdown,
-    get_insights_budget_status,
-    get_insights_category_breakdown,
-    get_insights_category_trend,
-    get_insights_income,
-    get_insights_kpis,
-    get_insights_summary,
-    get_monthly_trend,
-    resolve_insight_period,
-)
+from app.services import InsightFilters, build_insights
 from app.templates import templates
 
 # GET-only router: require_csrf was a no-op here (it returns early for safe
@@ -49,47 +37,20 @@ def insights(
     user, hh_id = auth
     today = local_today()
 
-    period = resolve_insight_period(preset, start_date, end_date, today)
-    start, end = period["start"], period["end"]
-
-    selected_bucket_ids   = [b for b in bucket_ids.split(",")   if b.strip()]
-    selected_category_ids = [c for c in category_ids.split(",") if c.strip()]
-
-    # Every chart below takes the same filter set, so the numbers on the page
-    # all describe the same slice of data.
-    common = {
-        "bucket_type":  bucket_type,
-        "bucket_ids":   selected_bucket_ids or None,
-        "category_ids": selected_category_ids or None,
-        "paid_by":      paid_by or None,
-    }
-
-    summary          = get_insights_summary(db, hh_id, start, end, **common)
-    income_total     = get_insights_income(db, hh_id, start, end, **common)
-    bills_due        = get_insights_bills_due(
-        db, hh_id, start, end,
-        bucket_type=bucket_type,
-        bucket_ids=selected_bucket_ids or None,
-        category_ids=selected_category_ids or None,
-    )
-    categories       = get_insights_category_breakdown(db, hh_id, start, end, **common)
-    budget_status    = get_insights_budget_status(
-        db, hh_id, start, end,
-        bucket_type=bucket_type,
-        bucket_ids=selected_bucket_ids or None,
-    )
-    bucket_breakdown = get_insights_bucket_breakdown(db, hh_id, start, end, **common)
-    category_trend   = get_insights_category_trend(db, hh_id, n_months=6, **common)
-    trend            = get_monthly_trend(db, hh_id, n_months=6, **common)
-    forecast         = get_forecast(db, hh_id) if period["is_current_month"] else {}
-    kpis             = get_insights_kpis(db, hh_id, start, end, **common)
+    data = build_insights(db, hh_id, InsightFilters(
+        preset=preset, start_date=start_date, end_date=end_date,
+        bucket_type=bucket_type, bucket_ids=bucket_ids,
+        category_ids=category_ids, paid_by=paid_by, today=today,
+    ))
+    period, start, end = data["period"], data["start"], data["end"]
+    selected_bucket_ids = data["selected_bucket_ids"]
+    selected_category_ids = data["selected_category_ids"]
+    trend, category_trend = data["trend"], data["category_trend"]
 
     trend_max = max((m["total"] for m in trend), default=1) or 1
     # The chart scales each bar against the largest single monthly value, which
     # the service now reports directly.
     cat_trend_max = category_trend.get("max_value") or 1
-
-    net = round(income_total - summary["total_spent"], 2)
 
     # --- Supporting data for filter dropdowns ---
     buckets = (
@@ -127,17 +88,17 @@ def insights(
             "user":                 user,
             "household":            household,
             "households":           households,
-            "summary":              summary,
-            "income_total":         income_total,
-            "bills_due":            bills_due,
-            "net":                  net,
-            "categories":           categories,
-            "budget_status":        budget_status,
-            "bucket_breakdown":     bucket_breakdown,
+            "summary":              data["summary"],
+            "income_total":         data["income_total"],
+            "bills_due":            data["bills_due"],
+            "net":                  data["net"],
+            "categories":           data["categories"],
+            "budget_status":        data["budget_status"],
+            "bucket_breakdown":     data["bucket_breakdown"],
             "category_trend":       category_trend,
             "cat_trend_max":        cat_trend_max,
-            "kpis":                 kpis,
-            "forecast":             forecast,
+            "kpis":                 data["kpis"],
+            "forecast":             data["forecast"],
             "trend":                trend,
             "trend_max":            trend_max,
             "buckets":              buckets,

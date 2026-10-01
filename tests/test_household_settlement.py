@@ -147,10 +147,8 @@ def test_household_settlement_is_scoped_to_household(db, two_buckets):
 
 def test_bucket_and_household_settlements_compose(db, two_buckets):
     """A per-bucket payment reduces the household total, not double-counted."""
-    from app.services import record_bucket_settlement
-
-    record_bucket_settlement(
-        db, two_buckets.bucket_id, two_buckets.household_id,
+    record_household_settlement(
+        db, two_buckets.household_id, bucket_id=two_buckets.bucket_id,
         from_user_id=two_buckets.partner_id, to_user_id=two_buckets.user_id,
         amount=50,
     )
@@ -164,11 +162,9 @@ def test_bucket_and_household_settlements_compose(db, two_buckets):
 
 
 def test_history_includes_bucket_and_household_payments(db, two_buckets):
-    from app.services import record_bucket_settlement
-
-    record_bucket_settlement(db, two_buckets.bucket_id, two_buckets.household_id,
-                             from_user_id=two_buckets.partner_id,
-                             to_user_id=two_buckets.user_id, amount=10)
+    record_household_settlement(db, two_buckets.household_id, bucket_id=two_buckets.bucket_id,
+                                from_user_id=two_buckets.partner_id,
+                                to_user_id=two_buckets.user_id, amount=10)
     record_household_settlement(db, two_buckets.household_id,
                                 from_user_id=two_buckets.partner_id,
                                 to_user_id=two_buckets.user_id, amount=5)

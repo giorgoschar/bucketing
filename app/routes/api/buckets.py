@@ -1,6 +1,8 @@
 """
 API buckets routes — CRUD + balance + settle.
 """
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -14,6 +16,7 @@ from app.models import (
     RecurringBill,
     Transaction,
 )
+from app.money import quantize
 from app.services import (
     get_bucket_balance,
     get_bucket_settlement,
@@ -21,7 +24,6 @@ from app.services import (
     get_household_settlement,
     get_household_settlement_history,
     get_member_balances,
-    record_bucket_settlement,
     record_household_settlement,
 )
 from app.validators import parse_amount, parse_color, validate_split_users
@@ -38,7 +40,7 @@ class BucketIn(BaseModel):
     type:              str   = "custom"
     color:             str   = "#6366f1"
     icon:              str   = "🪣"
-    budget:            float | None = None
+    budget:            Decimal | None = None
     description:       str   | None = None
     show_income:       bool  = True
     enable_settlement: bool  = False
@@ -53,7 +55,7 @@ def _bucket_dict(b: Bucket, balance: dict | None = None) -> dict:
         "color":            b.color,
         "icon":             b.icon,
         "status":           b.status.value,
-        "budget":           float(b.budget) if b.budget is not None else None,
+        "budget":           quantize(b.budget) if b.budget is not None else None,
         "description":      b.description,
         "show_income":      b.show_income,
         "enable_settlement": b.enable_settlement,
@@ -204,7 +206,7 @@ def get_settlement(
 class SettleIn(BaseModel):
     from_user_id: str | None = None
     to_user_id:   str | None = None
-    amount:       float | None = None
+    amount:       Decimal | None = None
     note:         str | None = None
 
 
@@ -241,8 +243,9 @@ def settle_bucket(
     if body.amount is not None:
         parse_amount(body.amount, field="amount")
 
-    created = record_bucket_settlement(
-        db, bucket_id, hh_id,
+    created = record_household_settlement(
+        db, hh_id,
+        bucket_id=bucket_id,
         created_by=user.id,
         from_user_id=body.from_user_id,
         to_user_id=body.to_user_id,
@@ -255,7 +258,7 @@ def settle_bucket(
         "bucket_id": bucket_id,
         "recorded": [
             {"from_user_id": s.from_user_id, "to_user_id": s.to_user_id,
-             "amount": float(s.amount)}
+             "amount": quantize(s.amount)}
             for s in created
         ],
         "settlements": get_bucket_settlement(db, bucket_id),
@@ -317,7 +320,7 @@ def settle_household(
     return {
         "recorded": [
             {"from_user_id": s.from_user_id, "to_user_id": s.to_user_id,
-             "amount": float(s.amount)}
+             "amount": quantize(s.amount)}
             for s in created
         ],
         "settlements": get_household_settlement(db, hh_id),

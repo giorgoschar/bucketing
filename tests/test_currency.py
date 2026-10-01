@@ -133,3 +133,12 @@ def test_dashboard_totals_reflect_conversion(client, mixed):
     r = client.get("/dashboard")
     assert r.status_code == 200
     assert "150" in r.text
+
+
+def test_bucket_all_time_total_converts(client, mixed):
+    """B4: the bucket page's all-time total summed raw amounts (EUR 100 + USD 100
+    rendered as 200) instead of applying the exchange rate."""
+    r = client.get(f"/buckets/{mixed.bucket_id}?all_time=true")
+    assert r.status_code == 200
+    assert "€150.00" in r.text
+    assert "€200.00" not in r.text

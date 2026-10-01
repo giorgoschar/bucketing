@@ -3,6 +3,7 @@ Buckets CRUD routes.
 """
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth import require_auth, require_csrf
@@ -16,7 +17,9 @@ from app.models import (
     Transaction,
     TransactionType,
 )
+from app.money import TENTH, ZERO, quantize, to_decimal
 from app.services import (
+    base_amount_expr,
     base_ctx,
     get_bucket_balance,
     get_bucket_month_summary,
@@ -24,7 +27,7 @@ from app.services import (
     get_bucket_settlement_history,
     get_savings_summary,
     get_trip_summary,
-    record_bucket_settlement,
+    record_household_settlement,
 )
 from app.templates import templates
 from app.validators import parse_amount, parse_color, parse_year_month, require_member
@@ -173,7 +176,17 @@ def bucket_detail(
             .order_by(Transaction.transaction_date.desc(), Transaction.created_at.desc())
             .all()
         )
-        all_time_total = sum(t.amount for t in transactions if t.type == TransactionType.expense)
+        # Converted to household currency like every other total (B4): summing
+        # raw amounts added EUR and USD figures together.
+        all_time_total = quantize(
+            db.query(func.coalesce(func.sum(base_amount_expr()), 0))
+            .filter(
+                Transaction.active(),
+                Transaction.bucket_id == bucket_id,
+                Transaction.type == TransactionType.expense,
+            )
+            .scalar()
+        )
         month_summary = None
         total_pages = 1
     else:
@@ -216,13 +229,11 @@ def bucket_detail(
         get_bucket_settlement_history(db, bucket_id) if bucket.enable_settlement else []
     )
 
-    # Budget progress, clamped to 0..100 for the bar width. Computed here
-    # because bucket.budget is a Decimal and balance["expenses"] is a float.
-    budget_pct = 0.0
-    if bucket.budget and float(bucket.budget) > 0:
-        budget_pct = round(
-            min(max(float(balance["expenses"]) / float(bucket.budget) * 100, 0), 100), 1
-        )
+    # Budget progress, clamped to 0..100 for the bar width.
+    budget_pct = quantize(ZERO, TENTH)
+    if bucket.budget and bucket.budget > 0:
+        raw = quantize(to_decimal(balance["expenses"]) / bucket.budget * 100, TENTH)
+        budget_pct = min(max(raw, 0), 100)
 
     return templates.TemplateResponse(
         "buckets/detail.html",
@@ -357,12 +368,13 @@ def settle_bucket(
 
     value = parse_amount(amount, field="Amount", allow_blank=True)
 
-    created = record_bucket_settlement(
-        db, bucket_id, hh_id,
+    created = record_household_settlement(
+        db, hh_id,
+        bucket_id=bucket_id,
         created_by=user.id,
         from_user_id=payer,
         to_user_id=payee,
-        amount=float(value) if value is not None else None,
+        amount=value,
         note=note.strip() or None,
     )
     db.commit()
