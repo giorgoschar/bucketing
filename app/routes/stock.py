@@ -285,10 +285,10 @@ async def shopping_bought(request: Request, db: Session = Depends(get_db), auth=
     retailer_name = stock_svc.retailer_label(retailer) if retailer else None
     expense_url = None
     if total > 0:
-        # Follow-up: merchant= prefill once Phase 4's merchant field lands, and
-        # /transactions/new reading these query params.
         params = {"amount": f"{total:.2f}",
                   "notes": f"Groceries at {retailer_name}" if retailer_name else "Groceries"}
+        if retailer_name:
+            params["merchant"] = retailer_name
         cat_id = _groceries_category_id(db, hh_id)
         if cat_id:
             params["category_id"] = cat_id

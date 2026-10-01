@@ -13,7 +13,7 @@ existing row is touched.
 - price_snapshots: one row per product, retailer and day.
 
 Revision ID: a5b6c7d8e9f0
-Revises: d2e3f4a5b6c7
+Revises: e3f4a5b6c7d8
 Create Date: 2026-10-01
 
 """
@@ -24,8 +24,8 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'a5b6c7d8e9f0'
-# NOTE: re-pointed to the Phase 5 head (f4a5b6c7d8e9) when merged after 4–5.
-down_revision: str | None = 'd2e3f4a5b6c7'
+# NOTE: re-pointed to the Phase 5 head (f4a5b6c7d8e9) when merged after Phase 5.
+down_revision: str | None = 'e3f4a5b6c7d8'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

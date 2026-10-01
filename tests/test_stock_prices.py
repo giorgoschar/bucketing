@@ -292,4 +292,50 @@ def test_api_shopping(client, db, api):  # noqa: F811
     assert body["best_single_store"]["retailer"] == "lidl"
 
 
+def _init_cfg(html):
+    import html as htmllib
+    import json
+    import re
+
+    raw = re.search(r"data-init='([^']*)'", html, re.S).group(1)
+    return json.loads(htmllib.unescape(raw))
+
+
+def test_expense_link_prefills_the_new_expense_form(client, db, authed):
+    import re
+
+    cat = Category(household_id=authed.household_id, name="Food & Groceries")
+    db.add(cat)
+    item = stock_svc.add_product(db, authed.household_id, authed.user_id, name="Milk",
+                                 quantity=D("0"), min_quantity=D("1"))
+    db.commit()
+    _series(db, item.product_id, [1.40], retailer="lidl", end=stock_svc.local_today())
+    r = client.post("/stock/shopping/bought",
+                    data={"item_id": [item.id], f"qty_{item.id}": "2", "retailer": "lidl"},
+                    headers=authed.headers)
+    href = re.search(r'href="(/transactions/new\?[^"]+)"', r.text).group(1).replace("&amp;", "&")
+    assert "merchant=Lidl" in href
+
+    page = client.get(href)
+    assert page.status_code == 200
+    pre = _init_cfg(page.text)["prefill"]
+    assert pre == {"amount": "2.80", "category_id": cat.id,
+                   "notes": "Groceries at Lidl", "merchant": "Lidl"}
+
+
+def test_prefill_ignores_foreign_category_and_bad_amount(client, db, authed, make_household):
+    other = make_household(name="Other", username="other")
+    foreign = Category(household_id=other.household_id, name="Theirs")
+    db.add(foreign)
+    db.commit()
+    nasty = "x'<b>"
+    page = client.get("/transactions/new", params={
+        "amount": "abc", "category_id": foreign.id, "notes": nasty, "merchant": "M"})
+    assert page.status_code == 200
+    pre = _init_cfg(page.text)["prefill"]
+    assert pre["amount"] == "" and pre["category_id"] == ""
+    assert pre["notes"] == nasty and pre["merchant"] == "M"
+    assert nasty not in page.text      # escaped, not raw
+
+
 from tests.test_api import api  # noqa: E402,F401  (fixture)

@@ -231,3 +231,61 @@ def test_default_client_uses_settings(monkeypatch):
     monkeypatch.setattr(posokanei, "_client", None)
     with pytest.raises(PosokaneiUnavailable):
         posokanei.search("γάλα")
+
+
+def test_get_404_is_not_found_not_an_outage():
+    from app.posokanei import PosokaneiNotFound
+
+    client, _ = make_client(lambda req: httpx.Response(404, json={"detail": "nope"}))
+    with pytest.raises(PosokaneiNotFound):
+        client.get("p-gone")
+
+
+@pytest.mark.parametrize("response", [
+    httpx.Response(500), httpx.Response(503), httpx.Response(403, text="<html>"),
+])
+def test_get_outages_are_not_not_found(response):
+    from app.posokanei import PosokaneiNotFound
+
+    client, _ = make_client(lambda req: response)
+    with pytest.raises(PosokaneiUnavailable) as exc:
+        client.get("p-1")
+    assert not isinstance(exc.value, PosokaneiNotFound)
+
+
+@pytest.mark.parametrize("pid", ["..", ".", "x?a=b#", "a/b", "", "x" * 65, "γάλα", "a b"])
+def test_get_rejects_unsafe_ids_without_a_request(pid):
+    from app.posokanei import PosokaneiNotFound, valid_product_id
+
+    assert not valid_product_id(pid)
+    client, rec = make_client(lambda req: httpx.Response(200, json=SEARCH_PAYLOAD["results"][0]))
+    with pytest.raises(PosokaneiNotFound):
+        client.get(pid)
+    assert rec.requests == []
+
+
+def test_valid_ids_pass():
+    from app.posokanei import valid_product_id
+
+    for pid in ("p-123", "abc.def_1", "A" * 64, "123"):
+        assert valid_product_id(pid)
+
+
+@pytest.mark.parametrize("value,expected", [
+    (True, True), (False, False), (1, True), (0, False), ("true", True), ("True", True),
+    ("1", True), ("false", False), ("0", False), (0.5, False), (12, False),
+    ("yes", False), (None, False), ("0.15", False),
+])
+def test_is_discount_is_parsed_strictly(value, expected):
+    payload = json.loads(json.dumps(SEARCH_PAYLOAD))
+    payload["results"][0]["retailer_prices"][0]["is_discount"] = value
+    client, _ = make_client(lambda req: httpx.Response(200, json=payload))
+    assert client.search("γάλα")[0].retailer_prices[0].is_discount is expected
+
+
+def test_items_container_accepted_but_unknown_aliases_rejected():
+    client, _ = make_client(lambda req: httpx.Response(200, json={"items": SEARCH_PAYLOAD["results"]}))
+    assert client.search("γάλα")[0].id == "p-123"
+    client, _ = make_client(lambda req: httpx.Response(200, json={"products": SEARCH_PAYLOAD["results"]}))
+    with pytest.raises(PosokaneiUnavailable):
+        client.search("γάλα")

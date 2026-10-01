@@ -363,3 +363,17 @@ def test_api_product_lookup_unavailable(client, api, down):  # noqa: F811
 
 def test_api_product_lookup_requires_auth(client):
     assert client.get("/api/v1/products/search", params={"q": "x"}).status_code == 401
+
+
+@pytest.mark.parametrize("pid", ["..", ".", "x?a=b#", "a/b", "x" * 65])
+def test_unsafe_posokanei_id_rejected_on_web_form(client, authed, db, pid):
+    r = client.post("/stock", data={"name": "Milk", "posokanei_id": pid}, headers=authed.headers)
+    assert r.status_code == 400
+    assert db.query(Product).count() == 0
+
+
+def test_unsafe_posokanei_id_rejected_on_api(client, db, api):  # noqa: F811
+    headers, _ = api
+    r = client.post("/api/v1/stock", json={"name": "Milk", "posokanei_id": ".."}, headers=headers)
+    assert r.status_code == 400
+    assert db.query(Product).count() == 0

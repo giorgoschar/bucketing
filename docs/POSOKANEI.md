@@ -16,7 +16,7 @@ compute its own price advice.
 |---|---|---|
 | `search(query, page=1, page_size=20)` | `POST /products/search` body `{"query": q, "page": p, "page_size": n}` | add-product search box |
 | `by_barcode(barcode)` | `GET /products/barcode/{barcode}` | 404 → `None`; non-digit codes never sent |
-| `get(product_id, include_history=True)` | `GET /products/{id}?countries=GR&include_tax=true&include_history=true` | daily refresh; `history` (if present) backfills snapshots |
+| `get(product_id, include_history=True)` | `GET /products/{id}?countries=GR&include_tax=true&include_history=true` | daily refresh; `history` (if present) backfills snapshots; 404 or an invalid id → `PosokaneiNotFound` |
 
 Base URL `https://api.posokanei.gov.gr` (`POSOKANEI_BASE_URL`).
 
@@ -48,8 +48,10 @@ Two stages run in the daily job (after the budget warnings):
 - `_refresh_tracked_prices` — for every non-archived product with a
   `posokanei_id` whose stock item has `track_price`, call `get()` and store
   today's `price_snapshots` (skipped when a snapshot for today already
-  exists). After 3 consecutive `PosokaneiUnavailable` errors it logs and
-  stops for the day; the rest of the job still runs.
+  exists), never-priced products first, then the stalest. A per-product
+  miss (`PosokaneiNotFound`: 404 or invalid id) is skipped; after 3
+  consecutive outage errors (timeouts, transport errors, 5xx, 403) it logs
+  and stops for the day; the rest of the job still runs.
 - `_notify_stock_and_prices` — `stock_low` (dedupe
   `stock_low:{item.id}:{today}`) when an item crossed down to its minimum
   since the start of yesterday; `price_drop` (dedupe
@@ -77,10 +79,13 @@ WAF / bot filter). The live field shapes could therefore not be verified.
 
 Consequences:
 
-- The mapping follows the specified shape but is deliberately tolerant
-  (accepts a bare list or `results` / `items` / `products` / `data`;
-  `retailer_prices` / `prices`; nested retailer objects; common key
-  aliases), and derives `price_stats` from the retailer prices when absent.
+- The mapping reads exactly the specified keys; only the search container
+  varies (a bare list, `results` or `items`). `price_stats` is derived from
+  the retailer prices when absent. `is_discount` is parsed strictly
+  (booleans, 0/1, "true"/"false"/"1"/"0"; anything else is false).
+- Product ids must match `^[A-Za-z0-9._-]{1,64}$` (not `.`/`..`); they are
+  validated when a product is added (400) and again in the client, which
+  also URL-quotes them.
 - A 403 is just another `PosokaneiUnavailable`, so in the observed state
   the feature runs in degraded mode: manual products, manual barcodes, no
   prices. Re-check the shapes once the endpoint answers and adjust

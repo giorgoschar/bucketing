@@ -22,6 +22,7 @@ from app.config import settings
 from app.database import get_db
 from app.models import (
     Bucket,
+    Category,
     Transaction,
     TransactionSplit,
     TransactionType,
@@ -134,11 +135,29 @@ def _get_context(db: Session, user, hh_id: str) -> dict:
 def new_transaction(
     request: Request,
     bucket_id: str = None,
+    amount: str = "",
+    category_id: str = "",
+    notes: str = "",
+    merchant: str = "",
     db: Session = Depends(get_db),
     auth=Depends(require_auth),
 ):
     user, hh_id = auth
     ctx = _get_context(db, user, hh_id)
+
+    # Optional prefill from links (e.g. stock "Mark bought"). Invalid values
+    # are dropped rather than rejected; nothing here is saved until submit.
+    try:
+        amt = parse_amount(amount, allow_blank=True)
+    except HTTPException:
+        amt = None
+    cat = db.get(Category, category_id) if category_id else None
+    prefill = {
+        "amount": f"{amt:.2f}" if amt is not None else "",
+        "category_id": cat.id if cat is not None and cat.household_id == hh_id else "",
+        "notes": notes.strip()[:500],
+        "merchant": merchant.strip()[:200],
+    }
 
     # If a bucket is pre-selected, respect its show_income setting
     show_income = True
@@ -151,6 +170,7 @@ def new_transaction(
         "request": request,
         "user": user,
         "selected_bucket_id": bucket_id or "",
+        "prefill": prefill,
         "show_income": show_income,
         "step": 1,
     })

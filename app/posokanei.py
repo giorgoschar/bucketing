@@ -22,6 +22,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
+from urllib.parse import quote
 
 import httpx
 
@@ -36,6 +37,24 @@ _BARCODE_RE = re.compile(r"^\d{6,14}$")
 
 class PosokaneiUnavailable(Exception):
     """PosoKanei could not be used right now; callers must degrade."""
+
+
+class PosokaneiNotFound(PosokaneiUnavailable):
+    """This one product does not exist (404) or its id is invalid.
+
+    A per-product miss, not an outage: batch callers (the daily refresh) skip
+    it and carry on. Subclasses PosokaneiUnavailable so UI callers that only
+    care about "no data" keep working unchanged.
+    """
+
+
+_PRODUCT_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+
+
+def valid_product_id(value) -> bool:
+    """A PosoKanei product id safe to put in a URL path segment."""
+    return (isinstance(value, str) and bool(_PRODUCT_ID_RE.match(value))
+            and value not in (".", ".."))
 
 
 # ---------------------------------------------------------------------------
@@ -93,18 +112,11 @@ class ProductSummary:
 # Mapping (tolerant: the API is undocumented, so accept common key variants)
 # ---------------------------------------------------------------------------
 
-def _first(d: dict, *keys, default=None):
-    for k in keys:
-        if k in d and d[k] is not None:
-            return d[k]
-    return default
-
-
 def _dec(value) -> Decimal | None:
-    if value is None or value == "":
+    if value is None or value == "" or isinstance(value, bool):
         return None
     try:
-        out = Decimal(str(value).replace(",", "."))
+        out = Decimal(str(value))
     except (InvalidOperation, ValueError):
         return None
     return out if out.is_finite() else None
@@ -117,41 +129,46 @@ def _str(value) -> str | None:
     return s or None
 
 
+def _bool(value) -> bool:
+    """Strict: only real booleans, 0/1 and "true"/"false"/"1"/"0" count. A
+    numeric discount amount (e.g. 0.5) is not a flag and reads as False."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return value == 1
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "1")
+    return False
+
+
 def _map_retailer(raw: dict) -> RetailerPrice:
-    retailer = _first(raw, "retailer", "retailer_id", "retailer_code", "store", "chain")
-    if isinstance(retailer, dict):  # {"retailer": {"id":..., "name":...}}
-        nested = retailer
-        retailer = _first(nested, "id", "code", "slug", "name")
-        display = _first(raw, "display_name") or _first(nested, "display_name", "name")
-    else:
-        display = _first(raw, "display_name", "retailer_name", "store_name", "name")
-    retailer = _str(retailer) or _str(display) or "unknown"
+    retailer = _str(raw.get("retailer")) or "unknown"
     return RetailerPrice(
         retailer=retailer[:40],
-        display_name=_str(display) or retailer,
-        price=_dec(_first(raw, "price", "final_price", "current_price")),
-        unit_price=_dec(_first(raw, "unit_price", "price_per_unit")),
-        is_discount=bool(_first(raw, "is_discount", "discount", "on_offer", default=False)),
-        discount_pct=_dec(_first(raw, "discount_pct", "discount_percent", "discount_percentage")),
-        last_updated=_str(_first(raw, "last_updated", "updated_at", "date")),
+        display_name=_str(raw.get("display_name")) or retailer,
+        price=_dec(raw.get("price")),
+        unit_price=_dec(raw.get("unit_price")),
+        is_discount=_bool(raw.get("is_discount")),
+        discount_pct=_dec(raw.get("discount_pct")),
+        last_updated=_str(raw.get("last_updated")),
     )
 
 
 def _map_history(raw) -> list[PricePoint]:
     points = []
-    for h in raw or []:
+    for h in raw if isinstance(raw, list) else []:
         if not isinstance(h, dict):
             continue
-        price = _dec(_first(h, "price", "min_price", "final_price"))
-        day = _str(_first(h, "date", "snapshot_date", "day"))
+        price = _dec(h.get("price"))
+        day = _str(h.get("date"))
         if price is None or day is None:
             continue
         points.append(PricePoint(
             date=day[:10],
-            retailer=(_str(_first(h, "retailer", "retailer_id", "store")) or "unknown")[:40],
+            retailer=(_str(h.get("retailer")) or "unknown")[:40],
             price=price,
-            unit_price=_dec(_first(h, "unit_price", "price_per_unit")),
-            is_discount=bool(_first(h, "is_discount", "discount", default=False)),
+            unit_price=_dec(h.get("unit_price")),
+            is_discount=_bool(h.get("is_discount")),
         ))
     return points
 
@@ -159,20 +176,20 @@ def _map_history(raw) -> list[PricePoint]:
 def _map_product(raw) -> ProductSummary:
     if not isinstance(raw, dict):
         raise PosokaneiUnavailable("unexpected product shape")
-    pid = _str(_first(raw, "id", "product_id", "uuid"))
-    name = _str(_first(raw, "name", "title", "product_name"))
+    pid = _str(raw.get("id"))
+    name = _str(raw.get("name"))
     if not pid or not name:
         raise PosokaneiUnavailable("product without id/name")
 
-    prices_raw = _first(raw, "retailer_prices", "prices", "retailers", default=[])
+    prices_raw = raw.get("retailer_prices") or []
     prices = [_map_retailer(p) for p in prices_raw if isinstance(p, dict)]
 
-    stats_raw = _first(raw, "price_stats", "stats", default=None)
+    stats_raw = raw.get("price_stats")
     if isinstance(stats_raw, dict):
         stats = PriceStats(
-            min=_dec(_first(stats_raw, "min", "min_price")),
-            max=_dec(_first(stats_raw, "max", "max_price")),
-            avg=_dec(_first(stats_raw, "avg", "mean", "avg_price")),
+            min=_dec(stats_raw.get("min")),
+            max=_dec(stats_raw.get("max")),
+            avg=_dec(stats_raw.get("avg")),
         )
     else:
         values = [p.price for p in prices if p.price is not None]
@@ -185,24 +202,22 @@ def _map_product(raw) -> ProductSummary:
     return ProductSummary(
         id=pid[:64],
         name=name[:200],
-        brand=(_str(_first(raw, "brand", "brand_name")) or None),
-        barcode=_str(_first(raw, "barcode", "ean", "gtin")),
-        unit=_str(_first(raw, "unit", "unit_of_measure")),
-        unit_quantity=_dec(_first(raw, "unit_quantity", "quantity", "size")),
-        image_url=_str(_first(raw, "image_url", "image", "thumbnail")),
+        brand=_str(raw.get("brand")),
+        barcode=_str(raw.get("barcode")),
+        unit=_str(raw.get("unit")),
+        unit_quantity=_dec(raw.get("unit_quantity")),
+        image_url=_str(raw.get("image_url")),
         retailer_prices=prices,
         price_stats=stats,
-        history=_map_history(_first(raw, "history", "price_history", default=[])),
+        history=_map_history(raw.get("history")),
     )
 
 
 def _map_search(payload) -> list[ProductSummary]:
     if isinstance(payload, list):
         items = payload
-    elif isinstance(payload, dict):
-        items = _first(payload, "results", "items", "products", "data")
-        if not isinstance(items, list):
-            raise PosokaneiUnavailable("unexpected search shape")
+    elif isinstance(payload, dict) and isinstance(payload.get("results", payload.get("items")), list):
+        items = payload.get("results", payload.get("items"))
     else:
         raise PosokaneiUnavailable("unexpected search shape")
     return [_map_product(p) for p in items]
@@ -328,15 +343,23 @@ class PosokaneiClient:
 
     def get(self, product_id: str, include_history: bool = True) -> ProductSummary:
         pid = (product_id or "").strip()
-        if not pid or "/" in pid or len(pid) > 64:
-            raise PosokaneiUnavailable("invalid product id")
+        if not valid_product_id(pid):
+            raise PosokaneiNotFound("invalid product id")
         params = {
             "countries": "GR",
             "include_tax": "true",
             "include_history": "true" if include_history else "false",
         }
-        return self._call(("get", pid, include_history), _map_product,
-                          "GET", f"/products/{pid}", params=params)
+        def mapper(payload):
+            if payload is None:
+                raise PosokaneiNotFound(f"product {pid} not found")
+            return _map_product(payload)
+
+        # quote() is defence in depth: valid_product_id already excludes
+        # anything that could change the path.
+        return self._call(("get", pid, include_history), mapper,
+                          "GET", f"/products/{quote(pid, safe='')}", params=params,
+                          allow_404=True)
 
 
 # ---------------------------------------------------------------------------

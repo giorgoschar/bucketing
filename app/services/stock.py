@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.clock import local_today, utcnow_naive
 from app.models import PriceSnapshot, Product, StockItem, StockMovement, StockReason
 from app.money import ZERO, quantize, to_decimal
+from app.posokanei import valid_product_id
 
 MAX_QUANTITY = Decimal("100000")
 _BARCODE_RE = re.compile(r"^\d{6,14}$")
@@ -109,6 +110,9 @@ def add_product(
     if not name:
         raise StockError("Name is required.")
     barcode = clean_barcode(barcode)
+    posokanei_id = (posokanei_id or "").strip() or None
+    if posokanei_id is not None and not valid_product_id(posokanei_id):
+        raise StockError("Invalid PosoKanei product id.")
     quantity = parse_quantity(quantity)
     min_quantity = parse_quantity(min_quantity, field="Minimum")
     if image_url and not str(image_url).startswith("https://"):

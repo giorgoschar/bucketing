@@ -269,7 +269,13 @@ def test_stock_migration_tables_and_barcode_uniqueness(tmp_path):
         add_product(conn, hh1, "5201054017906")
     engine.dispose()
 
-    down = _alembic(["downgrade", "d2e3f4a5b6c7"], db_url)
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "stock_mig", ROOT / "alembic" / "versions" / "a5b6c7d8e9f0_stock_and_prices.py")
+    mig = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mig)
+    down = _alembic(["downgrade", mig.down_revision], db_url)
     assert down.returncode == 0, down.stderr
     tables = set(inspect(create_engine(db_url)).get_table_names())
     assert not {"products", "stock_items", "stock_movements", "price_snapshots"} & tables

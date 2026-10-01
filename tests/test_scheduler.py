@@ -422,3 +422,57 @@ def test_no_price_drop_for_a_normal_price(db, make_household, run_job, fake_poso
     db.commit()
     run_job()
     assert db.query(Notification).filter_by(type=NotificationType.price_drop).count() == 0
+
+
+def test_dead_product_ids_do_not_starve_the_refresh(db, make_household, run_job, monkeypatch):
+    """404s are per-product misses: skipped, never counted as an outage."""
+    from app import posokanei
+    from app.models import PriceSnapshot
+    from app.posokanei import PosokaneiNotFound
+
+    Fake = _stock_fixtures()
+
+    class Mixed(Fake):
+        def get(self, pid, include_history=True):
+            if pid.startswith("dead"):
+                self.calls.append(pid)
+                raise PosokaneiNotFound(pid)
+            return super().get(pid, include_history)
+
+    client = Mixed()
+    monkeypatch.setattr(posokanei, "_client", client)
+    hh = make_household()
+    for n in range(3):
+        _stock_item(db, hh, f"Dead {n}", f"dead-{n}")
+    good = _stock_item(db, hh, "Good", "zz-good")      # sorts last by id/name either way
+
+    run_job()
+
+    assert "zz-good" in client.calls
+    snaps = db.query(PriceSnapshot).all()
+    assert [(s.product_id, s.snapshot_date) for s in snaps] == [(good.product_id, today_local())]
+
+
+def test_refresh_order_is_oldest_snapshot_first(db, make_household, run_job, monkeypatch):
+    from datetime import timedelta
+    from decimal import Decimal
+
+    from app import posokanei
+    from app.models import PriceSnapshot
+
+    Fake = _stock_fixtures()
+    client = Fake()
+    monkeypatch.setattr(posokanei, "_client", client)
+    hh = make_household()
+    recent = _stock_item(db, hh, "Recent", "p-recent")
+    stale = _stock_item(db, hh, "Stale", "p-stale")
+    _stock_item(db, hh, "Never", "p-never")
+    today = today_local()
+    for item, age in ((recent, 1), (stale, 20)):
+        db.add(PriceSnapshot(product_id=item.product_id, retailer="lidl", price=Decimal("1"),
+                             snapshot_date=today - timedelta(days=age)))
+    db.commit()
+
+    run_job()
+
+    assert client.calls == ["p-never", "p-stale", "p-recent"]

@@ -485,26 +485,38 @@ def _refresh_tracked_prices(db, today: date) -> int:
     Requests are spaced by the client (≥ 250 ms, so ≤ 4 req/s). PosoKanei
     being unavailable is logged and ends the stage; the job carries on.
     """
+    from sqlalchemy import func
+
     from app import posokanei
     from app.models import PriceSnapshot, Product, StockItem
     from app.services.stock import record_snapshots
 
-    done_today = (db.query(PriceSnapshot.product_id)
-                  .filter(PriceSnapshot.snapshot_date == today))
+    last_snap = (db.query(PriceSnapshot.product_id.label("pid"),
+                          func.max(PriceSnapshot.snapshot_date).label("last"))
+                 .group_by(PriceSnapshot.product_id)
+                 .subquery())
+    rows = (db.query(Product.id, last_snap.c.last)
+            .join(StockItem, StockItem.product_id == Product.id)
+            .outerjoin(last_snap, last_snap.c.pid == Product.id)
+            .filter(Product.posokanei_id.isnot(None),
+                    Product.archived_at.is_(None),
+                    StockItem.track_price.is_(True))
+            .all())
+    # Deterministic and fair: never-priced first, then the stalest, so a
+    # stage cut short by an outage starts where it left off next time.
     product_ids = [
-        pid for (pid,) in db.query(Product.id)
-        .join(StockItem, StockItem.product_id == Product.id)
-        .filter(Product.posokanei_id.isnot(None),
-                Product.archived_at.is_(None),
-                StockItem.track_price.is_(True),
-                Product.id.notin_(done_today))
-        .all()
+        pid for pid, last in sorted(rows, key=lambda r: (r[1] is not None, r[1] or today, r[0]))
+        if last is None or last < today
     ]
     stored = failures = 0
     for pid in product_ids:
         product = db.get(Product, pid)
         try:
             summary = posokanei.get(product.posokanei_id)
+        except posokanei.PosokaneiNotFound as exc:
+            # One delisted/bogus id: skip it, it says nothing about an outage.
+            logger.info("PosoKanei has no product %s (%s); skipping", product.posokanei_id, exc)
+            continue
         except posokanei.PosokaneiUnavailable as exc:
             failures += 1
             logger.warning("PosoKanei unavailable for product %s: %s", pid, exc)
