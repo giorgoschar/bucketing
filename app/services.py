@@ -114,21 +114,30 @@ TRASH_DIRNAME = ".trash"
 def delete_transaction(db: Session, txn: Transaction, uploads_dir: str | None = None) -> None:
     """Soft-delete a transaction. Never removes the row, its splits or its receipt.
 
-    The receipt file is moved to <uploads>/.trash/ (purged after 30 days by the
-    scheduler); receipt_path keeps the bare filename so it can be restored.
-    The caller commits.
+    The row is marked deleted and committed first; only then is the receipt
+    moved to <uploads>/.trash/ (purged 30 days after *deletion* by the
+    scheduler). If the move fails the row stays deleted and the file stays in
+    uploads/ (not lost). receipt_path keeps the bare filename for restore.
     """
     uploads_dir = uploads_dir or UPLOADS_DIR
     txn.deleted_at = datetime.utcnow()
-    if txn.receipt_path:
-        src = os.path.join(uploads_dir, txn.receipt_path)
-        if os.path.isfile(src):
-            trash = os.path.join(uploads_dir, TRASH_DIRNAME)
-            os.makedirs(trash, exist_ok=True)
-            try:
-                shutil.move(src, os.path.join(trash, os.path.basename(txn.receipt_path)))
-            except OSError:
-                logger.exception("Could not move receipt %s to trash", txn.receipt_path)
+    db.commit()
+    if not txn.receipt_path:
+        return
+    name = os.path.basename(txn.receipt_path)
+    src = os.path.join(uploads_dir, name)
+    if not os.path.isfile(src):
+        return
+    trash = os.path.join(uploads_dir, TRASH_DIRNAME)
+    dest = os.path.join(trash, name)
+    try:
+        os.makedirs(trash, exist_ok=True)
+        shutil.move(src, dest)
+        # Retention counts from deletion, not from when the file was uploaded.
+        os.utime(dest, None)
+    except OSError:
+        logger.warning("Could not move receipt %s to trash for transaction %s",
+                       name, txn.id, exc_info=True)
 
 
 def base_ctx(db: Session, user, hh_id: str) -> dict:

@@ -11,6 +11,8 @@ from app.models import (
     Bucket,
     BucketStatus,
     BucketType,
+    RecurringBill,
+    Transaction,
 )
 from app.services import (
     get_bucket_balance,
@@ -152,6 +154,13 @@ def delete_bucket(
     bucket = db.query(Bucket).filter_by(id=bucket_id, household_id=hh_id).first()
     if not bucket:
         raise HTTPException(status_code=404, detail="Bucket not found")
+    has_txns = db.query(Transaction.id).filter(Transaction.bucket_id == bucket_id).first()
+    has_bills = db.query(RecurringBill.id).filter(RecurringBill.bucket_id == bucket_id).first()
+    if has_txns or has_bills:
+        raise HTTPException(
+            status_code=409,
+            detail="This bucket has transactions or recurring bills and cannot be deleted. Archive it instead.",
+        )
     db.delete(bucket)
     db.commit()
 

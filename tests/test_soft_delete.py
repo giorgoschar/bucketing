@@ -306,3 +306,74 @@ def test_purge_script_cli_requires_explicit_flag():
     assert mod.parse_args(["abc"]).execute is False
     assert mod.parse_args(["abc", "--yes-delete-abc"]).execute is True
     assert mod.parse_args(["abc", "--yes-delete-other"]).execute is False
+
+
+# ---- review fixes ----------------------------------------------------------
+
+def test_trash_retention_counts_from_deletion_not_upload(db, make_household):
+    from app.scheduler import _purge_trash, today_local
+    hh = make_household()
+    path = _receipt("old.jpg")
+    old = time.time() - 90 * 86400
+    os.utime(path, (old, old))
+    t = _txn(db, hh, "x", receipt_path="old.jpg")
+
+    delete_transaction(db, t)
+    _purge_trash(db, today_local())
+    assert os.path.exists("uploads/.trash/old.jpg")
+
+    os.utime("uploads/.trash/old.jpg", (old, old))
+    _purge_trash(db, today_local())
+    assert not os.path.exists("uploads/.trash/old.jpg")
+
+
+def test_move_failure_keeps_row_deleted_and_file_in_uploads(db, make_household, monkeypatch):
+    import app.services as services
+    hh = make_household()
+    _receipt("keep.jpg")
+    t = _txn(db, hh, "x", receipt_path="keep.jpg")
+
+    def boom(*a, **k):
+        raise OSError("disk")
+    monkeypatch.setattr(services.shutil, "move", boom)
+    delete_transaction(db, t)
+
+    db.expire_all()
+    assert db.get(Transaction, t.id).deleted_at is not None
+    assert os.path.exists("uploads/keep.jpg")
+
+
+def test_commit_failure_does_not_move_receipt(db, make_household, monkeypatch):
+    hh = make_household()
+    _receipt("stay.jpg")
+    t = _txn(db, hh, "x", receipt_path="stay.jpg")
+
+    def bad_commit():
+        raise RuntimeError("commit failed")
+    monkeypatch.setattr(db, "commit", bad_commit)
+    with pytest.raises(RuntimeError):
+        delete_transaction(db, t)
+    assert os.path.exists("uploads/stay.jpg")
+    assert not os.path.exists("uploads/.trash/stay.jpg")
+
+
+def test_api_refuses_to_delete_bucket_with_transactions(client, db, make_household):
+    hh = make_household(username="bk1")
+    r = client.post("/api/v1/auth/login", json={"username": hh.username, "password": PASSWORD})
+    r = client.post("/api/v1/auth/totp/verify", json={
+        "pending_token": r.json()["pending_token"], "code": pyotp.TOTP(hh.secret).now()})
+    h = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    t = _txn(db, hh, "x")
+    delete_transaction(db, t)  # even a soft-deleted txn blocks deletion
+
+    r = client.delete(f"/api/v1/buckets/{hh.bucket_id}", headers=h)
+    assert r.status_code == 409
+    assert "Archive" in r.json()["detail"]
+    db.expire_all()
+    assert db.get(Bucket, hh.bucket_id) is not None
+    assert db.get(Transaction, t.id) is not None
+
+    empty = Bucket(household_id=hh.household_id, name="Empty")
+    db.add(empty)
+    db.commit()
+    assert client.delete(f"/api/v1/buckets/{empty.id}", headers=h).status_code == 204
