@@ -174,3 +174,59 @@ def test_notification_enum_members_are_all_migrated():
         f"NotificationType member(s) {sorted(missing)} have no ALTER TYPE migration; "
         f"inserting them will fail on PostgreSQL"
     )
+
+
+def test_security_hardening_migration_preserves_data(tmp_path):
+    """Phase 1 columns are additive: existing rows survive with safe defaults."""
+    import uuid
+
+    from sqlalchemy import text
+
+    db_url = _db_url(tmp_path, "sec.db")
+    assert _alembic(["upgrade", "b3c4d5e6f7a8"], db_url).returncode == 0
+
+    engine = create_engine(db_url)
+    hh_id, user_id, tx_id, bucket_id = (str(uuid.uuid4()) for _ in range(4))
+    with engine.begin() as conn:
+        conn.execute(text(
+            "INSERT INTO households (id, name, default_currency) VALUES (:i, 'H', 'EUR')"
+        ), {"i": hh_id})
+        conn.execute(text(
+            "INSERT INTO users (id, username, display_name, password_hash, session_version, "
+            "totp_enabled, totp_secret, email_verified) "
+            "VALUES (:i, 'u', 'U', 'x', 0, true, 'PLAINSECRET', false)"
+        ), {"i": user_id})
+        conn.execute(text(
+            "INSERT INTO buckets (id, household_id, name, type, status, show_income, enable_settlement) "
+            "VALUES (:b, :h, 'B', 'custom', 'active', true, false)"
+        ), {"b": bucket_id, "h": hh_id})
+        conn.execute(text(
+            "INSERT INTO transactions (id, bucket_id, household_id, amount, currency, exchange_rate, "
+            "type, paid_by, transaction_date, exclude_from_forecast, exclude_from_settlement) "
+            "VALUES (:i, :b, :h, 12.5, 'EUR', 1, 'expense', :u, '2026-01-01', false, false)"
+        ), {"i": tx_id, "b": bucket_id, "h": hh_id, "u": user_id})
+
+    def check():
+        with engine.connect() as conn:
+            row = conn.execute(text(
+                "SELECT totp_secret, failed_logins, locked_until, last_totp_step "
+                "FROM users WHERE id = :i"), {"i": user_id}).one()
+            assert tuple(row) == ("PLAINSECRET", 0, None, None)
+            assert conn.execute(text(
+                "SELECT deleted_at FROM transactions WHERE id = :i"), {"i": tx_id}).scalar() is None
+            assert conn.execute(text(
+                "SELECT archived_at FROM households WHERE id = :i"), {"i": hh_id}).scalar() is None
+
+    up = _alembic(["upgrade", "head"], db_url)
+    assert up.returncode == 0, up.stderr
+    check()
+
+    down = _alembic(["downgrade", "b3c4d5e6f7a8"], db_url)
+    assert down.returncode == 0, down.stderr
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT totp_secret FROM users")).scalar() == "PLAINSECRET"
+        assert conn.execute(text("SELECT COUNT(*) FROM transactions")).scalar() == 1
+
+    up = _alembic(["upgrade", "head"], db_url)
+    assert up.returncode == 0, up.stderr
+    check()
