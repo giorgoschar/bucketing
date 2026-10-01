@@ -73,6 +73,12 @@ class Settings(BaseSettings):
     # forged Host poison the link an owner shares.
     app_base_url: str | None = None
 
+    # PosoKanei (unofficial Greek supermarket price API, see docs/POSOKANEI.md).
+    # Set POSOKANEI_ENABLED=false to stop all outbound price lookups; stock
+    # pages keep working and show "prices unavailable".
+    posokanei_enabled: bool = True
+    posokanei_base_url: str = "https://api.posokanei.gov.gr"
+
     # Web Push (VAPID) — set via environment variables in production
     # Generate with: vapid --gen  (after installing pywebpush)
     vapid_private_key: str = ""
