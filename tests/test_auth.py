@@ -205,3 +205,32 @@ def test_state_changing_request_requires_csrf(client, authed):
 def test_logout_clears_session(client, authed):
     client.post("/logout", headers=authed.headers)
     assert client.get("/dashboard").status_code == 302
+
+
+def test_html_lockout_after_ten_wrong_passwords(client, make_household):
+    from app.ratelimit import limiter
+
+    hh = make_household()
+    for _ in range(10):
+        limiter.reset()
+        r = client.post("/login", data={"username": hh.username, "password": "wrong"})
+        assert "Invalid username or password." in r.text
+    limiter.reset()
+    r = client.post("/login", data={"username": hh.username, "password": PASSWORD})
+    assert r.status_code == 429
+    assert "Invalid username or password." in r.text
+
+
+def test_html_wrong_totp_codes_lock_the_account(client, db, make_household):
+    from app.ratelimit import limiter
+
+    hh = make_household()
+    assert client.post("/login", data={"username": hh.username, "password": PASSWORD}).status_code == 302
+    for _ in range(10):
+        limiter.reset()
+        client.post("/login/verify", data={"code": "000000"})
+    limiter.reset()
+    r = client.post("/login/verify", data={"code": pyotp.TOTP(hh.secret).now()})
+    assert r.status_code == 429
+    db.expire_all()
+    assert db.get(User, hh.user_id).locked_until is not None

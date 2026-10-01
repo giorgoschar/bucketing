@@ -3,7 +3,7 @@ API settings routes — profile, household, members, categories.
 """
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -19,6 +19,7 @@ from app.models import (
     MemberRole,
     User,
 )
+from app.ratelimit import limiter
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -150,7 +151,9 @@ def update_household(
 
 
 @router.post("/household/invite")
+@limiter.limit("5/minute")
 def create_invite(
+    request: Request,
     auth=Depends(require_api_auth),
     db: Session = Depends(get_db),
 ):

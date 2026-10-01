@@ -8,6 +8,7 @@ Session cookie payload:
 import hashlib
 import logging
 import secrets
+from datetime import UTC, datetime, timedelta
 
 import bcrypt as _bcrypt
 from fastapi import Depends, HTTPException, Request
@@ -65,6 +66,43 @@ def verify_password_constant_time(plain: str, hashed: str | None) -> bool:
         _bcrypt.checkpw(_prepare(plain), _DUMMY_HASH.encode())
         return False
     return verify_password(plain, hashed)
+
+
+# ---------------------------------------------------------------------------
+# Account lockout — complements the per-IP rate limits, which an attacker
+# rotating addresses (or sharing a proxy bucket) gets around.
+# ---------------------------------------------------------------------------
+
+LOCKOUT_THRESHOLD = 10
+LOCKOUT_MINUTES = 15
+
+
+def _naive_utcnow() -> datetime:
+    # Column is naive (SQLite drops tzinfo); store and compare naive UTC.
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
+def is_locked(user: User | None) -> bool:
+    return bool(user and user.locked_until and user.locked_until > _naive_utcnow())
+
+
+def register_failed_login(db: Session, user: User | None) -> None:
+    """Count a failed password or 2FA attempt; lock the account at the threshold."""
+    if user is None:
+        return
+    user.failed_logins = (user.failed_logins or 0) + 1
+    if user.failed_logins >= LOCKOUT_THRESHOLD:
+        user.locked_until = _naive_utcnow() + timedelta(minutes=LOCKOUT_MINUTES)
+        user.failed_logins = 0
+        security_logger.warning("Account '%s' locked for %d minutes", user.username, LOCKOUT_MINUTES)
+    db.commit()
+
+
+def clear_failed_logins(db: Session, user: User) -> None:
+    if user.failed_logins or user.locked_until:
+        user.failed_logins = 0
+        user.locked_until = None
+        db.commit()
 
 
 # ---------------------------------------------------------------------------

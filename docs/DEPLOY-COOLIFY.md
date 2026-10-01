@@ -20,7 +20,7 @@ deploy (and before any redeploy that introduces a new required variable).
 | `APP_TIMEZONE` | yes | `Europe/Athens` (compose default). Drives "today" for bills and reminders. |
 | `APP_BASE_URL` | yes | `https://expenses.example.com` — used for invite links; required in production. |
 | `VAPID_PRIVATE_KEY`, `VAPID_PUBLIC_KEY`, `VAPID_CLAIMS_EMAIL` | for push | Web-push keys. |
-| `RATE_LIMIT_STORAGE_URI` | optional | `redis://redis:6379` if you add the Redis service; otherwise limits are per worker. |
+| `RATE_LIMIT_STORAGE_URI` | recommended | `redis://redis:6379` with the compose `redis` profile enabled (`docker compose --profile redis up`, or remove the `profiles:` line in Coolify). Without it, per-IP login limits apply per worker; the per-account lockout (10 failures → 15 min) is stored in the database and holds regardless. |
 | `POSOKANEI_ENABLED` | optional | `true` to fetch supermarket prices for the stock list. |
 | `BACKUP_KEEP_DAYS` | optional | Days of backups to keep (default 30). |
 | `BACKUP_BEFORE_MIGRATE` | optional | `true` (default) dumps the DB to `/backups/pre-migrate-*.sql.gz` before `alembic upgrade`. |

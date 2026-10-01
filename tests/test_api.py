@@ -278,3 +278,101 @@ def test_household_settlement_api(client, db, api):
 
     assert db.query(Settlement).filter(Settlement.bucket_id.is_(None)).count() == 1
     assert len(client.get("/api/v1/settlement", headers=headers).json()["history"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# C2/M1: API auth rate limits and per-account lockout
+# ---------------------------------------------------------------------------
+
+def test_api_login_is_rate_limited(client, make_household):
+    hh = make_household()
+    codes = [client.post("/api/v1/auth/login",
+                         json={"username": hh.username, "password": "wrong"}).status_code
+             for _ in range(11)]
+    assert codes[:10] == [401] * 10
+    assert codes[10] == 429
+
+
+def test_api_totp_verify_is_rate_limited(client, make_household):
+    hh = make_household()
+    codes = []
+    for _ in range(11):
+        r = client.post("/api/v1/auth/totp/verify",
+                        json={"pending_token": "x", "code": "000000"})
+        codes.append(r.status_code)
+    assert codes[10] == 429
+
+
+def test_api_refresh_is_rate_limited(client):
+    codes = [client.post("/api/v1/auth/token/refresh",
+                         json={"refresh_token": "nope"}).status_code for _ in range(11)]
+    assert codes[:10] == [401] * 10
+    assert codes[10] == 429
+
+
+def _reset_limits():
+    from app.ratelimit import limiter
+    limiter.reset()
+
+
+def test_ten_wrong_passwords_lock_the_account(client, make_household):
+    hh = make_household()
+    for _ in range(10):
+        _reset_limits()  # isolate the account lockout from the per-IP limit
+        r = client.post("/api/v1/auth/login",
+                        json={"username": hh.username, "password": "wrong"})
+        assert r.status_code == 401
+    _reset_limits()
+    r = client.post("/api/v1/auth/login", json={"username": hh.username, "password": PASSWORD})
+    assert r.status_code == 429
+    assert r.json()["detail"] == "Invalid credentials"
+
+
+def test_lockout_expires_and_success_clears_counter(client, db, make_household):
+    from datetime import datetime, timedelta
+
+    from app.models import User
+
+    hh = make_household()
+    user = db.get(User, hh.user_id)
+    user.failed_logins = 9
+    user.locked_until = datetime.utcnow() - timedelta(minutes=1)  # noqa: DTZ003
+    db.commit()
+
+    r = client.post("/api/v1/auth/login", json={"username": hh.username, "password": PASSWORD})
+    assert r.status_code == 200
+    db.expire_all()
+    # A correct password alone must not reset the counter (it guards 2FA too).
+    assert db.get(User, hh.user_id).failed_logins == 9
+    r = client.post("/api/v1/auth/totp/verify",
+                    json={"pending_token": r.json()["pending_token"],
+                          "code": pyotp.TOTP(hh.secret).now()})
+    assert r.status_code == 200
+    db.expire_all()
+    assert db.get(User, hh.user_id).failed_logins == 0
+
+
+def test_wrong_totp_codes_count_towards_lockout(client, db, make_household):
+    from app.models import User
+
+    hh = make_household()
+    pending = client.post("/api/v1/auth/login",
+                          json={"username": hh.username, "password": PASSWORD}).json()["pending_token"]
+    for _ in range(10):
+        _reset_limits()
+        r = client.post("/api/v1/auth/totp/verify", json={"pending_token": pending, "code": "000000"})
+        assert r.status_code == 401
+    _reset_limits()
+    r = client.post("/api/v1/auth/totp/verify",
+                    json={"pending_token": pending, "code": pyotp.TOTP(hh.secret).now()})
+    assert r.status_code == 429
+    db.expire_all()
+    assert db.get(User, hh.user_id).locked_until is not None
+
+
+def test_api_invite_creation_is_rate_limited(client, api):
+    headers, _ = api
+    codes = [client.post("/api/v1/settings/household/invite", headers=headers).status_code
+             for _ in range(6)]
+    assert codes[:5] == [200] * 5
+    assert codes[5] == 429

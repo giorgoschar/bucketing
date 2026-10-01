@@ -9,7 +9,7 @@ Flow:
   5. GET  /api/v1/auth/me            → {user}
 """
 import pyotp
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -22,9 +22,16 @@ from app.api_auth import (
     revoke_refresh_token,
     rotate_refresh_token,
 )
-from app.auth import security_logger, verify_password_constant_time
+from app.auth import (
+    clear_failed_logins,
+    is_locked,
+    register_failed_login,
+    security_logger,
+    verify_password_constant_time,
+)
 from app.database import get_db
 from app.models import HouseholdMember, User
+from app.ratelimit import limiter
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -65,8 +72,15 @@ def _user_dict(user: User) -> dict:
 # Routes
 # ---------------------------------------------------------------------------
 
+def _locked_out() -> HTTPException:
+    # Same wording as a bad password; 429 like the per-IP limit, so a lockout
+    # does not confirm the account exists.
+    return HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Invalid credentials")
+
+
 @router.post("/login")
-def login(body: LoginRequest, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def login(request: Request, body: LoginRequest, db: Session = Depends(get_db)):
     """
     Step 1: Validate credentials.
     Returns a short-lived pending_token (5 min) that must be exchanged via /totp/verify.
@@ -76,7 +90,11 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
         or_(User.username == identifier, User.email == identifier)
     ).first()
     # Constant-time regardless of whether the account exists (see app/auth.py).
-    if not verify_password_constant_time(body.password, user.password_hash if user else None):
+    password_ok = verify_password_constant_time(body.password, user.password_hash if user else None)
+    if is_locked(user):
+        raise _locked_out()
+    if not password_ok:
+        register_failed_login(db, user)
         security_logger.warning("API login failed for username=%s", identifier)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -96,7 +114,8 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/totp/verify")
-def totp_verify(body: TotpVerifyRequest, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def totp_verify(request: Request, body: TotpVerifyRequest, db: Session = Depends(get_db)):
     """
     Step 2: Verify TOTP code using the pending_token from /login.
     Returns a full access_token + refresh_token pair.
@@ -113,10 +132,15 @@ def totp_verify(body: TotpVerifyRequest, db: Session = Depends(get_db)):
     if not user.totp_enabled or not user.totp_secret:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="TOTP not enrolled")
 
+    if is_locked(user):
+        raise _locked_out()
+
     totp = pyotp.TOTP(user.totp_secret)
     if not totp.verify(body.code, valid_window=1):
+        register_failed_login(db, user)
         security_logger.warning("API TOTP verify failed for user_id=%s", user.id)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP code")
+    clear_failed_logins(db, user)
 
     hh_id = claims["hh"]
     access_token = create_access_token(user.id, hh_id, user.session_version)
@@ -131,7 +155,8 @@ def totp_verify(body: TotpVerifyRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/token/refresh")
-def token_refresh(body: TokenRefreshRequest, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def token_refresh(request: Request, body: TokenRefreshRequest, db: Session = Depends(get_db)):
     """
     Exchange a refresh token for a new access + refresh token pair (rotation).
     The old refresh token is immediately revoked.

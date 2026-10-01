@@ -96,6 +96,9 @@ class User(Base):
     avatar_color = Column(String(7), default="#6366f1")  # hex color
     created_at = Column(DateTime, default=datetime.utcnow)
     session_version = Column(Integer, default=0, nullable=False)
+    # Per-account lockout (see app.auth.register_failed_login)
+    failed_logins = Column(Integer, default=0, server_default="0", nullable=False)
+    locked_until = Column(DateTime, nullable=True)
     totp_secret = Column(String, nullable=True)
     totp_enabled = Column(Boolean, default=False, nullable=False)
     totp_backup_codes = Column(Text, nullable=True)  # JSON array of bcrypt-hashed codes

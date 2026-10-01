@@ -11,10 +11,13 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.auth import (
+    clear_failed_logins,
     clear_session,
     get_current_session,
     get_pending_session,
     hash_password,
+    is_locked,
+    register_failed_login,
     require_auth,
     require_csrf,
     security_logger,
@@ -166,7 +169,16 @@ def login_submit(
     ).first()
     # Always run bcrypt, even for an unknown identifier, so response time does
     # not disclose which accounts exist.
-    if not verify_password_constant_time(password, user.password_hash if user else None):
+    password_ok = verify_password_constant_time(password, user.password_hash if user else None)
+    if is_locked(user):
+        security_logger.warning("Login for locked account '%s' from %s", identifier, ip)
+        return templates.TemplateResponse(
+            "auth/login.html",
+            {"request": request, "error": "Invalid username or password."},
+            status_code=429,
+        )
+    if not password_ok:
+        register_failed_login(db, user)
         security_logger.warning("Failed login for '%s' from %s", identifier, ip)
         return templates.TemplateResponse(
             "auth/login.html",
@@ -221,13 +233,22 @@ def verify_totp_submit(
     if not user or not user.totp_enabled:
         return RedirectResponse("/login", status_code=302)
 
+    if is_locked(user):
+        return templates.TemplateResponse(
+            "auth/verify_totp.html",
+            {"request": request, "error": "Invalid code. Please try again."},
+            status_code=429,
+        )
+
     totp = pyotp.TOTP(user.totp_secret)
     if totp.verify(code.strip(), valid_window=1):
+        clear_failed_logins(db, user)
         security_logger.info("2FA success for '%s' from %s", user.username, ip)
         response = RedirectResponse("/dashboard", status_code=302)
         set_session(response, user.id, pending["hh_id"], user.session_version)
         return response
 
+    register_failed_login(db, user)
     security_logger.warning("2FA failure for '%s' from %s", user.username, ip)
     return templates.TemplateResponse(
         "auth/verify_totp.html",
@@ -260,6 +281,13 @@ def verify_backup_submit(
     if not user or not user.totp_enabled or not user.totp_backup_codes:
         return RedirectResponse("/login", status_code=302)
 
+    if is_locked(user):
+        return templates.TemplateResponse(
+            "auth/verify_backup.html",
+            {"request": request, "error": "Invalid backup code."},
+            status_code=429,
+        )
+
     codes: list = json.loads(user.totp_backup_codes)
     code_input = backup_code.strip().encode()
     matched_index = None
@@ -272,6 +300,7 @@ def verify_backup_submit(
             continue
 
     if matched_index is None:
+        register_failed_login(db, user)
         security_logger.warning("Backup code failure for '%s' from %s", user.username, ip)
         return templates.TemplateResponse(
             "auth/verify_backup.html",
@@ -282,6 +311,7 @@ def verify_backup_submit(
     codes.pop(matched_index)
     user.totp_backup_codes = json.dumps(codes)
     db.commit()
+    clear_failed_logins(db, user)
 
     security_logger.info("Backup code used for '%s' from %s (%d remaining)", user.username, ip, len(codes))
     response = RedirectResponse("/dashboard", status_code=302)
