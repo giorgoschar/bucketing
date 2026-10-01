@@ -12,6 +12,7 @@ from app.services import (
     get_insights_category_breakdown,
     get_insights_category_trend,
     get_insights_summary,
+    get_monthly_trend,
     resolve_insight_period,
 )
 
@@ -158,16 +159,26 @@ def test_budget_status_reports_true_percentage_over_100(db, data):
     assert row["remaining"] == -50.0
 
 
-def test_budget_status_excludes_forecast_excluded_rows(db, data):
-    b = db.get(Bucket, data.bucket_id)
-    b.budget = 500
-    for t in db.query(Transaction).filter_by(bucket_id=data.bucket_id).all():
-        t.exclude_from_forecast = True
+def test_budget_status_counts_one_off_purchases(db, authed):
+    """exclude_from_forecast only affects projections, not actual budget spend."""
+    b = db.get(Bucket, authed.bucket_id)
+    b.budget = 100
+    when = local_today()
+    for amount, one_off in ((Decimal("127.60"), False), (Decimal("99"), True)):
+        db.add(Transaction(
+            bucket_id=authed.bucket_id, household_id=authed.household_id,
+            amount=amount, currency="EUR", type="expense", transaction_date=when,
+            paid_by=authed.user_id, exclude_from_forecast=one_off,
+        ))
     db.commit()
 
-    row = next(r for r in get_insights_budget_status(db, data.household_id, None, None)
-               if r["bucket"].id == data.bucket_id)
-    assert row["spent"] == 0.0
+    row = next(r for r in get_insights_budget_status(db, authed.household_id, None, None)
+               if r["bucket"].id == authed.bucket_id)
+    assert row["spent"] == Decimal("226.60")
+    assert row["over_budget"] is True
+    # ... while projections (built on the trend) keep ignoring the one-off.
+    trend = get_monthly_trend(db, authed.household_id, 1)
+    assert trend[-1]["total"] == Decimal("127.60")
 
 
 # ---------------------------------------------------------------------------

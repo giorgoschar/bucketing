@@ -726,10 +726,9 @@ def get_insights_budget_status(
             Transaction.active(),
             Transaction.bucket_id.in_(ids),
             Transaction.type == TransactionType.expense,
-            # Excluded transactions are left out of every other spend figure;
-            # counting them here made a bucket look over budget on the same
-            # page that reported it under.
-            Transaction.exclude_from_forecast == False,  # noqa: E712
+            # One-off purchases (exclude_from_forecast) still count: the flag
+            # only keeps them out of projections, not out of actual spend, so
+            # this matches the dashboard's bucket spend.
         )
     )
     if start:

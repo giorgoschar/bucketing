@@ -72,9 +72,9 @@ def test_budget_status_for_a_month(db, month_data):
     )
     assert len(rows) == 1
     r = rows[0]
-    # Excluded (99) and deleted (77) expenses are left out.
+    # One-off (99) counts toward budget spend; the deleted (77) expense does not.
     assert (r["spent"], r["budget"], r["pct"], r["pct_actual"], r["remaining"], r["over_budget"]) == (
-        Decimal("127.60"), Decimal("100.00"), 100, Decimal("127.6"), Decimal("-27.60"), True,
+        Decimal("226.60"), Decimal("100.00"), 100, Decimal("226.6"), Decimal("-126.60"), True,
     )
 
 
