@@ -1,7 +1,9 @@
 """Final fix wave (F1): security regressions found in the branch review."""
 import time
+from pathlib import Path
 
 import pyotp
+import pytest
 from fastapi.testclient import TestClient
 
 from app.models import User
@@ -183,3 +185,38 @@ def test_api_password_change_wrong_password_locks(client, db, make_household):
     r = client.post("/api/v1/settings/profile/password", headers=headers, json={
         "current_password": PASSWORD, "new_password": "another-long-password"})
     assert r.status_code == 429
+
+
+# ---------------------------------------------------------------------------
+# A5 / A9: production guard — encryption key and placeholder secrets
+# ---------------------------------------------------------------------------
+
+def _prod(**kw):
+    from app.config import Settings
+
+    base = {"debug": False, "app_secret_key": "a1" * 32,
+            "app_base_url": "https://a.example", "_env_file": None}
+    base.update(kw)
+    return Settings(**base)
+
+
+def test_malformed_field_encryption_key_is_a_startup_error():
+    from cryptography.fernet import Fernet
+
+    with pytest.raises(RuntimeError, match="FIELD_ENCRYPTION_KEY"):
+        _prod(field_encryption_key="not-a-fernet-key")
+    _prod(field_encryption_key=Fernet.generate_key().decode())
+    _prod(field_encryption_key=None)
+
+
+def test_placeholder_app_secret_key_is_rejected_in_production():
+    with pytest.raises(RuntimeError, match="placeholder"):
+        _prod(app_secret_key="change-me-in-production-use-a-long-random-string")
+    with pytest.raises(RuntimeError, match="placeholder"):
+        _prod(app_secret_key="CHANGE-ME-please-this-is-long-enough-for-32")
+
+
+def test_env_example_is_production_safe():
+    text = (Path(__file__).resolve().parent.parent / ".env.example").read_text()
+    assert "\nDEBUG=false" in text
+    assert "\nDEBUG=true" not in text

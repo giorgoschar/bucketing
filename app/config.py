@@ -87,7 +87,25 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _guard_production_defaults(self) -> "Settings":
+        if self.field_encryption_key:
+            # A malformed key would otherwise only surface inside verify_totp,
+            # turning every 2FA login into a 500. Fail at startup instead.
+            from cryptography.fernet import Fernet
+
+            try:
+                Fernet(self.field_encryption_key.encode())
+            except (ValueError, TypeError) as exc:
+                raise RuntimeError(
+                    "FIELD_ENCRYPTION_KEY is not a valid Fernet key (32 url-safe base64-encoded "
+                    "bytes). Generate one with: python -c \"from cryptography.fernet import "
+                    "Fernet; print(Fernet.generate_key().decode())\""
+                ) from exc
         if not self.debug:
+            if "change-me" in (self.app_secret_key or "").lower():
+                raise RuntimeError(
+                    "APP_SECRET_KEY is still the .env.example placeholder. "
+                    "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+                )
             if not self.app_secret_key:
                 raise RuntimeError(
                     "APP_SECRET_KEY must be set to a cryptographically random value in production. "
