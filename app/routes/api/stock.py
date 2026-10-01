@@ -97,6 +97,38 @@ def adjust_stock(item_id: str, body: StockAdjust,
     return item_payload(item, prices.get(item.product_id))
 
 
+@router.get("/shopping")
+def shopping(auth=Depends(require_api_auth), db: Session = Depends(get_db)):
+    _user, hh_id = auth
+    data = stock_svc.shopping_list(db, hh_id)
+
+    def row(r):
+        a = r["advice"] or {}
+        return {
+            "id": r["item"].id,
+            "name": r["product"].name,
+            "need_qty": r["need_qty"],
+            "reason": r["reason"],
+            "runout_days_estimate": r["runout_days"],
+            "retailer": r["retailer"],
+            "retailer_name": r["retailer_name"],
+            "price": r["price"],
+            "line_total": r["line_total"],
+            "advice": a.get("advice", "unknown"),
+            "advice_reason": a.get("reason"),
+            "trend_pct_30d": a.get("trend_pct_30d"),
+        }
+
+    return {
+        "items": [row(r) for r in data["items"]],
+        "groups": [{"retailer": g["retailer"], "retailer_name": g["retailer_name"],
+                    "total": g["total"], "item_ids": [r["item"].id for r in g["items"]]}
+                   for g in data["groups"]],
+        "best_single_store": data["best_single_store"],
+        "total": data["total"],
+    }
+
+
 def _product(summary) -> dict:
     return asdict(summary)
 

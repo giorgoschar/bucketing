@@ -6,6 +6,7 @@ snapshots, and lookups that fail render "prices unavailable" instead of an
 error (see docs/POSOKANEI.md).
 """
 import logging
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -16,6 +17,7 @@ from app.auth import require_auth, require_csrf
 from app.clock import local_today
 from app.config import settings
 from app.database import get_db
+from app.models import Category, StockReason
 from app.posokanei import PosokaneiUnavailable
 from app.services import base_ctx
 from app.services import stock as stock_svc
@@ -41,8 +43,23 @@ def _bad(exc: StockError):
 
 
 def _rows(db, hh_id, items):
-    prices = stock_svc.current_prices(db, [i.product_id for i in items])
-    return [{"item": i, "prices": prices.get(i.product_id, [])} for i in items]
+    today = local_today()
+    pids = [i.product_id for i in items]
+    prices = stock_svc.current_prices(db, pids)
+    advice = stock_svc.price_advice_bulk(db, pids, today)
+    runout = stock_svc.runout_bulk(db, items, today)
+    return [{"item": i, "prices": prices.get(i.product_id, []),
+             "advice": advice.get(i.product_id), "runout_days": runout.get(i.id)}
+            for i in items]
+
+
+def _groceries_category_id(db, hh_id) -> str | None:
+    """The household's groceries category, if it has one (matched by name)."""
+    cats = (db.query(Category)
+            .filter(Category.household_id == hh_id, Category.name.ilike("%grocer%"))
+            .order_by(Category.name)
+            .all())
+    return cats[0].id if cats else None
 
 
 def snapshot_now(db, product) -> bool:
@@ -214,3 +231,69 @@ def stock_archive(item_id: str, db: Session = Depends(get_db), auth=Depends(requ
         raise HTTPException(status_code=404)
     db.commit()
     return RedirectResponse("/stock?notice=removed", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Shopping list
+# ---------------------------------------------------------------------------
+
+def _shopping_ctx(request, db, user, hh_id, bought=None):
+    ctx = base_ctx(db, user, hh_id)
+    today = local_today()
+    ctx.update({
+        "request": request,
+        "user": user,
+        "data": stock_svc.shopping_list(db, hh_id, today),
+        "rotation": stock_svc.rotation_suggestions(db, hh_id, today),
+        "bought": bought,
+    })
+    return ctx
+
+
+@router.get("/stock/shopping", response_class=HTMLResponse)
+def shopping_page(request: Request, db: Session = Depends(get_db), auth=Depends(require_auth)):
+    user, hh_id = auth
+    return templates.TemplateResponse("stock/shopping.html", _shopping_ctx(request, db, user, hh_id))
+
+
+@router.post("/stock/shopping/bought", response_class=HTMLResponse)
+async def shopping_bought(request: Request, db: Session = Depends(get_db), auth=Depends(require_auth)):
+    """Add the bought quantities to stock (reason "buy") and offer a link to
+    record the expense, prefilled with the basket total at that retailer."""
+    user, hh_id = auth
+    form = await request.form()
+    retailer = (form.get("retailer") or "").strip()[:40] or None
+    picked = []
+    for item_id in dict.fromkeys(form.getlist("item_id")):
+        item = stock_svc.get_stock_item(db, hh_id, str(item_id))
+        if item is None:
+            raise HTTPException(status_code=404)
+        try:
+            qty = stock_svc.parse_quantity(form.get(f"qty_{item.id}") or "1",
+                                           field="Quantity", allow_zero=False)
+        except StockError as exc:
+            raise _bad(exc) from None
+        picked.append((item, qty))
+    if not picked:
+        return RedirectResponse("/stock/shopping", status_code=303)
+
+    total = stock_svc.basket_total(db, picked, retailer)
+    for item, qty in picked:
+        stock_svc.adjust_stock(db, hh_id, item.id, qty, user.id, reason=StockReason.buy)
+    db.commit()
+
+    retailer_name = stock_svc.retailer_label(retailer) if retailer else None
+    expense_url = None
+    if total > 0:
+        # Follow-up: merchant= prefill once Phase 4's merchant field lands, and
+        # /transactions/new reading these query params.
+        params = {"amount": f"{total:.2f}",
+                  "notes": f"Groceries at {retailer_name}" if retailer_name else "Groceries"}
+        cat_id = _groceries_category_id(db, hh_id)
+        if cat_id:
+            params["category_id"] = cat_id
+        expense_url = "/transactions/new?" + urlencode(params)
+    bought = {"count": len(picked), "total": total, "retailer_name": retailer_name,
+              "expense_url": expense_url}
+    return templates.TemplateResponse("stock/shopping.html",
+                                      _shopping_ctx(request, db, user, hh_id, bought))

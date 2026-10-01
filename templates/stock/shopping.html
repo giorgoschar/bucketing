@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Shopping list{% endblock %}
+{% block header_title %}Shopping list{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto space-y-4">
+
+  <div class="flex items-center gap-2">
+    <a href="/stock" class="px-4 py-2 rounded-xl text-sm font-semibold border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">← Stock</a>
+  </div>
+
+  {% if bought %}
+  <div class="px-4 py-3 rounded-xl text-sm bg-emerald-50 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-300 space-y-1">
+    <p>Marked {{ bought.count }} item{{ 's' if bought.count != 1 }} as bought.</p>
+    {% if bought.expense_url %}
+    <a href="{{ bought.expense_url }}" class="inline-block font-semibold underline">
+      Record the expense ({{ bought.total | currency('EUR') }}{% if bought.retailer_name %} at {{ bought.retailer_name }}{% endif %})
+    </a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if not data["items"] %}
+  <div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 px-5 py-8 text-center text-sm text-gray-400">
+    Nothing to buy — every tracked item is above its minimum and not running out this week.
+  </div>
+  {% else %}
+
+  {% set best = data.best_single_store %}
+  {% if best %}
+  <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
+    <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Cheapest single store</p>
+    <p class="text-sm">
+      <span class="font-semibold">{{ best.retailer_name }}</span> — {{ best.total | currency('EUR') }}
+      for {{ best.covers }} item{{ 's' if best.covers != 1 }}{% if best.missing %} ({{ best.missing }} not stocked there){% endif %}.
+      Splitting by cheapest store: {{ data.total | currency('EUR') }}.
+    </p>
+  </div>
+  {% endif %}
+
+  {% for g in data.groups %}
+  <form method="POST" action="/stock/shopping/bought"
+        class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
+    <input type="hidden" name="retailer" value="{{ g.retailer or '' }}" />
+    <div class="px-5 py-3 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
+      {% if g.retailer %}
+      <p class="text-sm font-semibold">{{ g.retailer_name }}</p>
+      <p class="text-sm font-semibold tabular-nums">{{ g.total | currency('EUR') }}</p>
+      {% else %}
+      <p class="text-sm font-semibold text-gray-500">Prices unavailable</p>
+      {% endif %}
+    </div>
+    <div class="divide-y divide-gray-100 dark:divide-gray-800">
+      {% for r in g["items"] %}
+      <label class="px-5 py-3 flex items-center gap-3">
+        <input type="checkbox" name="item_id" value="{{ r.item.id }}" checked />
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium truncate">{{ r.product.name }}</p>
+          <p class="text-xs text-gray-400">
+            {% if r.reason == 'low' %}At or below minimum{% else %}Runs out in ~{{ r.runout_days | round(0) | int }} d (estimate){% endif %}
+            {% if r.price is not none %} · {{ r.price | currency('EUR') }} each{% if r.is_discount %} · offer{% endif %}{% endif %}
+            {% if r.advice and r.advice.advice == 'buy_now' %} · <span class="text-emerald-600" title="{{ r.advice.reason }}">buy now (estimate)</span>
+            {% elif r.advice and r.advice.advice == 'wait' %} · <span class="text-amber-600" title="{{ r.advice.reason }}">price high — wait if you can (estimate)</span>{% endif %}
+          </p>
+        </div>
+        <input type="number" name="qty_{{ r.item.id }}" value="{{ '%g' | format(r.need_qty | float) }}" min="0.5" step="0.5"
+               class="w-16 px-2 py-1 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm" aria-label="Quantity" />
+      </label>
+      {% endfor %}
+    </div>
+    <div class="px-5 py-3 border-t border-gray-100 dark:border-gray-800">
+      <button class="px-4 py-2 rounded-xl bg-primary-500 hover:bg-primary-600 text-white text-sm font-semibold">Mark bought</button>
+    </div>
+  </form>
+  {% endfor %}
+  {% endif %}
+
+  {% if rotation %}
+  <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
+    <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Timing tips (estimates)</p>
+    <ul class="space-y-1 text-sm">
+      {% for s in rotation %}
+      <li>{% if s.kind == 'stock_up' %}🟢{% else %}🟡{% endif %} {{ s.message }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <p class="text-[11px] text-gray-400 px-1">
+    Prices from PosoKanei (posokanei.gov.gr). Advice, trends and run-out dates are estimates from past prices and your usage.
+  </p>
+</div>
+{% endblock %}

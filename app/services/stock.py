@@ -10,16 +10,17 @@ the stock list but keeps its price history and movements.
 """
 from __future__ import annotations
 
+import math
 import re
-from datetime import date
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
-from app.clock import utcnow_naive
+from app.clock import local_today, utcnow_naive
 from app.models import PriceSnapshot, Product, StockItem, StockMovement, StockReason
-from app.money import ZERO, to_decimal
+from app.money import ZERO, quantize, to_decimal
 
 MAX_QUANTITY = Decimal("100000")
 _BARCODE_RE = re.compile(r"^\d{6,14}$")
@@ -284,3 +285,280 @@ def current_prices(db: Session, product_ids) -> dict[str, list[PriceSnapshot]]:
 def _price_key(s: PriceSnapshot):
     # Lowest unit price where known; rows without one sort after by price.
     return (s.unit_price is None, s.unit_price if s.unit_price is not None else s.price, s.price)
+
+
+# ---------------------------------------------------------------------------
+# Price advice ("price prediction" — an estimate, labelled as such in the UI)
+# ---------------------------------------------------------------------------
+
+ADVICE_MIN_DAYS = 7               # distinct snapshot days needed before advising
+BUY_NEAR_LOW = Decimal("1.02")    # within 2% of the 90-day low
+DISCOUNT_BELOW_MEDIAN = Decimal("0.9")
+WAIT_ABOVE_MEDIAN = Decimal("1.08")
+
+
+def _median(values: list[Decimal]) -> Decimal | None:
+    if not values:
+        return None
+    s = sorted(values)
+    mid = len(s) // 2
+    return s[mid] if len(s) % 2 else (s[mid - 1] + s[mid]) / 2
+
+
+def _trend_pct_30d(daily: dict[date, Decimal], today: date) -> Decimal | None:
+    """Least-squares slope of the daily minimum over the last 30 days, scaled
+    to a month and expressed as a percentage of the mean price."""
+    pts = [(-(today - d).days, p) for d, p in daily.items() if (today - d).days < 30]
+    if len(pts) < 2:
+        return None
+    n = Decimal(len(pts))
+    mx = sum(Decimal(x) for x, _ in pts) / n
+    my = sum(p for _, p in pts) / n
+    sxx = sum((Decimal(x) - mx) ** 2 for x, _ in pts)
+    if not sxx or not my:
+        return None
+    slope = sum((Decimal(x) - mx) * (p - my) for x, p in pts) / sxx
+    return (slope * 30 / my * 100).quantize(Decimal("0.1"))
+
+
+def _advice_from(snaps: list[PriceSnapshot], today: date) -> dict:
+    out = {"advice": "unknown", "reason": "Not enough price history yet",
+           "current_min": None, "median_30d": None, "min_90d": None,
+           "trend_pct_30d": None, "is_discount": False}
+    recent = [s for s in snaps if 0 <= (today - s.snapshot_date).days < 90]
+    if not recent:
+        return out
+
+    daily: dict[date, Decimal] = {}
+    for s in recent:
+        price = to_decimal(s.price)
+        if s.snapshot_date not in daily or price < daily[s.snapshot_date]:
+            daily[s.snapshot_date] = price
+    latest = max(daily)
+    current = daily[latest]
+    is_discount = any(s.is_discount for s in recent
+                      if s.snapshot_date == latest and to_decimal(s.price) == current)
+    median_30d = _median([p for d, p in daily.items() if (today - d).days < 30])
+    min_90d = min(daily.values())
+    trend = _trend_pct_30d(daily, today)
+    out.update(current_min=current, median_30d=median_30d, min_90d=min_90d,
+               trend_pct_30d=trend, is_discount=is_discount)
+    if len(daily) < ADVICE_MIN_DAYS or median_30d is None:
+        return out
+
+    trend_txt = ""
+    if trend is not None and abs(trend) >= 1:
+        trend_txt = f"; prices {'rising' if trend > 0 else 'falling'} {abs(trend)}%/month"
+    if current <= min_90d * BUY_NEAR_LOW:
+        out.update(advice="buy_now", reason=f"At its 90-day low{trend_txt}")
+    elif is_discount and current <= median_30d * DISCOUNT_BELOW_MEDIAN:
+        out.update(advice="buy_now", reason=f"On offer, 10%+ below the 30-day median{trend_txt}")
+    elif current >= median_30d * WAIT_ABOVE_MEDIAN and current > min_90d:
+        out.update(advice="wait", reason=f"8%+ above the 30-day median{trend_txt}")
+    else:
+        out.update(advice="neutral", reason=f"Around its usual price{trend_txt}")
+    return out
+
+
+def _snapshots_by_product(db: Session, product_ids, today: date) -> dict[str, list[PriceSnapshot]]:
+    product_ids = list(product_ids)
+    if not product_ids:
+        return {}
+    rows = (db.query(PriceSnapshot)
+            .filter(PriceSnapshot.product_id.in_(product_ids),
+                    PriceSnapshot.snapshot_date > today - timedelta(days=90),
+                    PriceSnapshot.snapshot_date <= today)
+            .all())
+    out: dict[str, list[PriceSnapshot]] = {}
+    for s in rows:
+        out.setdefault(s.product_id, []).append(s)
+    return out
+
+
+def price_advice(db: Session, product: Product, today: date | None = None) -> dict:
+    """advice: buy_now | wait | neutral | unknown, with the figures behind it
+    (current_min, median_30d, min_90d, trend_pct_30d)."""
+    today = today or local_today()
+    return _advice_from(_snapshots_by_product(db, [product.id], today).get(product.id, []), today)
+
+
+def price_advice_bulk(db: Session, product_ids, today: date | None = None) -> dict[str, dict]:
+    today = today or local_today()
+    product_ids = list(product_ids)
+    snaps = _snapshots_by_product(db, product_ids, today)
+    return {pid: _advice_from(snaps.get(pid, []), today) for pid in product_ids}
+
+
+# ---------------------------------------------------------------------------
+# Run-out prediction (estimate)
+# ---------------------------------------------------------------------------
+
+RUNOUT_WINDOW_DAYS = 60
+RUNOUT_MIN_OBSERVED_DAYS = 7
+
+
+def _runout_from(quantity, uses: list[tuple[date, Decimal]], today: date) -> Decimal | None:
+    if len(uses) < 2:
+        return None
+    total = sum(abs(d) for _, d in uses)
+    if not total:
+        return None
+    observed = max(RUNOUT_MIN_OBSERVED_DAYS, (today - min(day for day, _ in uses)).days)
+    # quantity / (total / observed), rearranged to keep the division last.
+    return (to_decimal(quantity) * observed / total).quantize(Decimal("0.1"))
+
+
+def _uses_by_item(db: Session, item_ids, today: date) -> dict[str, list[tuple[date, Decimal]]]:
+    item_ids = list(item_ids)
+    if not item_ids:
+        return {}
+    since = datetime.combine(today - timedelta(days=RUNOUT_WINDOW_DAYS), time.min)
+    rows = (db.query(StockMovement.stock_item_id, StockMovement.created_at, StockMovement.delta)
+            .filter(StockMovement.stock_item_id.in_(item_ids),
+                    StockMovement.reason == StockReason.use.value,
+                    StockMovement.created_at >= since)
+            .all())
+    out: dict[str, list[tuple[date, Decimal]]] = {}
+    for item_id, created_at, delta in rows:
+        if created_at.date() <= today:
+            out.setdefault(item_id, []).append((created_at.date(), to_decimal(delta)))
+    return out
+
+
+def predicted_runout_days(db: Session, item: StockItem, today: date | None = None) -> Decimal | None:
+    """Days until ``item`` runs out at its recent consumption rate (estimate).
+
+    rate = Σ|use deltas| over the last 60 days / days observed (at least 7);
+    None with fewer than two "use" movements.
+    """
+    today = today or local_today()
+    return _runout_from(item.quantity, _uses_by_item(db, [item.id], today).get(item.id, []), today)
+
+
+def runout_bulk(db: Session, items, today: date | None = None) -> dict[str, Decimal | None]:
+    today = today or local_today()
+    uses = _uses_by_item(db, [i.id for i in items], today)
+    return {i.id: _runout_from(i.quantity, uses.get(i.id, []), today) for i in items}
+
+
+# ---------------------------------------------------------------------------
+# Shopping list & rotation
+# ---------------------------------------------------------------------------
+
+RUNOUT_SOON_DAYS = 7
+
+
+def _line(price, qty) -> Decimal:
+    return quantize(to_decimal(price) * to_decimal(qty))
+
+
+def restock_quantity(item: StockItem) -> Decimal:
+    """How many to buy: back up to twice the minimum, at least one."""
+    gap = to_decimal(item.min_quantity) * 2 - to_decimal(item.quantity)
+    return max(Decimal("1"), Decimal(math.ceil(gap)))
+
+
+def shopping_list(db: Session, hh_id: str, today: date | None = None) -> dict:
+    """Items to buy (at/below minimum, or running out within a week), each at
+    its cheapest current retailer, grouped into per-retailer baskets."""
+    today = today or local_today()
+    items = list_stock(db, hh_id)
+    runout = runout_bulk(db, items, today)
+    wanted = [
+        i for i in items
+        if to_decimal(i.quantity) <= to_decimal(i.min_quantity)
+        or (runout[i.id] is not None and runout[i.id] <= RUNOUT_SOON_DAYS)
+    ]
+    pids = [i.product_id for i in wanted]
+    prices = current_prices(db, pids)
+    advice = price_advice_bulk(db, pids, today)
+
+    rows = []
+    for i in wanted:
+        need = restock_quantity(i)
+        snaps = prices.get(i.product_id, [])
+        best = snaps[0] if snaps else None
+        rows.append({
+            "item": i,
+            "product": i.product,
+            "need_qty": need,
+            "reason": "low" if to_decimal(i.quantity) <= to_decimal(i.min_quantity) else "runout",
+            "runout_days": runout[i.id],
+            "retailer": best.retailer if best else None,
+            "retailer_name": retailer_label(best.retailer) if best else None,
+            "price": to_decimal(best.price) if best else None,
+            "unit_price": best.unit_price if best else None,
+            "is_discount": bool(best and best.is_discount),
+            "line_total": _line(best.price, need) if best else None,
+            "advice": advice.get(i.product_id),
+            "prices": snaps,
+        })
+
+    groups: dict[str | None, dict] = {}
+    for r in rows:
+        g = groups.setdefault(r["retailer"], {
+            "retailer": r["retailer"], "retailer_name": r["retailer_name"],
+            "items": [], "total": ZERO,
+        })
+        g["items"].append(r)
+        if r["line_total"] is not None:
+            g["total"] += r["line_total"]
+    ordered = sorted(groups.values(),
+                     key=lambda g: (g["retailer"] is None, -len(g["items"]), g["total"]))
+
+    # Cheapest single store for the whole list: most items covered, then total.
+    priced = [r for r in rows if r["prices"]]
+    candidates = []
+    for ret in {s.retailer for r in priced for s in r["prices"]}:
+        total, covers = ZERO, 0
+        for r in priced:
+            snap = next((s for s in r["prices"] if s.retailer == ret), None)
+            if snap is not None:
+                total += _line(snap.price, r["need_qty"])
+                covers += 1
+        candidates.append((-covers, total, ret))
+    best_store = None
+    if candidates:
+        neg_covers, total, ret = min(candidates)
+        best_store = {"retailer": ret, "retailer_name": retailer_label(ret), "total": total,
+                      "covers": -neg_covers, "missing": len(priced) + neg_covers}
+
+    return {
+        "items": rows,
+        "groups": ordered,
+        "best_single_store": best_store,
+        "total": sum((r["line_total"] for r in rows if r["line_total"] is not None), ZERO),
+        "unpriced": sum(1 for r in rows if r["price"] is None),
+    }
+
+
+def basket_total(db: Session, items_with_qty, retailer: str | None) -> Decimal:
+    """Σ qty × current price at ``retailer`` where it has one, else the cheapest."""
+    prices = current_prices(db, [i.product_id for i, _ in items_with_qty])
+    total = ZERO
+    for item, qty in items_with_qty:
+        snaps = prices.get(item.product_id) or []
+        snap = next((s for s in snaps if s.retailer == retailer), None) if retailer else None
+        snap = snap or (snaps[0] if snaps else None)
+        if snap is not None:
+            total += _line(snap.price, qty)
+    return total
+
+
+def rotation_suggestions(db: Session, hh_id: str, today: date | None = None) -> list[dict]:
+    """"Stock up now" for buy_now items below 2× minimum; "hold off" for
+    wait items you still have more than the minimum of."""
+    today = today or local_today()
+    items = list_stock(db, hh_id)
+    advice = price_advice_bulk(db, [i.product_id for i in items], today)
+    out = []
+    for i in items:
+        a = advice[i.product_id]
+        qty, mn = to_decimal(i.quantity), to_decimal(i.min_quantity)
+        if a["advice"] == "buy_now" and qty < mn * 2:
+            out.append({"item": i, "product": i.product, "kind": "stock_up", "advice": a,
+                        "message": f"Stock up on {i.product.name} now: {a['reason'].lower()}."})
+        elif a["advice"] == "wait" and qty > mn:
+            out.append({"item": i, "product": i.product, "kind": "hold_off", "advice": a,
+                        "message": f"Hold off on {i.product.name}: {a['reason'].lower()}."})
+    return out
