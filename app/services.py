@@ -10,6 +10,7 @@ from datetime import date, timedelta
 
 from fastapi import HTTPException, UploadFile
 from sqlalchemy import case, func, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app.clock import local_today, utcnow_naive
@@ -2214,6 +2215,17 @@ class DeletedTransactionReplay(Exception):
     """The client_id matches a soft-deleted transaction; never resurrect it."""
 
 
+def _find_by_client_id(db: Session, household_id: str, client_id: str) -> Transaction | None:
+    """Deliberately includes soft-deleted rows: a replay of a deleted expense
+    must not become a second row."""
+    return (
+        db.query(Transaction)
+        .filter(Transaction.household_id == household_id,
+                Transaction.client_id == client_id)
+        .first()
+    )
+
+
 def _store_receipt(receipt: UploadFile, uploads_dir: str) -> str:
     """Validate and save an uploaded receipt; return the stored filename."""
     ext = os.path.splitext(receipt.filename or "")[1].lower()
@@ -2255,19 +2267,15 @@ def create_transaction(
     """
     uploads_dir = uploads_dir or UPLOADS_DIR
 
-    if data.client_id:
-        # Deliberately includes soft-deleted rows: a replay of a deleted
-        # expense must not become a second row.
-        existing = (
-            db.query(Transaction)
-            .filter(Transaction.household_id == household_id,
-                    Transaction.client_id == data.client_id)
-            .first()
-        )
+    def _raise_if_replay() -> None:
+        existing = _find_by_client_id(db, household_id, data.client_id)
         if existing is not None:
             if existing.deleted_at is not None:
                 raise DeletedTransactionReplay()
             raise DuplicateTransaction(existing)
+
+    if data.client_id:
+        _raise_if_replay()
 
     paid_by = require_member(db, data.paid_by, household_id)
     category_id = require_category(db, data.category_id, household_id)
@@ -2305,13 +2313,17 @@ def create_transaction(
         for s in data.splits:
             db.add(TransactionSplit(transaction_id=txn.id, user_id=s.user_id, amount=s.amount))
         db.commit()
-    except Exception:
+    except Exception as exc:
         db.rollback()
         if receipt_path:
             try:
                 os.remove(os.path.join(uploads_dir, receipt_path))
             except OSError:
                 pass
+        if isinstance(exc, IntegrityError) and data.client_id:
+            # Lost a race against a concurrent create with the same client_id:
+            # answer as the idempotent replay it is.
+            _raise_if_replay()
         raise
     db.refresh(txn)
     return txn

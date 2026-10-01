@@ -417,6 +417,31 @@ def test_api_client_id_of_deleted_transaction_is_409(client, db, api):
     assert client.post("/api/v1/transactions", headers=headers, json=body).status_code == 409
 
 
+def test_api_client_id_race_returns_existing_row(client, db, api, monkeypatch):
+    """Two creates both pass the lookup; the loser must get the idempotent reply."""
+    from app import services
+    from app.models import Transaction
+
+    headers, hh = api
+    body = {"bucket_id": hh.bucket_id, "amount": 10, "type": "expense",
+            "client_id": "api-race-1"}
+    first = client.post("/api/v1/transactions", headers=headers, json=body)
+    assert first.status_code == 201
+
+    real = services._find_by_client_id
+    calls = []
+
+    def blind_once(*a, **kw):
+        calls.append(1)
+        return None if len(calls) == 1 else real(*a, **kw)
+
+    monkeypatch.setattr(services, "_find_by_client_id", blind_once)
+    second = client.post("/api/v1/transactions", headers=headers, json=body)
+    assert second.status_code == 200
+    assert second.json()["id"] == first.json()["id"]
+    assert db.query(Transaction).count() == 1
+
+
 def test_api_unknown_currency_is_422(client, api):
     headers, hh = api
     r = client.post("/api/v1/transactions", headers=headers, json={

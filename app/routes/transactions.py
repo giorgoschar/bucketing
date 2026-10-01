@@ -3,6 +3,7 @@ Transactions routes: add expense wizard + CRUD.
 """
 import csv
 import io
+import logging
 import re
 from datetime import date
 from html.parser import HTMLParser
@@ -21,6 +22,7 @@ from fastapi.responses import (
 from pydantic import ValidationError
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
+from starlette.concurrency import run_in_threadpool
 
 from app.auth import require_auth, require_csrf
 from app.category_rules import learn_rule, resolve_category
@@ -56,6 +58,8 @@ from app.validators import (
     validate_currency,
     validate_split_users,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/transactions", dependencies=[Depends(require_csrf)])
 
@@ -402,7 +406,9 @@ async def create_transaction(
         raise HTTPException(status_code=400, detail=_first_error(exc)) from None
 
     try:
-        txn = create_transaction_service(
+        # Sync DB + upload I/O: keep it off the event loop.
+        txn = await run_in_threadpool(
+            create_transaction_service,
             db, household_id=hh_id, bucket=bucket, user=user,
             data=data, receipt=receipt, is_shared=shared,
         )
@@ -425,9 +431,14 @@ async def create_transaction(
     # Teach the categorisation rule from a scan: correcting a merchant's
     # category once makes it stick for next time.
     if remember_rule == "on" and txn.category_id:
-        learn_rule(db, hh_id, merchant or notes, txn.category_id,
-                   created_by=user.id)
-        db.commit()
+        try:
+            learn_rule(db, hh_id, merchant or notes, txn.category_id,
+                       created_by=user.id)
+            db.commit()
+        except Exception:
+            # A convenience rule must never fail an expense that is already saved.
+            db.rollback()
+            logger.warning("Could not learn categorisation rule", exc_info=True)
 
     # HTMX: if triggered from wizard, swap to success partial; else redirect
     if request.headers.get("HX-Request"):
