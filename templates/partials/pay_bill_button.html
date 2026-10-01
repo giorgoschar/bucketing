@@ -23,8 +23,15 @@
 </div>
 {% endif %}
 
+{% set _splits = [] %}
+{% for s in bill.splits %}{% set _ = _splits.append({"user_id": s.user_id, "name": s.user.display_name, "amount": s.amount | float}) %}{% endfor %}
 <button type="button"
-        onclick="openPayModal('{{ occ.id }}', '{{ bill.id }}', {{ 'true' if _is_variable else 'false' }}, '{{ bill.name | replace("'", "\\'") }}', [{% for s in bill.splits %}{'user_id':'{{ s.user_id }}','name':'{{ s.user.display_name | replace("'", "\\'") }}','amount':{{ s.amount | float }}}{% if not loop.last %},{% endif %}{% endfor %}], {{ none | tojson if _occ_amount is none else _occ_amount | float | tojson }})"
+        data-occ-id="{{ occ.id }}" data-bill-id="{{ bill.id }}"
+        data-variable="{{ 'true' if _is_variable else 'false' }}"
+        data-bill-name="{{ bill.name }}"
+        data-splits="{{ _splits | tojson | forceescape }}"
+        data-amount="{{ '' if _occ_amount is none else (_occ_amount | float) }}"
+        onclick="openPayModal(this)"
         class="ml-2 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 font-semibold text-xs rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition-colors flex-shrink-0">
   Pay
 </button>

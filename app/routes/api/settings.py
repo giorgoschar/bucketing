@@ -20,6 +20,7 @@ from app.models import (
     User,
 )
 from app.ratelimit import limiter
+from app.validators import parse_color
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -82,7 +83,7 @@ def update_profile(
             raise HTTPException(status_code=409, detail="Email already registered to another account")
     user.display_name = body.display_name.strip()
     user.email        = email_clean
-    user.avatar_color = body.avatar_color
+    user.avatar_color = parse_color(body.avatar_color, field="Avatar colour")
     db.commit()
     return {"id": user.id, "display_name": user.display_name, "email": user.email, "avatar_color": user.avatar_color}
 
@@ -221,7 +222,7 @@ def create_category(
     db: Session = Depends(get_db),
 ):
     user, hh_id = auth
-    cat = Category(household_id=hh_id, name=body.name.strip(), color=body.color, icon=body.icon)
+    cat = Category(household_id=hh_id, name=body.name.strip(), color=parse_color(body.color), icon=body.icon)
     db.add(cat)
     db.commit()
     db.refresh(cat)
@@ -240,7 +241,7 @@ def update_category(
     if not cat:
         raise HTTPException(status_code=404, detail="Category not found")
     cat.name  = body.name.strip()
-    cat.color = body.color
+    cat.color = parse_color(body.color)
     cat.icon  = body.icon
     db.commit()
     return {"id": cat.id, "name": cat.name, "color": cat.color, "icon": cat.icon, "is_default": cat.is_default}

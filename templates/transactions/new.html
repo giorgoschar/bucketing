@@ -170,7 +170,8 @@
           <div class="grid grid-cols-3 sm:grid-cols-4 gap-2">
             {% for cat in categories %}
             <button type="button"
-                    x-show="!catSearch || '{{ cat.name }}'.toLowerCase().includes(catSearch.toLowerCase())"
+                    data-name="{{ cat.name }}"
+                    x-show="!catSearch || $el.dataset.name.toLowerCase().includes(catSearch.toLowerCase())"
                     @click="form.category_id = '{{ cat.id }}'"
                     :class="form.category_id === '{{ cat.id }}'
                       ? 'ring-2 ring-offset-1 ring-gray-400 scale-95'

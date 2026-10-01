@@ -121,7 +121,10 @@ async def security_headers(request: Request, call_next):
         "style-src 'self' 'unsafe-inline'; "
         "worker-src blob: 'self'; "
         "img-src 'self' data: blob:; "
-        "connect-src 'self' cdn.jsdelivr.net blob:;"
+        "connect-src 'self' cdn.jsdelivr.net blob:; "
+        "object-src 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
     )
     if not settings.debug:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"

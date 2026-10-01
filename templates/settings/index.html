@@ -207,14 +207,14 @@
                 <div x-show="showActions" x-cloak @click.away="showActions = false"
                      class="absolute right-0 mt-1 w-52 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg z-10 overflow-hidden">
                   <form method="POST" action="/settings/transfer-ownership/{{ m.user.id }}"
-                        onsubmit="return confirm('Transfer ownership to {{ m.user.display_name }}? You will become a regular member.')">
+                        data-confirm="Transfer ownership to {{ m.user.display_name }}? You will become a regular member.">
                     <button type="submit" class="w-full text-left px-4 py-2.5 text-xs hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 font-semibold">
                       👑 Transfer ownership
                     </button>
                   </form>
                   <div class="border-t border-gray-100 dark:border-gray-700 mx-3"></div>
                   <form method="POST" action="/settings/remove-member/{{ m.user.id }}"
-                        onsubmit="return confirm('Remove {{ m.user.display_name }} from this household?')">
+                        data-confirm="Remove {{ m.user.display_name }} from this household?">
                     <button type="submit" class="w-full text-left px-4 py-2.5 text-xs hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 font-medium">
                       🗑 Remove member
                     </button>
@@ -244,7 +244,7 @@
           {% for inv in invitations %}
           <div class="flex items-center gap-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-xl">
             <span class="text-xs font-mono text-gray-500 flex-1 truncate">{{ request.base_url }}join/{{ inv.token }}</span>
-            <button onclick="navigator.clipboard.writeText('{{ request.base_url }}join/{{ inv.token }}')"
+            <button data-url="{{ request.base_url }}join/{{ inv.token }}" onclick="navigator.clipboard.writeText(this.dataset.url)"
                     class="text-xs text-primary-500 font-medium flex-shrink-0 hover:underline">Copy</button>
           </div>
           {% endfor %}
@@ -457,7 +457,7 @@
       <p class="text-sm text-red-500 mb-3">{{ leave_error }}</p>
       {% endif %}
       <form method="POST" action="/settings/leave-household"
-            onsubmit="return confirm('Are you sure you want to leave {{ household.name }}? This cannot be undone.')">
+            data-confirm="Are you sure you want to leave {{ household.name }}? This cannot be undone.">
         <button type="submit"
                 class="px-4 py-2 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-xl text-sm transition-colors">
           Leave household

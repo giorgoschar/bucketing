@@ -52,7 +52,7 @@
           Review
         </a>
         <form method="POST" action="/transactions/{{ t.id }}/delete" class="flex-shrink-0"
-              onsubmit="return confirm('Delete this transaction? This cannot be undone.')">
+              data-confirm="Delete this transaction? This cannot be undone.">
           <input type="hidden" name="_csrf_token" value="{{ request.state.csrf_token }}">
           <button type="submit"
                   class="px-2.5 py-1 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-xs font-semibold hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors">

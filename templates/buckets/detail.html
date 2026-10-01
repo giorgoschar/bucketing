@@ -483,7 +483,7 @@
     </form>
     <div class="px-6 pb-5">
       <form method="POST" action="/buckets/{{ bucket.id }}/archive"
-            onsubmit="return confirm('Archive this bucket?')">
+            data-confirm="Archive this bucket?">
         <button type="submit" class="w-full py-2 text-sm text-red-400 hover:text-red-500 font-medium">Archive bucket</button>
       </form>
     </div>

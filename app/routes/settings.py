@@ -42,6 +42,7 @@ from app.ratelimit import limiter
 from app.seed import seed_categories
 from app.services import base_ctx
 from app.templates import templates
+from app.validators import parse_color
 
 router = APIRouter(prefix="/settings", dependencies=[Depends(require_csrf)])
 
@@ -169,6 +170,7 @@ def update_profile(
     auth=Depends(require_auth),
 ):
     user, hh_id = auth
+    avatar_color = parse_color(avatar_color, field="Avatar colour")
     email_clean = email.strip().lower() or None
     if email_clean:
         conflict = db.query(User).filter(
@@ -279,6 +281,7 @@ def create_category(
     auth=Depends(require_auth),
 ):
     user, hh_id = auth
+    color = parse_color(color)
     cat = Category(
         household_id=hh_id,
         name=name.strip(),

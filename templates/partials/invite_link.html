@@ -5,7 +5,7 @@
     <input type="text" value="{{ invite_url }}" readonly
            class="flex-1 px-3 py-2 text-xs bg-white dark:bg-gray-800 border border-emerald-200 dark:border-emerald-700 rounded-lg font-mono select-all"
            onclick="this.select()" />
-    <button onclick="navigator.clipboard.writeText('{{ invite_url }}').then(() => this.textContent = 'Copied!')"
+    <button data-url="{{ invite_url }}" onclick="navigator.clipboard.writeText(this.dataset.url).then(() => this.textContent = 'Copied!')"
             class="px-3 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold rounded-lg transition-colors">
       Copy
     </button>

@@ -26,7 +26,7 @@ from app.services import (
     record_bucket_settlement,
 )
 from app.templates import templates
-from app.validators import parse_amount, parse_year_month, require_member
+from app.validators import parse_amount, parse_color, parse_year_month, require_member
 
 router = APIRouter(prefix="/buckets", dependencies=[Depends(require_csrf)])
 
@@ -113,7 +113,7 @@ def create_bucket(
         household_id=hh_id,
         name=name.strip(),
         type=BucketType(type),
-        color=color,
+        color=parse_color(color),
         icon=icon,
         budget=parse_amount(budget, field="Budget", allow_blank=True),
         description=description.strip() or None,
@@ -279,7 +279,7 @@ def edit_bucket(
 
     bucket.name = name.strip()
     bucket.type = BucketType(type)
-    bucket.color = color
+    bucket.color = parse_color(color)
     bucket.icon = icon
     bucket.budget = parse_amount(budget, field="Budget", allow_blank=True)
     bucket.description = description.strip() or None

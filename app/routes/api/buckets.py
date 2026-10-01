@@ -22,7 +22,7 @@ from app.services import (
     record_bucket_settlement,
     record_household_settlement,
 )
-from app.validators import parse_amount, validate_split_users
+from app.validators import parse_amount, parse_color, validate_split_users
 
 router = APIRouter(prefix="/buckets", tags=["buckets"])
 
@@ -92,7 +92,7 @@ def create_bucket(
         household_id=hh_id,
         name=body.name.strip(),
         type=BucketType(body.type),
-        color=body.color,
+        color=parse_color(body.color),
         icon=body.icon,
         budget=body.budget,
         description=body.description,
@@ -132,7 +132,7 @@ def update_bucket(
 
     bucket.name              = body.name.strip()
     bucket.type              = BucketType(body.type)
-    bucket.color             = body.color
+    bucket.color             = parse_color(body.color)
     bucket.icon              = body.icon
     bucket.budget            = body.budget
     bucket.description       = body.description

@@ -322,3 +322,128 @@ def test_tooltip_style_is_hand_written_not_purgeable_tailwind():
 def test_service_worker_precaches_the_tooltip_listener():
     sw = (STATIC / "sw.js").read_text()
     assert "/static/chart-tooltip.js" in sw
+
+
+# ---------------------------------------------------------------------------
+# Task 1.4: no user data interpolated into JavaScript strings
+# ---------------------------------------------------------------------------
+
+_JS_ATTR = re.compile(
+    r"""(?<![\w-])(?P<attr>x-[a-z:.-]+|@[a-z.:-]+|:[a-z-]+|on[a-z]+|hx-[a-z]+)="(?P<body>[^"]*\{\{[^"]*)\"""",
+)
+# Server-generated, non-user-controlled values may stay: UUID primary keys,
+# enum values, loop counters/presets/keys and amounts.
+_SAFE_EXPR = re.compile(
+    r"\{\{\s*(?:[\w.]+\.(?:id|value)|\w+\.\w+_id|[pi]|key|value|amt|"
+    r"'true' if [^}]*|none \| tojson[^}]*)\s*\}\}"
+)
+
+
+def _js_attr_interpolations():
+    for path in sorted(TEMPLATES.rglob("*.html")):
+        for n, line in enumerate(path.read_text().splitlines(), 1):
+            for m in _JS_ATTR.finditer(line):
+                # URL/target attributes are not JavaScript.
+                if m.group("attr") in ("hx-get", "hx-post", "hx-target"):
+                    continue
+                rest = _SAFE_EXPR.sub("", m.group("body"))
+                if "{{" in rest or "{%" in rest:
+                    yield f"{path}:{n}: {m.group('body')[:90]}"
+
+
+def test_no_user_data_in_template_built_js_strings():
+    offenders = list(_js_attr_interpolations())
+    assert not offenders, "user data inside JS attribute:\n" + "\n".join(offenders)
+
+
+def test_lib_js_has_delegated_confirm_and_is_loaded():
+    lib = (STATIC / "lib.js").read_text()
+    assert "data-confirm" in lib or "[data-confirm]" in lib
+    assert "confirm(" in lib
+    assert 'src="/static/lib.js"' in Path("templates/base.html").read_text()
+    sw = (STATIC / "sw.js").read_text()
+    assert "/static/lib.js" in sw
+
+
+def test_no_inline_confirm_handlers_with_interpolation():
+    for path in TEMPLATES.rglob("*.html"):
+        for line in path.read_text().splitlines():
+            assert not ("confirm(" in line and "{{" in line), f"{path}: {line.strip()}"
+
+
+EVIL = "');alert(1);//"
+
+
+def test_hostile_names_render_inert(client, db, authed):
+    from app.models import Category, HouseholdMember, User
+
+    hh_id = db.query(HouseholdMember).first().household_id
+    db.add(Category(household_id=hh_id, name=EVIL, color="#112233", icon="x"))
+    db.add(Category(household_id=hh_id, name="<script>boom</script>",
+                    color="#112233", icon="x"))
+    for u in db.query(User).all():
+        u.display_name = EVIL
+    db.commit()
+
+    for url in ("/transactions/new", "/settings", "/bills"):
+        r = client.get(url)
+        assert r.status_code == 200, url
+        html = r.text
+        assert "<script>boom" not in html, url
+        # The raw payload may only appear HTML-escaped, never inside a JS
+        # string (the quote would be a literal ' instead of &#39;).
+        assert EVIL not in html, f"{url} leaks an unescaped payload"
+
+
+def test_csp_hardening_directives(client):
+    csp = client.get("/login").headers["content-security-policy"]
+    for d in ("object-src 'none'", "base-uri 'self'", "form-action 'self'"):
+        assert d in csp
+
+
+@pytest.mark.parametrize("bad", ["red", "#12345", "#1234567", "#gggggg",
+                                 "url(javascript:x)", "#fff;x:y", ""])
+def test_parse_color_rejects(bad):
+    from fastapi import HTTPException
+
+    from app.validators import parse_color
+    with pytest.raises(HTTPException) as e:
+        parse_color(bad)
+    assert e.value.status_code == 400
+
+
+def test_parse_color_normalises():
+    from app.validators import parse_color
+    assert parse_color(" #AbCdEf ") == "#abcdef"
+
+
+def test_html_settings_reject_bad_colors(client, db, authed):
+    from app.models import Category, User
+    r = client.post("/settings/categories", data={
+        "name": "X", "color": 'red;" onload="x', "icon": "a"}, headers=authed.headers)
+    assert r.status_code == 400
+    assert db.query(Category).filter_by(name="X").count() == 0
+    r = client.post("/settings/profile", data={
+        "display_name": "N", "avatar_color": "nope"}, headers=authed.headers)
+    assert r.status_code == 400
+    assert db.query(User).filter_by(avatar_color="nope").count() == 0
+
+
+def test_api_settings_reject_bad_colors(client, make_household):
+    import pyotp
+
+    from tests.conftest import PASSWORD
+    hh = make_household()
+    r = client.post("/api/v1/auth/login",
+                    json={"username": hh.username, "password": PASSWORD})
+    p = r.json()["pending_token"]
+    r = client.post("/api/v1/auth/totp/verify",
+                    json={"pending_token": p, "code": pyotp.TOTP(hh.secret).now()})
+    h = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    assert client.post("/api/v1/settings/categories", headers=h,
+                       json={"name": "X", "color": "<b>"}).status_code == 400
+    assert client.put("/api/v1/settings/profile", headers=h,
+                      json={"display_name": "N", "avatar_color": "bad"}).status_code == 400
+    ok = client.post("/api/v1/settings/categories", headers=h,
+                     json={"name": "X", "color": "#ABCDEF"})
+    assert ok.status_code == 201 and ok.json()["color"] == "#abcdef"

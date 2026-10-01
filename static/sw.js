@@ -1,4 +1,4 @@
-const CACHE_NAME = 'expenses-v6';
+const CACHE_NAME = 'expenses-v7';
 const CDN_CACHE = 'expenses-cdn-v6';
 
 const STATIC_ASSETS = [
@@ -8,6 +8,7 @@ const STATIC_ASSETS = [
   '/static/vendor/htmx.min.js',
   '/static/vendor/alpine.min.js',
   '/static/offline.js',
+  '/static/lib.js',
   '/static/insights.js',
   '/static/expense-wizard.js',
   '/static/app-components.js',

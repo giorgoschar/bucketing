@@ -7,6 +7,7 @@ the query, a member of household A could attach their data to household B's
 bucket, or split an expense onto a user outside their household. Everything that
 accepts an id from a request should run it through here.
 """
+import re
 from decimal import Decimal, InvalidOperation
 
 from fastapi import HTTPException
@@ -16,6 +17,20 @@ from app.models import Bucket, Category, HouseholdMember
 
 # Money limits — Numeric(12, 4) tops out below 100 million.
 MAX_AMOUNT = Decimal("99999999")
+
+_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def parse_color(raw, *, field: str = "Color") -> str:
+    """Validate a ``#rrggbb`` colour and return it lowercased, or raise HTTP 400.
+
+    Colours are interpolated into inline ``style`` attributes, so anything
+    looser than a plain hex value is a CSS/HTML injection vector.
+    """
+    value = (raw or "").strip() if isinstance(raw, str) else ""
+    if not _COLOR_RE.match(value):
+        raise HTTPException(status_code=400, detail=f"{field} must look like #rrggbb.")
+    return value.lower()
 
 
 def parse_amount(
