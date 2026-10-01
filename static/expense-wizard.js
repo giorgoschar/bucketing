@@ -27,6 +27,36 @@ function expenseWizard() {
       // were charged to members but the money was credited to nobody, so both
       // members appeared to owe a third party who does not exist.
       this.form.paid_by = cfg.currentUserId || '';
+      this._wireOfflineSubmit();
+    },
+
+    /* Offline: queue the expense in IndexedDB and register Background Sync
+       instead of letting the browser submit a request that cannot succeed.
+       Wired here (not in a page <script>) because a swapped-in body's scripts
+       run after Alpine, and the form is a fresh node on every navigation, so
+       the listener never accumulates. */
+    _wireOfflineSubmit() {
+      const form = this.$el.querySelector('#expense-form');
+      if (!form) return;
+      form.addEventListener('submit', async (e) => {
+        if (navigator.onLine) return; // normal submission proceeds
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (!window.offlineExpenses) {
+          alert('Offline support is loading. Please try again in a moment.');
+          return;
+        }
+        await window.offlineExpenses.saveOfflineTransaction(new FormData(form));
+        if ('serviceWorker' in navigator && 'SyncManager' in window) {
+          const reg = await navigator.serviceWorker.ready;
+          await reg.sync.register('submit-expense').catch(() => {});
+        }
+        const result = document.getElementById('wizard-result');
+        if (result) {
+          result.innerHTML = '<div class="mt-6 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl text-center"><p class="text-sm font-medium text-amber-700 dark:text-amber-400">\u{1F4F6} You\'re offline. Your expense has been saved and will sync automatically when you reconnect.</p></div>';
+        }
+        this.step = 5; // hide the wizard steps
+      });
     },
 
     buckets: {},

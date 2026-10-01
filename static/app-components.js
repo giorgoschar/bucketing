@@ -24,19 +24,17 @@ function notifCenter() {
         async init() {
           await this.fetchNotifs(0);
           /* hx-boost swaps the <body> on every navigation, so this component
-             re-initialises each time. setInterval lives on window, not the DOM,
-             so the previous timer survived the swap and kept polling — after a
-             few tab changes the app was firing several /notifications requests
-             a minute and climbing. Keep exactly one, on window. */
-          if (window.__notifTimer) clearInterval(window.__notifTimer);
-          window.__notifTimer = setInterval(() => this.fetchNotifs(0, true), 60000);
-          this._timer = window.__notifTimer;
+             re-initialises each time and the old timer must not outlive it:
+             setInterval lives on window, not the DOM. Each bell owns exactly
+             one interval (this._timer) and destroy() clears it. */
+          if (this._timer) clearInterval(this._timer);
+          this._timer = setInterval(() => this.fetchNotifs(0, true), 60000);
         },
 
         destroy() {
-          if (window.__notifTimer) {
-            clearInterval(window.__notifTimer);
-            window.__notifTimer = null;
+          if (this._timer) {
+            clearInterval(this._timer);
+            this._timer = null;
           }
         },
         async fetchNotifs(offset = 0, silent = false) {
@@ -72,7 +70,8 @@ function notifCenter() {
         },
         async markAllRead() {
           try {
-            await fetch('/notifications/read-all', { method: 'POST', headers: { 'X-CSRF-Token': _csrfToken() } });
+            await app.fetchJSON('/notifications/read-all', { method: 'POST' });
+            window.__notifCache = null;
             this.unread = 0;
             this.items  = this.items.map(n => ({ ...n, is_read: true }));
           } catch (_) {}
@@ -133,7 +132,7 @@ function pushSettings() {
             userVisibleOnly: true,
             applicationServerKey: this._urlB64(public_key),
           });
-          await fetch('/push/subscribe', { method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRF-Token': _csrfToken()}, body: JSON.stringify(sub) });
+          await app.fetchJSON('/push/subscribe', { method: 'POST', body: sub.toJSON() });
           this._sub = sub;
           this.subStatus = 'subscribed';
           this.statusText = 'This device will receive push notifications.';
@@ -150,7 +149,7 @@ function pushSettings() {
         this.feedback = '';
         try {
           if (this._sub) {
-            await fetch('/push/subscribe', { method: 'DELETE', headers: {'Content-Type': 'application/json', 'X-CSRF-Token': _csrfToken()}, body: JSON.stringify({ endpoint: this._sub.endpoint }) });
+            await app.fetchJSON('/push/subscribe', { method: 'DELETE', body: { endpoint: this._sub.endpoint } });
             await this._sub.unsubscribe();
             this._sub = null;
           }
@@ -168,12 +167,15 @@ function pushSettings() {
         this.loading = true;
         this.feedback = '';
         try {
-          const resp = await fetch('/push/test', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': _csrfToken() },
-            body: JSON.stringify({ endpoint: this._sub?.endpoint || null }),
-          });
-          const data = await resp.json();
+          let data;
+          try {
+            data = await app.fetchJSON('/push/test', {
+              method: 'POST',
+              body: { endpoint: this._sub?.endpoint || null },
+            });
+          } catch (e) {
+            data = e.data || { error: e.message };
+          }
           if (data.sent) {
             this._ok('Test notification sent! Check your device.');
           } else {

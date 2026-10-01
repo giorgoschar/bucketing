@@ -11,9 +11,6 @@
   <meta name="apple-mobile-web-app-title" content="{{ household.name if household else 'Expenses' }}" />
   <link rel="manifest" href="/static/manifest.json" />
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
-  <!-- Resource hint for the receipt-scanner libraries, the only remaining CDN -->
-  <link rel="preconnect" href="https://cdn.jsdelivr.net" />
-  <link rel="dns-prefetch" href="https://cdn.jsdelivr.net" />
   <title>{% block title %}{{ household.name if household else 'Expenses' }}{% endblock %}</title>
 
   <!-- Tailwind, built ahead of time (npm run css).
@@ -30,10 +27,13 @@
        and Alpine initialises the tree as soon as it starts, so any x-data
        factory it needs has to already exist. Living in <head> also means
        hx-boost body swaps never re-evaluate or race them. -->
-  <script defer src="/static/lib.js"></script>
+  <!-- lib.js is NOT deferred: it defines window.app (csrfToken/fetchJSON), which
+       the inline script below uses while the head is still being parsed. -->
+  <script src="/static/lib.js"></script>
   <script defer src="/static/insights.js"></script>
   <script defer src="/static/expense-wizard.js"></script>
   <script defer src="/static/app-components.js"></script>
+  <script defer src="/static/receipt-scanner.js"></script>
   <!-- Chart tooltips: one delegated listener on document, registered once, so
        it keeps working across hx-boost swaps and insights filter changes. -->
   <script defer src="/static/chart-tooltip.js"></script>
@@ -45,13 +45,6 @@
   <!-- CSRF token for double-submit validation -->
   <meta name="csrf-token" content="{{ request.cookies.get('csrf_token', '') }}">
   <script>
-    // Helper: read CSRF token from the non-httponly cookie.
-    // Defined first so it's available to all listeners below.
-    function _csrfToken() {
-      var m = document.cookie.split('; ').find(function(r) { return r.startsWith('csrf_token='); });
-      return m ? m.split('=').slice(1).join('=') : '';
-    }
-
     // Send CSRF token on every HTMX request (reads cookie, not meta tag, so
     // it stays correct even after the cookie is refreshed mid-session).
     /* Guarded: this whole script block re-executes on every boosted body swap,
@@ -60,13 +53,13 @@
     if (!window.__csrfWired) {
       window.__csrfWired = true;
       document.addEventListener('htmx:configRequest', function (evt) {
-        var token = _csrfToken();
+        var token = app.csrfToken();
         if (token) evt.detail.headers['X-CSRF-Token'] = token;
       });
     }
     // Inject hidden field into traditional (non-HTMX) POST forms
     function _injectCsrfFields() {
-      var val = _csrfToken();
+      var val = app.csrfToken();
       if (!val) return;
       document.querySelectorAll('form').forEach(function (f) {
         if ((f.method || '').toLowerCase() === 'post' && !f.querySelector('[name="_csrf_token"]')) {
@@ -411,31 +404,10 @@
   {% block scripts %}{% endblock %}
 
   <script>
-    // Alpine: shared notification center component
-    
-
-    // Service worker + Web Push subscription
+    // Service worker. Push is NOT subscribed here: that happens only when the
+    // user enables it in Settings (pushSettings in app-components.js).
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js', { scope: '/' }).then(reg => {
-        if (!('PushManager' in window)) return;
-        reg.pushManager.getSubscription().then(async existing => {
-          if (existing) return;
-          try {
-            const keyResp = await fetch('/push/vapid-public-key');
-            if (!keyResp.ok) return;  // VAPID not configured
-            const { public_key } = await keyResp.json();
-            const sub = await reg.pushManager.subscribe({
-              userVisibleOnly: true,
-              applicationServerKey: _urlBase64ToUint8(public_key),
-            });
-            await fetch('/push/subscribe', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': _csrfToken() },
-              body: JSON.stringify(sub),
-            });
-          } catch (_) {}
-        });
-      });
+      navigator.serviceWorker.register('/sw.js', { scope: '/' });
     }
 
     /* ---------------------------------------------------------------
@@ -525,13 +497,6 @@
       });
     }
 
-    function _urlBase64ToUint8(base64String) {
-      const padding = '='.repeat((4 - base64String.length % 4) % 4);
-      const base64  = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-      const raw     = atob(base64);
-      return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
-    }
-
     // Fix Alpine + hx-boost timing: after HTMX settles (scripts evaluated),
     // re-init any Alpine components that failed because their factory function
     // wasn't yet defined when Alpine's MutationObserver fired.
@@ -540,12 +505,6 @@
        the old htmx:afterSettle initTree() fallback is gone. Re-initialising a
        tree Alpine had already claimed was what made it throw
        "Cannot convert undefined or null to object" on every navigation. */
-  </script>
-
-  <!-- Push-settings Alpine component — defined globally so hx-boost navigations
-       don't create a timing race between script injection and Alpine.initTree. -->
-  <script>
-  
   </script>
 </body>
 </html>

@@ -113,7 +113,9 @@ def test_offline_js_reads_csrf_from_cookie_not_meta():
     mid-session. Reading the tag meant a queued expense flushed after a refresh
     was rejected with 403 and stuck in the queue forever."""
     js = open("static/offline.js").read()
-    assert "csrf_token=" in js, "should read the cookie"
+    # the cookie reader now lives once, in static/lib.js (app.csrfToken)
+    assert "app.csrfToken()" in js, "should use the shared cookie reader"
+    assert "csrf_token=" in open("static/lib.js").read(), "lib.js should read the cookie"
     assert 'meta[name="csrf-token"]' not in js, "must not use the stale meta tag"
 
 

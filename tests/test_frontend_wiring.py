@@ -26,6 +26,7 @@ HEAD_LOADED = {
     "expenseWizard": "static/expense-wizard.js",
     "notifCenter": "static/app-components.js",
     "pushSettings": "static/app-components.js",
+    "receiptScanner": "static/receipt-scanner.js",
 }
 
 
@@ -106,11 +107,14 @@ def test_global_listeners_are_registered_once():
     )
 
 
-def test_notification_poller_keeps_a_single_timer():
-    """setInterval lives on window, so a per-component timer leaks on each swap."""
+def test_notification_bells_each_own_their_timer():
+    """Each bell keeps its own interval in this._timer and clears it in
+    destroy(); a shared window.__notifTimer made the second bell cancel the
+    first one's poller."""
     js = Path("static/app-components.js").read_text()
-    assert "window.__notifTimer" in js
-    assert "clearInterval(window.__notifTimer)" in js
+    assert "__notifTimer" not in js
+    assert "this._timer = setInterval(" in js
+    assert "clearInterval(this._timer)" in js
 
 
 def test_no_duplicate_form_field_names_in_a_form():
@@ -468,11 +472,18 @@ def test_api_settings_reject_bad_colors(client, make_household):
 
 
 def test_scan_page_renders_currency_as_json(client, db, authed):
+    """receiptScanner() lives in static/receipt-scanner.js, so per-page config
+    reaches it through a data-init attribute, JSON-encoded by `| tojson`."""
+    import html as htmllib
+
     from app.models import Household, HouseholdMember
     hh = db.get(Household, db.query(HouseholdMember).first().household_id)
     r = client.get("/transactions/scan")
     assert r.status_code == 200
-    assert f"currency: {json.dumps(hh.default_currency)}," in r.text
+    m = re.search(r"x-data=\"receiptScanner\(\)\"[^>]*data-init='([^']*)'", r.text, re.S)
+    assert m, "scan page lost its data-init config"
+    cfg = json.loads(htmllib.unescape(m.group(1)))
+    assert cfg["currency"] == hh.default_currency
     assert "currency: '" not in r.text
 
 
@@ -493,3 +504,198 @@ def test_api_household_rejects_script_currency(client, make_household):
     ok = client.put("/api/v1/settings/household", headers=h,
                     json={"name": "H", "default_currency": "EUR"})
     assert ok.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Task 2.6: CSRF on every mutating fetch, no CDN, single lib.js
+# ---------------------------------------------------------------------------
+
+def _first_party_sources():
+    """Templates and our own static JS; vendored libraries are not ours."""
+    for path in sorted(TEMPLATES.rglob("*.html")):
+        yield path
+    for path in sorted(STATIC.glob("*.js")):
+        yield path
+
+
+def _fetch_calls(text):
+    """Yield (offset, call_text) for every `fetch(` call, balancing parens."""
+    for m in re.finditer(r"(?<![\w.$])fetch\(", text):
+        depth, i = 1, m.end()
+        while i < len(text) and depth:
+            depth += {"(": 1, ")": -1}.get(text[i], 0)
+            i += 1
+        yield m.start(), text[m.start():i]
+
+
+def test_every_mutating_fetch_carries_a_csrf_token():
+    """A POST/PUT/PATCH/DELETE fetch must go through app.fetchJSON (which adds
+    X-CSRF-Token) or set the header itself. The scan page's two POSTs did
+    neither and were rejected with 403."""
+    offenders, seen = [], 0
+    for path in _first_party_sources():
+        if path.name == "lib.js":
+            continue  # defines app.fetchJSON
+        text = path.read_text()
+        for offset, call in _fetch_calls(text):
+            if re.search(r"method:\s*['\"](POST|PUT|PATCH|DELETE)['\"]", call):
+                seen += 1
+                if "X-CSRF-Token" not in call:
+                    line = text.count("\n", 0, offset) + 1
+                    offenders.append(f"{path}:{line}")
+    assert seen, "expected to find mutating fetch calls; is the regex stale?"
+    assert not offenders, "fetch without CSRF token (use app.fetchJSON):\n" + "\n".join(offenders)
+
+
+def test_no_template_loads_a_remote_script():
+    for path in TEMPLATES.rglob("*.html"):
+        assert not re.search(r"<script[^>]*\bsrc=[\"']https?://", path.read_text()), (
+            f"{path} loads a remote script"
+        )
+
+
+def test_no_first_party_code_references_a_cdn():
+    for path in _first_party_sources():
+        if path.name == "sw.js":
+            continue  # the service worker may cache whatever origins it sees
+        text = path.read_text()
+        for host in ("cdn.jsdelivr.net", "unpkg.com", "cdnjs.cloudflare.com"):
+            if path.suffix == ".html":
+                # comments may explain history; markup and script may not
+                text = re.sub(r"<!--.*?-->|\{#.*?#\}", "", text, flags=re.S)
+            assert host not in text, f"{path} references {host}"
+
+
+def _strip_js(src):
+    """Blank out strings and comments so only structure is left."""
+    out, i, n = [], 0, len(src)
+    while i < n:
+        c = src[i]
+        if src.startswith("//", i):
+            while i < n and src[i] != "\n":
+                i += 1
+        elif src.startswith("/*", i):
+            j = src.find("*/", i + 2)
+            i = n if j < 0 else j + 2
+        elif c in "'\"`":
+            q, i = c, i + 1
+            while i < n and src[i] != q:
+                i += 2 if src[i] == "\\" else 1
+            i += 1
+            out.append('""')
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
+
+
+def _top_level_lexicals(script):
+    code = _strip_js(script)
+    depth, found = 0, []
+    for m in re.finditer(r"[{}()\[\]]|\b(?:const|let)\s+[\w${]", code):
+        tok = m.group(0)
+        if tok in "{([":
+            depth += 1
+        elif tok in "})]":
+            depth -= 1
+        elif depth == 0:
+            found.append(tok.split()[0])
+    return found
+
+
+def test_no_top_level_const_or_let_in_inline_scripts():
+    """The body re-executes on every hx-boost swap. A top-level const/let in an
+    inline script throws "Identifier has already been declared" the second time
+    and takes the rest of the block with it."""
+    offenders = []
+    for path in TEMPLATES.rglob("*.html"):
+        for m in _INLINE_SCRIPT.finditer(path.read_text()):
+            if _top_level_lexicals(m.group(1)):
+                line = path.read_text().count("\n", 0, m.start(1)) + 1
+                offenders.append(f"{path}:~{line}")
+    assert not offenders, "top-level const/let:\n" + "\n".join(offenders)
+
+
+def test_top_level_lexical_detector_works():
+    assert _top_level_lexicals("const a = 1;")
+    assert _top_level_lexicals("function f(){ const a = 1; }") == []
+    assert _top_level_lexicals("var s = 'let x'; // const y") == []
+
+
+def test_lib_js_exposes_app_helpers():
+    lib = (STATIC / "lib.js").read_text()
+    assert "window.app" in lib
+    assert "csrfToken" in lib and "fetchJSON" in lib
+    assert "X-CSRF-Token" in lib
+
+
+def test_there_is_one_csrf_token_reader():
+    """_csrfToken (base.html) and _csrf (offline.js) were duplicates of the
+    reader that now lives in lib.js."""
+    for path in _first_party_sources():
+        text = path.read_text()
+        assert "_csrfToken" not in text, f"{path} still uses _csrfToken"
+        if path.name != "sw.js":
+            assert not re.search(r"\b_csrf\(", text), f"{path} still uses _csrf()"
+
+
+def test_lib_js_loads_before_other_scripts_that_use_it():
+    head = Path("templates/base.html").read_text().split("</head>")[0]
+    lib = head.index('src="/static/lib.js"')
+    for src in ("receipt-scanner.js", "app-components.js", "offline.js"):
+        assert lib < head.index(f'src="/static/{src}"'), src
+
+
+def test_push_is_not_auto_subscribed_on_every_page_load():
+    base = Path("templates/base.html").read_text()
+    assert "/push/subscribe" not in base
+    assert "pushManager.subscribe" not in base
+    assert "pushManager.subscribe" in (STATIC / "app-components.js").read_text()
+
+
+def test_scanner_libraries_are_vendored():
+    for rel in (
+        "qr-scanner/qr-scanner.legacy.min.js",
+        "tesseract/tesseract.min.js",
+        "tesseract/worker.min.js",
+        "tesseract/core/tesseract-core-simd-lstm.wasm.js",
+        "tesseract/core/tesseract-core-lstm.wasm.js",
+        "tesseract/lang/eng.traineddata.gz",
+        "tesseract/lang/ell.traineddata.gz",
+        "pdfjs/pdf.min.mjs",
+        "pdfjs/pdf.worker.min.mjs",
+    ):
+        assert (STATIC / "vendor" / rel).is_file(), f"run: npm run vendor:copy ({rel})"
+
+
+def test_receipt_scanner_uses_vendored_paths_and_fetch_helper():
+    js = (STATIC / "receipt-scanner.js").read_text()
+    for needle in ("'/static/vendor/tesseract'", "TESS_BASE + '/worker.min.js'",
+                   "TESS_BASE + '/core'", "TESS_BASE + '/lang'",
+                   "'/static/vendor/pdfjs'", "PDFJS_BASE + '/pdf.worker.min.mjs'"):
+        assert needle in js, needle
+    assert js.count("app.fetchJSON(") >= 2
+    assert "{{" not in js and "{%" not in js
+
+
+def test_scanner_vendor_scripts_load_from_self_on_the_scan_page():
+    html = Path("templates/transactions/scan.html").read_text()
+    assert "/static/vendor/qr-scanner/qr-scanner.legacy.min.js" in html
+    assert "/static/vendor/tesseract/tesseract.min.js" in html
+
+
+def test_csp_does_not_allow_a_cdn(client):
+    csp = client.get("/login").headers["content-security-policy"]
+    assert "jsdelivr" not in csp and "unpkg" not in csp
+    assert "worker-src blob: 'self'" in csp
+
+
+def test_offline_form_hook_lives_in_the_wizard():
+    assert "offlineExpenses" in (STATIC / "expense-wizard.js").read_text()
+    assert "<script" not in Path("templates/transactions/new.html").read_text()
+
+
+def test_service_worker_precaches_new_static_files():
+    sw = (STATIC / "sw.js").read_text()
+    assert "/static/receipt-scanner.js" in sw
+    assert "expenses-v7'" not in sw
