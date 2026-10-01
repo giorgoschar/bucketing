@@ -21,7 +21,9 @@
   </form>
 
   {# Add movement #}
+  {# Reset after a successful add so a second tap cannot log a duplicate. #}
   <form method="post" action="/cash/add" hx-post="/cash/add" hx-target="#cash-list" hx-swap="outerHTML"
+        hx-on::after-request="if (event.detail.successful) this.reset()"
         class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800 space-y-3">
     <input type="hidden" name="month" value="{{ month }}" />
     <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Log cash</p>
@@ -44,9 +46,12 @@
              class="px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm" />
       <select name="user_id" aria-label="Member"
               class="px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm">
-        {# The server only lets non-owners log for themselves. #}
+        {# The server only lets non-owners log for themselves, so only owners
+           are offered other members. #}
         <option value="{{ user.id }}">For me</option>
-        {% for m in members if m.id != user.id %}<option value="{{ m.id }}">{{ m.display_name }} (owner only)</option>{% endfor %}
+        {% if is_owner %}
+        {% for m in members if m.id != user.id %}<option value="{{ m.id }}">{{ m.display_name }}</option>{% endfor %}
+        {% endif %}
       </select>
     </div>
     <button type="submit" class="w-full py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-semibold rounded-xl text-sm">Add</button>

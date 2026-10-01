@@ -22,6 +22,7 @@ from app.services import (
     member_balances,
     parse_month,
 )
+from app.services.cash import is_owner
 from app.templates import templates
 from app.validators import household_member_ids, parse_amount, require_category, require_member
 
@@ -78,6 +79,7 @@ def cash_page(
     ctx = _list_ctx(db, user, hh_id, month or None, member or None)
     ctx["request"] = request
     ctx["today"] = local_today()
+    ctx["is_owner"] = is_owner(db, user.id, hh_id)
     if request.headers.get("HX-Request") and request.headers.get("HX-Target") == "cash-list":
         return templates.TemplateResponse("cash/_list.html", ctx)
     return templates.TemplateResponse("cash/index.html", ctx)
