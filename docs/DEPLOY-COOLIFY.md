@@ -35,6 +35,14 @@ The compose file declares named volumes; Coolify keeps them across deploys:
 | `uploads_data` | `/app/uploads` (app, backup read-only) | Receipt files |
 | `backups` | `/backups` (app, backup) | `db-*.sql.gz`, `uploads-*.tgz`, `pre-migrate-*.sql.gz` |
 
+The container runs as uid `10001` (user `app`). Fresh volumes inherit that ownership
+from the image. When upgrading a deployment whose uploads were written by the old root
+container, fix ownership once:
+
+```sh
+docker compose run --rm --user root app chown -R 10001 /app/uploads /backups
+```
+
 Do not switch `uploads` back to a bind mount: Coolify's bind paths change between
 deployments of some resource types.
 

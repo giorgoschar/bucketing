@@ -50,3 +50,4 @@ package.json
 package-lock.json
 tailwind.config.js
 static/src/
+.superpowers/

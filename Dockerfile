@@ -2,6 +2,9 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
 # pg_dump for the pre-migration backup in entrypoint.sh (Debian 13 ships v17,
 # which can dump the Postgres 16 server).
 RUN apt-get update \
@@ -15,9 +18,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy source
 COPY . .
 
-# Create runtime directories
-RUN mkdir -p uploads static/icons \
-    && chmod +x entrypoint.sh
+# Create runtime directories and drop root. /app/uploads and /backups are owned
+# by the app user so fresh named volumes mounted there inherit that ownership.
+RUN mkdir -p uploads static/icons /backups \
+    && chmod +x entrypoint.sh scripts/backup.sh \
+    && useradd -r -u 10001 app \
+    && chown -R app /app /backups
+
+USER app
 
 EXPOSE 8000
 
