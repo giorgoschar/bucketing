@@ -5,7 +5,7 @@ from decimal import Decimal
 import pytest
 
 from app.clock import local_today
-from app.models import Bucket, Category, Transaction, TransactionSplit
+from app.models import Bucket, Category, HouseholdMember, Transaction, TransactionSplit
 from app.services import (
     get_insights_bucket_breakdown,
     get_insights_budget_status,
@@ -176,9 +176,14 @@ def test_budget_status_counts_one_off_purchases(db, authed):
                if r["bucket"].id == authed.bucket_id)
     assert row["spent"] == Decimal("226.60")
     assert row["over_budget"] is True
-    # ... while projections (built on the trend) keep ignoring the one-off.
-    trend = get_monthly_trend(db, authed.household_id, 1)
-    assert trend[-1]["total"] == Decimal("127.60")
+    # Every actual-spend figure includes the one-off...
+    assert get_insights_summary(db, authed.household_id, None, None)["total_spent"] == Decimal("226.60")
+    assert get_monthly_trend(db, authed.household_id, 1)[-1]["total"] == Decimal("226.60")
+    # ...while the projection's trend baseline ignores it.
+    from app.services.insights import _sum_expenses_by
+    month = (when.year, when.month)
+    assert _sum_expenses_by(db, authed.household_id, None, None, group_by="month",
+                            include_one_offs=False)[month] == Decimal("127.60")
 
 
 # ---------------------------------------------------------------------------
@@ -299,3 +304,31 @@ def test_htmx_request_returns_a_bare_fragment(client, data):
 def test_full_page_load_is_not_a_fragment(client, data):
     r = client.get("/insights")
     assert "<!DOCTYPE" in r.text or "<html" in r.text
+
+
+def test_paid_and_share_both_sum_to_total_with_edge_cases(db, duo):
+    from app.models import User
+    from app.services import delete_transaction
+    from tests.test_household_settlement import _add_member
+    a, b = duo.user_id, duo.partner_id
+    gone = _add_member(db, duo.household_id, "gone")
+    db.commit()
+    gone_id = gone.id
+    _paid(db, duo, 100, [(a, 50), (b, 50)])
+    _paid(db, duo, 20, payer=None)                                # no payer, no split
+    t = _paid(db, duo, 30, payer=b)
+    t.exchange_rate = 2                                           # 60 base
+    db.commit()
+    deleted = _paid(db, duo, 777)
+    delete_transaction(db, deleted)
+    _paid(db, duo, 40, payer=gone_id)
+    db.query(HouseholdMember).filter_by(user_id=gone_id).delete()
+    db.commit()
+
+    s = get_insights_summary(db, duo.household_id, None, None)
+    assert s["total_spent"] == Decimal("220")
+    assert sum(d["paid"] for d in s["paid_by"].values()) == s["total_spent"]
+    assert sum(d["share"] for d in s["paid_by"].values()) == s["total_spent"]
+    assert s["paid_by"][gone_id]["name"].startswith("Former member")
+    assert s["paid_by"]["unassigned"]["share"] == Decimal("20")
+    assert db.get(User, gone_id) is not None

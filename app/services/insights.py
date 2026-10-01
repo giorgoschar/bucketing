@@ -104,6 +104,7 @@ def get_monthly_trend(
     bucket_ids: list | None = None,
     category_ids: list | None = None,
     paid_by: str | None = None,
+    include_one_offs: bool = True,
 ) -> list[dict]:
     """Expense totals for the last n_months calendar months (oldest → newest).
 
@@ -123,6 +124,7 @@ def get_monthly_trend(
         bucket_ids=bucket_ids,
         category_ids=category_ids,
         paid_by=paid_by,
+        include_one_offs=include_one_offs,
     )
 
     return [
@@ -146,7 +148,8 @@ def get_forecast(db: Session, household_id: str) -> dict:
     Returns empty dict if less than 3 months of history.
     """
     today = local_today()
-    trend = get_monthly_trend(db, household_id, n_months=4)
+    # Projections ignore one-off purchases; the trend chart shows actual spend.
+    trend = get_monthly_trend(db, household_id, n_months=4, include_one_offs=False)
     past = [m for m in trend if not m["is_current"]]
     if len(past) < 3:
         return {}
@@ -295,17 +298,23 @@ def _build_expense_query(
     bucket_ids: list | None = None,
     category_ids: list | None = None,
     paid_by: str | None = None,
+    include_one_offs: bool = True,
 ):
-    """Return a base Transaction query pre-filtered by all insight dimensions."""
+    """Return a base Transaction query pre-filtered by all insight dimensions.
+
+    One-off purchases (exclude_from_forecast) are actual spend, so they are
+    included unless a projection asks for ``include_one_offs=False``.
+    """
     q = (
         db.query(Transaction)
         .filter(
             Transaction.active(),
             Transaction.household_id == household_id,
             Transaction.type == TransactionType.expense,
-            Transaction.exclude_from_forecast == False,  # noqa: E712
         )
     )
+    if not include_one_offs:
+        q = q.filter(Transaction.exclude_from_forecast == False)  # noqa: E712
     if start:
         q = q.filter(Transaction.transaction_date >= start)
     if end:
@@ -335,6 +344,7 @@ def _sum_expenses_by(
     bucket_ids: list | None = None,
     category_ids: list | None = None,
     paid_by: str | None = None,
+    include_one_offs: bool = True,
 ) -> dict:
     """Sum filtered expenses grouped by one dimension, in a single round trip.
 
@@ -352,6 +362,7 @@ def _sum_expenses_by(
         bucket_ids=bucket_ids,
         category_ids=category_ids,
         paid_by=paid_by,
+        include_one_offs=include_one_offs,
     )
 
     def key_for(bucket_id, category_id, txn_date):
@@ -388,12 +399,8 @@ def _sum_expenses_by(
     return dict(totals)
 
 
-def _effective_amount(t: Transaction, paid_by: str | None = None) -> Decimal:
-    """The full amount of the transaction in household currency.
-
-    ``paid_by`` filters by payer upstream, so there is nothing to apportion
-    here; the argument is kept so existing callers stay unchanged.
-    """
+def _effective_amount(t: Transaction) -> Decimal:
+    """The full amount of the transaction in household currency."""
     return to_base(t.amount, t.exchange_rate)
 
 
@@ -410,7 +417,7 @@ def get_insights_summary(
     """Unified summary: total expenses + paid-by breakdown for any date range + filters."""
     q = _build_expense_query(db, household_id, start, end, bucket_type, bucket_ids, category_ids, paid_by)
     txns = q.options(joinedload(Transaction.splits)).all()
-    total_spent = sum(_effective_amount(t, paid_by) for t in txns)
+    total_spent = sum(_effective_amount(t) for t in txns)
 
     paid_acc: dict[str, Decimal] = defaultdict(Decimal)
     share_acc: dict[str, Decimal] = defaultdict(Decimal)
@@ -418,8 +425,12 @@ def get_insights_summary(
         # Full amount is credited to whoever fronted it; expenses with no payer
         # go to an "Unassigned" row so the bars still sum to total_spent.
         paid_acc[t.paid_by or UNASSIGNED_PAYER] += to_base(t.amount, t.exchange_rate)
-        for uid, share in shares_for(t).items():
+        shares = shares_for(t)
+        assigned = sum(shares.values(), ZERO)
+        for uid, share in shares.items():
             share_acc[uid] += share
+        # With no payer there is nobody to absorb the unsplit remainder.
+        share_acc[UNASSIGNED_PAYER] += (to_base(t.amount, t.exchange_rate) - assigned) if not t.paid_by else ZERO
 
     members = (
         db.query(User)
@@ -428,22 +439,28 @@ def get_insights_summary(
         .all()
     )
     member_map = {m.id: m for m in members}
+    # Payers / split users who left the household still hold real money.
+    missing = {uid for uid in set(paid_acc) | set(share_acc) if uid != UNASSIGNED_PAYER} - set(member_map)
+    former = {u.id: u for u in db.query(User).filter(User.id.in_(missing)).all()} if missing else {}
     paid_by_detail = {}
     for uid in sorted(set(paid_acc) | set(share_acc), key=lambda k: (-paid_acc.get(k, ZERO), k)):
         paid = paid_acc.get(uid, ZERO)
+        share = share_acc.get(uid, ZERO)
         if uid == UNASSIGNED_PAYER:
-            name, color = "Unassigned", "#9ca3af"
-        else:
-            u = member_map.get(uid)
-            if not u:
+            if not paid and abs(share) < Decimal("0.005"):
                 continue
-            name, color = u.display_name, u.avatar_color
+            name, color = "Unassigned", "#9ca3af"
+        elif uid in member_map:
+            name, color = member_map[uid].display_name, member_map[uid].avatar_color
+        else:
+            u = former.get(uid)
+            name, color = f"Former member: {u.display_name if u else 'unknown'}", "#9ca3af"
         paid_q = quantize(paid)
         paid_by_detail[uid] = {
             "name":   name,
             "color":  color,
             "paid":   paid_q,
-            "share":  quantize(share_acc.get(uid, ZERO)),
+            "share":  quantize(share),
             "amount": paid_q,  # alias of ``paid``, kept for one release
         }
 
@@ -547,7 +564,7 @@ def get_insights_category_breakdown(
 
     totals: dict[str | None, Decimal] = defaultdict(Decimal)
     for t in txns:
-        totals[t.category_id] += _effective_amount(t, paid_by)
+        totals[t.category_id] += _effective_amount(t)
 
     grand = sum(totals.values()) or 1
     cat_ids = [cid for cid in totals if cid is not None]
@@ -879,7 +896,7 @@ def get_insights_kpis(
     )
     txns = q.options(joinedload(Transaction.splits), joinedload(Transaction.category)).all()
 
-    amounts = [(t, _effective_amount(t, paid_by)) for t in txns]
+    amounts = [(t, _effective_amount(t)) for t in txns]
     amounts = [(t, a) for t, a in amounts if a]
     total = sum((a for _, a in amounts), ZERO)
     count = len(amounts)
@@ -940,7 +957,7 @@ def get_insights_kpis(
             category_ids=category_ids, paid_by=paid_by,
         )
         prev_txns = prev_q.options(joinedload(Transaction.splits)).all()
-        previous_total = quantize(sum(_effective_amount(t, paid_by) for t in prev_txns))
+        previous_total = quantize(sum(_effective_amount(t) for t in prev_txns))
         if previous_total > 0:
             change_pct = quantize((total - previous_total) / previous_total * 100, TENTH)
 

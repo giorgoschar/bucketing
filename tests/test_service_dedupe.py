@@ -57,9 +57,10 @@ def test_category_breakdown_for_a_month(db, month_data):
         db, month_data.household_id, date(2026, 3, 1), date(2026, 3, 31), limit=6,
     )
     assert [(r["name"], r["amount"], r["pct"]) for r in rows] == [
-        ("Food", Decimal("60.10"), Decimal("47.1")),
-        ("Fun", Decimal("60.00"), Decimal("47.0")),
-        ("Uncategorised", Decimal("7.50"), Decimal("5.9")),
+        # Fun includes the 99 one-off purchase: actual spend counts it.
+        ("Fun", Decimal("159.00"), Decimal("70.2")),
+        ("Food", Decimal("60.10"), Decimal("26.5")),
+        ("Uncategorised", Decimal("7.50"), Decimal("3.3")),
     ]
 
 
