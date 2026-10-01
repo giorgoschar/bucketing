@@ -19,6 +19,7 @@ from app.models import (
     TransactionType,
 )
 from app.receipt_parser import match_category, parse_receipt_text
+from app.services import delete_transaction as delete_transaction_soft
 from app.validators import (
     parse_amount,
     parse_year_month,
@@ -136,7 +137,7 @@ def list_transactions(
     db: Session = Depends(get_db),
 ):
     user, hh_id = auth
-    q = db.query(Transaction).filter(Transaction.household_id == hh_id)
+    q = db.query(Transaction).filter(Transaction.active(), Transaction.household_id == hh_id)
 
     if bucket_id:
         q = q.filter(Transaction.bucket_id == bucket_id)
@@ -220,7 +221,7 @@ def get_transaction(
     db: Session = Depends(get_db),
 ):
     user, hh_id = auth
-    txn = db.query(Transaction).options(joinedload(Transaction.splits)).filter_by(id=txn_id, household_id=hh_id).first()
+    txn = db.query(Transaction).options(joinedload(Transaction.splits)).filter(Transaction.active()).filter_by(id=txn_id, household_id=hh_id).first()
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found")
     return _txn_dict(txn)
@@ -234,7 +235,7 @@ def update_transaction(
     db: Session = Depends(get_db),
 ):
     user, hh_id = auth
-    txn = db.query(Transaction).filter_by(id=txn_id, household_id=hh_id).first()
+    txn = db.query(Transaction).filter(Transaction.active()).filter_by(id=txn_id, household_id=hh_id).first()
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
@@ -273,17 +274,12 @@ def delete_transaction(
     db: Session = Depends(get_db),
 ):
     user, hh_id = auth
-    txn = db.query(Transaction).filter_by(id=txn_id, household_id=hh_id).first()
+    txn = db.query(Transaction).filter(Transaction.active()).filter_by(id=txn_id, household_id=hh_id).first()
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
-    # Remove receipt file if present
-    if txn.receipt_path:
-        receipt_file = Path(UPLOADS_DIR) / txn.receipt_path
-        if receipt_file.is_file():
-            receipt_file.unlink(missing_ok=True)
-
-    db.delete(txn)
+    # Soft delete: the row and splits stay, the receipt moves to uploads/.trash.
+    delete_transaction_soft(db, txn, UPLOADS_DIR)
     db.commit()
 
 
@@ -296,7 +292,7 @@ async def upload_receipt(
 ):
     """Upload or replace a receipt image/PDF for a transaction."""
     user, hh_id = auth
-    txn = db.query(Transaction).filter_by(id=txn_id, household_id=hh_id).first()
+    txn = db.query(Transaction).filter(Transaction.active()).filter_by(id=txn_id, household_id=hh_id).first()
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found")
 

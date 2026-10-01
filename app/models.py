@@ -116,6 +116,9 @@ class Household(Base):
     name = Column(String(100), nullable=False)
     default_currency = Column(String(3), default="EUR")
     created_at = Column(DateTime, default=datetime.utcnow)
+    # Set when the last member leaves. The household and all its data are kept;
+    # only scripts/purge_household.py may hard-delete it.
+    archived_at = Column(DateTime, nullable=True)
 
     members = relationship("HouseholdMember", back_populates="household")
     buckets = relationship("Bucket", back_populates="household")
@@ -218,6 +221,7 @@ class Transaction(Base):
     __table_args__ = (
         Index("ix_transactions_household_date", "household_id", "transaction_date"),
         Index("ix_transactions_bucket_id", "bucket_id"),
+        Index("ix_transactions_deleted_at", "deleted_at"),
         # NULLs do not collide, so only offline submissions are constrained.
         UniqueConstraint("household_id", "client_id", name="uq_transaction_client_id"),
     )
@@ -244,6 +248,14 @@ class Transaction(Base):
     # repeat instead of creating a second transaction.
     client_id = Column(String(64), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    # Soft delete: set (naive UTC) instead of removing the row. Every read
+    # query must filter with Transaction.active().
+    deleted_at = Column(DateTime, nullable=True)
+
+    @classmethod
+    def active(cls):
+        """Filter expression selecting transactions that are not soft-deleted."""
+        return cls.deleted_at.is_(None)
 
     bucket = relationship("Bucket", back_populates="transactions")
     paid_by_user = relationship("User", back_populates="paid_transactions")

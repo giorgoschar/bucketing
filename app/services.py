@@ -1,8 +1,11 @@
 """
 Balance and summary calculations for dashboards and bucket views.
 """
+import logging
+import os
+import shutil
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session, joinedload
@@ -102,11 +105,38 @@ def split_to_base(split, txn) -> float:
     return to_base(split.amount, txn.exchange_rate)
 
 
+logger = logging.getLogger(__name__)
+
+UPLOADS_DIR = "uploads"
+TRASH_DIRNAME = ".trash"
+
+
+def delete_transaction(db: Session, txn: Transaction, uploads_dir: str | None = None) -> None:
+    """Soft-delete a transaction. Never removes the row, its splits or its receipt.
+
+    The receipt file is moved to <uploads>/.trash/ (purged after 30 days by the
+    scheduler); receipt_path keeps the bare filename so it can be restored.
+    The caller commits.
+    """
+    uploads_dir = uploads_dir or UPLOADS_DIR
+    txn.deleted_at = datetime.utcnow()
+    if txn.receipt_path:
+        src = os.path.join(uploads_dir, txn.receipt_path)
+        if os.path.isfile(src):
+            trash = os.path.join(uploads_dir, TRASH_DIRNAME)
+            os.makedirs(trash, exist_ok=True)
+            try:
+                shutil.move(src, os.path.join(trash, os.path.basename(txn.receipt_path)))
+            except OSError:
+                logger.exception("Could not move receipt %s to trash", txn.receipt_path)
+
+
 def base_ctx(db: Session, user, hh_id: str) -> dict:
     """Minimal context shared by every page: current household + switcher list."""
     household = db.get(Household, hh_id)
     memberships = db.query(HouseholdMember).filter_by(user_id=user.id).all()
     households = [db.get(Household, m.household_id) for m in memberships]
+    households = [h for h in households if h is not None and h.archived_at is None]
     return {"household": household, "households": households}
 
 
@@ -141,6 +171,7 @@ def get_month_summary(db: Session, household_id: str, year: int, month: int, buc
     q = (
         db.query(Transaction)
         .filter(
+            Transaction.active(),
             Transaction.household_id == household_id,
             Transaction.type == TransactionType.expense,
             Transaction.transaction_date >= start,
@@ -212,6 +243,7 @@ def get_bucket_month_summary(db: Session, bucket_id: str, year: int, month: int)
     txns = (
         db.query(Transaction)
         .filter(
+            Transaction.active(),
             Transaction.bucket_id == bucket_id,
             Transaction.type == TransactionType.expense,
             Transaction.transaction_date >= start,
@@ -263,6 +295,7 @@ def get_all_time_summary(db: Session, household_id: str, bucket_type: str = "", 
     q = (
         db.query(Transaction)
         .filter(
+            Transaction.active(),
             Transaction.household_id == household_id,
             Transaction.type == TransactionType.expense,
             Transaction.exclude_from_forecast == False,  # noqa: E712
@@ -315,7 +348,11 @@ def get_bucket_balance(db: Session, bucket_id: str) -> dict:
     expense_sum = func.coalesce(
         func.sum(case((Transaction.type == TransactionType.expense, base_amount_expr()), else_=0)), 0
     )
-    row = db.query(income_sum, expense_sum).filter(Transaction.bucket_id == bucket_id).one()
+    row = (
+        db.query(income_sum, expense_sum)
+        .filter(Transaction.active(), Transaction.bucket_id == bucket_id)
+        .one()
+    )
     income = float(row[0])
     expenses = float(row[1])
     return {
@@ -397,6 +434,7 @@ def get_income_total(db: Session, household_id: str, year: int, month: int) -> f
         db.query(func.coalesce(func.sum(base_amount_expr()), 0))
         .join(Bucket, Bucket.id == Transaction.bucket_id)
         .filter(
+            Transaction.active(),
             Transaction.household_id == household_id,
             Transaction.type == TransactionType.income,
             Transaction.transaction_date >= start,
@@ -447,6 +485,7 @@ def get_category_breakdown(
     q = (
         db.query(Transaction)
         .filter(
+            Transaction.active(),
             Transaction.household_id == household_id,
             Transaction.type == TransactionType.expense,
             Transaction.transaction_date >= start,
@@ -550,6 +589,7 @@ def get_forecast(db: Session, household_id: str) -> dict:
     spend_so_far = (
         db.query(func.coalesce(func.sum(base_amount_expr()), 0))
         .filter(
+            Transaction.active(),
             Transaction.household_id == household_id,
             Transaction.type == TransactionType.expense,
             Transaction.transaction_date >= start,
@@ -593,6 +633,7 @@ def get_bucket_budget_status(db: Session, household_id: str, year: int, month: i
     rows = (
         db.query(Transaction.bucket_id, func.sum(base_amount_expr()))
         .filter(
+            Transaction.active(),
             Transaction.bucket_id.in_(bucket_ids),
             Transaction.type == TransactionType.expense,
             Transaction.transaction_date >= start,
@@ -630,6 +671,7 @@ def compute_bucket_net(db: Session, bucket_id: str) -> dict[str, float]:
     txns = (
         db.query(Transaction)
         .filter(
+            Transaction.active(),
             Transaction.bucket_id == bucket_id,
             Transaction.type == TransactionType.expense,
         )
@@ -756,6 +798,7 @@ def get_settlement_exclusions(db: Session, household_id: str) -> dict:
         )
         .join(Bucket, Bucket.id == Transaction.bucket_id)
         .filter(
+            Transaction.active(),
             Transaction.household_id == household_id,
             Transaction.type == TransactionType.expense,
             Bucket.enable_settlement.is_(True),
@@ -936,6 +979,7 @@ def get_bucket_spend_this_month(db: Session, household_id: str, year: int, month
     rows = (
         db.query(Transaction.bucket_id, func.sum(base_amount_expr()))
         .filter(
+            Transaction.active(),
             Transaction.household_id == household_id,
             Transaction.type == TransactionType.expense,
             Transaction.transaction_date >= start,
@@ -1059,6 +1103,7 @@ def _build_expense_query(
     q = (
         db.query(Transaction)
         .filter(
+            Transaction.active(),
             Transaction.household_id == household_id,
             Transaction.type == TransactionType.expense,
             Transaction.exclude_from_forecast == False,  # noqa: E712
@@ -1240,6 +1285,7 @@ def get_insights_income(
         db.query(func.coalesce(func.sum(base_amount_expr()), 0))
         .join(Bucket, Bucket.id == Transaction.bucket_id)
         .filter(
+            Transaction.active(),
             Transaction.household_id == household_id,
             Transaction.type == TransactionType.income,
             Bucket.show_income.is_(True),
@@ -1502,6 +1548,7 @@ def get_insights_budget_status(
     q = (
         db.query(Transaction.bucket_id, func.sum(base_amount_expr()))
         .filter(
+            Transaction.active(),
             Transaction.bucket_id.in_(ids),
             Transaction.type == TransactionType.expense,
             # Excluded transactions are left out of every other spend figure;
@@ -1637,6 +1684,7 @@ def get_trip_summary(db: Session, bucket: Bucket) -> dict:
     txns = (
         db.query(Transaction)
         .filter(
+            Transaction.active(),
             Transaction.bucket_id == bucket.id,
             Transaction.type == TransactionType.expense,
         )
@@ -1792,6 +1840,7 @@ def find_duplicate_candidates(
     q = (
         db.query(Transaction)
         .filter(
+            Transaction.active(),
             Transaction.household_id == household_id,
             Transaction.type == TransactionType.expense,
             Transaction.amount >= lo,
@@ -1828,6 +1877,7 @@ def find_household_duplicates(
     txns = (
         db.query(Transaction)
         .filter(
+            Transaction.active(),
             Transaction.household_id == household_id,
             Transaction.type == TransactionType.expense,
             Transaction.transaction_date >= cutoff,
@@ -1876,6 +1926,7 @@ def get_person_summary(
     q = (
         db.query(Transaction)
         .filter(
+            Transaction.active(),
             Transaction.household_id == household_id,
             Transaction.type == TransactionType.expense,
         )

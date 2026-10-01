@@ -510,6 +510,38 @@ def _notify_budget_thresholds(db, today: date) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Receipt trash
+# ---------------------------------------------------------------------------
+
+TRASH_RETENTION_DAYS = 30
+
+
+def _purge_trash(db, today: date, uploads_dir: str | None = None) -> int:
+    """Delete receipt FILES in <uploads>/.trash older than 30 days (by mtime).
+
+    Files only: database rows (soft-deleted transactions) are never touched.
+    """
+    import os
+    import time
+
+    from app.services import TRASH_DIRNAME, UPLOADS_DIR
+
+    trash = os.path.join(uploads_dir or UPLOADS_DIR, TRASH_DIRNAME)
+    if not os.path.isdir(trash):
+        return 0
+    cutoff = time.time() - TRASH_RETENTION_DAYS * 86400
+    removed = 0
+    for entry in os.scandir(trash):
+        try:
+            if entry.is_file() and entry.stat().st_mtime < cutoff:
+                os.remove(entry.path)
+                removed += 1
+        except OSError:
+            logger.exception("Could not purge trash file %s", entry.path)
+    return removed
+
+
+# ---------------------------------------------------------------------------
 # Job entry point
 # ---------------------------------------------------------------------------
 
@@ -530,6 +562,7 @@ def auto_mark_paid_job() -> None:
             _notify_contracts_expiring,
             _notify_bill_drift,
             _notify_budget_thresholds,
+            _purge_trash,
         ):
             try:
                 stage(db, today)

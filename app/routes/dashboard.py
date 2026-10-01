@@ -56,6 +56,7 @@ def dashboard(
     recent = (
         db.query(Transaction)
         .filter_by(household_id=hh_id)
+        .filter(Transaction.active())
         .filter(Transaction.type.in_([TransactionType.expense, TransactionType.income]))
         .order_by(Transaction.transaction_date.desc(), Transaction.created_at.desc())
         .limit(10)
