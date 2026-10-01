@@ -84,4 +84,6 @@ def insights(
         "category_trend":  data["category_trend"],
         "monthly_trend":   data["trend"],
         "forecast":        data["forecast"],
+        "by_method":       data["by_method"],
+        "cash_share":      data["cash_share"],
     }

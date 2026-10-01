@@ -35,7 +35,7 @@
       </button>
     </div>
     <div class="flex-1 overflow-y-auto px-5 py-4 space-y-1">
-      {% set widget_labels = [('kpi','KPI summary'),('forecast','Forecast'),('trend','6-month trend'),('categories','Category breakdown'),('budget','Budget progress'),('who_paid','Who paid'),('bucket_breakdown','Per-bucket spending'),('cat_trend','Category trend')] %}
+      {% set widget_labels = [('kpi','KPI summary'),('forecast','Forecast'),('trend','6-month trend'),('categories','Category breakdown'),('budget','Budget progress'),('who_paid','Who paid'),('by_method','Payment method'),('bucket_breakdown','Per-bucket spending'),('cat_trend','Category trend')] %}
       {% for key, label in widget_labels %}
       <div class="flex items-center justify-between py-2.5">
         <span class="text-sm text-gray-700 dark:text-gray-300">{{ label }}</span>
@@ -53,7 +53,7 @@
 
   {# ===== KPI cards ===== #}
   <div x-show="show('kpi')" x-cloak
-       class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+       class="grid grid-cols-2 lg:grid-cols-5 gap-3">
 
     <div class="bg-white dark:bg-gray-900 rounded-2xl p-4 border border-gray-100 dark:border-gray-800">
       <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Expenses</p>
@@ -79,6 +79,12 @@
       <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Bills due</p>
       <p class="text-xl font-bold">{{ bills_due | currency(household.default_currency) }}</p>
       <p class="text-[11px] text-gray-400 mt-1">{{ period_label }}</p>
+    </div>
+
+    <div class="bg-white dark:bg-gray-900 rounded-2xl p-4 border border-gray-100 dark:border-gray-800">
+      <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Cash share</p>
+      <p class="text-xl font-bold">{{ cash_share }}%</p>
+      <p class="text-[11px] text-gray-400 mt-1">of spending</p>
     </div>
 
   </div>
@@ -358,6 +364,29 @@
                  style="left: calc({{ [(data.share / summary.total_spent * 100), 100] | min | round(1) }}% - 1px)"></div>
           </div>
           {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# ===== Payment method breakdown ===== #}
+  {% if by_method %}
+  <div x-show="show('by_method')" x-cloak
+       class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
+    <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Payment method</p>
+    <div class="space-y-3">
+      {% for row in by_method %}
+      <div>
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-sm font-medium truncate">{{ row.label }}</span>
+          <span class="text-sm font-semibold whitespace-nowrap">{{ row.amount | currency(household.default_currency) }}
+            <span class="text-xs font-normal text-gray-400">{{ row.pct }}%</span></span>
+        </div>
+        <div class="mt-1 h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden"
+             role="img" aria-label="{{ row.label }} {{ row.pct }}% of spending">
+          <div class="h-full rounded-full bg-primary-500" style="width: {{ row.pct }}%"></div>
         </div>
       </div>
       {% endfor %}

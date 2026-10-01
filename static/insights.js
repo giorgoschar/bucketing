@@ -195,7 +195,7 @@ function insightsFilters() {
 function widgetToggle() {
   const DEFAULTS = {
     kpi: true, forecast: true, trend: true, categories: true,
-    budget: true, who_paid: true, bucket_breakdown: true, cat_trend: true,
+    budget: true, who_paid: true, by_method: true, bucket_breakdown: true, cat_trend: true,
   };
   const stored = (() => {
     try { return JSON.parse(localStorage.getItem('insights_widgets') || '{}'); }

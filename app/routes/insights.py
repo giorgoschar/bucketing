@@ -98,6 +98,8 @@ def insights(
             "category_trend":       category_trend,
             "cat_trend_max":        cat_trend_max,
             "kpis":                 data["kpis"],
+            "by_method":            data["by_method"],
+            "cash_share":           data["cash_share"],
             "forecast":             data["forecast"],
             "trend":                trend,
             "trend_max":            trend_max,

@@ -380,3 +380,85 @@ def test_dashboard_month_and_all_time_summary_count_one_offs(db, authed):
     db.commit()
     assert get_month_summary(db, authed.household_id, today.year, today.month)["total_spent"] == Decimal("226.60")
     assert get_all_time_summary(db, authed.household_id)["total_spent"] == Decimal("226.60")
+
+
+# ---------------------------------------------------------------------------
+# Payment-method breakdown
+# ---------------------------------------------------------------------------
+
+def _pay(db, ctx, amount, method, rate=None, payer="__me__", deleted=False):
+    from app.clock import utcnow_naive
+    t = Transaction(
+        bucket_id=ctx.bucket_id, household_id=ctx.household_id, amount=amount,
+        currency="EUR", type="expense", transaction_date=local_today(),
+        paid_by=ctx.user_id if payer == "__me__" else payer,
+        payment_method=method, exchange_rate=rate,
+        deleted_at=utcnow_naive() if deleted else None,
+    )
+    db.add(t)
+    db.commit()
+    return t
+
+
+def _by_method(db, ctx, **filters):
+    from app.services import InsightFilters, build_insights
+    return build_insights(db, ctx.household_id, InsightFilters(preset="all_time", **filters))
+
+
+def test_by_method_two_cash_one_card(db, authed):
+    for m in ("cash", "cash", "card"):
+        _pay(db, authed, 10, m)
+    data = _by_method(db, authed)
+    rows = data["by_method"]
+    assert [r["method"] for r in rows] == ["cash", "card"]
+    assert rows[0]["amount"] == Decimal("20.00")
+    assert rows[0]["pct"] == Decimal("66.7")
+    assert rows[0]["label"] == "Cash"
+    assert data["cash_share"] == Decimal("66.7")
+
+
+def test_by_method_uses_exchange_rates_and_omits_zero(db, authed):
+    _pay(db, authed, 10, "cash", rate=Decimal("2"))     # 20 base
+    _pay(db, authed, 20, "card", rate=Decimal("0.5"))   # 10 base
+    _pay(db, authed, 10, "card")                        # 10 base
+    data = _by_method(db, authed)
+    amounts = {r["method"]: r["amount"] for r in data["by_method"]}
+    assert amounts == {"cash": Decimal("20.00"), "card": Decimal("20.00")}
+    assert data["cash_share"] == Decimal("50.0")
+
+
+def test_by_method_respects_paid_by_and_soft_delete(db, duo):
+    _pay(db, duo, 10, "cash")
+    _pay(db, duo, 30, "card", payer=duo.partner_id)
+    _pay(db, duo, 50, "cash", deleted=True)
+    data = _by_method(db, duo, paid_by=duo.user_id)
+    assert [(r["method"], r["amount"]) for r in data["by_method"]] == [("cash", Decimal("10.00"))]
+    assert data["cash_share"] == Decimal("100.0")
+    assert _by_method(db, duo)["cash_share"] == Decimal("25.0")
+
+
+def test_cash_share_is_zero_without_spending(db, authed):
+    data = _by_method(db, authed)
+    assert data["by_method"] == []
+    assert data["cash_share"] == Decimal("0.0")
+
+
+from tests.test_api import api  # noqa: E402,F401  (fixture)
+
+
+def test_by_method_in_api(client, db, api):
+    headers, hh = api
+    for m in ("cash", "cash", "card"):
+        _pay(db, hh, 10, m)
+    body = client.get("/api/v1/insights?preset=all_time", headers=headers).json()
+    assert body["by_method"][0]["method"] == "cash"
+    assert body["cash_share"] == 66.7
+
+
+def test_by_method_in_widget(client, db, authed):
+    for m in ("cash", "cash", "card"):
+        _pay(db, authed, 10, m)
+    page = client.get("/insights?preset=all_time").text
+    assert "Payment method" in page and "Cash" in page and "Card" in page
+    assert "Cash share" in page
+    assert "by_method" in page      # widget toggle key

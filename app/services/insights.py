@@ -16,12 +16,13 @@ from app.models import (
     BucketType,
     Category,
     HouseholdMember,
+    PaymentMethod,
     RecurringBill,
     Transaction,
     TransactionType,
     User,
 )
-from app.money import TENTH, ZERO, quantize, to_decimal
+from app.money import TENTH, ZERO, percent, quantize, to_decimal
 from app.services.money import base_amount_expr, shares_for, to_base
 
 UNASSIGNED_PAYER = "unassigned"
@@ -348,7 +349,7 @@ def _sum_expenses_by(
 ) -> dict:
     """Sum filtered expenses grouped by one dimension, in a single round trip.
 
-    ``group_by`` is "bucket", "category", "month" or "category_month".
+    ``group_by`` is "bucket", "category", "method", "month" or "category_month".
 
     Several insight widgets used to loop and issue one query per bucket / per
     month, which is what made the filter bar feel sluggish: a single filter
@@ -381,6 +382,8 @@ def _sum_expenses_by(
         cols = [Transaction.bucket_id]
     elif group_by == "category":
         cols = [Transaction.category_id]
+    elif group_by == "method":
+        cols = [Transaction.payment_method]
     else:
         # Group in Python: month bucketing differs per SQL dialect, and one
         # round trip beats a portable-but-chatty per-month query.
@@ -391,7 +394,7 @@ def _sum_expenses_by(
         total = to_decimal(row[-1] or 0)
         if group_by == "bucket":
             totals[row[0]] += total
-        elif group_by == "category":
+        elif group_by in ("category", "method"):
             totals[row[0]] += total
         else:
             cat_id, d = row[0], row[1]
@@ -581,6 +584,56 @@ def get_insights_category_breakdown(
             "pct":    quantize(amount / grand * 100, TENTH),
         })
     return rows
+
+
+_METHOD_LABELS = {
+    PaymentMethod.card.value: "Card",
+    PaymentMethod.cash.value: "Cash",
+    PaymentMethod.apple_pay.value: "Apple Pay",
+    PaymentMethod.transfer.value: "Transfer",
+    PaymentMethod.other.value: "Other",
+}
+
+
+def get_insights_by_method(
+    db: Session,
+    household_id: str,
+    start: date | None,
+    end: date | None,
+    bucket_type: str = "",
+    bucket_ids: list | None = None,
+    category_ids: list | None = None,
+    paid_by: str | None = None,
+) -> tuple[list[dict], Decimal]:
+    """Actual spend per payment method plus cash's share of all spending (%).
+
+    Rows are ``{method, label, amount, pct}``, biggest first, zero methods
+    omitted. A missing method counts as "other".
+    """
+    raw = _sum_expenses_by(
+        db, household_id, start, end,
+        group_by="method",
+        bucket_type=bucket_type,
+        bucket_ids=bucket_ids,
+        category_ids=category_ids,
+        paid_by=paid_by,
+    )
+    totals: dict[str, Decimal] = defaultdict(Decimal)
+    for method, amount in raw.items():
+        totals[method or PaymentMethod.other.value] += amount
+    grand = sum(totals.values(), ZERO)
+    rows = [
+        {
+            "method": m,
+            "label":  _METHOD_LABELS.get(m, m.replace("_", " ").title()),
+            "amount": quantize(amt),
+            "pct":    percent(amt, grand),
+        }
+        for m, amt in totals.items() if quantize(amt) > 0
+    ]
+    rows.sort(key=lambda r: -r["amount"])
+    cash_share = percent(totals.get(PaymentMethod.cash.value, ZERO), grand)
+    return rows, cash_share
 
 
 def get_insights_bucket_breakdown(
@@ -834,6 +887,7 @@ def build_insights(db: Session, household_id: str, filters: InsightFilters) -> d
     trend            = get_monthly_trend(db, household_id, n_months=6, **common)
     forecast         = get_forecast(db, household_id) if period["is_current_month"] else {}
     kpis             = get_insights_kpis(db, household_id, start, end, **common)
+    by_method, cash_share = get_insights_by_method(db, household_id, start, end, **common)
 
     return {
         "period":                period,
@@ -852,6 +906,8 @@ def build_insights(db: Session, household_id: str, filters: InsightFilters) -> d
         "trend":                 trend,
         "forecast":              forecast,
         "kpis":                  kpis,
+        "by_method":             by_method,
+        "cash_share":            cash_share,
     }
 
 
