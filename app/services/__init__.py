@@ -31,6 +31,11 @@ from app.services.duplicates import (  # noqa: F401
     find_duplicate_candidates,
     find_household_duplicates,
 )
+from app.services.ingest import (  # noqa: F401
+    ingest_apple_pay,
+    ingest_client_id,
+    notify_ingest_created,
+)
 from app.services.insights import (  # noqa: F401
     INSIGHT_PRESETS,
     InsightFilters,

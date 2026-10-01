@@ -82,6 +82,7 @@ class NotificationType(str, enum.Enum):
     contract_expiring  = "contract_expiring"
     bill_drift         = "bill_drift"       # bill cost moved vs its own history
     budget_warning     = "budget_warning"   # bucket spend crossed a budget threshold
+    ingest_created     = "ingest_created"   # an expense arrived via the Apple Pay Shortcut
     general            = "general"
     # WARNING: on PostgreSQL this is a native ENUM type (created in migration
     # 2c1adaf99fa2), so adding a member here REQUIRES a migration running
