@@ -162,6 +162,9 @@ def create_invite(
 ):
     """Generate a single-use invite token (expires in `invite_expiry_days` days)."""
     user, hh_id = auth
+    my_membership = db.query(HouseholdMember).filter_by(user_id=user.id, household_id=hh_id).first()
+    if not my_membership or my_membership.role != MemberRole.owner:
+        raise HTTPException(status_code=403, detail="Only the household owner can create invites")
     expires_at = datetime.utcnow() + timedelta(days=settings.invite_expiry_days)
     invitation = Invitation(
         household_id=hh_id,

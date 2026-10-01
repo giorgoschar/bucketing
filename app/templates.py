@@ -2,6 +2,8 @@ from pathlib import Path
 
 from fastapi.templating import Jinja2Templates
 
+from app.auth import form_csrf_token
+
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
 
 
@@ -37,6 +39,7 @@ def initials(name: str) -> str:
     return name[:2].upper()
 
 
+templates.env.globals["form_csrf_token"] = form_csrf_token
 templates.env.filters["currency"] = format_currency
 templates.env.filters["dmy"] = dmy
 templates.env.filters["dmy_short"] = dmy_short

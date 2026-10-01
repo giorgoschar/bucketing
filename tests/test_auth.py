@@ -4,7 +4,7 @@ import json
 import pyotp
 
 from app.models import User
-from tests.conftest import PASSWORD
+from tests.conftest import PASSWORD, form_csrf
 
 
 def test_first_run_redirects_to_setup(client):
@@ -14,7 +14,7 @@ def test_first_run_redirects_to_setup(client):
 
 
 def test_setup_creates_owner_and_requires_2fa(client, db):
-    r = client.post("/setup", data={
+    r = client.post("/setup", data={**form_csrf(client, "/setup"), 
         "household_name": "Home", "display_name": "Ann", "username": "ann",
         "email": "ann@example.com", "password": "a-very-long-password",
     })
@@ -24,7 +24,7 @@ def test_setup_creates_owner_and_requires_2fa(client, db):
 
 
 def test_setup_rejects_short_password(client, db):
-    r = client.post("/setup", data={
+    r = client.post("/setup", data={**form_csrf(client, "/setup"), 
         "household_name": "Home", "display_name": "Ann", "username": "ann",
         "email": "ann@example.com", "password": "short",
     })
@@ -35,7 +35,7 @@ def test_setup_rejects_short_password(client, db):
 
 def test_login_with_wrong_password_fails(client, make_household):
     hh = make_household()
-    r = client.post("/login", data={"username": hh.username, "password": "wrong-password"})
+    r = client.post("/login", data={**form_csrf(client, "/login"), "username": hh.username, "password": "wrong-password"})
     assert r.status_code == 200
     assert "Invalid username or password" in r.text
 
@@ -43,14 +43,14 @@ def test_login_with_wrong_password_fails(client, make_household):
 def test_login_with_unknown_user_gives_same_message(client, make_household):
     """No user enumeration through differing responses."""
     make_household()
-    r = client.post("/login", data={"username": "nobody", "password": "whatever-long"})
+    r = client.post("/login", data={**form_csrf(client, "/login"), "username": "nobody", "password": "whatever-long"})
     assert r.status_code == 200
     assert "Invalid username or password" in r.text
 
 
 def test_login_by_email_works(client, make_household):
     hh = make_household()
-    r = client.post("/login", data={"username": f"{hh.username}@example.com",
+    r = client.post("/login", data={**form_csrf(client, "/login"), "username": f"{hh.username}@example.com",
                                     "password": PASSWORD})
     assert r.status_code == 302
     assert r.headers["location"] == "/login/verify"
@@ -58,7 +58,7 @@ def test_login_by_email_works(client, make_household):
 
 def test_password_alone_does_not_grant_access(client, make_household):
     hh = make_household()
-    client.post("/login", data={"username": hh.username, "password": PASSWORD})
+    client.post("/login", data={**form_csrf(client, "/login"), "username": hh.username, "password": PASSWORD})
     r = client.get("/dashboard")
     assert r.status_code == 302
     assert "/login" in r.headers["location"]
@@ -66,8 +66,8 @@ def test_password_alone_does_not_grant_access(client, make_household):
 
 def test_wrong_totp_code_is_rejected(client, make_household):
     hh = make_household()
-    client.post("/login", data={"username": hh.username, "password": PASSWORD})
-    r = client.post("/login/verify", data={"code": "000000"})
+    client.post("/login", data={**form_csrf(client, "/login"), "username": hh.username, "password": PASSWORD})
+    r = client.post("/login/verify", data={**form_csrf(client, "/login/verify"), "code": "000000"})
     assert r.status_code == 200
     assert "Invalid code" in r.text
 
@@ -82,7 +82,7 @@ def test_full_login_reaches_dashboard(client, authed):
 
 def test_enroll_secret_is_not_taken_from_the_request(client, db):
     """The server holds the pending secret; a client-supplied one is ignored."""
-    client.post("/setup", data={
+    client.post("/setup", data={**form_csrf(client, "/setup"), 
         "household_name": "Home", "display_name": "Ann", "username": "ann",
         "email": "ann@example.com", "password": "a-very-long-password",
     })
@@ -95,7 +95,7 @@ def test_enroll_secret_is_not_taken_from_the_request(client, db):
     assert attacker_secret != server_secret
 
     # A code for the attacker's secret must not enroll.
-    r = client.post("/settings/2fa/enroll", data={
+    r = client.post("/settings/2fa/enroll", data={**form_csrf(client, "/settings/2fa/enroll"), 
         "secret": attacker_secret, "code": pyotp.TOTP(attacker_secret).now(),
     })
     db.expire_all()
@@ -104,7 +104,7 @@ def test_enroll_secret_is_not_taken_from_the_request(client, db):
     assert user.totp_secret == server_secret
 
     # The server's own secret does enroll.
-    r = client.post("/settings/2fa/enroll", data={"code": server_code})
+    r = client.post("/settings/2fa/enroll", data={**form_csrf(client, "/settings/2fa/enroll"), "code": server_code})
     assert r.status_code == 200
     db.expire_all()
     user = db.query(User).filter_by(username="ann").one()
@@ -114,7 +114,7 @@ def test_enroll_secret_is_not_taken_from_the_request(client, db):
 
 def test_enroll_page_reuses_pending_secret(client, db):
     """Reloading the QR page must not invalidate an already-scanned code."""
-    client.post("/setup", data={
+    client.post("/setup", data={**form_csrf(client, "/setup"), 
         "household_name": "Home", "display_name": "Ann", "username": "ann",
         "email": "ann@example.com", "password": "a-very-long-password",
     })
@@ -151,8 +151,8 @@ def test_backup_code_logs_in_and_is_consumed(client, db, make_household):
     )
     db.commit()
 
-    client.post("/login", data={"username": hh.username, "password": PASSWORD})
-    r = client.post("/login/verify/backup", data={"backup_code": "AAAA1111"})
+    client.post("/login", data={**form_csrf(client, "/login"), "username": hh.username, "password": PASSWORD})
+    r = client.post("/login/verify/backup", data={**form_csrf(client, "/login/verify/backup"), "backup_code": "AAAA1111"})
     assert r.status_code == 302
     assert client.get("/dashboard").status_code == 200
 
@@ -195,8 +195,8 @@ def test_password_change_invalidates_other_sessions(app, client, db, authed):
     from fastapi.testclient import TestClient
 
     other = TestClient(app, follow_redirects=False)
-    other.post("/login", data={"username": authed.username, "password": PASSWORD})
-    other.post("/login/verify", data={"code": _next_step_code(authed.secret)})
+    other.post("/login", data={**form_csrf(other, "/login"), "username": authed.username, "password": PASSWORD})
+    other.post("/login/verify", data={**form_csrf(other, "/login/verify"), "code": _next_step_code(authed.secret)})
     assert other.get("/dashboard").status_code == 200
 
     client.post("/settings/profile/password", data={
@@ -222,10 +222,10 @@ def test_html_lockout_after_ten_wrong_passwords(client, make_household):
     hh = make_household()
     for _ in range(10):
         limiter.reset()
-        r = client.post("/login", data={"username": hh.username, "password": "wrong"})
+        r = client.post("/login", data={**form_csrf(client, "/login"), "username": hh.username, "password": "wrong"})
         assert "Invalid username or password." in r.text
     limiter.reset()
-    r = client.post("/login", data={"username": hh.username, "password": PASSWORD})
+    r = client.post("/login", data={**form_csrf(client, "/login"), "username": hh.username, "password": PASSWORD})
     assert r.status_code == 429
     assert "Invalid username or password." in r.text
 
@@ -234,12 +234,12 @@ def test_html_wrong_totp_codes_lock_the_account(client, db, make_household):
     from app.ratelimit import limiter
 
     hh = make_household()
-    assert client.post("/login", data={"username": hh.username, "password": PASSWORD}).status_code == 302
+    assert client.post("/login", data={**form_csrf(client, "/login"), "username": hh.username, "password": PASSWORD}).status_code == 302
     for _ in range(10):
         limiter.reset()
-        client.post("/login/verify", data={"code": "000000"})
+        client.post("/login/verify", data={**form_csrf(client, "/login/verify"), "code": "000000"})
     limiter.reset()
-    r = client.post("/login/verify", data={"code": pyotp.TOTP(hh.secret).now()})
+    r = client.post("/login/verify", data={**form_csrf(client, "/login/verify"), "code": pyotp.TOTP(hh.secret).now()})
     assert r.status_code == 429
     db.expire_all()
     assert db.get(User, hh.user_id).locked_until is not None

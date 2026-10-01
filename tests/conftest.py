@@ -177,14 +177,27 @@ def make_household(db):
     return _make
 
 
+def form_csrf(client, path):
+    """GET an unauthenticated form and return its pre-session CSRF field as a
+    dict to merge into the POST data: ``data={..., **form_csrf(client, "/login")}``."""
+    import re
+
+    r = client.get(path)
+    m = re.search(r'name="_csrf_token" value="([^"]+)"', r.text)
+    assert m, f"GET {path} ({r.status_code}) rendered no _csrf_token field"
+    return {"_csrf_token": m.group(1)}
+
+
 @pytest.fixture()
 def login(client):
     """Log a user in through the real password + TOTP flow. Returns CSRF headers."""
 
     def _login(username, secret):
-        r = client.post("/login", data={"username": username, "password": PASSWORD})
+        r = client.post("/login", data={"username": username, "password": PASSWORD,
+                                        **form_csrf(client, "/login")})
         assert r.status_code == 302, f"login failed: {r.status_code}"
-        r = client.post("/login/verify", data={"code": pyotp.TOTP(secret).now()})
+        r = client.post("/login/verify", data={"code": pyotp.TOTP(secret).now(),
+                                               **form_csrf(client, "/login/verify")})
         assert r.status_code == 302, f"totp verify failed: {r.status_code}"
         token = client.cookies.get("csrf_token")
         assert token, "no CSRF cookie issued after login"

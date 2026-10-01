@@ -174,11 +174,11 @@ def _web_login(app, username, secret):
     import pyotp
     from fastapi.testclient import TestClient
 
-    from tests.conftest import PASSWORD
+    from tests.conftest import PASSWORD, form_csrf
 
     c = TestClient(app, follow_redirects=False)
-    assert c.post("/login", data={"username": username, "password": PASSWORD}).status_code == 302
-    assert c.post("/login/verify", data={"code": pyotp.TOTP(secret).now()}).status_code == 302
+    assert c.post("/login", data={**form_csrf(c, "/login"), "username": username, "password": PASSWORD}).status_code == 302
+    assert c.post("/login/verify", data={**form_csrf(c, "/login/verify"), "code": pyotp.TOTP(secret).now()}).status_code == 302
     return c
 
 

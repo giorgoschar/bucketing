@@ -46,6 +46,7 @@ from app.validators import (
     require_bucket,
     require_category,
     require_member,
+    require_receipt_content,
     validate_split_users,
 )
 
@@ -53,7 +54,7 @@ router = APIRouter(prefix="/transactions", dependencies=[Depends(require_csrf)])
 
 UPLOADS_DIR = "uploads"
 MAX_RECEIPT_SIZE = 10 * 1024 * 1024  # 10 MB
-ALLOWED_RECEIPT_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".pdf"}
+ALLOWED_RECEIPT_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".pdf", ".heic", ".heif"}
 
 
 def _maybe_number(value: str):
@@ -429,9 +430,10 @@ async def create_transaction(
                 detail=f"Unsupported file type '{ext}'. Allowed: {', '.join(ALLOWED_RECEIPT_EXTENSIONS)}",
             )
         os.makedirs(UPLOADS_DIR, exist_ok=True)
-        content = await receipt.read()
+        content = await receipt.read(MAX_RECEIPT_SIZE + 1)
         if len(content) > MAX_RECEIPT_SIZE:
             raise HTTPException(status_code=400, detail="File too large. Maximum size is 10 MB.")
+        require_receipt_content(ext, content)
         filename = f"{uuid.uuid4()}{ext}"
         filepath = os.path.join(UPLOADS_DIR, filename)
         with open(filepath, "wb") as f:

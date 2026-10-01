@@ -23,6 +23,7 @@
 </details>
 
 <form method="POST" action="/settings/2fa/enroll" class="space-y-4">
+  <input type="hidden" name="_csrf_token" value="{{ form_csrf_token(request) }}">
   {# The secret is held server-side for the duration of enrollment; it is
      deliberately not submitted back, so the client cannot choose it. #}
   <div>
