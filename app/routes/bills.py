@@ -16,6 +16,7 @@ from app.bills_service import (
     effective_overrides,
     generate_occurrences,
     normalise_interval_months,
+    resolve_bill_payer,
     settle_occurrence,
 )
 from app.clock import local_today, utcnow_naive
@@ -218,7 +219,7 @@ async def mark_paid(
     if not pay_amount:
         raise HTTPException(status_code=400, detail="Amount required for variable bills")
 
-    payer = require_member(db, paid_by, hh_id) or bill.paid_by_default or user.id
+    payer = require_member(db, paid_by, hh_id) or resolve_bill_payer(db, bill, user.id)
     try:
         pm = parse_payment_method(payment_method)
     except ValueError as exc:

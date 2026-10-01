@@ -174,7 +174,7 @@ def _auto_pay_due_bills(db, today: date) -> int:
             "household_id":    bill.household_id,
             "bucket_id":       bill.bucket_id,
             "category_id":     bill.category_id,
-            "paid_by_default": bill.paid_by_default,
+            "paid_by_default": bills_service.resolve_bill_payer(db, bill),
             "currency":        bill.currency,
             "name":            bill.name,
         })

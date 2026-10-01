@@ -16,6 +16,7 @@ from app.bills_service import (
     effective_overrides,
     generate_occurrences,
     normalise_interval_months,
+    resolve_bill_payer,
     settle_occurrence,
 )
 from app.clock import utcnow_naive
@@ -342,7 +343,7 @@ def pay_occurrence(
 
     if body.splits:
         validate_split_users([s.user_id for s in body.splits], hh_id, db)
-    payer = require_member(db, body.paid_by, hh_id) or bill.paid_by_default or user.id
+    payer = require_member(db, body.paid_by, hh_id) or resolve_bill_payer(db, bill, user.id)
 
     try:
         paid = settle_occurrence(
