@@ -461,3 +461,91 @@ def test_failed_verify_leaves_legacy_secret_untouched(db, make_household):
     assert verify_totp(db, user, "000000") is False
     db.expire_all()
     assert db.get(User, hh.user_id).totp_secret == hh.secret
+
+
+# ---------------------------------------------------------------------------
+# Review fixes: undecryptable secrets, key transition, atomic step claim
+# ---------------------------------------------------------------------------
+
+def test_undecryptable_secret_fails_login_without_500(client, db, make_household):
+    hh = make_household()
+    user = db.get(User, hh.user_id)
+    user.totp_secret = "enc:not-a-valid-token"
+    db.commit()
+    client.post("/login", data={"username": hh.username, "password": PASSWORD})
+    r = client.post("/login/verify", data={"code": pyotp.TOTP(hh.secret).now()})
+    assert r.status_code == 200
+    assert "Invalid code" in r.text
+    db.expire_all()
+    assert db.get(User, hh.user_id).totp_secret == "enc:not-a-valid-token"
+
+
+def test_undecryptable_secret_fails_api_verify_without_500(client, db, make_household):
+    hh = make_household()
+    user = db.get(User, hh.user_id)
+    user.totp_secret = "enc:not-a-valid-token"
+    db.commit()
+    pending = client.post(
+        "/api/v1/auth/login", json={"username": hh.username, "password": PASSWORD}
+    ).json()["pending_token"]
+    r = client.post("/api/v1/auth/totp/verify", json={
+        "pending_token": pending, "code": pyotp.TOTP(hh.secret).now()})
+    assert r.status_code == 401
+
+
+def test_enroll_restarts_when_pending_secret_is_unreadable(client, db):
+    client.post("/setup", data={
+        "household_name": "Home", "display_name": "Ann", "username": "ann",
+        "email": "ann@example.com", "password": "a-very-long-password",
+    })
+    user = db.query(User).filter_by(username="ann").one()
+    user.totp_secret = "enc:garbage"
+    db.commit()
+    assert client.get("/settings/2fa/enroll").status_code == 200
+    r = client.post("/settings/2fa/enroll", data={"code": "123456"})
+    assert r.status_code in (200, 302)
+    db.expire_all()
+    user = db.query(User).filter_by(username="ann").one()
+    assert user.totp_enabled is False
+    assert len(user.get_totp_secret()) == 32
+
+
+def test_secret_encrypted_with_derived_key_survives_setting_field_key(db, make_household, monkeypatch):
+    from cryptography.fernet import Fernet
+
+    from app.auth import verify_totp
+    from app.config import settings
+    from app.crypto import decrypt_str
+
+    hh = make_household()
+    user = db.get(User, hh.user_id)
+    user.set_totp_secret(hh.secret)  # under the derived key (no field key set)
+    db.commit()
+    old = user.totp_secret
+    monkeypatch.setattr(settings, "field_encryption_key", Fernet.generate_key().decode())
+    assert decrypt_str(old) == hh.secret
+    assert verify_totp(db, user, pyotp.TOTP(hh.secret).now()) is True
+    db.expire_all()
+    new = db.get(User, hh.user_id).totp_secret
+    assert new != old and new.startswith("enc:")
+    # Now readable with the new primary key alone.
+    assert Fernet(settings.field_encryption_key.encode()).decrypt(new[4:].encode()).decode() == hh.secret
+
+
+def test_totp_step_claim_is_atomic(db, make_household):
+    from sqlalchemy.orm import sessionmaker
+
+    from app.auth import verify_totp
+
+    hh = make_household()
+    other = sessionmaker(bind=db.get_bind())()
+    try:
+        a = db.get(User, hh.user_id)
+        b = other.get(User, hh.user_id)  # both loaded with last_totp_step None
+        code = pyotp.TOTP(hh.secret).now()
+        assert verify_totp(db, a, code) is True
+        # b's in-memory state is stale, so only the conditional UPDATE can stop it.
+        assert b.last_totp_step is None
+        assert verify_totp(other, b, code) is False
+    finally:
+        other.close()

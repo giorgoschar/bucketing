@@ -14,12 +14,14 @@ from datetime import UTC, datetime, timedelta
 
 import bcrypt as _bcrypt
 import pyotp
+from cryptography.fernet import InvalidToken
 from fastapi import Depends, HTTPException, Request
 from itsdangerous import BadSignature, URLSafeTimedSerializer
+from sqlalchemy import or_, update
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.crypto import is_encrypted
+from app.crypto import needs_rotation
 from app.database import get_db
 from app.models import HouseholdMember, RefreshToken, User
 
@@ -123,8 +125,13 @@ def verify_totp(db: Session, user: User, code: str) -> bool:
     the step it actually matches must be newer than the last one accepted, which
     is then stored. A legacy plaintext secret is re-encrypted on success.
     """
-    stored = user.totp_secret
-    secret = user.get_totp_secret()
+    try:
+        secret = user.get_totp_secret()
+    except InvalidToken:
+        security_logger.error(
+            "Stored TOTP secret for user_id=%s cannot be decrypted (key changed?)", user.id
+        )
+        return False
     if not secret or not code:
         return False
     code = code.strip()
@@ -135,9 +142,21 @@ def verify_totp(db: Session, user: User, code: str) -> bool:
             continue
         if user.last_totp_step is not None and step <= user.last_totp_step:
             continue  # replay
-        user.last_totp_step = step
-        if not is_encrypted(stored):
-            user.set_totp_secret(secret)  # lazy migration of legacy plaintext
+        # Claim the step atomically: of two concurrent requests with the same
+        # code, only one UPDATE matches a row.
+        claimed = db.execute(
+            update(User)
+            .where(User.id == user.id, or_(User.last_totp_step.is_(None), User.last_totp_step < step))
+            .values(last_totp_step=step),
+            execution_options={"synchronize_session": False},
+        ).rowcount
+        if claimed != 1:
+            db.rollback()
+            db.refresh(user)
+            return False
+        db.refresh(user)
+        if needs_rotation(user.totp_secret):
+            user.set_totp_secret(secret)  # lazy migration: plaintext / old key -> primary key
         db.commit()
         return True
     return False
