@@ -87,5 +87,68 @@
     </div>
   </div>
 
+  <!-- ===== iOS Shortcut setup guide ===== -->
+  <div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
+    <div class="px-6 py-4 border-b border-gray-50 dark:border-gray-800">
+      <p class="text-sm font-semibold">Set up the Apple Pay Shortcut</p>
+      <p class="text-xs text-gray-400 mt-0.5">
+        Every Apple Pay purchase on your iPhone becomes an expense here, paid by you.
+      </p>
+    </div>
+    <div class="px-6 py-5 space-y-4 text-sm">
+      <div>
+        <p class="text-xs text-gray-400 mb-1">Ingest URL</p>
+        <div class="flex items-center gap-2">
+          <code class="flex-1 min-w-0 break-all text-xs font-mono bg-gray-100 dark:bg-gray-800 px-3 py-2 rounded-lg select-all">{{ ingest_url }}</code>
+          <button type="button" data-url="{{ ingest_url }}"
+                  onclick="navigator.clipboard.writeText(this.dataset.url).then(() => this.textContent = 'Copied!')"
+                  class="flex-shrink-0 px-3 py-2 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-xs font-semibold rounded-lg">
+            Copy
+          </button>
+        </div>
+      </div>
+
+      <ol class="list-decimal pl-5 space-y-2 text-gray-700 dark:text-gray-300">
+        <li>Create a token above and copy it.</li>
+        <li>Open the <strong>Shortcuts</strong> app → <strong>Automation</strong> tab → <strong>+</strong> (New Automation).</li>
+        <li>Choose <strong>Transaction</strong> (shown as <strong>Wallet</strong> on some iOS versions).</li>
+        <li>Choose the cards to watch (your Apple Pay cards), leave the other options as they are.</li>
+        <li>Select <strong>Run Immediately</strong> (and turn off “Notify When Run” if you like), then <strong>Next</strong> → <strong>New Blank Automation</strong>.</li>
+        <li>Add the action <strong>Get Contents of URL</strong> and set:
+          <ul class="list-disc pl-5 mt-1 space-y-1 text-xs">
+            <li>URL: the ingest URL above</li>
+            <li>Method: <strong>POST</strong></li>
+            <li>Headers: <code>Authorization</code> = <code>Bearer &lt;your token&gt;</code></li>
+            <li>Request Body: <strong>JSON</strong> with the keys
+              <code>merchant</code> = Shortcut Input → <em>Merchant</em>,
+              <code>amount</code> = Shortcut Input → <em>Amount</em>,
+              <code>card</code> = Shortcut Input → <em>Card</em> (all as Text).</li>
+          </ul>
+        </li>
+        <li>Tap <strong>Done</strong>. Pay with Apple Pay once and check that the expense appears — you also get a notification so you can fix the category or bucket.</li>
+      </ol>
+
+      <div class="px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800 rounded-xl text-xs text-amber-800 dark:text-amber-300 space-y-1">
+        <p>
+          <strong>Known iOS flakiness:</strong> Transaction automations sometimes time out or
+          fire twice (a long-standing issue reported on Apple’s developer forums), especially with a
+          weak connection. If a purchase is missing, add it by hand.
+        </p>
+        <p>
+          <strong>Duplicates are handled for you:</strong> a repeated request for the same merchant,
+          amount and minute is recognised server-side and never creates a second expense.
+          Expenses you deleted are not brought back by a retry.
+        </p>
+      </div>
+
+      <p class="text-xs text-gray-400">
+        Optional JSON keys: <code>currency</code> (defaults to {{ household.default_currency if household else 'the household currency' }}),
+        <code>occurred_at</code> (ISO 8601 date-time), <code>notes</code>.
+        The category comes from your <a href="/settings" class="underline">auto-categorisation rules</a>;
+        the bucket is the token’s default, otherwise your first day-to-day bucket.
+      </p>
+    </div>
+  </div>
+
 </div>
 {% endblock %}

@@ -224,3 +224,114 @@ def test_rate_limit_is_per_token(client, db, ingest):
     r = client.post(URL, json={"merchant": "Other", "amount": "1"},
                     headers={"Authorization": f"Bearer {raw}"})
     assert r.status_code == 201
+
+
+# ---------------------------------------------------------------- replay dedupe
+# Plan Review Focus 2: an Apple Pay ingest replayed (same merchant + amount +
+# minute) must create exactly one transaction.
+
+
+def _rows(db):
+    return db.query(Transaction).count()
+
+
+def _ingest_notifications(db):
+    return db.query(Notification).filter_by(type=NotificationType.ingest_created).count()
+
+
+def test_same_payload_twice_creates_one_row(client, db, ingest):
+    first = _post(client, ingest, card="Visa", occurred_at="2026-10-01T12:34:00Z")
+    second = _post(client, ingest, card="Visa", occurred_at="2026-10-01T12:34:00Z")
+    assert first.status_code == 201
+    assert second.status_code == 200
+    assert second.json()["duplicate"] is True
+    assert second.json()["id"] == first.json()["id"]
+    assert _rows(db) == 1
+    assert _ingest_notifications(db) == 1   # no second notification on replay
+
+
+def test_locale_string_and_number_amounts_dedupe(client, db, ingest):
+    at = "2026-10-01T12:34:00+03:00"
+    assert _post(client, ingest, amount="12,50", occurred_at=at).status_code == 201
+    r = _post(client, ingest, amount=12.5, occurred_at=at)
+    assert r.status_code == 200 and r.json()["duplicate"] is True
+    r = _post(client, ingest, amount="12.500", occurred_at=at)
+    assert r.json().get("duplicate") is True
+    assert _rows(db) == 1
+
+
+def test_seconds_jitter_dedupes(client, db, ingest):
+    assert _post(client, ingest, occurred_at="2026-10-01T12:34:05Z").status_code == 201
+    r = _post(client, ingest, occurred_at="2026-10-01T12:34:58.123Z")
+    assert r.json().get("duplicate") is True
+    # The same instant written with another offset is the same purchase.
+    r = _post(client, ingest, occurred_at="2026-10-01T15:34:30+03:00")
+    assert r.json().get("duplicate") is True
+    assert _rows(db) == 1
+
+
+def test_replay_without_occurred_at_in_same_minute_dedupes(client, db, ingest, monkeypatch):
+    from datetime import UTC, datetime
+
+    import app.services.ingest as ingest_mod
+
+    times = iter([datetime(2026, 10, 1, 9, 15, 2, tzinfo=UTC),
+                  datetime(2026, 10, 1, 9, 15, 41, tzinfo=UTC),
+                  datetime(2026, 10, 1, 9, 16, 0, tzinfo=UTC)])
+    monkeypatch.setattr(ingest_mod, "utcnow", lambda: next(times))
+    assert _post(client, ingest).status_code == 201
+    assert _post(client, ingest).json().get("duplicate") is True
+    # A minute later it is treated as a new purchase.
+    assert _post(client, ingest).status_code == 201
+    assert _rows(db) == 2
+
+
+def test_different_purchases_are_not_merged(client, db, ingest):
+    at = "2026-10-01T12:34:00Z"
+    assert _post(client, ingest, occurred_at=at).status_code == 201
+    assert _post(client, ingest, occurred_at=at, amount="12,51").status_code == 201
+    assert _post(client, ingest, occurred_at=at, merchant="Lidl").status_code == 201
+    assert _post(client, ingest, occurred_at="2026-10-01T12:35:00Z").status_code == 201
+    assert _rows(db) == 4
+
+
+def test_replay_of_deleted_expense_is_409_and_not_resurrected(client, db, ingest):
+    from app.clock import utcnow_naive
+
+    at = "2026-10-01T12:34:00Z"
+    tid = _post(client, ingest, occurred_at=at).json()["id"]
+    db.get(Transaction, tid).deleted_at = utcnow_naive()
+    db.commit()
+    r = _post(client, ingest, occurred_at=at)
+    assert r.status_code == 409
+    assert _rows(db) == 1
+    assert db.query(Transaction).filter(Transaction.active()).count() == 0
+
+
+def test_client_id_normalisation_unit():
+    from datetime import UTC, datetime, timedelta, timezone
+
+    from app.services import ingest_client_id
+
+    base = datetime(2026, 10, 1, 12, 34, 5, tzinfo=UTC)
+    a = ingest_client_id("t1", "Shop", Decimal("12.5"), base)
+    assert a == ingest_client_id("t1", "Shop", Decimal("12.5000"), base + timedelta(seconds=50))
+    athens = timezone(timedelta(hours=3))
+    assert a == ingest_client_id("t1", "Shop", Decimal("12.50"), base.astimezone(athens))
+    assert a != ingest_client_id("t2", "Shop", Decimal("12.5"), base)
+    assert len(a) == 32
+
+
+# ---------------------------------------------------------------- setup guide
+
+
+def test_automations_page_has_shortcut_guide(client, authed):
+    r = client.get("/settings/automations")
+    assert r.status_code == 200
+    text = r.text
+    for needle in ("Shortcuts", "Automation", "Wallet", "Run Immediately",
+                   "Get Contents of URL", "Authorization", "Bearer",
+                   "/api/v1/ingest/apple-pay", "merchant", "amount", "card"):
+        assert needle in text, needle
+    assert "time out" in text or "timeout" in text
+    assert "duplicate" in text.lower()
