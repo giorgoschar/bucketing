@@ -3,16 +3,19 @@ set -e
 (set -o pipefail) 2>/dev/null && set -o pipefail
 
 # Snapshot the database before migrations touch it. Opt out with
-# BACKUP_BEFORE_MIGRATE=false; skipped when /backups is not mounted/writable
-# or the database is not Postgres.
+# BACKUP_BEFORE_MIGRATE=false; skipped when $BACKUP_DIR (/backups) is not
+# mounted/writable or the database is not Postgres.
+BACKUP_DIR=${BACKUP_DIR:-/backups}
 if [ "${BACKUP_BEFORE_MIGRATE:-true}" = "true" ] \
-    && [ -d /backups ] && [ -w /backups ] \
+    && [ -d "$BACKUP_DIR" ] && [ -w "$BACKUP_DIR" ] \
     && command -v pg_dump >/dev/null 2>&1; then
     case "$DATABASE_URL" in
         postgres*)
-            dump="/backups/pre-migrate-$(date +%F-%H%M).sql.gz"
+            dump="$BACKUP_DIR/pre-migrate-$(date +%F-%H%M).sql.gz"
             echo "Backing up database to $dump..."
-            pg_dump "$DATABASE_URL" | gzip > "$dump.partial"
+            # libpq rejects SQLAlchemy's "postgresql+driver://" scheme.
+            pg_url=$(printf '%s' "$DATABASE_URL" | sed -E 's#^postgres(ql)?\+[^:]*://#postgresql://#')
+            pg_dump "$pg_url" | gzip > "$dump.partial"
             mv "$dump.partial" "$dump"
             ;;
     esac
