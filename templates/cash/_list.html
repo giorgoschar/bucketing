@@ -1,0 +1,50 @@
+{# HTMX-swappable block: balances, comparison and movements. #}
+<div id="cash-list" class="space-y-4">
+
+  <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
+    <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-3">Cash on hand</p>
+    <div class="space-y-2.5">
+      {% for m, bal in balances %}
+      <div class="flex items-center gap-3">
+        <div class="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
+             style="background-color: {{ m.avatar_color }}">{{ m.display_name | initials }}</div>
+        <span class="text-sm flex-1 truncate">{{ m.display_name }}{% if m.id == user.id %} <span class="text-gray-400">(you)</span>{% endif %}</span>
+        <span class="text-sm font-semibold">{{ bal | currency(household.default_currency) }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <p class="text-xs text-gray-400 px-1">{{ target_name }} · {{ month }}</p>
+  {% include "cash/_comparison.html" %}
+
+  <div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 divide-y divide-gray-100 dark:divide-gray-800">
+    {% for mv in movements %}
+    <div class="flex items-center gap-3 px-4 py-3">
+      <span class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0
+                   {% if mv.kind == 'in' %}bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400{% else %}bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400{% endif %}">
+        {{ '+' if mv.kind == 'in' else '−' }}
+      </span>
+      <div class="flex-1 min-w-0">
+        <p class="text-sm font-medium truncate">{{ mv.note or ('Cash in' if mv.kind == 'in' else 'Cash out') }}</p>
+        <p class="text-xs text-gray-400 truncate">
+          {{ names.get(mv.user_id, '') }} · {{ mv.movement_date | dmy }}{% if mv.category_id and cash_cats.get(mv.category_id) %} · {{ cash_cats.get(mv.category_id) }}{% endif %}
+        </p>
+      </div>
+      <span class="text-sm font-semibold {% if mv.kind == 'in' %}text-emerald-600 dark:text-emerald-400{% else %}text-orange-500{% endif %}">
+        {{ '+' if mv.kind == 'in' else '−' }}{{ mv.amount | currency(household.default_currency) }}
+      </span>
+      {% if mv.id in deletable %}
+      <form method="post" action="/cash/{{ mv.id }}/delete"
+            hx-post="/cash/{{ mv.id }}/delete" hx-target="#cash-list" hx-swap="outerHTML"
+            hx-confirm="Delete this cash movement?">
+        <input type="hidden" name="month" value="{{ month }}" />
+        <button type="submit" class="text-xs text-gray-400 hover:text-red-500 px-1" aria-label="Delete movement">✕</button>
+      </form>
+      {% endif %}
+    </div>
+    {% else %}
+    <p class="px-4 py-6 text-sm text-gray-400 text-center">No cash movements in {{ month }}.</p>
+    {% endfor %}
+  </div>
+</div>

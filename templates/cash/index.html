@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Cash{% endblock %}
+{% block header_title %}Cash{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto space-y-4">
+
+  {# Filter: member + month. Swaps only the list block. #}
+  <form method="get" action="/cash" hx-get="/cash" hx-target="#cash-list" hx-swap="outerHTML"
+        hx-trigger="change" class="flex gap-2">
+    <select name="member" aria-label="Member"
+            class="flex-1 px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm">
+      <option value="">All members</option>
+      {% for m in members %}
+      <option value="{{ m.id }}" {% if m.id == member_filter %}selected{% endif %}>{{ m.display_name }}</option>
+      {% endfor %}
+    </select>
+    <input type="month" name="month" value="{{ month }}" aria-label="Month"
+           class="px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm" />
+    <noscript><button type="submit" class="px-3 py-2 text-sm">Go</button></noscript>
+  </form>
+
+  {# Add movement #}
+  <form method="post" action="/cash/add" hx-post="/cash/add" hx-target="#cash-list" hx-swap="outerHTML"
+        class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800 space-y-3">
+    <input type="hidden" name="month" value="{{ month }}" />
+    <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Log cash</p>
+    <div class="grid grid-cols-2 gap-3">
+      <select name="kind" aria-label="Kind"
+              class="px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm">
+        <option value="in">In (withdrawn / received)</option>
+        <option value="out">Out (given away / untracked)</option>
+      </select>
+      <input type="number" name="amount" step="0.01" min="0.01" required placeholder="0.00" aria-label="Amount"
+             class="px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm text-right" />
+      <input type="date" name="movement_date" value="{{ today }}" aria-label="Date"
+             class="px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm" />
+      <select name="category_id" aria-label="Category"
+              class="px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm">
+        <option value="">No category</option>
+        {% for c in categories %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+      </select>
+      <input type="text" name="note" maxlength="500" placeholder="Note (e.g. ATM)" aria-label="Note"
+             class="px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm" />
+      <select name="user_id" aria-label="Member"
+              class="px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm">
+        {# The server only lets non-owners log for themselves. #}
+        <option value="{{ user.id }}">For me</option>
+        {% for m in members if m.id != user.id %}<option value="{{ m.id }}">{{ m.display_name }} (owner only)</option>{% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="w-full py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-semibold rounded-xl text-sm">Add</button>
+    <p class="text-[11px] text-gray-400">Cash is tracked in {{ household.default_currency }}. Expenses paid in cash are not mirrored here; they show up in the comparison below.</p>
+  </form>
+
+  {% include "cash/_list.html" %}
+</div>
+{% endblock %}

@@ -14,6 +14,7 @@ from app.database import get_db
 from app.models import Bucket
 from app.services import (
     base_ctx,
+    cash_comparison,
     get_household_settlement,
     get_household_settlement_history,
     get_member_balances,
@@ -132,5 +133,7 @@ def person_page(
         "is_self":      target_id == user.id,
         "period_label": period["period_label"],
         "preset":       period["preset"],
+        "comparison":   cash_comparison(db, hh_id, target_id,
+                                        period["start"], period["end"]),
     })
     return templates.TemplateResponse("person.html", ctx)

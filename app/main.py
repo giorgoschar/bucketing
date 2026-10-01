@@ -19,6 +19,7 @@ from app.routes import (
     auth,
     bills,
     buckets,
+    cash,
     dashboard,
     income,
     scan,
@@ -176,6 +177,7 @@ app.include_router(settings_router.router)
 app.include_router(notifications_router.router)
 app.include_router(insights_router.router)
 app.include_router(settlement_router.router)
+app.include_router(cash.router)
 app.include_router(api_router)
 
 

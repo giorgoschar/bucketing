@@ -6,6 +6,15 @@ from app.services.buckets import (  # noqa: F401
     get_savings_summary,
     get_trip_summary,
 )
+from app.services.cash import (  # noqa: F401
+    add_movement,
+    can_manage_for,
+    cash_comparison,
+    delete_movement,
+    list_movements,
+    member_balances,
+    parse_month,
+)
 from app.services.context import (  # noqa: F401
     base_ctx,
     full_ctx,

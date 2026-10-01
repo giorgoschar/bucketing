@@ -9,6 +9,7 @@ from app.routes.api import (
     auth,
     bills,
     buckets,
+    cash,
     dashboard,
     income,
     insights,
@@ -26,6 +27,7 @@ router.include_router(buckets.router)
 # Household-wide settle up (defined alongside buckets, mounted at /settlement)
 router.include_router(buckets._household_router)
 router.include_router(bills.router)
+router.include_router(cash.router)
 router.include_router(income.router)
 router.include_router(insights.router)
 router.include_router(notifications.router)
