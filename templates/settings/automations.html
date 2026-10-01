@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block title %}Automations{% endblock %}
+{% block header_title %}Automations{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto space-y-6">
+
+  <a href="/settings" class="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+    Settings
+  </a>
+
+  {% if error %}
+  <div class="px-4 py-3 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800 rounded-xl text-sm text-red-700 dark:text-red-300">
+    {{ error }}
+  </div>
+  {% endif %}
+
+  {% if new_token %}
+  <!-- ===== Freshly created token: shown exactly once ===== -->
+  <div class="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-2xl px-6 py-5 space-y-3">
+    <p class="text-sm font-semibold text-emerald-800 dark:text-emerald-300">Your new token</p>
+    <p class="text-xs text-emerald-700 dark:text-emerald-400">
+      Copy it now and paste it into the Shortcut. It is stored only as a hash, so it
+      <strong>cannot be shown again</strong> — if you lose it, revoke it and create another.
+    </p>
+    <div class="flex items-center gap-2">
+      <code class="flex-1 min-w-0 break-all text-xs font-mono bg-white dark:bg-gray-900 border border-emerald-200 dark:border-emerald-800 px-3 py-2 rounded-lg select-all">{{ new_token }}</code>
+      <button type="button" data-token="{{ new_token }}"
+              onclick="navigator.clipboard.writeText(this.dataset.token).then(() => this.textContent = 'Copied!')"
+              class="flex-shrink-0 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg transition-colors">
+        Copy
+      </button>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- ===== Personal ingest tokens ===== -->
+  <div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
+    <div class="px-6 py-4 border-b border-gray-50 dark:border-gray-800">
+      <p class="text-sm font-semibold">Ingest tokens</p>
+      <p class="text-xs text-gray-400 mt-0.5">
+        A token lets an iOS Shortcut add Apple Pay purchases as your expenses in
+        {{ household.name if household else 'this household' }}. It can only add expenses (scope <code>ingest</code>).
+      </p>
+    </div>
+    <div class="px-6 py-5">
+      {% if tokens %}
+      <div class="space-y-2 mb-5">
+        {% for t in tokens %}
+        <div class="flex items-center gap-3 py-1.5">
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium truncate">{{ t.name }}</p>
+            <p class="text-xs text-gray-400">
+              <code class="font-mono">{{ t.prefix }}…</code>
+              · {% if t.last_used_at %}last used {{ t.last_used_at | dmy }}{% else %}never used{% endif %}
+              {% if t.default_bucket_id and bucket_names.get(t.default_bucket_id) %}· → {{ bucket_names[t.default_bucket_id] }}{% endif %}
+            </p>
+          </div>
+          <form method="POST" action="/settings/automations/tokens/{{ t.id }}/revoke" class="flex-shrink-0">
+            <input type="hidden" name="_csrf_token" value="{{ request.state.csrf_token }}">
+            <button type="submit" class="text-xs font-semibold text-red-500 hover:text-red-600">Revoke</button>
+          </form>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="text-sm text-gray-400 mb-5">No tokens yet.</p>
+      {% endif %}
+
+      <form method="POST" action="/settings/automations/tokens" class="flex flex-wrap gap-2">
+        <input type="hidden" name="_csrf_token" value="{{ request.state.csrf_token }}">
+        <input type="text" name="name" required maxlength="60" placeholder="Token name, e.g. My iPhone"
+               class="flex-1 min-w-[10rem] px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm outline-none focus:border-primary-500" />
+        <select name="default_bucket_id" aria-label="Default bucket"
+                class="px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm outline-none focus:border-primary-500">
+          <option value="">First day-to-day bucket</option>
+          {% for b in active_buckets %}
+          <option value="{{ b.id }}">{{ b.icon }} {{ b.name }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit"
+                class="px-4 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-semibold rounded-xl text-sm transition-colors">
+          Create token
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== iOS Shortcut setup guide ===== -->
+  <div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
+    <div class="px-6 py-4 border-b border-gray-50 dark:border-gray-800">
+      <p class="text-sm font-semibold">Set up the Apple Pay Shortcut</p>
+      <p class="text-xs text-gray-400 mt-0.5">
+        Every Apple Pay purchase on your iPhone becomes an expense here, paid by you.
+      </p>
+    </div>
+    <div class="px-6 py-5 space-y-4 text-sm">
+      <div>
+        <p class="text-xs text-gray-400 mb-1">Ingest URL</p>
+        <div class="flex items-center gap-2">
+          <code class="flex-1 min-w-0 break-all text-xs font-mono bg-gray-100 dark:bg-gray-800 px-3 py-2 rounded-lg select-all">{{ ingest_url }}</code>
+          <button type="button" data-url="{{ ingest_url }}"
+                  onclick="navigator.clipboard.writeText(this.dataset.url).then(() => this.textContent = 'Copied!')"
+                  class="flex-shrink-0 px-3 py-2 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-xs font-semibold rounded-lg">
+            Copy
+          </button>
+        </div>
+      </div>
+
+      <ol class="list-decimal pl-5 space-y-2 text-gray-700 dark:text-gray-300">
+        <li>Create a token above and copy it.</li>
+        <li>Open the <strong>Shortcuts</strong> app → <strong>Automation</strong> tab → <strong>+</strong> (New Automation).</li>
+        <li>Choose <strong>Transaction</strong> (shown as <strong>Wallet</strong> on some iOS versions).</li>
+        <li>Choose the cards to watch (your Apple Pay cards), leave the other options as they are.</li>
+        <li>Select <strong>Run Immediately</strong> (and turn off “Notify When Run” if you like), then <strong>Next</strong> → <strong>New Blank Automation</strong>.</li>
+        <li>Add the action <strong>Get Contents of URL</strong> and set:
+          <ul class="list-disc pl-5 mt-1 space-y-1 text-xs">
+            <li>URL: the ingest URL above</li>
+            <li>Method: <strong>POST</strong></li>
+            <li>Headers: <code>Authorization</code> = <code>Bearer &lt;your token&gt;</code></li>
+            <li>Request Body: <strong>JSON</strong> with the keys
+              <code>merchant</code> = Shortcut Input → <em>Merchant</em>,
+              <code>amount</code> = Shortcut Input → <em>Amount</em>,
+              <code>card</code> = Shortcut Input → <em>Card</em> (all as Text).</li>
+          </ul>
+        </li>
+        <li>Tap <strong>Done</strong>. Pay with Apple Pay once and check that the expense appears — you also get a notification so you can fix the category or bucket.</li>
+      </ol>
+
+      <div class="px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800 rounded-xl text-xs text-amber-800 dark:text-amber-300 space-y-1">
+        <p>
+          <strong>Known iOS flakiness:</strong> Transaction automations sometimes time out or
+          fire twice (a long-standing issue reported on Apple’s developer forums), especially with a
+          weak connection. If a purchase is missing, add it by hand.
+        </p>
+        <p>
+          <strong>Duplicates are merged for you:</strong> repeated requests for the same merchant
+          and amount within the same minute are recognised server-side and create only one expense.
+          A retry that crosses a minute boundary can create a second expense — just delete it.
+          Expenses you deleted are not brought back by a retry.
+        </p>
+        <p>
+          Changing your password or resetting 2FA revokes your Shortcut tokens; create a new one afterwards.
+        </p>
+      </div>
+
+      <p class="text-xs text-gray-400">
+        Optional JSON keys: <code>currency</code> (defaults to {{ household.default_currency if household else 'the household currency' }}),
+        <code>occurred_at</code> (ISO 8601 date-time), <code>notes</code>.
+        The category comes from your <a href="/settings" class="underline">auto-categorisation rules</a>;
+        the bucket is the token’s default, otherwise your first day-to-day bucket.
+      </p>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

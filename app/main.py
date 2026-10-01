@@ -17,6 +17,7 @@ from app.database import Base, engine
 from app.ratelimit import limiter  # single shared instance
 from app.routes import (
     auth,
+    automations,
     bills,
     buckets,
     cash,
@@ -173,6 +174,7 @@ app.include_router(scan.router)
 app.include_router(transactions_search.router)
 app.include_router(income.router)
 app.include_router(bills.router)
+app.include_router(automations.router)
 app.include_router(settings_router.router)
 app.include_router(notifications_router.router)
 app.include_router(insights_router.router)

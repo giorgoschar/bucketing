@@ -82,6 +82,7 @@ class NotificationType(str, enum.Enum):
     contract_expiring  = "contract_expiring"
     bill_drift         = "bill_drift"       # bill cost moved vs its own history
     budget_warning     = "budget_warning"   # bucket spend crossed a budget threshold
+    ingest_created     = "ingest_created"   # an expense arrived via the Apple Pay Shortcut
     general            = "general"
     # WARNING: on PostgreSQL this is a native ENUM type (created in migration
     # 2c1adaf99fa2), so adding a member here REQUIRES a migration running
@@ -531,3 +532,40 @@ class RefreshToken(Base):
     created_at   = Column(DateTime, default=utcnow_naive)
 
     user = relationship("User")
+
+
+# ---------------------------------------------------------------------------
+# Personal API tokens (iOS Shortcut ingest)
+# ---------------------------------------------------------------------------
+
+class PersonalApiToken(Base):
+    """A long-lived credential one member creates for one household.
+
+    Only the SHA-256 of the token is stored; the plaintext (``pat_`` + 32
+    url-safe chars) is shown once at creation. ``prefix`` is the first 12
+    characters, for recognising a token in the list. Revocation sets
+    ``revoked_at`` (rows are never deleted).
+    """
+    __tablename__ = "personal_api_tokens"
+    __table_args__ = (
+        Index("ix_personal_api_tokens_user_household", "user_id", "household_id"),
+    )
+
+    id                = Column(String, primary_key=True, default=gen_id)
+    user_id           = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    household_id      = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False)
+    name              = Column(String(60), nullable=False)
+    token_hash        = Column(String(64), nullable=False, unique=True)
+    prefix            = Column(String(12), nullable=False)
+    scopes            = Column(String(100), nullable=False, default="ingest", server_default="ingest")
+    default_bucket_id = Column(String, ForeignKey("buckets.id", ondelete="SET NULL"), nullable=True)
+    last_used_at      = Column(DateTime, nullable=True)
+    created_at        = Column(DateTime, default=utcnow_naive)
+    revoked_at        = Column(DateTime, nullable=True)
+
+    user           = relationship("User")
+    default_bucket = relationship("Bucket")
+
+    @property
+    def scope_list(self) -> list[str]:
+        return [s.strip() for s in (self.scopes or "").split(",") if s.strip()]

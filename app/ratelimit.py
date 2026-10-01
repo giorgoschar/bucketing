@@ -12,6 +12,8 @@ Note on deployment: the default storage is per-process memory, and
 is really "5 per worker". Point ``RATE_LIMIT_STORAGE_URI`` at Redis
 (e.g. ``redis://localhost:6379``) to enforce limits across workers.
 """
+import hashlib
+
 from slowapi import Limiter
 from starlette.requests import Request
 
@@ -36,3 +38,18 @@ limiter = Limiter(
     key_func=client_key,
     storage_uri=settings.rate_limit_storage_uri or None,
 )
+
+
+def ingest_token_key(request: Request) -> str:
+    """Rate-limit key for the ingest endpoint: one bucket per personal token.
+
+    Keyed on the SHA-256 of the bearer token (never the token itself, so the
+    plaintext does not sit in the limiter's storage). Falls back to the client
+    IP when there is no bearer token; such requests are rejected with 401
+    before the limit is checked anyway.
+    """
+    auth = request.headers.get("Authorization", "")
+    scheme, _, credentials = auth.partition(" ")
+    if scheme.lower() == "bearer" and credentials.strip():
+        return "pat:" + hashlib.sha256(credentials.strip().encode()).hexdigest()
+    return client_key(request)

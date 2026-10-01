@@ -16,18 +16,19 @@ Access token claims:
   }
 """
 import hashlib
+import hmac
 import secrets
 from datetime import UTC, datetime, timedelta
 
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
-from app.clock import utcnow
+from app.clock import utcnow, utcnow_naive
 from app.config import settings
 from app.database import get_db
-from app.models import HouseholdMember, RefreshToken, User
+from app.models import HouseholdMember, PersonalApiToken, RefreshToken, User
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -84,6 +85,10 @@ def revoke_member_access(db: Session, user: User, household_id: str) -> None:
     db.query(RefreshToken).filter_by(user_id=user.id, household_id=household_id).update(
         {RefreshToken.revoked: True}, synchronize_session=False
     )
+    # Personal ingest tokens too, so re-adding the member later does not
+    # revive an old Shortcut.
+    from app.services.personal_tokens import revoke_user_tokens
+    revoke_user_tokens(db, user.id, household_id)
 
 
 def _hash_token(raw: str) -> str:
@@ -151,6 +156,14 @@ def require_api_auth(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    if credentials.credentials.startswith(PAT_PREFIX):
+        # Personal ingest tokens only ever authenticate the ingest endpoint.
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Personal tokens are not valid for this endpoint",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     claims = _decode_token(credentials.credentials)
 
     if claims.get("scope") != "api":
@@ -184,6 +197,71 @@ def require_api_auth(
         )
 
     return user, claims["hh"]
+
+
+PAT_PREFIX = "pat_"
+
+
+def _ingest_unauthorized(detail: str = "Invalid ingest token") -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=detail,
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+# Failed ingest authentications per client IP. Valid tokens are limited per
+# token by the endpoint itself (60/hour); this only throttles guessing.
+INGEST_FAILURE_LIMIT = "20/minute"
+
+
+def _ingest_failure(request: Request | None, detail: str = "Invalid ingest token") -> HTTPException:
+    """Count a failed ingest auth against the client IP: 401, or 429 once over
+    the limit. Uses the shared limiter's storage (reset between tests)."""
+    if request is not None:
+        from limits import parse
+
+        from app.ratelimit import client_key, limiter
+
+        if not limiter.limiter.hit(parse(INGEST_FAILURE_LIMIT), "ingest-fail", client_key(request)):
+            return HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                                 detail="Too many failed attempts; try again later.")
+    return _ingest_unauthorized(detail)
+
+
+def require_ingest_token(
+    request: Request = None,
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    db: Session = Depends(get_db),
+) -> PersonalApiToken:
+    """Auth dependency for the ingest endpoint: a personal ``pat_`` token only.
+
+    Enforces: Bearer present and ``pat_``-prefixed (JWTs are never accepted
+    here), a stored hash matches, not revoked, scope includes ``ingest``, the
+    owner still exists and is still a member of the token's household. Records
+    ``last_used_at``. Returns the token row. The token itself is never logged.
+    """
+    if not credentials or not credentials.credentials.startswith(PAT_PREFIX):
+        raise _ingest_failure(request, "A personal ingest token is required")
+
+    from app.services.personal_tokens import INGEST_SCOPE, hash_personal_token
+
+    digest = hash_personal_token(credentials.credentials)
+    # Lookup is by the SHA-256 of a 192-bit random secret, so query timing
+    # reveals nothing usable; the compare_digest is belt and braces.
+    record = db.query(PersonalApiToken).filter_by(token_hash=digest).first()
+    if record is None or not hmac.compare_digest(record.token_hash, digest):
+        raise _ingest_failure(request)
+    if record.revoked_at is not None:
+        raise _ingest_failure(request, "Token revoked")
+    if INGEST_SCOPE not in record.scope_list:
+        raise _ingest_failure(request, "Token scope is not valid for this endpoint")
+    if db.get(User, record.user_id) is None or not _is_member(db, record.household_id, record.user_id):
+        raise _ingest_failure(request, "Not a member of this household")
+
+    record.last_used_at = utcnow_naive()
+    db.commit()
+    return record
 
 
 def require_api_pending(

@@ -43,7 +43,7 @@ from app.models import (
 )
 from app.ratelimit import limiter
 from app.seed import seed_categories
-from app.services import base_ctx
+from app.services import base_ctx, revoke_user_tokens
 from app.templates import templates
 from app.validators import parse_color
 
@@ -229,6 +229,7 @@ def change_password(
 
     user.password_hash = hash_password(new_password)
     invalidate_user_sessions(db, user)
+    revoke_user_tokens(db, user.id)  # account recovery: Shortcut tokens too
     db.commit()
     security_logger.info("Password changed for '%s'", user.username)
 
@@ -526,6 +527,7 @@ def disable_totp(
     user.totp_enabled = False
     user.totp_backup_codes = None
     invalidate_user_sessions(db, user)
+    revoke_user_tokens(db, user.id)
     db.commit()
 
     security_logger.info("TOTP disabled for '%s'", user.username)
@@ -573,6 +575,7 @@ def admin_reset_member_totp(
     target_user.totp_enabled = False
     target_user.totp_backup_codes = None
     invalidate_user_sessions(db, target_user)
+    revoke_user_tokens(db, target_user.id)
     db.commit()
 
     security_logger.info(
@@ -731,8 +734,10 @@ def leave_household(
         })
         return templates.TemplateResponse("settings/index.html", ctx)
 
-    # Remove membership
+    # Remove membership (and this household's Shortcut tokens, so rejoining
+    # later does not revive them)
     db.delete(my_membership)
+    revoke_user_tokens(db, user.id, hh_id)
 
     if is_sole_member:
         # Keep the household and all its data; only archive it. Hard deletion

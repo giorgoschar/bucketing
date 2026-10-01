@@ -31,6 +31,11 @@ from app.services.duplicates import (  # noqa: F401
     find_duplicate_candidates,
     find_household_duplicates,
 )
+from app.services.ingest import (  # noqa: F401
+    ingest_apple_pay,
+    ingest_client_id,
+    notify_ingest_created,
+)
 from app.services.insights import (  # noqa: F401
     INSIGHT_PRESETS,
     InsightFilters,
@@ -57,6 +62,15 @@ from app.services.money import (  # noqa: F401
 )
 from app.services.person import (  # noqa: F401
     get_person_summary,
+)
+from app.services.personal_tokens import (  # noqa: F401
+    active_household_bucket,
+    hash_personal_token,
+    issue_personal_token,
+    list_personal_tokens,
+    revoke_personal_token,
+    revoke_user_tokens,
+    token_dict,
 )
 from app.services.settlement import (  # noqa: F401
     compute_bucket_net,

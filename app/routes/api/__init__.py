@@ -12,8 +12,10 @@ from app.routes.api import (
     cash,
     dashboard,
     income,
+    ingest,
     insights,
     notifications,
+    personal_tokens,
     settings,
     transactions,
 )
@@ -29,6 +31,8 @@ router.include_router(buckets._household_router)
 router.include_router(bills.router)
 router.include_router(cash.router)
 router.include_router(income.router)
+router.include_router(ingest.router)
 router.include_router(insights.router)
 router.include_router(notifications.router)
+router.include_router(personal_tokens.router)
 router.include_router(settings.router)
