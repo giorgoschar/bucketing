@@ -131,6 +131,7 @@ def _auto_pay_due_bills(db, today: date) -> int:
     from sqlalchemy import or_
     from sqlalchemy.orm import joinedload
 
+    from app import bills_service
     from app.models import (
         BillOccurrence,
         NotificationType,
@@ -184,10 +185,8 @@ def _auto_pay_due_bills(db, today: date) -> int:
         # transaction with scaled splits). If another worker (or an earlier run
         # of this job) already claimed it nothing is written — this is what
         # prevents duplicate auto-pay transactions.
-        from app.bills_service import settle_occurrence
-
         occ = db.get(BillOccurrence, item["occ_id"])
-        if not settle_occurrence(
+        if not bills_service.settle_occurrence(
             db, occ,
             amount=item["amount"],
             paid_by=item["paid_by_default"],

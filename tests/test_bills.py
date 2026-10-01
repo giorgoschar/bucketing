@@ -316,3 +316,51 @@ def test_auto_pay_job_uses_scaled_service_path(db, authed, make_bill, monkeypatc
     assert calls
     txn = db.query(Transaction).one()
     assert sorted(float(s.amount) for s in txn.splits) == [40.0, 40.0]
+
+
+# ---------------------------------------------------------------------------
+# HTML pay form: prefilled default shares are not overrides
+# ---------------------------------------------------------------------------
+
+def _pay_form(client, authed, bill, occ, data):
+    return client.post(f"/bills/{bill.id}/occurrences/{occ.id}/pay",
+                       data=data, headers=authed.headers, follow_redirects=False)
+
+
+def test_pay_form_with_default_shares_scales_to_amount(client, db, authed, make_bill):
+    from decimal import Decimal
+    bill, occ, users = _bill_with_splits(db, authed, make_bill, [50, 50], bill_amount=100)
+    r = _pay_form(client, authed, bill, occ, {
+        "amount": "80", f"split_{users[0]}": "50.00", f"split_{users[1]}": "50"})
+    assert r.status_code in (200, 302)
+    db.expire_all()
+    txn = db.query(Transaction).one()
+    assert _split_map(db, txn) == {users[0]: Decimal("40"), users[1]: Decimal("40")}
+
+
+def test_pay_form_edited_shares_used_as_is(client, db, authed, make_bill):
+    from decimal import Decimal
+    bill, occ, users = _bill_with_splits(db, authed, make_bill, [50, 50], bill_amount=100)
+    r = _pay_form(client, authed, bill, occ, {
+        "amount": "80", f"split_{users[0]}": "70", f"split_{users[1]}": "10"})
+    assert r.status_code in (200, 302)
+    db.expire_all()
+    txn = db.query(Transaction).one()
+    assert _split_map(db, txn) == {users[0]: Decimal("70"), users[1]: Decimal("10")}
+
+
+def test_pay_form_edited_shares_not_summing_is_400(client, db, authed, make_bill):
+    bill, occ, users = _bill_with_splits(db, authed, make_bill, [50, 50], bill_amount=100)
+    r = _pay_form(client, authed, bill, occ, {
+        "amount": "80", f"split_{users[0]}": "70", f"split_{users[1]}": "20"})
+    assert r.status_code == 400
+    assert "80" in r.text
+    db.expire_all()
+    assert db.query(Transaction).count() == 0
+    assert db.get(BillOccurrence, occ.id).status == OccurrenceStatus.unpaid
+
+
+def test_pay_modal_js_rescales_shares_on_amount_change():
+    from pathlib import Path
+    html = Path("templates/bills/list.html").read_text()
+    assert "rescalePayShares" in html and "shareEdited" in html

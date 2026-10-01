@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.auth import require_auth, require_csrf
 from app.bills_service import (
     delete_future_occurrences,
+    effective_overrides,
     generate_occurrences,
     normalise_interval_months,
     settle_occurrence,
@@ -217,7 +218,7 @@ async def mark_paid(
             amount=pay_amount,
             paid_by=payer,
             paid_on=utcnow_naive(),
-            split_overrides={uid: Decimal(str(a)) for uid, a in overrides} or None,
+            split_overrides=effective_overrides(bill, {uid: Decimal(str(a)) for uid, a in overrides}),
         )
     except ValueError as exc:
         db.rollback()

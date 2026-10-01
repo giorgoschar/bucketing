@@ -227,3 +227,17 @@ def settle_occurrence(db: Session, occ: BillOccurrence, **kwargs) -> bool:
     if occ.bill.bucket_id:
         return pay_occurrence(db, occ, **kwargs) is not None
     return claim_occurrence(db, occ, paid_by=kwargs["paid_by"], paid_on=kwargs["paid_on"])
+
+
+def effective_overrides(bill: RecurringBill, submitted) -> dict[str, Decimal] | None:
+    """Treat submitted shares identical to the bill's defaults as "no override".
+
+    The pay form prefills the bill's default shares, so an untouched form
+    submits them verbatim; those must be scaled to the amount actually paid
+    rather than validated as an override. Returns None for "use defaults".
+    """
+    shares = {uid: _q(v) for uid, v in dict(submitted or {}).items()}
+    if not shares:
+        return None
+    defaults = {s.user_id: _q(s.amount) for s in bill.splits}
+    return None if shares == defaults else shares

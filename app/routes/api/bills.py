@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.api_auth import require_api_auth
 from app.bills_service import (
     delete_future_occurrences,
+    effective_overrides,
     generate_occurrences,
     normalise_interval_months,
     settle_occurrence,
@@ -337,7 +338,7 @@ def pay_occurrence(
             amount=pay_amount,
             paid_by=payer,
             paid_on=utcnow_naive(),
-            split_overrides={s.user_id: Decimal(str(s.amount)) for s in body.splits} or None,
+            split_overrides=effective_overrides(bill, {s.user_id: Decimal(str(s.amount)) for s in body.splits}),
         )
     except ValueError as exc:
         db.rollback()
