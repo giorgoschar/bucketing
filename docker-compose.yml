@@ -16,15 +16,21 @@ services:
 
   app:
     build: .
+    # Local/VPS use: published on loopback only, put a reverse proxy in front.
+    # Coolify ignores this and routes through Traefik labels instead.
     ports:
-      - "8000:8000"
+      - "${APP_BIND_ADDRESS:-127.0.0.1}:8000:8000"
     volumes:
-      - ./uploads:/app/uploads
+      - uploads_data:/app/uploads
+      - backups:/backups
     environment:
       - DATABASE_URL=postgresql://expenses_user:${POSTGRES_PASSWORD:-localdevpassword}@db:5432/expenses
-      - APP_SECRET_KEY=${APP_SECRET_KEY:-change-me-in-production}
+      - APP_SECRET_KEY=${APP_SECRET_KEY:?set APP_SECRET_KEY}
       - DEBUG=false
       - APP_NAME=Expenses
+      - APP_TIMEZONE=${APP_TIMEZONE:-Europe/Athens}
+      - TRUST_PROXY_HEADERS=true
+      - ENABLE_SCHEDULER=true
     depends_on:
       db:
         condition: service_healthy
@@ -36,5 +42,25 @@ services:
       start_period: 20s
       retries: 3
 
+  # Daily pg_dump + uploads tarball into the `backups` volume.
+  # Drop this service when the database is a Coolify-managed Postgres with
+  # Coolify's own scheduled backups enabled (see docs/DEPLOY-COOLIFY.md).
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    command: ["sh", "-c", "while true; do /scripts/backup.sh; sleep 86400; done"]
+    environment:
+      - DATABASE_URL=postgresql://expenses_user:${POSTGRES_PASSWORD:-localdevpassword}@db:5432/expenses
+      - BACKUP_KEEP_DAYS=${BACKUP_KEEP_DAYS:-30}
+    volumes:
+      - ./scripts:/scripts:ro
+      - uploads_data:/app/uploads:ro
+      - backups:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   postgres_data:
+  uploads_data:
+  backups:
