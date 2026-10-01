@@ -36,6 +36,7 @@ from app.models import (
     User,
 )
 from app.receipt_parser import _extract_category_hint, parse_receipt_text
+from app.services import delete_transaction as delete_transaction_soft
 from app.services import find_duplicate_candidates, find_household_duplicates
 from app.services import full_ctx as _full_ctx
 from app.templates import templates
@@ -110,6 +111,7 @@ def serve_receipt(
     txn = (
         db.query(Transaction)
         .filter(
+            Transaction.active(),
             Transaction.household_id == hh_id,
             Transaction.receipt_path == filename,
         )
@@ -388,6 +390,12 @@ async def create_transaction(
             )
             .first()
         )
+        if existing and existing.deleted_at is not None:
+            # Do not silently resurrect or duplicate a deleted expense.
+            raise HTTPException(
+                status_code=409,
+                detail="This expense was already submitted and has since been deleted.",
+            )
         if existing:
             if request.headers.get("HX-Request"):
                 return templates.TemplateResponse(
@@ -526,7 +534,7 @@ def edit_transaction_page(
 ):
     user, hh_id = auth
     txn = db.get(Transaction, txn_id)
-    if not txn or txn.household_id != hh_id:
+    if not txn or txn.household_id != hh_id or txn.deleted_at is not None:
         raise HTTPException(status_code=404)
 
     ctx = _get_context(db, user, hh_id)
@@ -558,7 +566,7 @@ async def edit_transaction(
 ):
     user, hh_id = auth
     txn = db.get(Transaction, txn_id)
-    if not txn or txn.household_id != hh_id:
+    if not txn or txn.household_id != hh_id or txn.deleted_at is not None:
         raise HTTPException(status_code=404)
 
     # The target bucket was previously assigned straight from the form, so a
@@ -606,11 +614,11 @@ def delete_transaction(
 ):
     user, hh_id = auth
     txn = db.get(Transaction, txn_id)
-    if not txn or txn.household_id != hh_id:
+    if not txn or txn.household_id != hh_id or txn.deleted_at is not None:
         raise HTTPException(status_code=404)
 
     bucket_id = txn.bucket_id
-    db.delete(txn)
+    delete_transaction_soft(db, txn, UPLOADS_DIR)
     db.commit()
 
     if request.headers.get("HX-Request"):
@@ -631,7 +639,7 @@ def duplicate_transaction(
 ):
     user, hh_id = auth
     src = db.get(Transaction, txn_id)
-    if not src or src.household_id != hh_id:
+    if not src or src.household_id != hh_id or src.deleted_at is not None:
         raise HTTPException(status_code=404)
 
     new_txn = Transaction(
@@ -694,7 +702,7 @@ def search_transactions(
                       want_missing_payer])
 
     if has_filter:
-        query = db.query(Transaction).filter(Transaction.household_id == hh_id)
+        query = db.query(Transaction).filter(Transaction.active(), Transaction.household_id == hh_id)
 
         if q.strip():
             # Free text used to match notes only, so a scanned receipt whose
@@ -838,7 +846,7 @@ def export_transactions(
 
     query = (
         db.query(Transaction)
-        .filter(Transaction.household_id == hh_id)
+        .filter(Transaction.active(), Transaction.household_id == hh_id)
         .options(
             joinedload(Transaction.bucket),
             joinedload(Transaction.category),

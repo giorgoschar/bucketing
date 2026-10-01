@@ -665,6 +665,7 @@ def transfer_ownership(
 @router.post("/leave-household", response_class=HTMLResponse)
 def leave_household(
     request: Request,
+    confirm_name: str = Form(""),
     db: Session = Depends(get_db),
     auth=Depends(require_auth),
 ):
@@ -706,12 +707,31 @@ def leave_household(
     household = db.get(Household, hh_id)
     is_sole_member = db.query(HouseholdMember).filter_by(household_id=hh_id).count() == 1
 
+    # The last member leaving archives the household for everyone, so make
+    # them type its name. Nothing changes until it matches.
+    if is_sole_member and confirm_name.strip() != household.name:
+        ctx = base_ctx(db, user, hh_id)
+        ctx.update({
+            "request": request,
+            "user": user,
+            "leave_error": "You are the last member. Type the household name exactly to confirm leaving.",
+            "members": db.query(HouseholdMember).filter_by(household_id=hh_id).all(),
+            "invitations": db.query(Invitation).filter_by(household_id=hh_id).filter(Invitation.used_at.is_(None)).all(),
+            "categories": db.query(Category).filter_by(household_id=hh_id).order_by(Category.is_default.desc(), Category.name).all(),
+            "is_owner": my_membership.role == MemberRole.owner,
+            "avatar_colors": AVATAR_COLORS,
+            "currencies": settings.currencies,
+            "category_rules": list_rules(db, hh_id),
+        })
+        return templates.TemplateResponse("settings/index.html", ctx)
+
     # Remove membership
     db.delete(my_membership)
 
     if is_sole_member:
-        # Delete the empty household
-        db.delete(household)
+        # Keep the household and all its data; only archive it. Hard deletion
+        # is a manual admin step (scripts/purge_household.py).
+        household.archived_at = datetime.utcnow()
 
     db.commit()
 

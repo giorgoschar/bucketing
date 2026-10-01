@@ -168,7 +168,7 @@ def bucket_detail(
     if all_time:
         transactions = (
             db.query(Transaction)
-            .filter(Transaction.bucket_id == bucket_id)
+            .filter(Transaction.active(), Transaction.bucket_id == bucket_id)
             .order_by(Transaction.transaction_date.desc(), Transaction.created_at.desc())
             .all()
         )
@@ -186,6 +186,7 @@ def bucket_detail(
         base_q = (
             db.query(Transaction)
             .filter(
+                Transaction.active(),
                 Transaction.bucket_id == bucket_id,
                 Transaction.transaction_date >= start,
                 Transaction.transaction_date <= end,
