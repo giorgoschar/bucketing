@@ -51,3 +51,31 @@ def test_entrypoint_premigrate_dump_strips_sqlalchemy_driver(stubs):
     assert r.returncode == 0, r.stderr
     assert log.read_text().strip() == "postgresql://u:p@db:5432/expenses"
     assert list(backups.glob("pre-migrate-*.sql.gz"))
+
+
+def test_dockerfile_installs_pgdg_client_18_or_newer():
+    """Production is Postgres 18; Debian trixie's own client (17) refuses it."""
+    import re
+    text = (ROOT / "Dockerfile").read_text()
+    assert "apt.postgresql.org" in text and "-pgdg" in text
+    assert "signed-by=" in text
+    m = re.search(r"postgresql-client-(\d+)", text)
+    assert m and int(m.group(1)) >= 18
+    assert not re.search(r"install[^\n]*\bpostgresql-client\b(?!-)", text)
+
+
+def test_entrypoint_failed_dump_is_fail_closed_and_actionable(stubs):
+    env, log, backups = stubs
+    bin_dir = Path(env["PATH"].split(":")[0])
+    _stub(bin_dir, "pg_dump",
+          'case "$1" in --version) echo "pg_dump (PostgreSQL) 17.11"; exit 0;; esac\n'
+          'echo "server version mismatch" >&2; exit 1')
+    marker = bin_dir.parent / "alembic.ran"
+    _stub(bin_dir, "alembic", f'touch "{marker}"')
+    r = subprocess.run(["sh", str(ROOT / "entrypoint.sh")], env=env,
+                       capture_output=True, text=True)
+    assert r.returncode != 0
+    assert not marker.exists(), "migration must not run after a failed backup"
+    assert "BACKUP_BEFORE_MIGRATE=false" in r.stderr
+    assert "17.11" in r.stderr
+    assert not list(backups.glob("pre-migrate-*"))

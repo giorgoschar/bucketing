@@ -3,6 +3,49 @@
 The app ships as a Docker Compose stack (`docker-compose.yml`): `db` (Postgres 16),
 `app` (FastAPI/uvicorn), and `backup` (daily `pg_dump` + uploads tarball).
 
+## Deploying as a Dockerfile application with a Coolify-managed PostgreSQL (how production runs)
+
+Production is **not** the compose stack: it is one Coolify *Dockerfile* application
+(built from this repo's `Dockerfile`) plus a separate Coolify-managed PostgreSQL
+(currently **18**). The image ships the PGDG `pg_dump` 18, which can dump 16, 17
+and 18 servers (Debian's own client is 17 and refuses a PG 18 server, which would
+abort the pre-migrate backup and therefore the deploy).
+
+**Environment Variables** (Coolify app → Environment Variables):
+
+- `DATABASE_URL`: the managed database's *internal* URL in plain `postgresql://user:pass@host:5432/db` form (use the plain `postgresql://` form, no `+driver`).
+- `APP_SECRET_KEY`: keep the existing production value.
+- `APP_BASE_URL`: the public https URL (invite links, ingest URL).
+- `FIELD_ENCRYPTION_KEY`: optional; if set it must be a valid Fernet key (a malformed one stops the app at startup).
+- `DEBUG=false`, `TRUST_PROXY_HEADERS=true` (Traefik sets `X-Forwarded-*`), `APP_TIMEZONE=Europe/Athens`.
+- `VAPID_PRIVATE_KEY`, `VAPID_PUBLIC_KEY`, `VAPID_CLAIMS_EMAIL` for web push.
+- `POSOKANEI_ENABLED=false` while the PosoKanei API returns 403.
+- `RATE_LIMIT_STORAGE_URI`: optional (e.g. a Coolify Redis).
+
+**Persistent storage** (Coolify app → Storage):
+
+- Mount storage at `/app/uploads`. Without it every receipt is lost on each redeploy.
+- **WARNING:** if production already stores receipts somewhere, mount THAT same storage at `/app/uploads`. Never create a new empty volume: existing receipts would 404 and backups would tar an empty directory. Before deploying, check in Coolify → app → Storages what is currently mounted.
+- Optionally mount one at `/backups` so pre-migrate dumps survive redeploys. It must be writable by uid 10001 (`docker run --rm -v <volume-name>:/data alpine chown -R 10001 /data`).
+- The container runs as uid `10001`. If the storage already holds root-owned files, fix it once on the Coolify server (use the real volume name or host path from the Storage tab):
+  ```sh
+  docker run --rm -v <volume-name>:/data alpine chown -R 10001 /data
+  # or, for a host bind mount: sudo chown -R 10001 /path/to/uploads
+  ```
+
+**Backups**: enable scheduled backups on the managed database in Coolify (that is the
+real backup). In addition, `entrypoint.sh` takes a dump into `/backups` before every
+migration. `/backups` is writable inside the image but ephemeral unless mounted, so
+mount a volume if you want those dumps to outlive the container. The dump is
+fail-closed: if it fails, the migration does not run. It is SKIPPED (not failed) when `/backups` is not writable, so make sure a mounted `/backups` is writable by uid 10001. `BACKUP_BEFORE_MIGRATE=false`
+skips it (not recommended).
+
+Follow the section 0 upgrade checklist as well (manual dump, receipts tarball, unpaid-bill
+check), adapting the dump command to the managed database, e.g.
+`pg_dump "$DATABASE_URL" | gzip > expenses-pre-v2.sql.gz` with a pg_dump 18 client.
+
+The sections below describe the compose stack, for local and self-hosted use.
+
 ## 0. Upgrading an existing v1 deployment (first v2 deploy) — checklist
 
 Do these **before** pressing Deploy:
@@ -48,7 +91,7 @@ deploy (and before any redeploy that introduces a new required variable).
 | `JWT_SECRET_KEY` | recommended | Separate random secret for API tokens (defaults to `APP_SECRET_KEY`). |
 | `FIELD_ENCRYPTION_KEY` | recommended | A malformed value stops the app at startup. Fernet key for encrypting TOTP secrets at rest: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. Derived from `APP_SECRET_KEY` when unset. Setting it later is safe: secrets encrypted under the derived key stay readable and are re-encrypted under the new key on the next 2FA login. Without it, **changing `APP_SECRET_KEY` makes stored TOTP secrets unreadable** (users would be locked out of 2FA), so set this key explicitly and keep it stable. Existing plaintext secrets keep working and are encrypted on the user's next successful 2FA login. |
 | `POSTGRES_PASSWORD` | yes | Password for the bundled `db` service. |
-| `DATABASE_URL` | only with an external DB | `postgresql://user:pass@host:5432/db`. When unset, the compose file builds it from `POSTGRES_PASSWORD` for the bundled `db`; when set it is passed to `app` and `backup`. |
+| `DATABASE_URL` | only with an external DB | `postgresql://user:pass@host:5432/db`. Compose IGNORES `DATABASE_URL` (it always uses the bundled `db`, built from `POSTGRES_PASSWORD`). `DATABASE_URL` is only used by the Coolify Dockerfile app + managed-Postgres setup (set in the Coolify UI) or when running uvicorn directly. |
 | `DEBUG` | yes | `false` (compose sets it). |
 | `TRUST_PROXY_HEADERS` | yes | `true` — Coolify's Traefik overwrites `X-Forwarded-For`. |
 | `APP_TIMEZONE` | yes | `Europe/Athens` (compose default). Drives "today" for bills and reminders. |
@@ -102,7 +145,7 @@ the app is published on `127.0.0.1:8000` only (override with `APP_BIND_ADDRESS`)
   from the host path).
 - **Coolify-managed Postgres resource:** enable Coolify's built-in scheduled backups
   (with S3) on the database resource, remove the `backup` service from the compose
-  file, and set `DATABASE_URL` (passed to `app` when set). Back up `./uploads`
+  file, and set `DATABASE_URL` (compose ignores it; it only applies to the Coolify Dockerfile app or running uvicorn directly). Back up `./uploads`
   separately.
 - **Before every migration:** `entrypoint.sh` writes `pre-migrate-<date>.sql.gz` when
   `/backups` is mounted (`BACKUP_BEFORE_MIGRATE=true`, the default).
