@@ -105,7 +105,7 @@ async def security_headers(request: Request, call_next):
             response.set_cookie(
                 CSRF_COOKIE_NAME, csrf_val,
                 httponly=False, samesite="strict",
-                max_age=60 * 60 * 24 * 30,
+                max_age=settings.session_max_age_seconds,
                 secure=not settings.debug,
             )
     response.headers["X-Frame-Options"] = "DENY"

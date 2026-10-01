@@ -144,7 +144,7 @@ def totp_verify(request: Request, body: TotpVerifyRequest, db: Session = Depends
 
     hh_id = claims["hh"]
     access_token = create_access_token(user.id, hh_id, user.session_version)
-    refresh_token = create_refresh_token(user.id, hh_id, db)
+    refresh_token = create_refresh_token(user.id, hh_id, db, user.session_version)
 
     return {
         "access_token":  access_token,

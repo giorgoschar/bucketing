@@ -16,6 +16,7 @@ from app.auth import (
     get_current_session,
     get_pending_session,
     hash_password,
+    invalidate_user_sessions,
     is_locked,
     register_failed_login,
     require_auth,
@@ -324,7 +325,16 @@ def verify_backup_submit(
 # ---------------------------------------------------------------------------
 
 @router.post("/logout")
-def logout():
+def logout(request: Request, db: Session = Depends(get_db)):
+    """Log out everywhere: bumping session_version kills every cookie and token
+    this user holds (there is no per-device session table)."""
+    session = get_current_session(request)
+    if session and session.get("state") == "authenticated":
+        user = db.get(User, session["user_id"])
+        if user and session.get("sv", -1) == user.session_version:
+            invalidate_user_sessions(db, user)
+            db.commit()
+            security_logger.info("Logout for '%s'", user.username)
     response = RedirectResponse("/login", status_code=302)
     clear_session(response)
     return response

@@ -295,7 +295,9 @@ def test_switch_does_not_revive_an_invalidated_cookie(app, db, make_household):
     r = c.post("/household/switch", data={"household_id": other.household_id},
                headers={"X-CSRF-Token": csrf})
     assert r.status_code == 302 and r.headers["location"] == "/login"
-    assert "session" not in r.headers.get("set-cookie", "")
+    # No fresh session minted; at most the stale one is cleared.
+    set_cookie = r.headers.get("set-cookie", "")
+    assert "session=" not in set_cookie or "session=;" in set_cookie
 
 
 def test_no_csrf_cookie_for_invalidated_session(app, db, make_household):

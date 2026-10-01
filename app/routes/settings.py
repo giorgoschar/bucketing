@@ -19,6 +19,7 @@ from app.auth import (
     clear_session,
     get_current_session,
     hash_password,
+    invalidate_user_sessions,
     require_auth,
     require_csrf,
     security_logger,
@@ -222,7 +223,7 @@ def change_password(
         return templates.TemplateResponse("settings/index.html", ctx)
 
     user.password_hash = hash_password(new_password)
-    user.session_version = (user.session_version or 0) + 1
+    invalidate_user_sessions(db, user)
     db.commit()
     security_logger.info("Password changed for '%s'", user.username)
 
@@ -499,7 +500,7 @@ def disable_totp(
     user.totp_secret = None
     user.totp_enabled = False
     user.totp_backup_codes = None
-    user.session_version = (user.session_version or 0) + 1
+    invalidate_user_sessions(db, user)
     db.commit()
 
     security_logger.info("TOTP disabled for '%s'", user.username)
@@ -546,7 +547,7 @@ def admin_reset_member_totp(
     target_user.totp_secret = None
     target_user.totp_enabled = False
     target_user.totp_backup_codes = None
-    target_user.session_version = (target_user.session_version or 0) + 1
+    invalidate_user_sessions(db, target_user)
     db.commit()
 
     security_logger.info(

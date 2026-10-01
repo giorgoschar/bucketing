@@ -234,3 +234,108 @@ def test_html_wrong_totp_codes_lock_the_account(client, db, make_household):
     assert r.status_code == 429
     db.expire_all()
     assert db.get(User, hh.user_id).locked_until is not None
+
+
+# ---------------------------------------------------------------------------
+# H1/H3/L2: sessions expire, logout invalidates, refresh tokens follow sv
+# ---------------------------------------------------------------------------
+
+def _shift_signer_clock(monkeypatch, seconds):
+    """Make itsdangerous believe `seconds` have passed since signing."""
+    import time as real_time
+    from types import SimpleNamespace
+
+    import itsdangerous.timed as timed
+
+    monkeypatch.setattr(timed, "time", SimpleNamespace(time=lambda: real_time.time() + seconds))
+
+
+def test_session_cookie_expires_after_max_age(client, authed, monkeypatch):
+    from app.config import settings
+
+    assert client.get("/dashboard").status_code == 200
+    _shift_signer_clock(monkeypatch, settings.session_max_age_seconds + 60)
+    r = client.get("/dashboard")
+    assert r.status_code == 302 and r.headers["location"] == "/login"
+
+
+def test_session_cookie_valid_within_max_age(client, authed, monkeypatch):
+    _shift_signer_clock(monkeypatch, 60 * 60 * 24 * 7)
+    assert client.get("/dashboard").status_code == 200
+
+
+def test_csrf_token_lives_as_long_as_the_session(client, authed, monkeypatch):
+    """The CSRF cookie lasts 30 days; the signed token must not die after 4 hours."""
+    from app.config import settings
+
+    _shift_signer_clock(monkeypatch, 60 * 60 * 5)
+    r = client.post("/settings/profile/password", data={
+        "current_password": "wrong", "new_password": "another-long-password",
+    }, headers=authed.headers)
+    assert r.status_code == 200  # reached the handler, not a CSRF rejection
+
+    from app.auth import generate_csrf_token, verify_csrf_token
+    token = generate_csrf_token(authed.user_id)
+    # The token was signed at "now + 5h"; move past its full lifetime from there.
+    _shift_signer_clock(monkeypatch, 60 * 60 * 5 + settings.session_max_age_seconds + 60)
+    assert not verify_csrf_token(token, authed.user_id)
+
+
+def test_logout_invalidates_the_old_cookie(client, authed):
+    old_cookie = client.cookies.get("session")
+    r = client.post("/logout", headers=authed.headers)
+    assert r.status_code == 302
+
+    client.cookies.set("session", old_cookie)
+    r = client.get("/dashboard")
+    assert r.status_code == 302 and r.headers["location"] == "/login"
+
+
+def test_stale_cookie_is_cleared_so_login_page_does_not_loop(client, db, authed):
+    user = db.get(User, authed.user_id)
+    user.session_version += 1
+    db.commit()
+
+    r = client.get("/dashboard")
+    assert r.status_code == 302 and r.headers["location"] == "/login"
+    assert 'session=""' in r.headers.get("set-cookie", "") or "session=;" in r.headers.get("set-cookie", "")
+    client.cookies.delete("session")
+    assert client.get("/login").status_code == 200
+
+
+def _api_tokens(client, hh):
+    r = client.post("/api/v1/auth/login", json={"username": hh.username, "password": PASSWORD})
+    r = client.post("/api/v1/auth/totp/verify", json={
+        "pending_token": r.json()["pending_token"], "code": pyotp.TOTP(hh.secret).now()})
+    assert r.status_code == 200
+    return r.json()
+
+
+def test_password_change_kills_refresh_tokens(client, authed):
+    tokens = _api_tokens(client, authed)
+    client.post("/settings/profile/password", data={
+        "current_password": PASSWORD, "new_password": "another-long-password",
+    }, headers=authed.headers)
+    r = client.post("/api/v1/auth/token/refresh", json={"refresh_token": tokens["refresh_token"]})
+    assert r.status_code == 401
+
+
+def test_api_password_change_kills_refresh_tokens(client, make_household):
+    hh = make_household()
+    tokens = _api_tokens(client, hh)
+    r = client.post("/api/v1/settings/profile/password", json={
+        "current_password": PASSWORD, "new_password": "another-long-password"},
+        headers={"Authorization": f"Bearer {tokens['access_token']}"})
+    assert r.status_code in (200, 204), r.text
+    r = client.post("/api/v1/auth/token/refresh", json={"refresh_token": tokens["refresh_token"]})
+    assert r.status_code == 401
+
+
+def test_refresh_token_from_older_session_version_is_rejected(client, db, make_household):
+    hh = make_household()
+    tokens = _api_tokens(client, hh)
+    user = db.get(User, hh.user_id)
+    user.session_version += 1  # e.g. 2FA reset elsewhere
+    db.commit()
+    r = client.post("/api/v1/auth/token/refresh", json={"refresh_token": tokens["refresh_token"]})
+    assert r.status_code == 401

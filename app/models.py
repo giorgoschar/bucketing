@@ -451,6 +451,9 @@ class RefreshToken(Base):
     token_hash   = Column(String, nullable=False, unique=True)  # SHA-256 hex of the raw token
     expires_at   = Column(DateTime, nullable=False)
     revoked      = Column(Boolean, default=False, nullable=False)
+    # User.session_version at issue; a later bump (logout, password or 2FA
+    # change) makes the token unusable even if it was not revoked.
+    session_version = Column(Integer, default=0, server_default="0", nullable=False)
     created_at   = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User")

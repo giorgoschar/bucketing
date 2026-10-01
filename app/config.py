@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     aade_path_prefix: str = "/tameiakes/myweb/q1.php"
     aade_timeout_seconds: float = 8.0
 
+    # Session lifetime, enforced server-side by the signed timestamp in the
+    # cookie (not only by the browser's cookie expiry).
+    session_max_age_seconds: int = 60 * 60 * 24 * 30
+
     # Invitation links
     invite_expiry_days: int = 7
 

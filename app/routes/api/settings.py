@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api_auth import require_api_auth, revoke_member_access
-from app.auth import hash_password, security_logger, verify_password
+from app.auth import hash_password, invalidate_user_sessions, security_logger, verify_password
 from app.config import settings
 from app.database import get_db
 from app.models import (
@@ -99,7 +99,7 @@ def change_password(
     if len(body.new_password) < 12:
         raise HTTPException(status_code=400, detail="Password must be at least 12 characters")
     user.password_hash   = hash_password(body.new_password)
-    user.session_version = (user.session_version or 0) + 1  # invalidates all existing tokens
+    invalidate_user_sessions(db, user)  # all cookies, access and refresh tokens
     db.commit()
     security_logger.info("API password changed for '%s'", user.username)
 

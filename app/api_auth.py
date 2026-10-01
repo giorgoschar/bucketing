@@ -89,7 +89,8 @@ def _hash_token(raw: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
-def create_refresh_token(user_id: str, household_id: str, db: Session) -> str:
+def create_refresh_token(user_id: str, household_id: str, db: Session,
+                         session_version: int = 0) -> str:
     """
     Generate a cryptographically random refresh token, store its hash in the DB,
     and return the raw token to the caller (never stored in plaintext).
@@ -101,6 +102,7 @@ def create_refresh_token(user_id: str, household_id: str, db: Session) -> str:
         household_id=household_id,
         token_hash=_hash_token(raw),
         expires_at=expires_at,
+        session_version=session_version,
     )
     db.add(record)
     db.commit()
@@ -239,6 +241,11 @@ def rotate_refresh_token(raw_token: str, db: Session) -> tuple[str, str]:
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
+    if record.session_version != user.session_version:
+        record.revoked = True
+        db.commit()
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session invalidated — please log in again")
+
     if not _is_member(db, record.household_id, user.id):
         record.revoked = True
         db.commit()
@@ -253,7 +260,7 @@ def rotate_refresh_token(raw_token: str, db: Session) -> tuple[str, str]:
 
     # Issue new pair
     new_access = create_access_token(user.id, record.household_id, user.session_version)
-    new_refresh = create_refresh_token(user.id, record.household_id, db)
+    new_refresh = create_refresh_token(user.id, record.household_id, db, user.session_version)
     return new_access, new_refresh
 
 

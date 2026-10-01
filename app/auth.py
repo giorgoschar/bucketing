@@ -12,15 +12,17 @@ from datetime import UTC, datetime, timedelta
 
 import bcrypt as _bcrypt
 from fastapi import Depends, HTTPException, Request
-from itsdangerous import BadSignature, URLSafeSerializer
+from itsdangerous import BadSignature, URLSafeTimedSerializer
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.models import HouseholdMember, User
+from app.models import HouseholdMember, RefreshToken, User
 
-_serializer = URLSafeSerializer(settings.app_secret_key, salt="session")
-_csrf_serializer = URLSafeSerializer(settings.app_secret_key, salt="csrf")
+# Timed serializers: the signed timestamp lets the server reject old cookies
+# even when a client ignores the cookie's expiry.
+_serializer = URLSafeTimedSerializer(settings.app_secret_key, salt="session")
+_csrf_serializer = URLSafeTimedSerializer(settings.app_secret_key, salt="csrf")
 
 COOKIE_NAME = "session"
 PENDING_COOKIE_NAME = "session_pending"
@@ -126,7 +128,7 @@ def set_session(response, user_id: str, household_id: str, session_version: int)
         "sv": session_version,
         "state": "authenticated",
     })
-    response.set_cookie(COOKIE_NAME, value, **_cookie_kwargs(60 * 60 * 24 * 30))
+    response.set_cookie(COOKIE_NAME, value, **_cookie_kwargs(settings.session_max_age_seconds))
     response.delete_cookie(PENDING_COOKIE_NAME)
     # Non-httponly CSRF token cookie — JS reads it for double-submit validation
     csrf_val = generate_csrf_token(user_id)
@@ -135,7 +137,7 @@ def set_session(response, user_id: str, household_id: str, session_version: int)
         csrf_val,
         httponly=False,
         samesite="strict",
-        max_age=60 * 60 * 24 * 30,
+        max_age=settings.session_max_age_seconds,
         secure=not settings.debug,
     )
 
@@ -161,10 +163,11 @@ def clear_session(response):
     response.delete_cookie(CSRF_COOKIE_NAME)
 
 
-def decode_cookie(cookie: str) -> dict | None:
+def decode_cookie(cookie: str, max_age: int | None = None) -> dict | None:
+    """Verify signature and age (default: the session lifetime)."""
     try:
-        return _serializer.loads(cookie)
-    except BadSignature:
+        return _serializer.loads(cookie, max_age=max_age or settings.session_max_age_seconds)
+    except BadSignature:  # includes SignatureExpired
         return None
 
 
@@ -179,7 +182,19 @@ def get_pending_session(request: Request) -> dict | None:
     cookie = request.cookies.get(PENDING_COOKIE_NAME)
     if not cookie:
         return None
-    return decode_cookie(cookie)
+    return decode_cookie(cookie, max_age=PENDING_MAX_AGE)
+
+
+def invalidate_user_sessions(db: Session, user: User) -> None:
+    """Log a user out everywhere: cookies, access tokens and refresh tokens.
+
+    Cookies and access tokens carry session_version; refresh tokens record it at
+    issue and are also revoked outright. The caller commits.
+    """
+    user.session_version = (user.session_version or 0) + 1
+    db.query(RefreshToken).filter_by(user_id=user.id, revoked=False).update(
+        {RefreshToken.revoked: True}, synchronize_session=False
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -195,7 +210,8 @@ def generate_csrf_token(user_id: str) -> str:
 def verify_csrf_token(token: str, user_id: str) -> bool:
     """Verify the submitted CSRF token matches the user."""
     try:
-        data = _csrf_serializer.loads(token, max_age=60 * 60 * 4)  # 4 hours
+        # Same lifetime as the session and the CSRF cookie itself.
+        data = _csrf_serializer.loads(token, max_age=settings.session_max_age_seconds)
         return data.get("uid") == user_id
     except Exception:
         return False
@@ -227,24 +243,28 @@ def require_auth(request: Request, db: Session = Depends(get_db)):
                 raise HTTPException(status_code=302, headers={"Location": "/settings/2fa/enroll"})
         raise HTTPException(status_code=302, headers={"Location": "/login"})
 
+    # Every rejection below clears the cookie: /login redirects any signed
+    # "authenticated" cookie to /dashboard, so a stale one would bounce forever.
+    stale = HTTPException(
+        status_code=302,
+        headers={"Location": "/login", "Set-Cookie": _expired_session_cookie()},
+    )
     if session.get("state") != "authenticated":
-        raise HTTPException(status_code=302, headers={"Location": "/login"})
+        raise stale
 
     user = db.get(User, session["user_id"])
     if not user:
-        raise HTTPException(status_code=302, headers={"Location": "/login"})
+        raise stale
 
-    # Session version check — invalidates all cookies after password change / TOTP reset
+    # Session version check — invalidates all cookies after password change,
+    # TOTP reset or logout
     if session.get("sv", -1) != user.session_version:
-        raise HTTPException(status_code=302, headers={"Location": "/login"})
+        raise stale
 
     # Membership check — a removed member's cookie still names the household
     hh_id = session.get("hh_id")
     if not db.query(HouseholdMember).filter_by(household_id=hh_id, user_id=user.id).first():
-        raise HTTPException(
-            status_code=302,
-            headers={"Location": "/login", "Set-Cookie": _expired_session_cookie()},
-        )
+        raise stale
 
     # TOTP enrollment enforcement — every authenticated user must enroll
     if not user.totp_enabled:
