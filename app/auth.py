@@ -11,7 +11,7 @@ import logging
 import re
 import secrets
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 import bcrypt as _bcrypt
 import pyotp
@@ -21,6 +21,7 @@ from itsdangerous import BadSignature, URLSafeTimedSerializer
 from sqlalchemy import or_, update
 from sqlalchemy.orm import Session
 
+from app.clock import utcnow_naive
 from app.config import settings
 from app.crypto import needs_rotation
 from app.database import get_db
@@ -88,7 +89,7 @@ LOCKOUT_MINUTES = 15
 
 def _naive_utcnow() -> datetime:
     # Column is naive (SQLite drops tzinfo); store and compare naive UTC.
-    return datetime.now(UTC).replace(tzinfo=None)
+    return utcnow_naive()
 
 
 def is_locked(user: User | None) -> bool:

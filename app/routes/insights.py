@@ -1,13 +1,13 @@
 """
 Insights / Analytics route.
 """
-from datetime import date
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from app.auth import require_auth
+from app.clock import local_today
 from app.database import get_db
 from app.models import Bucket, BucketStatus, Category, Household, HouseholdMember, User
 from app.services import (
@@ -47,7 +47,7 @@ def insights(
     auth=Depends(require_auth),
 ):
     user, hh_id = auth
-    today = date.today()
+    today = local_today()
 
     period = resolve_insight_period(preset, start_date, end_date, today)
     start, end = period["start"], period["end"]

@@ -1,7 +1,7 @@
 """
 API bills routes — CRUD for recurring bills + pay/skip occurrences.
 """
-from datetime import date, datetime
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
@@ -13,6 +13,7 @@ from app.bills_service import (
     generate_occurrences,
     normalise_interval_months,
 )
+from app.clock import utcnow_naive
 from app.database import get_db
 from app.models import (
     BillFrequency,
@@ -358,7 +359,7 @@ def pay_occurrence(
                 db.add(TransactionSplit(transaction_id=txn.id, user_id=uid, amount=amt))
 
     occ.status  = OccurrenceStatus.paid
-    occ.paid_at = datetime.utcnow()
+    occ.paid_at = utcnow_naive()
     occ.paid_by = payer
     if explicit_amount is not None:
         occ.amount = explicit_amount

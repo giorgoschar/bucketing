@@ -5,11 +5,12 @@ import logging
 import os
 import shutil
 from collections import defaultdict
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session, joinedload
 
+from app.clock import local_today, utcnow_naive
 from app.models import (
     BillOccurrence,
     Bucket,
@@ -120,7 +121,7 @@ def delete_transaction(db: Session, txn: Transaction, uploads_dir: str | None = 
     uploads/ (not lost). receipt_path keeps the bare filename for restore.
     """
     uploads_dir = uploads_dir or UPLOADS_DIR
-    txn.deleted_at = datetime.utcnow()
+    txn.deleted_at = utcnow_naive()
     db.commit()
     if not txn.receipt_path:
         return
@@ -373,7 +374,7 @@ def get_bucket_balance(db: Session, bucket_id: str) -> dict:
 
 def get_upcoming_bills(db: Session, household_id: str, days: int = 30) -> list:
     """Bills due within the next N days."""
-    today = date.today()
+    today = local_today()
     cutoff = today + timedelta(days=days)
 
     occurrences = (
@@ -394,7 +395,7 @@ def get_upcoming_bills(db: Session, household_id: str, days: int = 30) -> list:
 
 
 def get_overdue_bills(db: Session, household_id: str) -> list:
-    today = date.today()
+    today = local_today()
     occurrences = (
         db.query(BillOccurrence)
         .join(RecurringBill, RecurringBill.id == BillOccurrence.bill_id)
@@ -416,7 +417,7 @@ def get_overdue_bills(db: Session, household_id: str) -> list:
 
 def _recent_months(n_months: int, today: date | None = None) -> list[tuple[int, int]]:
     """The last n_months as (year, month) pairs, oldest → newest."""
-    today = today or date.today()
+    today = today or local_today()
     months: list[tuple[int, int]] = []
     for i in range(n_months - 1, -1, -1):
         m, y = today.month - i, today.year
@@ -545,7 +546,7 @@ def get_monthly_trend(
     Accepts the insight filters so the trend chart describes the same slice of
     data as the rest of the page; the dashboard calls it without filters.
     """
-    today = date.today()
+    today = local_today()
     months = _recent_months(n_months, today)
 
     # One query for the whole window instead of one per month.
@@ -580,7 +581,7 @@ def get_forecast(db: Session, household_id: str) -> dict:
     - trend_delta = projected - baseline
     Returns empty dict if less than 3 months of history.
     """
-    today = date.today()
+    today = local_today()
     trend = get_monthly_trend(db, household_id, n_months=4)
     past = [m for m in trend if not m["is_current"]]
     if len(past) < 3:
@@ -1027,7 +1028,7 @@ def resolve_insight_period(
     Shared by the HTML and JSON insights endpoints, which previously carried
     two hand-maintained copies of this logic that could drift apart.
     """
-    today = today or date.today()
+    today = today or local_today()
     start: date | None = None
     end: date | None = None
 
@@ -1472,7 +1473,7 @@ def get_insights_category_trend(
     Returns {months: [label,...], series: [{name, color, icon, values: [float,...]}]}
     Only includes the top_n categories by total spend across the period.
     """
-    today = date.today()
+    today = local_today()
     month_list = _recent_months(n_months, today)
 
     # One pass over the whole window, grouped by (category, year, month) —
@@ -1715,7 +1716,7 @@ def get_trip_summary(db: Session, bucket: Bucket) -> dict:
         days = (end - start).days + 1
         nights = max(days - 1, 0)
 
-    today = date.today()
+    today = local_today()
     status, days_until, days_remaining = "none", None, None
     if bucket.start_date and bucket.end_date:
         if today < bucket.start_date:
@@ -1796,7 +1797,7 @@ def get_savings_summary(db: Session, bucket: Bucket) -> dict:
 
     months_left = None
     if bucket.end_date:
-        today = date.today()
+        today = local_today()
         months_left = max(
             (bucket.end_date.year - today.year) * 12 + (bucket.end_date.month - today.month),
             0,
@@ -1882,7 +1883,7 @@ def find_household_duplicates(
     Groups by rounded amount and walks each group by date, so a pair logged
     days apart is caught without comparing every row to every other row.
     """
-    cutoff = date.today() - timedelta(days=since_days)
+    cutoff = local_today() - timedelta(days=since_days)
     txns = (
         db.query(Transaction)
         .filter(
@@ -2117,7 +2118,7 @@ def get_insights_kpis(
     # "Quietest" is only meaningful for months that actually finished, and that
     # the filter covers end to end. A month still in progress — or clipped by
     # the range — always looks cheapest simply because less of it has happened.
-    today = date.today()
+    today = local_today()
     complete = {
         (y, m): value
         for (y, m), value in by_month.items()

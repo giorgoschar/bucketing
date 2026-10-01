@@ -5,8 +5,9 @@ Two people logging the same dinner is the most common data-quality problem in a
 shared tracker. These surface likely repeats; they never block or delete
 anything, because a genuine repeat (two coffees the same day) is legitimate.
 """
-from datetime import date, timedelta
+from datetime import timedelta
 
+from app.clock import local_today
 from app.models import Bucket, Transaction, TransactionType
 from app.services import find_duplicate_candidates, find_household_duplicates
 
@@ -17,7 +18,7 @@ def _expense(db, authed, amount, when=None, notes=None, bucket_id=None):
         household_id=authed.household_id,
         amount=amount, currency="EUR", exchange_rate=1,
         type=TransactionType.expense,
-        transaction_date=when or date.today(),
+        transaction_date=when or local_today(),
         notes=notes, paid_by=authed.user_id,
     )
     db.add(txn)
@@ -32,23 +33,23 @@ def _expense(db, authed, amount, when=None, notes=None, bucket_id=None):
 def test_same_amount_same_day_is_flagged(db, authed):
     _expense(db, authed, 42.50, notes="Dinner")
     matches = find_duplicate_candidates(
-        db, authed.household_id, amount=42.50, transaction_date=date.today()
+        db, authed.household_id, amount=42.50, transaction_date=local_today()
     )
     assert len(matches) == 1
 
 
 def test_within_window_is_flagged(db, authed):
-    _expense(db, authed, 42.50, date.today() - timedelta(days=2))
+    _expense(db, authed, 42.50, local_today() - timedelta(days=2))
     matches = find_duplicate_candidates(
-        db, authed.household_id, amount=42.50, transaction_date=date.today()
+        db, authed.household_id, amount=42.50, transaction_date=local_today()
     )
     assert len(matches) == 1
 
 
 def test_outside_window_is_not_flagged(db, authed):
-    _expense(db, authed, 42.50, date.today() - timedelta(days=10))
+    _expense(db, authed, 42.50, local_today() - timedelta(days=10))
     matches = find_duplicate_candidates(
-        db, authed.household_id, amount=42.50, transaction_date=date.today()
+        db, authed.household_id, amount=42.50, transaction_date=local_today()
     )
     assert matches == []
 
@@ -56,7 +57,7 @@ def test_outside_window_is_not_flagged(db, authed):
 def test_different_amount_is_not_flagged(db, authed):
     _expense(db, authed, 42.50)
     matches = find_duplicate_candidates(
-        db, authed.household_id, amount=99.00, transaction_date=date.today()
+        db, authed.household_id, amount=99.00, transaction_date=local_today()
     )
     assert matches == []
 
@@ -71,7 +72,7 @@ def test_cross_bucket_duplicate_is_flagged(db, authed):
 
     matches = find_duplicate_candidates(
         db, authed.household_id, amount=42.50,
-        transaction_date=date.today(), bucket_id=authed.bucket_id,
+        transaction_date=local_today(), bucket_id=authed.bucket_id,
     )
     assert len(matches) == 1
 
@@ -80,7 +81,7 @@ def test_excludes_the_transaction_being_edited(db, authed):
     txn = _expense(db, authed, 42.50)
     matches = find_duplicate_candidates(
         db, authed.household_id, amount=42.50,
-        transaction_date=date.today(), exclude_id=txn.id,
+        transaction_date=local_today(), exclude_id=txn.id,
     )
     assert matches == []
 
@@ -89,11 +90,11 @@ def test_income_is_not_matched(db, authed):
     db.add(Transaction(
         bucket_id=authed.bucket_id, household_id=authed.household_id,
         amount=42.50, currency="EUR", exchange_rate=1,
-        type=TransactionType.income, transaction_date=date.today(),
+        type=TransactionType.income, transaction_date=local_today(),
     ))
     db.commit()
     matches = find_duplicate_candidates(
-        db, authed.household_id, amount=42.50, transaction_date=date.today()
+        db, authed.household_id, amount=42.50, transaction_date=local_today()
     )
     assert matches == []
 
@@ -103,12 +104,12 @@ def test_other_households_are_never_matched(db, authed, make_household):
     db.add(Transaction(
         bucket_id=victim.bucket_id, household_id=victim.household_id,
         amount=42.50, currency="EUR", exchange_rate=1,
-        type=TransactionType.expense, transaction_date=date.today(),
+        type=TransactionType.expense, transaction_date=local_today(),
     ))
     db.commit()
 
     matches = find_duplicate_candidates(
-        db, authed.household_id, amount=42.50, transaction_date=date.today()
+        db, authed.household_id, amount=42.50, transaction_date=local_today()
     )
     assert matches == []
 
@@ -135,7 +136,7 @@ def test_scan_ignores_isolated_transactions(db, authed):
 def test_scan_splits_clusters_by_date_gap(db, authed):
     """Same amount every month is a subscription, not a duplicate."""
     for months in range(3):
-        _expense(db, authed, 9.99, date.today() - timedelta(days=30 * months))
+        _expense(db, authed, 9.99, local_today() - timedelta(days=30 * months))
     assert find_household_duplicates(db, authed.household_id) == []
 
 
@@ -148,7 +149,7 @@ def test_scan_groups_three_way_duplicate(db, authed):
 
 
 def test_scan_respects_lookback(db, authed):
-    old = date.today() - timedelta(days=200)
+    old = local_today() - timedelta(days=200)
     _expense(db, authed, 15.00, old)
     _expense(db, authed, 15.00, old)
     assert find_household_duplicates(db, authed.household_id, since_days=90) == []
@@ -161,7 +162,7 @@ def test_scan_respects_lookback(db, authed):
 def test_check_endpoint_returns_matches(client, db, authed):
     _expense(db, authed, 42.50, notes="Dinner")
     r = client.get(
-        f"/transactions/check-duplicate?amount=42.50&transaction_date={date.today()}"
+        f"/transactions/check-duplicate?amount=42.50&transaction_date={local_today()}"
     )
     assert r.status_code == 200
     dups = r.json()["duplicates"]
@@ -203,7 +204,7 @@ def test_duplicates_page_is_household_scoped(client, db, authed, make_household)
         db.add(Transaction(
             bucket_id=victim.bucket_id, household_id=victim.household_id,
             amount=77.00, currency="EUR", exchange_rate=1,
-            type=TransactionType.expense, transaction_date=date.today(),
+            type=TransactionType.expense, transaction_date=local_today(),
             notes="VictimSecret",
         ))
     db.commit()

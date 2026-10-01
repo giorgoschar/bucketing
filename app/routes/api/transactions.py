@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
 
 from app.api_auth import require_api_auth
+from app.clock import local_today
 from app.database import get_db
 from app.models import (
     Bucket,
@@ -107,7 +108,7 @@ def _validate_txn_refs(body: "TransactionIn", hh_id: str, db: Session) -> None:
 
 def _parse_body_date(value: str) -> date:
     if not value:
-        return date.today()
+        return local_today()
     try:
         return date.fromisoformat(value)
     except ValueError:

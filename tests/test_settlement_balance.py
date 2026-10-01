@@ -5,12 +5,12 @@ Every expense has to be fully attributed to somebody. When it is not, the
 per-member nets stop summing to zero, balances get inflated, and the suggested
 transfers become nonsense — which is exactly what was reported.
 """
-from datetime import date
 
 import pyotp
 import pytest
 
 from app.auth import hash_password
+from app.clock import local_today
 from app.models import (
     Bucket,
     HouseholdMember,
@@ -51,7 +51,7 @@ def _expense(db, ctx, amount, payer, splits=(), bucket_id=None):
     t = Transaction(
         bucket_id=bucket_id or ctx.bucket_id, household_id=ctx.household_id,
         amount=amount, currency="EUR", exchange_rate=1,
-        type=TransactionType.expense, transaction_date=date.today(), paid_by=payer,
+        type=TransactionType.expense, transaction_date=local_today(), paid_by=payer,
     )
     db.add(t)
     db.flush()

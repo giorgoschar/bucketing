@@ -4,12 +4,12 @@ Household-wide settle up.
 Nets every settlement-enabled bucket together so members square up once,
 instead of bucket by bucket.
 """
-from datetime import date
 
 import pyotp
 import pytest
 
 from app.auth import hash_password
+from app.clock import local_today
 from app.models import (
     Bucket,
     HouseholdMember,
@@ -47,7 +47,7 @@ def _shared_expense(db, bucket_id, household_id, payer, members, amount):
     txn = Transaction(
         bucket_id=bucket_id, household_id=household_id, amount=amount,
         currency="EUR", exchange_rate=1, type=TransactionType.expense,
-        transaction_date=date.today(), paid_by=payer,
+        transaction_date=local_today(), paid_by=payer,
     )
     db.add(txn)
     db.flush()
@@ -110,7 +110,7 @@ def test_buckets_without_settlement_are_excluded(db, two_buckets):
     db.add(Transaction(
         bucket_id=private.id, household_id=two_buckets.household_id,
         amount=500, currency="EUR", exchange_rate=1,
-        type=TransactionType.expense, transaction_date=date.today(),
+        type=TransactionType.expense, transaction_date=local_today(),
         paid_by=two_buckets.user_id,
     ))
     db.commit()

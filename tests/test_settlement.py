@@ -4,12 +4,12 @@ Settle up.
 get_bucket_settlement() derived who owes whom, but nothing recorded that a debt
 had been paid, so the same balance was shown forever.
 """
-from datetime import date
 
 import pyotp
 import pytest
 
 from app.auth import hash_password
+from app.clock import local_today
 from app.models import (
     Bucket,
     HouseholdMember,
@@ -50,7 +50,7 @@ def shared(db, authed):
     txn = Transaction(
         bucket_id=authed.bucket_id, household_id=authed.household_id,
         amount=100, currency="EUR", exchange_rate=1,
-        type=TransactionType.expense, transaction_date=date.today(),
+        type=TransactionType.expense, transaction_date=local_today(),
         paid_by=authed.user_id,
     )
     db.add(txn)
@@ -114,7 +114,7 @@ def test_new_expense_after_settling_creates_new_debt(db, shared):
     txn = Transaction(
         bucket_id=shared.bucket_id, household_id=shared.household_id,
         amount=60, currency="EUR", exchange_rate=1,
-        type=TransactionType.expense, transaction_date=date.today(),
+        type=TransactionType.expense, transaction_date=local_today(),
         paid_by=shared.partner_id,
     )
     db.add(txn)

@@ -1,7 +1,7 @@
 """
 API settings routes — profile, household, members, categories.
 """
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.api_auth import require_api_auth, revoke_member_access
 from app.auth import hash_password, invalidate_user_sessions, security_logger, verify_password
+from app.clock import utcnow_naive
 from app.config import settings
 from app.database import get_db
 from app.models import (
@@ -165,7 +166,7 @@ def create_invite(
     my_membership = db.query(HouseholdMember).filter_by(user_id=user.id, household_id=hh_id).first()
     if not my_membership or my_membership.role != MemberRole.owner:
         raise HTTPException(status_code=403, detail="Only the household owner can create invites")
-    expires_at = datetime.utcnow() + timedelta(days=settings.invite_expiry_days)
+    expires_at = utcnow_naive() + timedelta(days=settings.invite_expiry_days)
     invitation = Invitation(
         household_id=hh_id,
         created_by=user.id,

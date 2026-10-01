@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.auth import require_auth, require_csrf
 from app.category_rules import learn_rule, resolve_category
+from app.clock import local_today
 from app.config import settings
 from app.database import get_db
 from app.models import (
@@ -321,7 +322,7 @@ def _get_context(db: Session, user, hh_id: str) -> dict:
     """Common template context for transaction forms."""
     ctx = _full_ctx(db, user, hh_id)
     ctx["currencies"] = settings.currencies
-    ctx["today"] = date.today().isoformat()
+    ctx["today"] = local_today().isoformat()
     return ctx
 
 
@@ -654,7 +655,7 @@ def duplicate_transaction(
         paid_by=src.paid_by,
         category_id=src.category_id,
         notes=src.notes,
-        transaction_date=date.today(),
+        transaction_date=local_today(),
         exclude_from_forecast=src.exclude_from_forecast,
         exclude_from_settlement=src.exclude_from_settlement,
     )

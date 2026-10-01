@@ -8,6 +8,7 @@ from datetime import date, timedelta
 
 import pytest
 
+from app.clock import local_today
 from app.models import Bucket, Category, Transaction, TransactionType
 from app.services import get_insights_kpis
 
@@ -218,7 +219,7 @@ def test_api_exposes_kpis(client, db, spread, make_household):
 
 def test_quietest_month_ignores_the_current_month(db, authed):
     """A month in progress always looks cheapest — less of it has happened."""
-    today = date.today()
+    today = local_today()
     this_month = today.replace(day=1)
     prev_month = (this_month - timedelta(days=1)).replace(day=1)
     two_back = (prev_month - timedelta(days=1)).replace(day=1)
@@ -244,7 +245,7 @@ def test_quietest_month_ignores_a_month_clipped_by_the_filter(db, authed):
 
 
 def test_no_finished_month_means_no_quietest(db, authed):
-    today = date.today()
+    today = local_today()
     _expense(db, authed, 25, today)
 
     k = _kpis(db, authed, today.replace(day=1), today)

@@ -2,6 +2,7 @@
 import pyotp
 import pytest
 
+from app.clock import local_today, utcnow_naive
 from tests.conftest import PASSWORD
 
 
@@ -171,7 +172,6 @@ def test_bad_date_is_400_not_500(client, api):
 
 def test_settle_endpoint_records_and_clears(client, db, api):
     """POST /settle used to only return instructions and record nothing."""
-    from datetime import date
 
     import pyotp
 
@@ -198,7 +198,7 @@ def test_settle_endpoint_records_and_clears(client, db, api):
     db.get(Bucket, hh.bucket_id).enable_settlement = True
     txn = Transaction(bucket_id=hh.bucket_id, household_id=hh.household_id,
                       amount=80, currency="EUR", exchange_rate=1,
-                      type=TransactionType.expense, transaction_date=date.today(),
+                      type=TransactionType.expense, transaction_date=local_today(),
                       paid_by=hh.user_id)
     db.add(txn)
     db.flush()
@@ -229,7 +229,6 @@ def test_settle_requires_enabled_bucket(client, api):
 
 def test_household_settlement_api(client, db, api):
     """Household-wide settle nets buckets together and records the payment."""
-    from datetime import date
 
     import pyotp
 
@@ -256,7 +255,7 @@ def test_household_settlement_api(client, db, api):
     db.get(Bucket, hh.bucket_id).enable_settlement = True
     txn = Transaction(bucket_id=hh.bucket_id, household_id=hh.household_id,
                       amount=100, currency="EUR", exchange_rate=1,
-                      type=TransactionType.expense, transaction_date=date.today(),
+                      type=TransactionType.expense, transaction_date=local_today(),
                       paid_by=hh.user_id)
     db.add(txn)
     db.flush()
@@ -329,14 +328,14 @@ def test_ten_wrong_passwords_lock_the_account(client, make_household):
 
 
 def test_lockout_expires_and_success_clears_counter(client, db, make_household):
-    from datetime import datetime, timedelta
+    from datetime import timedelta
 
     from app.models import User
 
     hh = make_household()
     user = db.get(User, hh.user_id)
     user.failed_logins = 9
-    user.locked_until = datetime.utcnow() - timedelta(minutes=1)  # noqa: DTZ003
+    user.locked_until = utcnow_naive() - timedelta(minutes=1)
     db.commit()
 
     r = client.post("/api/v1/auth/login", json={"username": hh.username, "password": PASSWORD})

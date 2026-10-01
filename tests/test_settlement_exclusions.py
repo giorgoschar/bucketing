@@ -7,8 +7,8 @@ stopped summing to zero and both members showed as owing — apparently to a
 third person who does not exist. Reported as "shared expenses look like we owe
 someone else".
 """
-from datetime import date
 
+from app.clock import local_today
 from app.models import (
     Bucket,
     Transaction,
@@ -29,7 +29,7 @@ def _shared(db, ctx, amount, payer, *, excluded=False, when=None):
     t = Transaction(
         bucket_id=ctx.bucket_id, household_id=ctx.household_id,
         amount=amount, currency="EUR", exchange_rate=1,
-        type=TransactionType.expense, transaction_date=when or date.today(),
+        type=TransactionType.expense, transaction_date=when or local_today(),
         paid_by=payer, exclude_from_settlement=excluded,
     )
     db.add(t)
@@ -105,7 +105,7 @@ def test_excluded_expense_still_counts_as_spending(db, pair):
     from app.services import get_month_summary
 
     _shared(db, pair, 100, pair.user_id, excluded=True)
-    today = date.today()
+    today = local_today()
     summary = get_month_summary(db, pair.household_id, today.year, today.month)
     assert summary["total_spent"] == 100.0
 
@@ -143,7 +143,7 @@ def test_only_settlement_enabled_buckets_are_reported(db, pair):
     db.add(Transaction(
         bucket_id=other.id, household_id=pair.household_id, amount=70,
         currency="EUR", exchange_rate=1, type=TransactionType.expense,
-        transaction_date=date.today(), paid_by=None,
+        transaction_date=local_today(), paid_by=None,
     ))
     db.commit()
 
@@ -154,7 +154,7 @@ def test_exclusions_are_currency_converted(db, pair):
     db.add(Transaction(
         bucket_id=pair.bucket_id, household_id=pair.household_id, amount=200,
         currency="USD", exchange_rate=0.5, type=TransactionType.expense,
-        transaction_date=date.today(), paid_by=None,
+        transaction_date=local_today(), paid_by=None,
     ))
     db.commit()
     assert get_settlement_exclusions(db, pair.household_id)["no_payer_total"] == 100.0
@@ -174,7 +174,7 @@ def test_settle_up_page_explains_the_gap(client, db, pair):
 def test_edit_form_saves_the_exclusion(client, db, pair):
     t = _shared(db, pair, 100, pair.user_id)
     r = client.post(f"/transactions/{t.id}/edit", data={
-        "bucket_id": pair.bucket_id, "transaction_date": date.today().isoformat(),
+        "bucket_id": pair.bucket_id, "transaction_date": local_today().isoformat(),
         "amount": "100", "currency": "EUR", "type": "expense",
         "paid_by": pair.user_id, "exclude_from_settlement": "on",
     }, headers=pair.headers)
@@ -188,7 +188,7 @@ def test_edit_form_saves_the_exclusion(client, db, pair):
 def test_edit_form_can_clear_the_exclusion(client, db, pair):
     t = _shared(db, pair, 100, pair.user_id, excluded=True)
     r = client.post(f"/transactions/{t.id}/edit", data={
-        "bucket_id": pair.bucket_id, "transaction_date": date.today().isoformat(),
+        "bucket_id": pair.bucket_id, "transaction_date": local_today().isoformat(),
         "amount": "100", "currency": "EUR", "type": "expense",
         "paid_by": pair.user_id,
     }, headers=pair.headers)
@@ -202,7 +202,7 @@ def test_shared_expense_defaults_the_payer_to_the_submitter(client, db, pair):
     """Belt and braces behind the wizard's preselected payer: an offline replay
     or API client that omits paid_by must not create an unsettleable expense."""
     r = client.post("/transactions", data={
-        "bucket_id": pair.bucket_id, "transaction_date": date.today().isoformat(),
+        "bucket_id": pair.bucket_id, "transaction_date": local_today().isoformat(),
         "amount": "100", "currency": "EUR", "type": "expense",
         "is_shared": "on",
         f"split_{pair.user_id}": "50",

@@ -1,12 +1,12 @@
 """
 API dashboard route — monthly overview summary.
 """
-from datetime import date
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api_auth import require_api_auth
+from app.clock import local_today
 from app.config import settings
 from app.database import get_db
 from app.services import get_income_total, get_month_summary, get_overdue_bills, get_upcoming_bills
@@ -26,7 +26,7 @@ def dashboard_summary(
     upcoming bills (next 60 days), and overdue bills.
     """
     user, hh_id = auth
-    today = date.today()
+    today = local_today()
     y = year  or today.year
     m = month or today.month
 

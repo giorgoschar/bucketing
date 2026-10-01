@@ -20,10 +20,12 @@ Setting ``ENABLE_SCHEDULER=false`` on all but one worker avoids the redundant
 work, but correctness does not depend on it.
 """
 import logging
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+
+from app import clock
 
 logger = logging.getLogger(__name__)
 scheduler = BackgroundScheduler()  # timezone applied in start_scheduler()
@@ -49,31 +51,22 @@ BUDGET_THRESHOLDS = (80, 100)
 
 
 def _tz():
-    """The household calendar timezone, falling back to UTC if misconfigured."""
-    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-
-    from app.config import settings
-    try:
-        return ZoneInfo(settings.app_timezone)
-    except (ZoneInfoNotFoundError, ValueError, KeyError):
-        logger.warning("Unknown APP_TIMEZONE %r — falling back to UTC",
-                       settings.app_timezone)
-        return UTC
+    """The household calendar timezone (see app.clock.tz)."""
+    return clock.tz()
 
 
 def today_local() -> date:
     """Today on the household's calendar.
 
     Bill due dates are timezone-naive calendar dates entered in local time, so
-    comparing them against the UTC date is wrong for any household not on UTC:
-    between local midnight and the UTC offset, a bill due today looked not-yet-due.
+    comparing them against the UTC date is wrong for any household not on UTC.
     """
-    return datetime.now(_tz()).date()
+    return clock.local_today()
 
 
 def _utcnow() -> datetime:
-    """UTC wall clock, for stored timestamps (paid_at, created_at)."""
-    return datetime.now(UTC).replace(tzinfo=None)
+    """UTC wall clock, naive, for stored timestamps (paid_at, created_at)."""
+    return clock.utcnow_naive()
 
 
 def _members_by_household(db, household_ids: set[str]) -> dict[str, list[str]]:

@@ -3,6 +3,7 @@ from datetime import date, timedelta
 
 import pytest
 
+from app.clock import local_today
 from app.models import Bucket, Category, Transaction
 from app.services import (
     get_insights_bucket_breakdown,
@@ -23,7 +24,7 @@ def data(db, authed):
     db.add_all([food, travel])
     db.flush()
 
-    today = date.today()
+    today = local_today()
     rows = [
         (authed.bucket_id, food.id, 100, today),
         (authed.bucket_id, travel.id, 50, today),

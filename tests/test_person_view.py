@@ -10,6 +10,7 @@ import pyotp
 import pytest
 
 from app.auth import hash_password
+from app.clock import local_today
 from app.models import (
     Bucket,
     Category,
@@ -45,7 +46,7 @@ def _shared(db, authed, amount, payer, shares, when=None):
     txn = Transaction(
         bucket_id=authed.bucket_id, household_id=authed.household_id,
         amount=amount, currency="EUR", exchange_rate=1,
-        type=TransactionType.expense, transaction_date=when or date.today(),
+        type=TransactionType.expense, transaction_date=when or local_today(),
         paid_by=payer,
     )
     db.add(txn)
@@ -60,7 +61,7 @@ def _solo(db, authed, amount, payer, when=None):
     db.add(Transaction(
         bucket_id=authed.bucket_id, household_id=authed.household_id,
         amount=amount, currency="EUR", exchange_rate=1,
-        type=TransactionType.expense, transaction_date=when or date.today(),
+        type=TransactionType.expense, transaction_date=when or local_today(),
         paid_by=payer,
     ))
     db.commit()
@@ -108,11 +109,11 @@ def test_shared_count(db, pair):
 
 
 def test_period_filter_limits_the_totals(db, pair):
-    _solo(db, pair, 100, pair.user_id, date.today())
-    _solo(db, pair, 500, pair.user_id, date.today() - timedelta(days=400))
+    _solo(db, pair, 100, pair.user_id, local_today())
+    _solo(db, pair, 500, pair.user_id, local_today() - timedelta(days=400))
 
     recent = get_person_summary(db, pair.household_id, pair.user_id,
-                                date.today() - timedelta(days=30), date.today())
+                                local_today() - timedelta(days=30), local_today())
     assert recent["my_share"] == 100.0
 
     everything = get_person_summary(db, pair.household_id, pair.user_id)
@@ -123,10 +124,10 @@ def test_net_is_all_time_regardless_of_period(db, pair):
     """Settlement position is a running balance; a period filter must not skew it."""
     _shared(db, pair, 100, pair.user_id,
             {pair.user_id: 50, pair.partner_id: 50},
-            when=date.today() - timedelta(days=400))
+            when=local_today() - timedelta(days=400))
 
     scoped = get_person_summary(db, pair.household_id, pair.user_id,
-                                date.today() - timedelta(days=7), date.today())
+                                local_today() - timedelta(days=7), local_today())
     assert scoped["my_share"] == 0.0     # nothing in the window
     assert scoped["net"] == 50.0         # but still owed
 
@@ -138,7 +139,7 @@ def test_breakdown_by_bucket_and_category(db, pair):
     txn = Transaction(
         bucket_id=pair.bucket_id, household_id=pair.household_id,
         amount=30, currency="EUR", exchange_rate=1, category_id=cat.id,
-        type=TransactionType.expense, transaction_date=date.today(),
+        type=TransactionType.expense, transaction_date=local_today(),
         paid_by=pair.user_id,
     )
     db.add(txn)
@@ -153,7 +154,7 @@ def test_currency_is_converted(db, pair):
     db.add(Transaction(
         bucket_id=pair.bucket_id, household_id=pair.household_id,
         amount=200, currency="USD", exchange_rate=0.5,
-        type=TransactionType.expense, transaction_date=date.today(),
+        type=TransactionType.expense, transaction_date=local_today(),
         paid_by=pair.user_id,
     ))
     db.commit()

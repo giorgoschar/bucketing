@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api_auth import require_api_auth
+from app.clock import local_today
 from app.database import get_db
 from app.models import Bucket, Transaction, TransactionType
 
@@ -37,7 +38,7 @@ def create_income(
     if not bucket:
         raise Exception("Bucket not found")
 
-    txn_date = date.fromisoformat(body.transaction_date) if body.transaction_date else date.today()
+    txn_date = date.fromisoformat(body.transaction_date) if body.transaction_date else local_today()
 
     txn = Transaction(
         bucket_id=body.bucket_id,

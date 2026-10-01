@@ -1,7 +1,7 @@
 """
 Bills routes: recurring bills + occurrences.
 """
-from datetime import date, datetime
+from datetime import date
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -13,6 +13,7 @@ from app.bills_service import (
     generate_occurrences,
     normalise_interval_months,
 )
+from app.clock import local_today, utcnow_naive
 from app.config import settings
 from app.database import get_db
 from app.models import (
@@ -107,7 +108,7 @@ def bills_page(
         "overdue": overdue,
         "upcoming": upcoming,
         "all_bills": all_bills,
-        "today": date.today(),
+        "today": local_today(),
         "bills_page": page,
         "bills_total_pages": bills_total_pages,
     })
@@ -246,7 +247,7 @@ async def mark_paid(
                 ))
 
     occ.status = OccurrenceStatus.paid
-    occ.paid_at = datetime.utcnow()
+    occ.paid_at = utcnow_naive()
     occ.paid_by = payer
     if explicit_amount is not None:
         occ.amount = explicit_amount

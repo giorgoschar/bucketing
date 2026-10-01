@@ -5,11 +5,12 @@ is moved (not removed), and the last member leaving archives the household.
 """
 import os
 import time
-from datetime import date, datetime, timedelta
+from datetime import timedelta
 
 import pyotp
 import pytest
 
+from app.clock import local_today, utcnow_naive
 from app.models import (
     Bucket,
     Household,
@@ -43,7 +44,7 @@ def _txn(db, hh, notes, amount=10, **kw):
     t = Transaction(
         bucket_id=hh.bucket_id, household_id=hh.household_id, amount=amount,
         currency="EUR", exchange_rate=1, type=TransactionType.expense,
-        transaction_date=kw.pop("transaction_date", date.today()),
+        transaction_date=kw.pop("transaction_date", local_today()),
         paid_by=hh.user_id, notes=notes, **kw,
     )
     db.add(t)
@@ -104,7 +105,7 @@ def test_deleted_absent_from_summaries_and_insights(db, make_household):
     gone = _txn(db, hh, "gone", 90)
     delete_transaction(db, gone)
     db.commit()
-    today = date.today()
+    today = local_today()
 
     assert get_month_summary(db, hh.household_id, today.year, today.month)["total_spent"] == 10
     assert get_all_time_summary(db, hh.household_id)["total_spent"] == 10
@@ -178,7 +179,7 @@ def test_api_list_get_delete(client, db, make_household):
 def test_client_id_of_deleted_txn_is_a_clear_error(client, db, authed):
     url = "/transactions"
     data = {"bucket_id": authed.bucket_id, "amount": "5", "type": "expense",
-            "client_id": "abc", "transaction_date": date.today().isoformat()}
+            "client_id": "abc", "transaction_date": local_today().isoformat()}
     r = client.post(url, headers=authed.headers, data=data)
     assert r.status_code in (200, 302), r.text[:200]
     t = db.query(Transaction).filter_by(client_id="abc").one()
@@ -213,7 +214,7 @@ def test_purge_trash_never_touches_db_rows(db, make_household):
     from app.scheduler import _purge_trash, today_local
     hh = make_household()
     t = _txn(db, hh, "x")
-    t.deleted_at = datetime.utcnow() - timedelta(days=90)
+    t.deleted_at = utcnow_naive() - timedelta(days=90)
     db.commit()
     _purge_trash(db, today_local())
     assert db.query(Transaction).count() == 1
@@ -255,7 +256,7 @@ def test_archived_household_hidden_from_switcher(db, make_household):
     a = make_household(name="Alive", username="u_alive")
     b = make_household(name="Dead", username="u_dead")
     db.add(HouseholdMember(household_id=b.household_id, user_id=a.user_id))
-    db.get(Household, b.household_id).archived_at = datetime.utcnow()
+    db.get(Household, b.household_id).archived_at = utcnow_naive()
     db.commit()
     ctx = base_ctx(db, db.get(User, a.user_id), a.household_id)
     assert [h.name for h in ctx["households"]] == ["Alive"]
@@ -282,7 +283,7 @@ def test_purge_script_refuses_non_archived(db, make_household):
 def test_purge_script_dry_run_deletes_nothing(db, make_household, capsys):
     hh = make_household()
     _txn(db, hh, "x")
-    db.get(Household, hh.household_id).archived_at = datetime.utcnow()
+    db.get(Household, hh.household_id).archived_at = utcnow_naive()
     db.commit()
     assert _purge_module().purge(db, hh.household_id, execute=False) == 0
     assert db.get(Household, hh.household_id) is not None
@@ -293,7 +294,7 @@ def test_purge_script_dry_run_deletes_nothing(db, make_household, capsys):
 def test_purge_script_executes_on_archived(db, make_household):
     hh = make_household()
     _txn(db, hh, "x")
-    db.get(Household, hh.household_id).archived_at = datetime.utcnow()
+    db.get(Household, hh.household_id).archived_at = utcnow_naive()
     db.commit()
     assert _purge_module().purge(db, hh.household_id, execute=True) == 0
     db.expire_all()

@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.auth import require_auth, require_csrf
+from app.clock import local_today
 from app.config import settings
 from app.database import get_db
 from app.models import (
@@ -64,7 +65,7 @@ def new_income(
             "categories": categories,
             "members": members,
             "currencies": settings.currencies,
-            "today": date.today().isoformat(),
+            "today": local_today().isoformat(),
             "selected_bucket_id": selected_bucket_id,
         },
     )

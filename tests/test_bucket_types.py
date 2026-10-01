@@ -8,6 +8,7 @@ from datetime import date, timedelta
 
 import pytest
 
+from app.clock import local_today
 from app.models import (
     Bucket,
     BucketType,
@@ -23,7 +24,7 @@ def _expense(db, bucket, household_id, amount, when=None, paid_by=None,
     txn = Transaction(
         bucket_id=bucket.id, household_id=household_id, amount=amount,
         currency=currency, exchange_rate=rate, type=TransactionType.expense,
-        transaction_date=when or date.today(), paid_by=paid_by,
+        transaction_date=when or local_today(), paid_by=paid_by,
     )
     db.add(txn)
     db.flush()
@@ -83,8 +84,8 @@ def test_explicit_dates_win(db, authed, trip):
 
 
 def test_upcoming_trip_counts_down(db, trip):
-    trip.start_date = date.today() + timedelta(days=12)
-    trip.end_date = date.today() + timedelta(days=19)
+    trip.start_date = local_today() + timedelta(days=12)
+    trip.end_date = local_today() + timedelta(days=19)
     db.commit()
 
     s = get_trip_summary(db, trip)
@@ -93,8 +94,8 @@ def test_upcoming_trip_counts_down(db, trip):
 
 
 def test_active_trip_reports_days_remaining(db, trip):
-    trip.start_date = date.today() - timedelta(days=2)
-    trip.end_date = date.today() + timedelta(days=3)
+    trip.start_date = local_today() - timedelta(days=2)
+    trip.end_date = local_today() + timedelta(days=3)
     db.commit()
 
     s = get_trip_summary(db, trip)
@@ -103,8 +104,8 @@ def test_active_trip_reports_days_remaining(db, trip):
 
 
 def test_past_trip_is_finished(db, trip):
-    trip.start_date = date.today() - timedelta(days=30)
-    trip.end_date = date.today() - timedelta(days=20)
+    trip.start_date = local_today() - timedelta(days=30)
+    trip.end_date = local_today() - timedelta(days=20)
     db.commit()
     assert get_trip_summary(db, trip)["status"] == "past"
 
@@ -161,7 +162,7 @@ def _income(db, bucket, household_id, amount):
     db.add(Transaction(
         bucket_id=bucket.id, household_id=household_id, amount=amount,
         currency="EUR", exchange_rate=1, type=TransactionType.income,
-        transaction_date=date.today(),
+        transaction_date=local_today(),
     ))
 
 
@@ -212,7 +213,7 @@ def test_goal_reached(db, authed, savings):
 
 def test_monthly_contribution_required(db, authed, savings):
     savings.goal_amount = 1200
-    today = date.today()
+    today = local_today()
     month = today.month + 6
     year = today.year + (month - 1) // 12
     savings.end_date = date(year, (month - 1) % 12 + 1, 1)

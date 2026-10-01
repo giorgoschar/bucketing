@@ -8,6 +8,7 @@ from dateutil.relativedelta import relativedelta
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.clock import local_today
 from app.models import BillOccurrence, OccurrenceStatus, RecurringBill
 
 # Guard rails for open-ended bills.
@@ -48,7 +49,7 @@ def generate_occurrences(db: Session, bill: RecurringBill) -> None:
         db.query(BillOccurrence.due_date).filter_by(bill_id=bill.id).all()
     }
 
-    horizon = date(date.today().year + HORIZON_YEARS, 12, 31)
+    horizon = date(local_today().year + HORIZON_YEARS, 12, 31)
     current = bill.start_date
     count = 0
 
@@ -88,7 +89,7 @@ def delete_future_occurrences(db: Session, bill_id: str) -> None:
 
     Does not commit — the caller owns the transaction.
     """
-    today = date.today()
+    today = local_today()
     db.query(BillOccurrence).filter(
         BillOccurrence.bill_id == bill_id,
         BillOccurrence.due_date > today,

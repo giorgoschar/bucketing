@@ -1,12 +1,13 @@
 """Task 1.6: push allowlist, owner-only invites, upload sniffing, login CSRF, invite URL."""
 import io
 import re
-from datetime import date, datetime, timedelta
+from datetime import timedelta
 
 import pyotp
 import pytest
 from fastapi.testclient import TestClient
 
+from app.clock import local_today, utcnow_naive
 from app.models import Invitation, PushSubscription, Transaction, TransactionType, User
 from tests.conftest import PASSWORD
 from tests.test_household_settlement import _add_member
@@ -159,7 +160,7 @@ def api_txn(db, authed):
 
     txn = Transaction(bucket_id=authed.bucket_id, household_id=authed.household_id, amount=5,
                       currency="EUR", exchange_rate=1, type=TransactionType.expense,
-                      transaction_date=date.today(), paid_by=authed.user_id)
+                      transaction_date=local_today(), paid_by=authed.user_id)
     db.add(txn)
     db.commit()
     user = db.get(User, authed.user_id)
@@ -328,7 +329,7 @@ def test_enroll_requires_token(client, db):
 
 def test_join_requires_token(client, db, authed):
     db.add(Invitation(household_id=authed.household_id, token="tok123", created_by=authed.user_id,
-                      expires_at=datetime.utcnow() + timedelta(days=1)))
+                      expires_at=utcnow_naive() + timedelta(days=1)))
     db.commit()
     anon = TestClient(client.app, follow_redirects=False)
     data = {"display_name": "New", "username": "newbie", "email": "n@example.com",

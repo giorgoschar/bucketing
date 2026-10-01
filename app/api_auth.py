@@ -24,6 +24,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
+from app.clock import utcnow
 from app.config import settings
 from app.database import get_db
 from app.models import HouseholdMember, RefreshToken, User
@@ -38,7 +39,7 @@ _ALGORITHM = settings.jwt_algorithm
 # ---------------------------------------------------------------------------
 
 def _utcnow() -> datetime:
-    return datetime.now(UTC)
+    return utcnow()
 
 
 def create_access_token(user_id: str, household_id: str, session_version: int) -> str:

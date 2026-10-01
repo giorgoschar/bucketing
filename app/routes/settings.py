@@ -5,7 +5,7 @@ import base64
 import io
 import json
 import secrets
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import bcrypt as _bcrypt
 import pyotp
@@ -29,6 +29,7 @@ from app.auth import (
     verify_totp,
 )
 from app.category_rules import learn_rule, list_rules
+from app.clock import utcnow_naive
 from app.config import settings
 from app.database import get_db
 from app.models import (
@@ -257,7 +258,7 @@ def create_invite(
         household_id=hh_id,
         token=secrets.token_urlsafe(32),
         created_by=user.id,
-        expires_at=datetime.utcnow() + timedelta(days=settings.invite_expiry_days),
+        expires_at=utcnow_naive() + timedelta(days=settings.invite_expiry_days),
     )
     db.add(invite)
     db.commit()
@@ -736,7 +737,7 @@ def leave_household(
     if is_sole_member:
         # Keep the household and all its data; only archive it. Hard deletion
         # is a manual admin step (scripts/purge_household.py).
-        household.archived_at = datetime.utcnow()
+        household.archived_at = utcnow_naive()
 
     db.commit()
 

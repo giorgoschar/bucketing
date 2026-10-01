@@ -1,6 +1,5 @@
 import enum
 import uuid
-from datetime import date, datetime
 
 from sqlalchemy import (
     BigInteger,
@@ -19,6 +18,7 @@ from sqlalchemy import (
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import relationship
 
+from app.clock import local_today, utcnow_naive
 from app.database import Base
 
 
@@ -95,7 +95,7 @@ class User(Base):
     display_name = Column(String(100), nullable=False)
     password_hash = Column(String, nullable=False)
     avatar_color = Column(String(7), default="#6366f1")  # hex color
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow_naive)
     session_version = Column(Integer, default=0, nullable=False)
     # Per-account lockout (see app.auth.register_failed_login)
     failed_logins = Column(Integer, default=0, server_default="0", nullable=False)
@@ -128,7 +128,7 @@ class Household(Base):
     id = Column(String, primary_key=True, default=gen_id)
     name = Column(String(100), nullable=False)
     default_currency = Column(String(3), default="EUR")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow_naive)
     # Set when the last member leaves. The household and all its data are kept;
     # only scripts/purge_household.py may hard-delete it.
     archived_at = Column(DateTime, nullable=True)
@@ -151,7 +151,7 @@ class HouseholdMember(Base):
     household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False)
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     role = Column(SAEnum(MemberRole), default=MemberRole.member, nullable=False)
-    joined_at = Column(DateTime, default=datetime.utcnow)
+    joined_at = Column(DateTime, default=utcnow_naive)
 
     household = relationship("Household", back_populates="members")
     user = relationship("User", back_populates="memberships")
@@ -218,7 +218,7 @@ class Bucket(Base):
     start_date = Column(Date, nullable=True)
     end_date = Column(Date, nullable=True)
     goal_amount = Column(Numeric(12, 4), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow_naive)
 
     household = relationship("Household", back_populates="buckets")
     transactions = relationship("Transaction", back_populates="bucket")
@@ -249,7 +249,7 @@ class Transaction(Base):
     paid_by = Column(String, ForeignKey("users.id"), nullable=True)
     category_id = Column(String, ForeignKey("categories.id"), nullable=True)
     notes = Column(Text, nullable=True)
-    transaction_date = Column(Date, default=date.today, nullable=False)
+    transaction_date = Column(Date, default=local_today, nullable=False)
     receipt_path = Column(String, nullable=True)
     exclude_from_forecast = Column(Boolean, default=False, nullable=False)
     # Keep this expense out of the settle-up maths while still counting it as
@@ -260,7 +260,7 @@ class Transaction(Base):
     # retried after the response was lost, so the server must recognise the
     # repeat instead of creating a second transaction.
     client_id = Column(String(64), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow_naive)
     # Soft delete: set (naive UTC) instead of removing the row. Every read
     # query must filter with Transaction.active().
     deleted_at = Column(DateTime, nullable=True)
@@ -315,7 +315,7 @@ class RecurringBill(Base):
     notes = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True)
     is_auto_pay = Column(Boolean, default=False, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow_naive)
 
     household = relationship("Household", back_populates="recurring_bills")
     bucket = relationship("Bucket", back_populates="recurring_bills")
@@ -365,7 +365,7 @@ class CategoryRule(Base):
     category_id  = Column(String, ForeignKey("categories.id", ondelete="CASCADE"), nullable=False)
     match_count  = Column(Integer, default=0, nullable=False)
     created_by   = Column(String, ForeignKey("users.id"), nullable=True)
-    created_at   = Column(DateTime, default=datetime.utcnow)
+    created_at   = Column(DateTime, default=utcnow_naive)
 
     household = relationship("Household")
     category  = relationship("Category")
@@ -397,7 +397,7 @@ class Settlement(Base):
     amount       = Column(Numeric(12, 4), nullable=False)
     note         = Column(Text, nullable=True)
     created_by   = Column(String, ForeignKey("users.id"), nullable=True)
-    created_at   = Column(DateTime, default=datetime.utcnow)
+    created_at   = Column(DateTime, default=utcnow_naive)
 
     household = relationship("Household")
     bucket    = relationship("Bucket")
@@ -440,7 +440,7 @@ class Notification(Base):
     # set to a stable key for anything emitted by the scheduler.
     dedupe_key   = Column(String(200), nullable=True)
     is_read      = Column(Boolean, default=False, nullable=False)
-    created_at   = Column(DateTime, default=datetime.utcnow)
+    created_at   = Column(DateTime, default=utcnow_naive)
 
     household = relationship("Household")
     user      = relationship("User")
@@ -455,7 +455,7 @@ class PushSubscription(Base):
     endpoint     = Column(Text, nullable=False, unique=True)
     p256dh       = Column(Text, nullable=False)
     auth         = Column(Text, nullable=False)
-    created_at   = Column(DateTime, default=datetime.utcnow)
+    created_at   = Column(DateTime, default=utcnow_naive)
 
     user = relationship("User")
 
@@ -479,6 +479,6 @@ class RefreshToken(Base):
     # User.session_version at issue; a later bump (logout, password or 2FA
     # change) makes the token unusable even if it was not revoked.
     session_version = Column(Integer, default=0, server_default="0", nullable=False)
-    created_at   = Column(DateTime, default=datetime.utcnow)
+    created_at   = Column(DateTime, default=utcnow_naive)
 
     user = relationship("User")

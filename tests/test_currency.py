@@ -5,10 +5,10 @@ Transaction.amount is denominated in Transaction.currency; exchange_rate
 converts it to the household's default currency. The rate was stored but never
 applied, so totals added raw amounts across currencies.
 """
-from datetime import date
 
 import pytest
 
+from app.clock import local_today
 from app.models import Transaction, TransactionSplit, TransactionType
 from app.services import (
     get_bucket_balance,
@@ -24,7 +24,7 @@ from app.services import (
 @pytest.fixture()
 def mixed(db, authed):
     """EUR 100 plus USD 100 at rate 0.5 => 150 in household currency."""
-    today = date.today()
+    today = local_today()
     db.add(Transaction(
         bucket_id=authed.bucket_id, household_id=authed.household_id,
         amount=100, currency="EUR", exchange_rate=1,
@@ -49,7 +49,7 @@ def test_to_base_applies_the_rate():
 
 
 def test_month_summary_converts(db, mixed):
-    today = date.today()
+    today = local_today()
     s = get_month_summary(db, mixed.household_id, today.year, today.month)
     assert s["total_spent"] == 150.0
 
@@ -85,7 +85,7 @@ def test_income_converts(db, authed):
     db.add(Transaction(
         bucket_id=authed.bucket_id, household_id=authed.household_id,
         amount=200, currency="USD", exchange_rate=0.5,
-        type=TransactionType.income, transaction_date=date.today(),
+        type=TransactionType.income, transaction_date=local_today(),
     ))
     db.commit()
     assert get_insights_income(db, authed.household_id, None, None) == 100.0
@@ -112,7 +112,7 @@ def test_settlement_converts(db, authed, make_household):
     txn = Transaction(
         bucket_id=authed.bucket_id, household_id=authed.household_id,
         amount=100, currency="USD", exchange_rate=0.5,
-        type=TransactionType.expense, transaction_date=date.today(),
+        type=TransactionType.expense, transaction_date=local_today(),
         paid_by=authed.user_id,
     )
     db.add(txn)

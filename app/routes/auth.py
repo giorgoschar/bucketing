@@ -2,7 +2,6 @@
 Auth routes: login, logout, first-run setup wizard, invite join, 2FA verify, register.
 """
 import json
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -27,6 +26,7 @@ from app.auth import (
     verify_password_constant_time,
     verify_totp,
 )
+from app.clock import utcnow_naive
 from app.config import settings
 from app.database import get_db
 from app.models import Household, HouseholdMember, Invitation, MemberRole, User
@@ -386,7 +386,7 @@ def join_page(token: str, request: Request, db: Session = Depends(get_db)):
         return templates.TemplateResponse(
             "auth/invite_invalid.html", {"request": request}
         )
-    if invite.expires_at and invite.expires_at < datetime.utcnow():
+    if invite.expires_at and invite.expires_at < utcnow_naive():
         return templates.TemplateResponse(
             "auth/invite_invalid.html", {"request": request, "expired": True}
         )
@@ -410,7 +410,7 @@ def join_submit(
     invite = db.query(Invitation).filter_by(token=token).first()
     if not invite or invite.used_at:
         raise HTTPException(status_code=400, detail="Invalid invite")
-    if invite.expires_at and invite.expires_at < datetime.utcnow():
+    if invite.expires_at and invite.expires_at < utcnow_naive():
         raise HTTPException(status_code=400, detail="Invite expired")
 
     if len(password) < 12:
@@ -464,7 +464,7 @@ def join_submit(
         role=MemberRole.member,
     ))
 
-    invite.used_at = datetime.utcnow()
+    invite.used_at = utcnow_naive()
     invite.used_by = user.id
     db.commit()
 

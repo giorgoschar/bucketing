@@ -6,6 +6,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.auth import require_auth, require_csrf
+from app.clock import local_today
 from app.database import get_db
 from app.models import (
     Bucket,
@@ -148,7 +149,7 @@ def bucket_detail(
     # ?month=13 or ?year=0 reached date() unchecked and raised a 500.
     parse_year_month(year, month)
 
-    today = date.today()
+    today = local_today()
     if year is None:
         year = today.year
     if month is None:
