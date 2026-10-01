@@ -297,7 +297,9 @@ def verify_backup_submit(
             if _bcrypt.checkpw(code_input, hashed.encode()):
                 matched_index = i
                 break
-        except Exception:
+        except (ValueError, TypeError):
+            # A malformed stored hash must not block the remaining codes.
+            security_logger.warning("Backup code check skipped: unusable hash at index %d", i)
             continue
 
     if matched_index is None:

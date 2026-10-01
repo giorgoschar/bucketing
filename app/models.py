@@ -235,6 +235,8 @@ class Transaction(Base):
         Index("ix_transactions_household_date", "household_id", "transaction_date"),
         Index("ix_transactions_bucket_id", "bucket_id"),
         Index("ix_transactions_deleted_at", "deleted_at"),
+        Index("ix_transactions_paid_by", "paid_by"),
+        Index("ix_transactions_category_id", "category_id"),
         # NULLs do not collide, so only offline submissions are constrained.
         UniqueConstraint("household_id", "client_id", name="uq_transaction_client_id"),
     )
@@ -279,6 +281,10 @@ class Transaction(Base):
 
 class TransactionSplit(Base):
     __tablename__ = "transaction_splits"
+    __table_args__ = (
+        Index("ix_transaction_splits_transaction_id", "transaction_id"),
+        Index("ix_transaction_splits_user_id", "user_id"),
+    )
 
     id = Column(String, primary_key=True, default=gen_id)
     transaction_id = Column(String, ForeignKey("transactions.id", ondelete="CASCADE"), nullable=False)
@@ -297,6 +303,9 @@ class TransactionSplit(Base):
 
 class RecurringBill(Base):
     __tablename__ = "recurring_bills"
+    __table_args__ = (
+        Index("ix_recurring_bills_household_id", "household_id"),
+    )
 
     id = Column(String, primary_key=True, default=gen_id)
     household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False)
@@ -427,6 +436,7 @@ class Notification(Base):
         # Guarantees a scheduled notification is only ever delivered once per
         # user, no matter how many times the job runs (restarts, extra workers).
         UniqueConstraint("user_id", "dedupe_key", name="uq_notification_dedupe"),
+        Index("ix_notifications_user_household_created", "user_id", "household_id", "created_at"),
     )
 
     id           = Column(String, primary_key=True, default=gen_id)

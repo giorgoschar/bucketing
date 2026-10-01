@@ -60,7 +60,9 @@ def hash_password(plain: str) -> str:
 def verify_password(plain: str, hashed: str) -> bool:
     try:
         return _bcrypt.checkpw(_prepare(plain), hashed.encode())
-    except Exception:
+    except (ValueError, TypeError, AttributeError) as exc:
+        # Malformed stored hash (bcrypt raises ValueError). Never log the hash.
+        security_logger.warning("verify_password: unusable password hash (%s)", type(exc).__name__)
         return False
 
 
@@ -271,7 +273,8 @@ def verify_csrf_token(token: str, user_id: str) -> bool:
         # Same lifetime as the session and the CSRF cookie itself.
         data = _csrf_serializer.loads(token, max_age=settings.session_max_age_seconds)
         return data.get("uid") == user_id
-    except Exception:
+    except (BadSignature, AttributeError) as exc:
+        security_logger.warning("CSRF token rejected (%s)", type(exc).__name__)
         return False
 
 
@@ -304,7 +307,8 @@ def verify_pre_session_csrf_token(token: str, cookie_nonce: str | None) -> bool:
     try:
         data = _pre_csrf_serializer.loads(token, max_age=PRE_SESSION_CSRF_MAX_AGE)
         return hmac.compare_digest(str(data.get("n", "")), cookie_nonce)
-    except Exception:
+    except (BadSignature, AttributeError) as exc:
+        security_logger.warning("Pre-session CSRF token rejected (%s)", type(exc).__name__)
         return False
 
 
