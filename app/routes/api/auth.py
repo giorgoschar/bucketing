@@ -8,7 +8,6 @@ Flow:
   4. POST /api/v1/auth/logout        → 204
   5. GET  /api/v1/auth/me            → {user}
 """
-import pyotp
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy import or_
@@ -25,9 +24,11 @@ from app.api_auth import (
 from app.auth import (
     clear_failed_logins,
     is_locked,
+    log_id,
     register_failed_login,
     security_logger,
     verify_password_constant_time,
+    verify_totp,
 )
 from app.database import get_db
 from app.models import HouseholdMember, User
@@ -95,7 +96,7 @@ def login(request: Request, body: LoginRequest, db: Session = Depends(get_db)):
         raise _locked_out()
     if not password_ok:
         register_failed_login(db, user)
-        security_logger.warning("API login failed for username=%s", identifier)
+        security_logger.warning("API login failed for username=%s", log_id(identifier))
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
@@ -135,8 +136,7 @@ def totp_verify(request: Request, body: TotpVerifyRequest, db: Session = Depends
     if is_locked(user):
         raise _locked_out()
 
-    totp = pyotp.TOTP(user.totp_secret)
-    if not totp.verify(body.code, valid_window=1):
+    if not verify_totp(db, user, body.code):
         register_failed_login(db, user)
         security_logger.warning("API TOTP verify failed for user_id=%s", user.id)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP code")

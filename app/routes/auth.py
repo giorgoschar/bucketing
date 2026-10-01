@@ -4,7 +4,6 @@ Auth routes: login, logout, first-run setup wizard, invite join, 2FA verify, reg
 import json
 from datetime import datetime
 
-import pyotp
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import or_
@@ -18,6 +17,7 @@ from app.auth import (
     hash_password,
     invalidate_user_sessions,
     is_locked,
+    log_id,
     register_failed_login,
     require_auth,
     require_csrf,
@@ -25,6 +25,7 @@ from app.auth import (
     set_pending_session,
     set_session,
     verify_password_constant_time,
+    verify_totp,
 )
 from app.config import settings
 from app.database import get_db
@@ -172,7 +173,7 @@ def login_submit(
     # not disclose which accounts exist.
     password_ok = verify_password_constant_time(password, user.password_hash if user else None)
     if is_locked(user):
-        security_logger.warning("Login for locked account '%s' from %s", identifier, ip)
+        security_logger.warning("Login for locked account '%s' from %s", log_id(identifier), ip)
         return templates.TemplateResponse(
             "auth/login.html",
             {"request": request, "error": "Invalid username or password."},
@@ -180,7 +181,7 @@ def login_submit(
         )
     if not password_ok:
         register_failed_login(db, user)
-        security_logger.warning("Failed login for '%s' from %s", identifier, ip)
+        security_logger.warning("Failed login for '%s' from %s", log_id(identifier), ip)
         return templates.TemplateResponse(
             "auth/login.html",
             {"request": request, "error": "Invalid username or password."},
@@ -241,8 +242,7 @@ def verify_totp_submit(
             status_code=429,
         )
 
-    totp = pyotp.TOTP(user.totp_secret)
-    if totp.verify(code.strip(), valid_window=1):
+    if verify_totp(db, user, code):
         clear_failed_logins(db, user)
         security_logger.info("2FA success for '%s' from %s", user.username, ip)
         response = RedirectResponse("/dashboard", status_code=302)

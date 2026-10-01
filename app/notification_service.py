@@ -89,10 +89,7 @@ def _build_vapid(private_key_str: str):
     try:
         return Vapid.from_string(private_key=private_key_str)
     except Exception:
-        logger.exception(
-            "_build_vapid: all parsing attempts failed (key prefix: %r)",
-            private_key_str[:12],
-        )
+        logger.exception("_build_vapid: all parsing attempts failed")
         raise
 
 

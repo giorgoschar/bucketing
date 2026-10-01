@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 import bcrypt as _bcrypt
 import pyotp
 import qrcode
+from cryptography.fernet import InvalidToken
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
@@ -25,6 +26,7 @@ from app.auth import (
     security_logger,
     set_session,
     verify_password,
+    verify_totp,
 )
 from app.category_rules import learn_rule, list_rules
 from app.config import settings
@@ -333,10 +335,21 @@ def _pending_secret(db: Session, user: User) -> str:
     A secret stored while totp_enabled is False is an enrollment in progress:
     it grants nothing until a valid code confirms it.
     """
-    if not user.totp_secret:
-        user.totp_secret = pyotp.random_base32()
+    secret = None
+    if user.totp_secret:
+        try:
+            secret = user.get_totp_secret()
+        except InvalidToken:
+            # Unreadable pending secret (key changed): safe to replace only while
+            # not enrolled — an enabled secret is never overwritten here.
+            if user.totp_enabled:
+                raise
+            security_logger.error("Pending TOTP secret for user_id=%s is unreadable; restarting enrollment", user.id)
+    if not secret:
+        secret = pyotp.random_base32()
+        user.set_totp_secret(secret)
         db.commit()
-    return user.totp_secret
+    return secret
 
 
 def _generate_qr_base64(totp_uri: str) -> str:
@@ -434,13 +447,16 @@ def enroll_totp_submit(
         )
         return RedirectResponse("/settings", status_code=302)
 
-    secret = user.totp_secret
+    try:
+        secret = user.get_totp_secret()
+    except InvalidToken:
+        secret = None  # unreadable pending secret: the enroll page restarts enrollment
     if not secret:
         # No enrollment in progress (e.g. a stale form) — start a fresh one.
         return RedirectResponse("/settings/2fa/enroll", status_code=302)
 
     totp = pyotp.TOTP(secret)
-    if not totp.verify(code.strip(), valid_window=1):
+    if not verify_totp(db, user, code):
         # Re-render the QR for the same secret so the user can retry
         totp_uri = totp.provisioning_uri(name=user.username, issuer_name=settings.app_name)
         qr_b64 = _generate_qr_base64(totp_uri)
@@ -495,7 +511,7 @@ def disable_totp(
         ctx.update({"request": request, "user": user, "totp_error": "Incorrect password."})
         return templates.TemplateResponse("settings/index.html", ctx)
 
-    if not user.totp_secret or not pyotp.TOTP(user.totp_secret).verify(code.strip(), valid_window=1):
+    if not user.totp_secret or not verify_totp(db, user, code):
         ctx = base_ctx(db, user, hh_id)
         ctx.update({"request": request, "user": user, "totp_error": "Invalid authenticator code."})
         return templates.TemplateResponse("settings/index.html", ctx)
@@ -533,7 +549,7 @@ def admin_reset_member_totp(
         raise HTTPException(status_code=403)
 
     # Verify owner's TOTP
-    if not owner.totp_secret or not pyotp.TOTP(owner.totp_secret).verify(owner_code.strip(), valid_window=1):
+    if not owner.totp_secret or not verify_totp(db, owner, owner_code):
         raise HTTPException(status_code=400, detail="Invalid authenticator code.")
 
     # Confirm target is a member of this household

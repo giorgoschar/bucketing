@@ -12,7 +12,7 @@ deploy (and before any redeploy that introduces a new required variable).
 |---|---|---|
 | `APP_SECRET_KEY` | yes | `python -c "import secrets; print(secrets.token_hex(32))"`. Compose refuses to start without it. Changing it logs everyone out. |
 | `JWT_SECRET_KEY` | recommended | Separate random secret for API tokens (defaults to `APP_SECRET_KEY`). |
-| `FIELD_ENCRYPTION_KEY` | recommended | Fernet key for encrypting TOTP secrets at rest: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. Derived from `APP_SECRET_KEY` when unset. |
+| `FIELD_ENCRYPTION_KEY` | recommended | Fernet key for encrypting TOTP secrets at rest: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. Derived from `APP_SECRET_KEY` when unset. Setting it later is safe: secrets encrypted under the derived key stay readable and are re-encrypted under the new key on the next 2FA login. Without it, **changing `APP_SECRET_KEY` makes stored TOTP secrets unreadable** (users would be locked out of 2FA), so set this key explicitly and keep it stable. Existing plaintext secrets keep working and are encrypted on the user's next successful 2FA login. |
 | `POSTGRES_PASSWORD` | yes | Password for the bundled `db` service. |
 | `DATABASE_URL` | only with an external DB | `postgresql://user:pass@host:5432/db`. The compose file builds it from `POSTGRES_PASSWORD` for the bundled `db`. |
 | `DEBUG` | yes | `false` (compose sets it). |

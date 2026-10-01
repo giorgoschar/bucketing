@@ -6,16 +6,22 @@ Session cookie payload:
   Pending session: {"user_id": "...", "hh_id": "...", "state": "2fa_pending"|"2fa_enroll"}
 """
 import hashlib
+import hmac
 import logging
 import secrets
+import time
 from datetime import UTC, datetime, timedelta
 
 import bcrypt as _bcrypt
+import pyotp
+from cryptography.fernet import InvalidToken
 from fastapi import Depends, HTTPException, Request
 from itsdangerous import BadSignature, URLSafeTimedSerializer
+from sqlalchemy import or_, update
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.crypto import needs_rotation
 from app.database import get_db
 from app.models import HouseholdMember, RefreshToken, User
 
@@ -105,6 +111,55 @@ def clear_failed_logins(db: Session, user: User) -> None:
         user.failed_logins = 0
         user.locked_until = None
         db.commit()
+
+
+def log_id(identifier: str) -> str:
+    """Short hash of a user-typed login identifier, safe to put in logs."""
+    return hashlib.sha256(identifier.encode()).hexdigest()[:8]
+
+
+def verify_totp(db: Session, user: User, code: str) -> bool:
+    """Check a TOTP code for `user`, rejecting replays.
+
+    The code may belong to the previous, current or next 30s step (valid_window=1);
+    the step it actually matches must be newer than the last one accepted, which
+    is then stored. A legacy plaintext secret is re-encrypted on success.
+    """
+    try:
+        secret = user.get_totp_secret()
+    except InvalidToken:
+        security_logger.error(
+            "Stored TOTP secret for user_id=%s cannot be decrypted (key changed?)", user.id
+        )
+        return False
+    if not secret or not code:
+        return False
+    code = code.strip()
+    totp = pyotp.TOTP(secret)
+    now_step = int(time.time()) // totp.interval
+    for step in (now_step - 1, now_step, now_step + 1):
+        if not hmac.compare_digest(totp.at(step * totp.interval), code):
+            continue
+        if user.last_totp_step is not None and step <= user.last_totp_step:
+            continue  # replay
+        # Claim the step atomically: of two concurrent requests with the same
+        # code, only one UPDATE matches a row.
+        claimed = db.execute(
+            update(User)
+            .where(User.id == user.id, or_(User.last_totp_step.is_(None), User.last_totp_step < step))
+            .values(last_totp_step=step),
+            execution_options={"synchronize_session": False},
+        ).rowcount
+        if claimed != 1:
+            db.rollback()
+            db.refresh(user)
+            return False
+        db.refresh(user)
+        if needs_rotation(user.totp_secret):
+            user.set_totp_secret(secret)  # lazy migration: plaintext / old key -> primary key
+        db.commit()
+        return True
+    return False
 
 
 # ---------------------------------------------------------------------------

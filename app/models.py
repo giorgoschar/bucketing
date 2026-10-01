@@ -3,6 +3,7 @@ import uuid
 from datetime import date, datetime
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     Column,
     Date,
@@ -99,9 +100,21 @@ class User(Base):
     # Per-account lockout (see app.auth.register_failed_login)
     failed_logins = Column(Integer, default=0, server_default="0", nullable=False)
     locked_until = Column(DateTime, nullable=True)
-    totp_secret = Column(String, nullable=True)
+    # Fernet ciphertext ("enc:..."); legacy rows may still hold plaintext. Use
+    # get_totp_secret()/set_totp_secret() rather than touching this directly.
+    totp_secret = Column(String(512), nullable=True)
+    # Last accepted 30s TOTP step — a code at or before it is a replay.
+    last_totp_step = Column(BigInteger, nullable=True)
     totp_enabled = Column(Boolean, default=False, nullable=False)
     totp_backup_codes = Column(Text, nullable=True)  # JSON array of bcrypt-hashed codes
+
+    def get_totp_secret(self) -> str | None:
+        from app.crypto import decrypt_str
+        return decrypt_str(self.totp_secret) if self.totp_secret else None
+
+    def set_totp_secret(self, secret: str | None) -> None:
+        from app.crypto import encrypt_str
+        self.totp_secret = encrypt_str(secret) if secret else None
 
     memberships = relationship("HouseholdMember", back_populates="user")
     paid_transactions = relationship("Transaction", back_populates="paid_by_user")

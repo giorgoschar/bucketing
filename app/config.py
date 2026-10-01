@@ -4,9 +4,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    app_secret_key: str = "dev-secret-change-me"
+    # Required: no default, so the app refuses to start without APP_SECRET_KEY.
+    app_secret_key: str
+    # Fernet key for encrypting TOTP secrets at rest. When unset it is derived
+    # from app_secret_key (and rotating APP_SECRET_KEY then breaks stored secrets).
+    field_encryption_key: str | None = None
     database_url: str = "sqlite:///./expenses.db"
-    debug: bool = True
+    debug: bool = False
     app_name: str = "Expenses"
     allow_registration: bool = False
 
@@ -73,7 +77,7 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _guard_production_defaults(self) -> "Settings":
         if not self.debug:
-            if not self.app_secret_key or self.app_secret_key == "dev-secret-change-me":
+            if not self.app_secret_key:
                 raise RuntimeError(
                     "APP_SECRET_KEY must be set to a cryptographically random value in production. "
                     "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""

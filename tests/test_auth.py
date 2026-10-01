@@ -89,6 +89,7 @@ def test_enroll_secret_is_not_taken_from_the_request(client, db):
     client.get("/settings/2fa/enroll")
     server_secret = db.query(User).filter_by(username="ann").one().totp_secret
     assert server_secret
+    server_code = pyotp.TOTP(db.query(User).filter_by(username="ann").one().get_totp_secret()).now()
 
     attacker_secret = pyotp.random_base32()
     assert attacker_secret != server_secret
@@ -103,7 +104,7 @@ def test_enroll_secret_is_not_taken_from_the_request(client, db):
     assert user.totp_secret == server_secret
 
     # The server's own secret does enroll.
-    r = client.post("/settings/2fa/enroll", data={"code": pyotp.TOTP(server_secret).now()})
+    r = client.post("/settings/2fa/enroll", data={"code": server_code})
     assert r.status_code == 200
     db.expire_all()
     user = db.query(User).filter_by(username="ann").one()
@@ -182,12 +183,20 @@ def test_password_change_rejects_wrong_current(client, authed):
     assert "incorrect" in r.text.lower()
 
 
+def _next_step_code(secret):
+    """Code for the next 30s step: the helpers already spent the current one,
+    and verify_totp (valid_window=1) accepts it while rejecting replays."""
+    import time
+
+    return pyotp.TOTP(secret).at(time.time() + 30)
+
+
 def test_password_change_invalidates_other_sessions(app, client, db, authed):
     from fastapi.testclient import TestClient
 
     other = TestClient(app, follow_redirects=False)
     other.post("/login", data={"username": authed.username, "password": PASSWORD})
-    other.post("/login/verify", data={"code": pyotp.TOTP(authed.secret).now()})
+    other.post("/login/verify", data={"code": _next_step_code(authed.secret)})
     assert other.get("/dashboard").status_code == 200
 
     client.post("/settings/profile/password", data={
@@ -306,7 +315,7 @@ def test_stale_cookie_is_cleared_so_login_page_does_not_loop(client, db, authed)
 def _api_tokens(client, hh):
     r = client.post("/api/v1/auth/login", json={"username": hh.username, "password": PASSWORD})
     r = client.post("/api/v1/auth/totp/verify", json={
-        "pending_token": r.json()["pending_token"], "code": pyotp.TOTP(hh.secret).now()})
+        "pending_token": r.json()["pending_token"], "code": _next_step_code(hh.secret)})
     assert r.status_code == 200
     return r.json()
 
@@ -339,3 +348,204 @@ def test_refresh_token_from_older_session_version_is_rejected(client, db, make_h
     db.commit()
     r = client.post("/api/v1/auth/token/refresh", json={"refresh_token": tokens["refresh_token"]})
     assert r.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# H5/L3/L4/M2: secure defaults, TOTP secrets encrypted at rest, TOTP replay
+# ---------------------------------------------------------------------------
+
+def test_crypto_round_trip_and_prefix():
+    from app.crypto import decrypt_str, encrypt_str
+
+    token = encrypt_str("JBSWY3DPEHPK3PXP")
+    assert token.startswith("enc:")
+    assert "JBSWY3DPEHPK3PXP" not in token
+    assert decrypt_str(token) == "JBSWY3DPEHPK3PXP"
+    # Legacy plaintext (no prefix) is returned unchanged.
+    assert decrypt_str("JBSWY3DPEHPK3PXP") == "JBSWY3DPEHPK3PXP"
+
+
+def test_settings_require_app_secret_key(monkeypatch):
+    import pytest
+    from pydantic import ValidationError
+
+    from app.config import Settings
+
+    monkeypatch.delenv("APP_SECRET_KEY", raising=False)
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
+
+
+def test_debug_defaults_to_false(monkeypatch):
+    from app.config import Settings
+
+    monkeypatch.delenv("DEBUG", raising=False)
+    s = Settings(_env_file=None, app_secret_key="x" * 40)
+    assert s.debug is False
+
+
+def test_new_totp_secret_is_stored_encrypted(client, db):
+    client.post("/setup", data={
+        "household_name": "Home", "display_name": "Ann", "username": "ann",
+        "email": "ann@example.com", "password": "a-very-long-password",
+    })
+    client.get("/settings/2fa/enroll")
+    user = db.query(User).filter_by(username="ann").one()
+    assert user.totp_secret.startswith("enc:")
+    assert len(user.get_totp_secret()) == 32
+
+
+def test_totp_code_cannot_be_replayed(client, make_household):
+    hh = make_household()
+    code = pyotp.TOTP(hh.secret).now()
+    client.post("/login", data={"username": hh.username, "password": PASSWORD})
+    assert client.post("/login/verify", data={"code": code}).status_code == 302
+    client.cookies.clear()
+    client.post("/login", data={"username": hh.username, "password": PASSWORD})
+    r = client.post("/login/verify", data={"code": code})
+    assert r.status_code == 200
+    assert "Invalid code" in r.text
+
+
+def test_replay_rejected_through_api(client, make_household):
+    hh = make_household()
+    code = pyotp.TOTP(hh.secret).now()
+
+    def attempt():
+        pending = client.post(
+            "/api/v1/auth/login", json={"username": hh.username, "password": PASSWORD}
+        ).json()["pending_token"]
+        return client.post("/api/v1/auth/totp/verify", json={"pending_token": pending, "code": code})
+
+    assert attempt().status_code == 200
+    assert attempt().status_code == 401
+
+
+def test_verify_totp_accepts_adjacent_step_but_never_goes_backwards(db, make_household):
+    import time
+
+    from app.auth import verify_totp
+
+    hh = make_household()
+    user = db.get(User, hh.user_id)
+    totp = pyotp.TOTP(hh.secret)
+    now_step = int(time.time()) // 30
+    # A code from the *next* step (within the window) is accepted ...
+    assert verify_totp(db, user, totp.at((now_step + 1) * 30)) is True
+    assert user.last_totp_step == now_step + 1
+    # ... after which the current and previous steps' codes are replays.
+    assert verify_totp(db, user, totp.at(now_step * 30)) is False
+    assert verify_totp(db, user, totp.at((now_step - 1) * 30)) is False
+    assert user.last_totp_step == now_step + 1
+
+
+def test_legacy_plaintext_secret_still_verifies_and_is_re_encrypted(client, db, make_household):
+    hh = make_household()
+    user = db.get(User, hh.user_id)
+    assert user.totp_secret == hh.secret  # legacy row: plaintext, no enc: prefix
+    client.post("/login", data={"username": hh.username, "password": PASSWORD})
+    r = client.post("/login/verify", data={"code": pyotp.TOTP(hh.secret).now()})
+    assert r.status_code == 302
+    db.expire_all()
+    user = db.get(User, hh.user_id)
+    assert user.totp_secret.startswith("enc:")
+    assert user.get_totp_secret() == hh.secret
+    assert user.last_totp_step is not None
+
+
+def test_failed_verify_leaves_legacy_secret_untouched(db, make_household):
+    from app.auth import verify_totp
+
+    hh = make_household()
+    user = db.get(User, hh.user_id)
+    assert verify_totp(db, user, "000000") is False
+    db.expire_all()
+    assert db.get(User, hh.user_id).totp_secret == hh.secret
+
+
+# ---------------------------------------------------------------------------
+# Review fixes: undecryptable secrets, key transition, atomic step claim
+# ---------------------------------------------------------------------------
+
+def test_undecryptable_secret_fails_login_without_500(client, db, make_household):
+    hh = make_household()
+    user = db.get(User, hh.user_id)
+    user.totp_secret = "enc:not-a-valid-token"
+    db.commit()
+    client.post("/login", data={"username": hh.username, "password": PASSWORD})
+    r = client.post("/login/verify", data={"code": pyotp.TOTP(hh.secret).now()})
+    assert r.status_code == 200
+    assert "Invalid code" in r.text
+    db.expire_all()
+    assert db.get(User, hh.user_id).totp_secret == "enc:not-a-valid-token"
+
+
+def test_undecryptable_secret_fails_api_verify_without_500(client, db, make_household):
+    hh = make_household()
+    user = db.get(User, hh.user_id)
+    user.totp_secret = "enc:not-a-valid-token"
+    db.commit()
+    pending = client.post(
+        "/api/v1/auth/login", json={"username": hh.username, "password": PASSWORD}
+    ).json()["pending_token"]
+    r = client.post("/api/v1/auth/totp/verify", json={
+        "pending_token": pending, "code": pyotp.TOTP(hh.secret).now()})
+    assert r.status_code == 401
+
+
+def test_enroll_restarts_when_pending_secret_is_unreadable(client, db):
+    client.post("/setup", data={
+        "household_name": "Home", "display_name": "Ann", "username": "ann",
+        "email": "ann@example.com", "password": "a-very-long-password",
+    })
+    user = db.query(User).filter_by(username="ann").one()
+    user.totp_secret = "enc:garbage"
+    db.commit()
+    assert client.get("/settings/2fa/enroll").status_code == 200
+    r = client.post("/settings/2fa/enroll", data={"code": "123456"})
+    assert r.status_code in (200, 302)
+    db.expire_all()
+    user = db.query(User).filter_by(username="ann").one()
+    assert user.totp_enabled is False
+    assert len(user.get_totp_secret()) == 32
+
+
+def test_secret_encrypted_with_derived_key_survives_setting_field_key(db, make_household, monkeypatch):
+    from cryptography.fernet import Fernet
+
+    from app.auth import verify_totp
+    from app.config import settings
+    from app.crypto import decrypt_str
+
+    hh = make_household()
+    user = db.get(User, hh.user_id)
+    user.set_totp_secret(hh.secret)  # under the derived key (no field key set)
+    db.commit()
+    old = user.totp_secret
+    monkeypatch.setattr(settings, "field_encryption_key", Fernet.generate_key().decode())
+    assert decrypt_str(old) == hh.secret
+    assert verify_totp(db, user, pyotp.TOTP(hh.secret).now()) is True
+    db.expire_all()
+    new = db.get(User, hh.user_id).totp_secret
+    assert new != old and new.startswith("enc:")
+    # Now readable with the new primary key alone.
+    assert Fernet(settings.field_encryption_key.encode()).decrypt(new[4:].encode()).decode() == hh.secret
+
+
+def test_totp_step_claim_is_atomic(db, make_household):
+    from sqlalchemy.orm import sessionmaker
+
+    from app.auth import verify_totp
+
+    hh = make_household()
+    other = sessionmaker(bind=db.get_bind())()
+    try:
+        a = db.get(User, hh.user_id)
+        b = other.get(User, hh.user_id)  # both loaded with last_totp_step None
+        code = pyotp.TOTP(hh.secret).now()
+        assert verify_totp(db, a, code) is True
+        # b's in-memory state is stale, so only the conditional UPDATE can stop it.
+        assert b.last_totp_step is None
+        assert verify_totp(other, b, code) is False
+    finally:
+        other.close()
