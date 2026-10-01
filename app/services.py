@@ -4,9 +4,11 @@ Balance and summary calculations for dashboards and bucket views.
 import logging
 import os
 import shutil
+import uuid
 from collections import defaultdict
 from datetime import date, timedelta
 
+from fastapi import HTTPException, UploadFile
 from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session, joinedload
 
@@ -26,6 +28,13 @@ from app.models import (
     TransactionSplit,
     TransactionType,
     User,
+)
+from app.schemas import TransactionCreate
+from app.validators import (
+    require_category,
+    require_member,
+    require_receipt_content,
+    validate_split_users,
 )
 
 # ---------------------------------------------------------------------------
@@ -2183,3 +2192,126 @@ def get_insights_kpis(
         "range_start":    range_start,
         "range_end":      range_end,
     }
+
+
+# ---------------------------------------------------------------------------
+# Transaction creation (shared by the HTML and JSON API routes)
+# ---------------------------------------------------------------------------
+
+MAX_RECEIPT_SIZE = 10 * 1024 * 1024  # 10 MB
+ALLOWED_RECEIPT_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".pdf", ".heic", ".heif"}
+
+
+class DuplicateTransaction(Exception):
+    """A transaction with this client_id already exists (offline replay)."""
+
+    def __init__(self, existing: Transaction):
+        super().__init__("transaction already submitted")
+        self.existing = existing
+
+
+class DeletedTransactionReplay(Exception):
+    """The client_id matches a soft-deleted transaction; never resurrect it."""
+
+
+def _store_receipt(receipt: UploadFile, uploads_dir: str) -> str:
+    """Validate and save an uploaded receipt; return the stored filename."""
+    ext = os.path.splitext(receipt.filename or "")[1].lower()
+    if ext not in ALLOWED_RECEIPT_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type '{ext}'. Allowed: {', '.join(sorted(ALLOWED_RECEIPT_EXTENSIONS))}",
+        )
+    content = receipt.file.read(MAX_RECEIPT_SIZE + 1)
+    if len(content) > MAX_RECEIPT_SIZE:
+        raise HTTPException(status_code=400, detail="File too large. Maximum size is 10 MB.")
+    require_receipt_content(ext, content)
+    os.makedirs(uploads_dir, exist_ok=True)
+    filename = f"{uuid.uuid4()}{ext}"
+    with open(os.path.join(uploads_dir, filename), "wb") as f:
+        f.write(content)
+    return filename
+
+
+def create_transaction(
+    db: Session,
+    *,
+    household_id: str,
+    bucket,
+    user,
+    data: TransactionCreate,
+    receipt: UploadFile | None = None,
+    is_shared: bool = False,
+    uploads_dir: str | None = None,
+) -> Transaction:
+    """Create a transaction (and its splits/receipt) from validated input.
+
+    ``data`` has already passed field validation (see app.schemas); this adds
+    the checks that need the database: client_id idempotency, and that the
+    category, payer and split users all belong to ``household_id``. Raises
+    DuplicateTransaction / DeletedTransactionReplay for client_id replays.
+    ``is_shared`` marks a shared expense with no explicit payer (the submitter
+    is the default payer, so settle-up has someone to credit).
+    """
+    uploads_dir = uploads_dir or UPLOADS_DIR
+
+    if data.client_id:
+        # Deliberately includes soft-deleted rows: a replay of a deleted
+        # expense must not become a second row.
+        existing = (
+            db.query(Transaction)
+            .filter(Transaction.household_id == household_id,
+                    Transaction.client_id == data.client_id)
+            .first()
+        )
+        if existing is not None:
+            if existing.deleted_at is not None:
+                raise DeletedTransactionReplay()
+            raise DuplicateTransaction(existing)
+
+    paid_by = require_member(db, data.paid_by, household_id)
+    category_id = require_category(db, data.category_id, household_id)
+    if data.splits:
+        validate_split_users([s.user_id for s in data.splits], household_id, db)
+
+    # A shared expense with no payer is unusable: settle-up would charge the
+    # shares to members with nobody credited for fronting the money.
+    if not paid_by and data.type.value == "expense" and (is_shared or data.splits):
+        paid_by = user.id
+
+    receipt_path = None
+    if receipt is not None and receipt.filename:
+        receipt_path = _store_receipt(receipt, uploads_dir)
+
+    txn = Transaction(
+        bucket_id=bucket.id,
+        household_id=household_id,
+        amount=data.amount,
+        currency=data.currency,
+        exchange_rate=data.exchange_rate,
+        type=data.type,
+        paid_by=paid_by,
+        category_id=category_id,
+        notes=data.notes,
+        transaction_date=data.transaction_date,
+        receipt_path=receipt_path,
+        client_id=data.client_id,
+        exclude_from_forecast=data.exclude_from_forecast,
+        exclude_from_settlement=data.exclude_from_settlement,
+    )
+    try:
+        db.add(txn)
+        db.flush()
+        for s in data.splits:
+            db.add(TransactionSplit(transaction_id=txn.id, user_id=s.user_id, amount=s.amount))
+        db.commit()
+    except Exception:
+        db.rollback()
+        if receipt_path:
+            try:
+                os.remove(os.path.join(uploads_dir, receipt_path))
+            except OSError:
+                pass
+        raise
+    db.refresh(txn)
+    return txn

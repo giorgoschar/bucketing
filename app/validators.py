@@ -65,6 +65,15 @@ def parse_amount(
     return value.quantize(Decimal("0.0001"))
 
 
+def validate_currency(value: str) -> str:
+    """Return the currency code if the app supports it, else raise HTTP 400."""
+    from app.config import settings
+
+    if value not in settings.currencies:
+        raise HTTPException(status_code=400, detail=f"Unsupported currency '{value}'.")
+    return value
+
+
 def parse_year_month(year: int | None, month: int | None) -> tuple[int | None, int | None]:
     """Validate calendar inputs before they reach date(); month=13 used to 500."""
     if year is not None and not (1970 <= year <= 2200):

@@ -5,7 +5,7 @@ import uuid
 from datetime import date
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
 
@@ -20,10 +20,14 @@ from app.models import (
     TransactionType,
 )
 from app.receipt_parser import match_category, parse_receipt_text
+from app.schemas import TransactionCreate
+from app.services import DeletedTransactionReplay, DuplicateTransaction
+from app.services import create_transaction as create_transaction_service
 from app.services import delete_transaction as delete_transaction_soft
 from app.validators import (
     parse_amount,
     parse_year_month,
+    require_bucket,
     require_category,
     require_member,
     require_receipt_content,
@@ -181,38 +185,28 @@ def list_transactions(
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 def create_transaction(
-    body: TransactionIn,
+    body: TransactionCreate,
+    response: Response,
     auth=Depends(require_api_auth),
     db: Session = Depends(get_db),
 ):
     user, hh_id = auth
-    _assert_bucket_in_household(body.bucket_id, hh_id, db)
-    _validate_txn_refs(body, hh_id, db)
+    bucket = require_bucket(db, body.bucket_id, hh_id)
+    body.paid_by = body.paid_by or user.id
 
-    txn_date = _parse_body_date(body.transaction_date)
-
-    txn = Transaction(
-        bucket_id=body.bucket_id,
-        household_id=hh_id,
-        amount=parse_amount(body.amount, field="amount"),
-        currency=body.currency,
-        exchange_rate=body.exchange_rate,
-        type=_parse_body_type(body.type),
-        paid_by=body.paid_by or user.id,
-        category_id=body.category_id or None,
-        notes=body.notes,
-        transaction_date=txn_date,
-        exclude_from_forecast=body.exclude_from_forecast,
-        exclude_from_settlement=body.exclude_from_settlement,
-    )
-    db.add(txn)
-    db.flush()
-
-    for s in body.splits:
-        db.add(TransactionSplit(transaction_id=txn.id, user_id=s.user_id, amount=s.amount))
-
-    db.commit()
-    db.refresh(txn)
+    try:
+        txn = create_transaction_service(
+            db, household_id=hh_id, bucket=bucket, user=user, data=body,
+        )
+    except DeletedTransactionReplay:
+        raise HTTPException(
+            status_code=409,
+            detail="This transaction was already submitted and has since been deleted.",
+        ) from None
+    except DuplicateTransaction as dup:
+        # Idempotent replay: same body shape as a create, never a second row.
+        response.status_code = status.HTTP_200_OK
+        return _txn_dict(dup.existing)
     return _txn_dict(txn)
 
 

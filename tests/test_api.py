@@ -129,7 +129,7 @@ def test_negative_amount_is_rejected(client, api):
     r = client.post("/api/v1/transactions", headers=headers, json={
         "bucket_id": hh.bucket_id, "amount": -50, "type": "expense",
     })
-    assert r.status_code == 400
+    assert r.status_code == 422
 
 
 def test_paying_an_occurrence_twice_does_not_double_charge(client, db, api, make_bill):
@@ -375,3 +375,51 @@ def test_api_invite_creation_is_rate_limited(client, api):
              for _ in range(6)]
     assert codes[:5] == [200] * 5
     assert codes[5] == 429
+
+
+# ---------------------------------------------------------------------------
+# Shared create_transaction service
+# ---------------------------------------------------------------------------
+
+def test_api_splits_exceeding_total_are_422(client, db, api):
+    from app.models import Transaction
+
+    headers, hh = api
+    r = client.post("/api/v1/transactions", headers=headers, json={
+        "bucket_id": hh.bucket_id, "amount": 10, "type": "expense",
+        "splits": [{"user_id": hh.user_id, "amount": 6},
+                   {"user_id": hh.user_id, "amount": 6}],
+    })
+    assert r.status_code == 422
+    assert db.query(Transaction).count() == 0
+
+
+def test_api_client_id_is_idempotent(client, db, api):
+    from app.models import Transaction
+
+    headers, hh = api
+    body = {"bucket_id": hh.bucket_id, "amount": 10, "type": "expense",
+            "client_id": "api-offline-1"}
+    first = client.post("/api/v1/transactions", headers=headers, json=body)
+    second = client.post("/api/v1/transactions", headers=headers, json=body)
+    assert first.status_code == 201
+    assert second.status_code == 200
+    assert second.json()["id"] == first.json()["id"]
+    assert db.query(Transaction).count() == 1
+
+
+def test_api_client_id_of_deleted_transaction_is_409(client, db, api):
+    headers, hh = api
+    body = {"bucket_id": hh.bucket_id, "amount": 10, "type": "expense",
+            "client_id": "api-offline-2"}
+    tid = client.post("/api/v1/transactions", headers=headers, json=body).json()["id"]
+    assert client.delete(f"/api/v1/transactions/{tid}", headers=headers).status_code == 204
+    assert client.post("/api/v1/transactions", headers=headers, json=body).status_code == 409
+
+
+def test_api_unknown_currency_is_422(client, api):
+    headers, hh = api
+    r = client.post("/api/v1/transactions", headers=headers, json={
+        "bucket_id": hh.bucket_id, "amount": 10, "type": "expense", "currency": "XX",
+    })
+    assert r.status_code == 422

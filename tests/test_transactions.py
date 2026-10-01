@@ -154,3 +154,13 @@ def test_export_only_contains_own_household(client, db, authed, make_household):
 
     r = client.get("/transactions/export?year=2026")
     assert "SecretExpense" not in r.text
+
+
+def test_comma_decimal_amount_is_stored_exactly(client, db, authed):
+    r = client.post("/transactions", data={
+        "bucket_id": authed.bucket_id, "transaction_date": "2026-07-20",
+        "amount": "12,50", "type": "expense",
+    }, headers=authed.headers, follow_redirects=False)
+    assert r.status_code in (200, 302)
+    txn = db.query(Transaction).one()
+    assert float(txn.amount) == 12.5
