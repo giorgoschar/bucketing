@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session
 
 from app.auth import require_auth, require_csrf
 from app.bills_service import (
+    BILL_HAS_HISTORY_MSG,
+    bill_has_payment_history,
     delete_future_occurrences,
     effective_overrides,
     generate_occurrences,
@@ -91,6 +93,11 @@ def bills_page(
     auth=Depends(require_auth),
 ):
     user, hh_id = auth
+    return _render_bills(request, db, user, hh_id, page=page)
+
+
+def _render_bills(request, db, user, hh_id, *, page: int = 1, error: str | None = None,
+                  status_code: int = 200):
     ctx = full_ctx(db, user, hh_id)
 
     overdue = get_overdue_bills(db, hh_id)
@@ -112,8 +119,9 @@ def bills_page(
         "today": local_today(),
         "bills_page": page,
         "bills_total_pages": bills_total_pages,
+        "error": error,
     })
-    return templates.TemplateResponse("bills/list.html", ctx)
+    return templates.TemplateResponse("bills/list.html", ctx, status_code=status_code)
 
 
 @router.post("", response_class=HTMLResponse)
@@ -403,6 +411,7 @@ def toggle_bill(
 @router.post("/{bill_id}/delete", response_class=HTMLResponse)
 def delete_bill(
     bill_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     auth=Depends(require_auth),
 ):
@@ -410,6 +419,8 @@ def delete_bill(
     bill = db.get(RecurringBill, bill_id)
     if not bill or bill.household_id != hh_id:
         raise HTTPException(status_code=404)
+    if bill_has_payment_history(db, bill.id):
+        return _render_bills(request, db, user, hh_id, error=BILL_HAS_HISTORY_MSG, status_code=409)
     db.delete(bill)
     db.commit()
     return RedirectResponse("/bills", status_code=302)

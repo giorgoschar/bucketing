@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session
 
 from app.api_auth import require_api_auth
 from app.bills_service import (
+    BILL_HAS_HISTORY_MSG,
+    bill_has_payment_history,
     delete_future_occurrences,
     effective_overrides,
     generate_occurrences,
@@ -306,6 +308,8 @@ def delete_bill(
     user, hh_id = auth
     bill = db.query(RecurringBill).filter_by(id=bill_id).first()
     _assert_bill_in_household(bill, hh_id)
+    if bill_has_payment_history(db, bill.id):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=BILL_HAS_HISTORY_MSG)
     db.delete(bill)
     db.commit()
 

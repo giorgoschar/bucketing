@@ -105,6 +105,26 @@ def delete_future_occurrences(db: Session, bill_id: str) -> None:
     ).delete(synchronize_session=False)
 
 
+BILL_HAS_HISTORY_MSG = (
+    "This bill has payment history, so it can't be deleted — deleting it would "
+    "erase those payments. Deactivate it instead (the pause toggle on the bill)."
+)
+
+
+def bill_has_payment_history(db: Session, bill_id: str) -> bool:
+    """True if any occurrence was paid, or skipped with an amount recorded.
+
+    Deleting such a bill would cascade away the only record of those payments
+    (for bucketless bills the paid occurrence *is* the payment record).
+    """
+    return db.query(BillOccurrence.id).filter(
+        BillOccurrence.bill_id == bill_id,
+        (BillOccurrence.status == OccurrenceStatus.paid)
+        | ((BillOccurrence.status == OccurrenceStatus.skipped) & BillOccurrence.amount.isnot(None))
+        | BillOccurrence.transaction_id.isnot(None),
+    ).first() is not None
+
+
 # ---------------------------------------------------------------------------
 # Paying an occurrence
 # ---------------------------------------------------------------------------
