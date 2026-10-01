@@ -13,6 +13,7 @@ from app.auth import require_auth, require_csrf
 from app.database import get_db
 from app.models import Bucket
 from app.services import (
+    SettlementChanged,
     base_ctx,
     cash_comparison,
     get_household_settlement,
@@ -22,6 +23,7 @@ from app.services import (
     get_settlement_exclusions,
     record_household_settlement,
     resolve_insight_period,
+    settlement_fingerprint,
 )
 from app.templates import templates
 from app.validators import parse_amount, require_member
@@ -45,10 +47,13 @@ def settlement_page(
         .all()
     )
 
+    settlement = get_household_settlement(db, hh_id)
     ctx.update({
         "request":     request,
         "user":        user,
-        "settlement":  get_household_settlement(db, hh_id),
+        "settlement":  settlement,
+        "settle_fingerprint": settlement_fingerprint(settlement),
+        "settle_stale": request.query_params.get("settle") == "stale",
         "balances":    get_member_balances(db, hh_id),
         "history":     get_household_settlement_history(db, hh_id),
         "enabled_buckets": enabled_buckets,
@@ -63,6 +68,7 @@ def settle_household(
     to_user_id: str = Form(""),
     amount: str = Form(""),
     note: str = Form(""),
+    expected: str | None = Form(None),
     db: Session = Depends(get_db),
     auth=Depends(require_auth),
 ):
@@ -82,14 +88,20 @@ def settle_household(
 
     value = parse_amount(amount, field="Amount", allow_blank=True)
 
-    record_household_settlement(
-        db, hh_id,
-        created_by=user.id,
-        from_user_id=payer,
-        to_user_id=payee,
-        amount=value,
-        note=note.strip() or None,
-    )
+    try:
+        record_household_settlement(
+            db, hh_id,
+            created_by=user.id,
+            from_user_id=payer,
+            to_user_id=payee,
+            amount=value,
+            note=note.strip() or None,
+            expected=expected,
+        )
+    except SettlementChanged:
+        # Double submit / stale tab: the displayed transfers no longer apply.
+        db.rollback()
+        return RedirectResponse("/settlement?settle=stale", status_code=303)
     db.commit()
     return RedirectResponse("/settlement", status_code=302)
 

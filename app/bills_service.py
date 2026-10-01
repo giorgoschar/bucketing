@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session
 from app.clock import local_today
 from app.models import (
     BillOccurrence,
+    HouseholdMember,
+    MemberRole,
     OccurrenceStatus,
     RecurringBill,
     Transaction,
@@ -103,6 +105,52 @@ def delete_future_occurrences(db: Session, bill_id: str) -> None:
         BillOccurrence.due_date > today,
         BillOccurrence.status == OccurrenceStatus.unpaid,
     ).delete(synchronize_session=False)
+
+
+def resolve_bill_payer(db: Session, bill: RecurringBill, fallback_user_id: str | None = None) -> str | None:
+    """Who pays a bill occurrence when no explicit payer was given.
+
+    A bill expense without a payer is silently excluded from settle-up, so:
+    the bill's default payer (if still a member) → ``fallback_user_id`` (the
+    user paying it by hand) → the household owner. Bills have no creator
+    column, so the owner stands in for "the bill's creator".
+    """
+    member_ids = {
+        uid for (uid,) in db.query(HouseholdMember.user_id)
+        .filter(HouseholdMember.household_id == bill.household_id).all()
+    }
+    if bill.paid_by_default and bill.paid_by_default in member_ids:
+        return bill.paid_by_default
+    if fallback_user_id:
+        return fallback_user_id
+    owner = (
+        db.query(HouseholdMember.user_id)
+        .filter(HouseholdMember.household_id == bill.household_id,
+                HouseholdMember.role == MemberRole.owner)
+        .order_by(HouseholdMember.joined_at)
+        .first()
+    )
+    return owner[0] if owner else None
+
+
+BILL_HAS_HISTORY_MSG = (
+    "This bill has payment history, so it can't be deleted — deleting it would "
+    "erase those payments. Deactivate it instead (the pause toggle on the bill)."
+)
+
+
+def bill_has_payment_history(db: Session, bill_id: str) -> bool:
+    """True if any occurrence was paid, or skipped with an amount recorded.
+
+    Deleting such a bill would cascade away the only record of those payments
+    (for bucketless bills the paid occurrence *is* the payment record).
+    """
+    return db.query(BillOccurrence.id).filter(
+        BillOccurrence.bill_id == bill_id,
+        (BillOccurrence.status == OccurrenceStatus.paid)
+        | ((BillOccurrence.status == OccurrenceStatus.skipped) & BillOccurrence.amount.isnot(None))
+        | BillOccurrence.transaction_id.isnot(None),
+    ).first() is not None
 
 
 # ---------------------------------------------------------------------------

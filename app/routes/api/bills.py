@@ -10,10 +10,13 @@ from sqlalchemy.orm import Session
 
 from app.api_auth import require_api_auth
 from app.bills_service import (
+    BILL_HAS_HISTORY_MSG,
+    bill_has_payment_history,
     delete_future_occurrences,
     effective_overrides,
     generate_occurrences,
     normalise_interval_months,
+    resolve_bill_payer,
     settle_occurrence,
 )
 from app.clock import utcnow_naive
@@ -306,6 +309,8 @@ def delete_bill(
     user, hh_id = auth
     bill = db.query(RecurringBill).filter_by(id=bill_id).first()
     _assert_bill_in_household(bill, hh_id)
+    if bill_has_payment_history(db, bill.id):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=BILL_HAS_HISTORY_MSG)
     db.delete(bill)
     db.commit()
 
@@ -338,7 +343,7 @@ def pay_occurrence(
 
     if body.splits:
         validate_split_users([s.user_id for s in body.splits], hh_id, db)
-    payer = require_member(db, body.paid_by, hh_id) or bill.paid_by_default or user.id
+    payer = require_member(db, body.paid_by, hh_id) or resolve_bill_payer(db, bill, user.id)
 
     try:
         paid = settle_occurrence(

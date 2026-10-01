@@ -36,6 +36,7 @@ function receiptScanner() {
       category_id: '',
       bucket_id: '',
       paid_by: '',
+      payment_method: 'card',
     },
 
     /* Per-page defaults arrive through the root element's data-init attribute

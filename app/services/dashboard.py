@@ -1,143 +1,34 @@
 """
 Month/all-time summaries, bills and forecast for dashboards.
 """
-from collections import defaultdict
-from datetime import date, timedelta
-from decimal import Decimal
+from datetime import timedelta
 
 from sqlalchemy.orm import Session, joinedload
 
 from app.clock import local_today
 from app.models import (
     BillOccurrence,
-    Bucket,
-    BucketType,
-    HouseholdMember,
     OccurrenceStatus,
     RecurringBill,
-    Transaction,
-    TransactionType,
-    User,
 )
-from app.money import quantize
-from app.services.money import split_to_base, to_base
+from app.services.insights import _month_range, get_insights_summary
 
 
 def get_month_summary(db: Session, household_id: str, year: int, month: int, bucket_type: str = "", bucket_ids: list | None = None) -> dict:
     """
-    Returns:
-      - total_spent: total expense amount for the month
-      - paid_by: {user_id: {"name": str, "color": str, "amount": Decimal}}
-      - balance: who owes whom (simplified two-person logic + multi-person)
+    Month total and who-paid breakdown, built from ``get_insights_summary`` so
+    the dashboard and Insights agree: ``paid`` (alias ``amount``) is what each
+    payer fronted, ``share`` what they owe; no-payer expenses go to an
+    "Unassigned" row and payers who left show as "Former member".
     """
-    start = date(year, month, 1)
-    # Last day of month
-    if month == 12:
-        end = date(year + 1, 1, 1) - timedelta(days=1)
-    else:
-        end = date(year, month + 1, 1) - timedelta(days=1)
-
-    q = (
-        db.query(Transaction)
-        .filter(
-            Transaction.active(),
-            Transaction.household_id == household_id,
-            Transaction.type == TransactionType.expense,
-            Transaction.transaction_date >= start,
-            Transaction.transaction_date <= end,
-        )
-    )
-    if bucket_type:
-        q = q.join(Bucket, Bucket.id == Transaction.bucket_id).filter(Bucket.type == BucketType(bucket_type))
-    if bucket_ids:
-        q = q.filter(Transaction.bucket_id.in_(bucket_ids))
-    txns = q.options(joinedload(Transaction.splits)).all()
-
-    total_spent = sum(to_base(t.amount, t.exchange_rate) for t in txns)
-
-    # Amount paid by each user — use splits when present, else paid_by
-    paid_by: dict[str, Decimal] = defaultdict(Decimal)
-    for t in txns:
-        if t.splits:
-            for s in t.splits:
-                paid_by[s.user_id] += split_to_base(s, t)
-        elif t.paid_by:
-            paid_by[t.paid_by] += to_base(t.amount, t.exchange_rate)
-
-    # Load member info
-    members = (
-        db.query(User)
-        .join(HouseholdMember, HouseholdMember.user_id == User.id)
-        .filter(HouseholdMember.household_id == household_id)
-        .all()
-    )
-    member_map = {m.id: m for m in members}
-
-    paid_by_detail = {}
-    for uid, amount in paid_by.items():
-        user = member_map.get(uid)
-        if user:
-            paid_by_detail[uid] = {
-                "name": user.display_name,
-                "color": user.avatar_color,
-                "amount": quantize(amount),
-            }
-
-    return {
-        "total_spent": quantize(total_spent),
-        "paid_by": paid_by_detail,
-        "period_start": start,
-        "period_end": end,
-    }
+    start, end = _month_range(year, month)
+    return get_insights_summary(db, household_id, start, end, bucket_type, bucket_ids)
 
 
 def get_all_time_summary(db: Session, household_id: str, bucket_type: str = "", bucket_ids: list | None = None) -> dict:
-    """Total expenses and who-paid breakdown across all time for a household."""
-    q = (
-        db.query(Transaction)
-        .filter(
-            Transaction.active(),
-            Transaction.household_id == household_id,
-            Transaction.type == TransactionType.expense,
-        )
-    )
-    if bucket_type:
-        q = q.join(Bucket, Bucket.id == Transaction.bucket_id).filter(Bucket.type == BucketType(bucket_type))
-    if bucket_ids:
-        q = q.filter(Transaction.bucket_id.in_(bucket_ids))
-    txns = q.options(joinedload(Transaction.splits)).all()
-    total_spent = sum(to_base(t.amount, t.exchange_rate) for t in txns)
-
-    paid_by: dict[str, Decimal] = defaultdict(Decimal)
-    for t in txns:
-        if t.splits:
-            for s in t.splits:
-                paid_by[s.user_id] += split_to_base(s, t)
-        elif t.paid_by:
-            paid_by[t.paid_by] += to_base(t.amount, t.exchange_rate)
-
-    members = (
-        db.query(User)
-        .join(HouseholdMember, HouseholdMember.user_id == User.id)
-        .filter(HouseholdMember.household_id == household_id)
-        .all()
-    )
-    member_map = {m.id: m for m in members}
-
-    paid_by_detail = {}
-    for uid, amount in paid_by.items():
-        user = member_map.get(uid)
-        if user:
-            paid_by_detail[uid] = {
-                "name": user.display_name,
-                "color": user.avatar_color,
-                "amount": quantize(amount),
-            }
-
-    return {
-        "total_spent": quantize(total_spent),
-        "paid_by": paid_by_detail,
-    }
+    """Total expenses and who-paid breakdown across all time (Insights semantics)."""
+    s = get_insights_summary(db, household_id, None, None, bucket_type, bucket_ids)
+    return {"total_spent": s["total_spent"], "paid_by": s["paid_by"]}
 
 
 def get_upcoming_bills(db: Session, household_id: str, days: int = 30) -> list:

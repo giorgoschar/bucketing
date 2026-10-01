@@ -2,7 +2,6 @@
 Bucket summaries and typed bucket behaviour (trip/savings).
 """
 from collections import defaultdict
-from datetime import date, timedelta
 from decimal import Decimal
 
 from sqlalchemy import case, func
@@ -12,81 +11,25 @@ from app.clock import local_today
 from app.models import (
     Bucket,
     BucketType,
-    HouseholdMember,
     Transaction,
     TransactionType,
     User,
 )
 from app.money import ZERO, percent, quantize, to_decimal
-from app.services.insights import _month_range
-from app.services.money import base_amount_expr, shares_for, split_to_base, to_base
+from app.services.insights import _month_range, get_insights_summary
+from app.services.money import base_amount_expr, shares_for, to_base
 
 
 def get_bucket_month_summary(db: Session, bucket_id: str, year: int, month: int) -> dict:
     """
-    Who-paid breakdown for a single bucket in a given month.
-    Returns total_spent, paid_by_detail, balances (same shape as get_month_summary).
-    Members are derived from the bucket's household.
+    Who-paid breakdown for a single bucket in a given month — same shape and
+    payer semantics as ``get_insights_summary`` (and the dashboard).
     """
-    from app.models import Bucket
     bucket = db.get(Bucket, bucket_id)
     if not bucket:
         return {"total_spent": 0, "paid_by": {}, "balances": []}
-
-    start = date(year, month, 1)
-    if month == 12:
-        end = date(year + 1, 1, 1) - timedelta(days=1)
-    else:
-        end = date(year, month + 1, 1) - timedelta(days=1)
-
-    txns = (
-        db.query(Transaction)
-        .filter(
-            Transaction.active(),
-            Transaction.bucket_id == bucket_id,
-            Transaction.type == TransactionType.expense,
-            Transaction.transaction_date >= start,
-            Transaction.transaction_date <= end,
-        )
-        .options(joinedload(Transaction.splits))
-        .all()
-    )
-
-    total_spent = sum(to_base(t.amount, t.exchange_rate) for t in txns)
-
-    # Amount paid by each user — use splits when present, else paid_by
-    paid_by: dict[str, Decimal] = defaultdict(Decimal)
-    for t in txns:
-        if t.splits:
-            for s in t.splits:
-                paid_by[s.user_id] += split_to_base(s, t)
-        elif t.paid_by:
-            paid_by[t.paid_by] += to_base(t.amount, t.exchange_rate)
-
-    members = (
-        db.query(User)
-        .join(HouseholdMember, HouseholdMember.user_id == User.id)
-        .filter(HouseholdMember.household_id == bucket.household_id)
-        .all()
-    )
-    member_map = {m.id: m for m in members}
-
-    paid_by_detail = {}
-    for uid, amount in paid_by.items():
-        user = member_map.get(uid)
-        if user:
-            paid_by_detail[uid] = {
-                "name": user.display_name,
-                "color": user.avatar_color,
-                "amount": quantize(amount),
-            }
-
-    return {
-        "total_spent": quantize(total_spent),
-        "paid_by": paid_by_detail,
-        "period_start": start,
-        "period_end": end,
-    }
+    start, end = _month_range(year, month)
+    return get_insights_summary(db, bucket.household_id, start, end, bucket_ids=[bucket_id])
 
 
 def get_bucket_balance(db: Session, bucket_id: str) -> dict:

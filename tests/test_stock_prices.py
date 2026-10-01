@@ -320,7 +320,7 @@ def test_expense_link_prefills_the_new_expense_form(client, db, authed):
     assert page.status_code == 200
     pre = _init_cfg(page.text)["prefill"]
     assert pre == {"amount": "2.80", "category_id": cat.id,
-                   "notes": "Groceries at Lidl", "merchant": "Lidl"}
+                   "notes": "Groceries at Lidl", "merchant": "Lidl", "currency": "EUR"}
 
 
 def test_prefill_ignores_foreign_category_and_bad_amount(client, db, authed, make_household):

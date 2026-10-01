@@ -74,3 +74,41 @@
 
   window.app = Object.assign(window.app || {}, { csrfToken: csrfToken, fetchJSON: fetchJSON });
 })();
+
+// Failed htmx requests used to fail silently (e.g. a 403 from a form the user
+// may not submit). Show the server's `detail` in a small dismissing banner.
+// textContent only: the message can echo user input, so it is never HTML.
+(function () {
+  if (window.__libHtmxErrorInstalled) return;
+  window.__libHtmxErrorInstalled = true;
+
+  var timer = null;
+  function show(message) {
+    var box = document.getElementById('htmx-error-toast');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'htmx-error-toast';
+      box.setAttribute('role', 'alert');
+      box.className = 'fixed bottom-20 left-1/2 -translate-x-1/2 z-50 max-w-sm w-[calc(100%-2rem)] px-4 py-3 ' +
+        'rounded-xl bg-red-600 text-white text-sm shadow-lg';
+      document.body.appendChild(box);
+    }
+    box.textContent = message;
+    box.hidden = false;
+    clearTimeout(timer);
+    timer = setTimeout(function () { box.hidden = true; }, 6000);
+  }
+
+  document.addEventListener('htmx:responseError', function (evt) {
+    var xhr = evt.detail && evt.detail.xhr;
+    var status = xhr ? xhr.status : 0;
+    var msg = '';
+    try {
+      var data = JSON.parse(xhr.responseText);
+      var detail = data && data.detail;
+      if (typeof detail === 'string') msg = detail;
+      else if (Array.isArray(detail) && detail[0] && typeof detail[0].msg === 'string') msg = detail[0].msg;
+    } catch (_) { /* not JSON */ }
+    show(msg || ('Something went wrong (' + status + '). Please try again.'));
+  });
+})();

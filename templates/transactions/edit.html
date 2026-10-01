@@ -8,6 +8,10 @@
     <form method="POST" action="/transactions/{{ txn.id }}/edit" class="space-y-4"
           x-data="{ isShared: {{ 'true' if txn.splits else 'false' }} }">
 
+      {% if error %}
+      <div role="alert" class="px-3.5 py-2.5 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 text-sm">{{ error }}</div>
+      {% endif %}
+
       <div class="grid grid-cols-2 gap-3">
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Amount</label>

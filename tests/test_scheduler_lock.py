@@ -40,6 +40,33 @@ def test_postgres_lock_acquired_keeps_connection():
     assert sched._lock_conn is None
 
 
+def test_postgres_lock_connection_is_autocommit():
+    """B7: the lock connection must not sit idle-in-transaction (autobegin),
+    or idle_in_transaction_session_timeout could kill it and drop the lock."""
+    eng, conn = _fake_engine(True)
+    assert sched._acquire_scheduler_lock(eng) is True
+    conn.execution_options.assert_called_once_with(isolation_level="AUTOCOMMIT")
+    first = [c[0] for c in conn.mock_calls if c[0] in ("execution_options", "execute")]
+    assert first[0] == "execution_options"
+
+
+@pytest.mark.skipif(not os.environ.get("TEST_DATABASE_URL"), reason="needs Postgres")
+def test_real_postgres_lock_connection_not_idle_in_transaction():
+    eng = create_engine(os.environ["TEST_DATABASE_URL"])
+    other = eng.connect()
+    try:
+        assert sched._acquire_scheduler_lock(eng) is True
+        pid = sched._lock_conn.execute(text("SELECT pg_backend_pid()")).scalar()
+        state = other.execute(
+            text("SELECT state FROM pg_stat_activity WHERE pid = :p"), {"p": pid}
+        ).scalar()
+        assert state == "idle"
+    finally:
+        sched._release_scheduler_lock()
+        other.close()
+        eng.dispose()
+
+
 def test_postgres_lock_not_acquired_closes_connection():
     eng, conn = _fake_engine(False)
     assert sched._acquire_scheduler_lock(eng) is False

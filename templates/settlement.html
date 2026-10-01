@@ -40,6 +40,12 @@
   <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
     <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Settle up</p>
 
+    {% if settle_stale %}
+    <div role="alert" class="mb-3 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 text-xs">
+      Balances changed since that page was loaded (already settled?), so nothing was recorded. Review the amounts below and try again.
+    </div>
+    {% endif %}
+
     {% if not enabled_buckets %}
     <div class="text-sm text-gray-500 dark:text-gray-400 space-y-2">
       <p>No buckets are tracking settlement yet.</p>
@@ -77,6 +83,7 @@
              style="background-color: {{ row.to_color }}">{{ row.to_name | initials }}</div>
         <form method="POST" action="/settlement/settle" class="flex-shrink-0">
           <input type="hidden" name="_csrf_token" value="{{ request.state.csrf_token }}">
+          <input type="hidden" name="expected" value="{{ settle_fingerprint }}">
           <input type="hidden" name="from_user_id" value="{{ row.from_id }}">
           <input type="hidden" name="to_user_id" value="{{ row.to_id }}">
           <input type="hidden" name="amount" value="{{ row.amount }}">
@@ -91,6 +98,7 @@
       {% if settlement | length > 1 %}
       <form method="POST" action="/settlement/settle" class="pt-1">
         <input type="hidden" name="_csrf_token" value="{{ request.state.csrf_token }}">
+        <input type="hidden" name="expected" value="{{ settle_fingerprint }}">
         <button type="submit"
                 class="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold transition-colors">
           Settle everything

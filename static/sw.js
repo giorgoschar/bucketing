@@ -1,4 +1,4 @@
-const CACHE_NAME = 'expenses-v11';
+const CACHE_NAME = 'expenses-v12';
 
 const STATIC_ASSETS = [
   '/static/manifest.json',

@@ -14,7 +14,7 @@
     <p>Marked {{ bought.count }} item{{ 's' if bought.count != 1 }} as bought.</p>
     {% if bought.expense_url %}
     <a href="{{ bought.expense_url }}" class="inline-block font-semibold underline">
-      Record the expense ({{ bought.total | currency('EUR') }}{% if bought.retailer_name %} at {{ bought.retailer_name }}{% endif %})
+      Record the expense ({% if bought.total > 0 %}{{ bought.total | currency('EUR') }}{% else %}enter the amount{% endif %}{% if bought.retailer_name %} at {{ bought.retailer_name }}{% endif %})
     </a>
     {% endif %}
   </div>
@@ -39,7 +39,7 @@
   {% endif %}
 
   {% for g in data.groups %}
-  <form method="POST" action="/stock/shopping/bought"
+  <form method="POST" action="/stock/shopping/bought" hx-push-url="false"
         class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
     <input type="hidden" name="retailer" value="{{ g.retailer or '' }}" />
     <div class="px-5 py-3 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">

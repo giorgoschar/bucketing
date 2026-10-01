@@ -84,6 +84,22 @@ async function _deletePending(id) {
 }
 
 /**
+ * Did the replayed POST /transactions really store the expense?
+ * fetch follows redirects, so a stale session lands on /login (or the 2FA
+ * pages) with a 200 — that is NOT success, and deleting the record would lose
+ * the expense. Success is a 2xx that either was not redirected or ended on the
+ * create's own destination (the bucket page / transactions). Replays are
+ * idempotent via client_id, so keeping a record queued is always safe.
+ */
+function _replaySucceeded(resp) {
+  if (!resp.ok) return false;
+  if (!resp.redirected) return true;
+  let path = '';
+  try { path = new URL(resp.url, location.origin).pathname; } catch { return false; }
+  return path.startsWith('/buckets/') || path === '/transactions' || path.startsWith('/transactions/');
+}
+
+/**
  * Called by the service worker's sync event (or as a fallback on page load).
  * Submits each queued record to POST /transactions, then removes it.
  */
@@ -113,7 +129,7 @@ async function flushPendingTransactions() {
         body,
         credentials: 'same-origin',
       });
-      if (resp.ok || resp.redirected) {
+      if (_replaySucceeded(resp)) {
         await _deletePending(id);
         sent++;
       } else if (resp.status >= 400 && resp.status < 500 && resp.status !== 403) {
