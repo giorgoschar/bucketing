@@ -36,6 +36,16 @@ class TransactionType(str, enum.Enum):
     transfer = "transfer"
 
 
+class PaymentMethod(str, enum.Enum):
+    """How an expense was paid. Stored as a plain VARCHAR (no DB enum type) so
+    adding a member never needs ALTER TYPE; validated in app.schemas."""
+    card = "card"
+    cash = "cash"
+    apple_pay = "apple_pay"
+    transfer = "transfer"
+    other = "other"
+
+
 class BucketType(str, enum.Enum):
     day2day = "day2day"
     trip = "trip"
@@ -253,6 +263,9 @@ class Transaction(Base):
     notes = Column(Text, nullable=True)
     transaction_date = Column(Date, default=local_today, nullable=False)
     receipt_path = Column(String, nullable=True)
+    payment_method = Column(String(16), default=PaymentMethod.card.value,
+                            server_default=PaymentMethod.card.value, nullable=False)
+    merchant = Column(String(200), nullable=True)
     exclude_from_forecast = Column(Boolean, default=False, nullable=False)
     # Keep this expense out of the settle-up maths while still counting it as
     # household spending. For costs that are shared with people outside the
@@ -277,6 +290,32 @@ class Transaction(Base):
     category = relationship("Category", back_populates="transactions")
     splits = relationship("TransactionSplit", back_populates="transaction", cascade="all, delete-orphan")
     bill_occurrence = relationship("BillOccurrence", back_populates="transaction", uselist=False)
+
+
+class CashMovement(Base):
+    """Cash wallet ledger entry (independent of expenses): ``in`` = cash taken
+    into the wallet (e.g. ATM withdrawal), ``out`` = cash given away / spent
+    untracked. Amounts are in the household currency. Soft-deleted."""
+    __tablename__ = "cash_movements"
+    __table_args__ = (
+        Index("ix_cash_movements_hh_user_date", "household_id", "user_id", "movement_date"),
+    )
+
+    id = Column(String, primary_key=True, default=gen_id)
+    household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    kind = Column(String(8), nullable=False)  # "in" | "out"
+    amount = Column(Numeric(12, 4), nullable=False)
+    currency = Column(String(3), nullable=False, default="EUR")
+    category_id = Column(String, ForeignKey("categories.id"), nullable=True)
+    note = Column(String(500), nullable=True)
+    movement_date = Column(Date, default=local_today, nullable=False)
+    created_at = Column(DateTime, default=utcnow_naive)
+    deleted_at = Column(DateTime, nullable=True)
+
+    @classmethod
+    def active(cls):
+        return cls.deleted_at.is_(None)
 
 
 class TransactionSplit(Base):
