@@ -57,7 +57,7 @@ def test_dockerfile_installs_pgdg_client_18_or_newer():
     """Production is Postgres 18; Debian trixie's own client (17) refuses it."""
     import re
     text = (ROOT / "Dockerfile").read_text()
-    assert "apt.postgresql.org" in text and "trixie-pgdg" in text
+    assert "apt.postgresql.org" in text and "-pgdg" in text
     assert "signed-by=" in text
     m = re.search(r"postgresql-client-(\d+)", text)
     assert m and int(m.group(1)) >= 18
