@@ -4,7 +4,7 @@ Income is a thin wrapper over the transactions API with type forced to 'income'.
 """
 from datetime import date
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -36,7 +36,7 @@ def create_income(
 
     bucket = db.query(Bucket).filter_by(id=body.bucket_id, household_id=hh_id).first()
     if not bucket:
-        raise Exception("Bucket not found")
+        raise HTTPException(status_code=404, detail="Bucket not found")
 
     txn_date = date.fromisoformat(body.transaction_date) if body.transaction_date else local_today()
 

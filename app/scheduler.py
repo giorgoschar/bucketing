@@ -566,12 +566,63 @@ def auto_mark_paid_job() -> None:
         db.close()
 
 
+# Arbitrary app-wide key for the Postgres advisory lock that elects the single
+# worker/process allowed to run the scheduler.
+SCHEDULER_LOCK_KEY = 727272
+_lock_conn = None  # dedicated connection holding the lock for the process lifetime
+
+
+def _acquire_scheduler_lock(engine=None) -> bool:
+    """True if this process may run the scheduler.
+
+    SQLite is single-process: always True. On Postgres, take a session-level
+    advisory lock on a dedicated connection that stays open for the process
+    lifetime (the lock is released automatically if the process dies)."""
+    global _lock_conn
+    if engine is None:
+        from app.database import engine as app_engine
+        engine = app_engine
+    if engine.dialect.name != "postgresql":
+        return True
+    from sqlalchemy import text
+
+    conn = engine.connect()
+    try:
+        got = bool(conn.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": SCHEDULER_LOCK_KEY}).scalar())
+    except Exception:
+        conn.close()
+        raise
+    if not got:
+        conn.close()
+        return False
+    _lock_conn = conn
+    return True
+
+
+def _release_scheduler_lock() -> None:
+    global _lock_conn
+    conn, _lock_conn = _lock_conn, None
+    if conn is not None:
+        try:
+            from sqlalchemy import text
+
+            # Pooled close() would keep the session (and the lock) alive.
+            conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": SCHEDULER_LOCK_KEY})
+            conn.close()
+        except Exception:
+            logger.warning("Failed to close scheduler lock connection", exc_info=True)
+
+
 def start_scheduler() -> None:
     """Start the background scheduler and run an immediate catch-up job."""
     from app.config import settings
 
     if not settings.enable_scheduler:
         logger.info("Scheduler disabled via ENABLE_SCHEDULER — skipping start")
+        return
+
+    if not _acquire_scheduler_lock():
+        logger.info("Scheduler advisory lock held by another worker — not starting scheduler here")
         return
 
     # Just after midnight on the household's calendar, not UTC.
@@ -600,3 +651,4 @@ def stop_scheduler() -> None:
     if scheduler.running:
         scheduler.shutdown(wait=False)
         logger.info("Scheduler stopped")
+    _release_scheduler_lock()

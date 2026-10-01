@@ -96,3 +96,17 @@ For the uploads restore, temporarily drop `:ro` from the `uploads_data` mount on
 `private_key.pem`, `public_key.pem` and `.env` sit in the repo root for local
 development. They are git-ignored; keep them out of the deployed image's build
 context in production by setting the values as Coolify environment variables instead.
+
+**Action for the operator (not done automatically):** if these files currently
+live in the repository root of a deployed checkout, move `private_key.pem`,
+`public_key.pem` and `.env` somewhere outside the repo directory (for example
+`~/secrets/expenses/`) and point the app at them via environment variables.
+Nothing in the repo deletes them; they are only ignored by version control, and
+anything in the build context can end up in an image layer.
+
+## 7. Scheduler with multiple workers
+
+The container runs `uvicorn --workers 2`. On PostgreSQL, each process tries
+`pg_try_advisory_lock(727272)` at startup; only the winner runs the scheduler
+(the lock is held on a dedicated connection and released if the process dies).
+`ENABLE_SCHEDULER=true` can stay set everywhere.

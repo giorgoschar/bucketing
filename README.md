@@ -58,7 +58,37 @@ docker-compose up -d
 # Open http://localhost:8000
 ```
 
-Data is persisted in `./data/` (SQLite) and `./uploads/` (receipts).
+The compose stack runs three services: `db` (PostgreSQL 16), `app` (uvicorn,
+2 workers) and `backup` (daily `pg_dump` + uploads tarball).
+
+Persistent data lives in named Docker volumes:
+
+| Volume | Holds |
+|---|---|
+| `postgres_data` | the PostgreSQL database |
+| `uploads_data` | receipt images (`/app/uploads`) |
+| `backups` | daily dumps, plus a pre-migration dump on each deploy |
+
+Migrations run automatically on start (`alembic upgrade head`). With two
+workers, only the process that wins a PostgreSQL advisory lock runs the
+background scheduler; on SQLite the single process always runs it.
+
+### Backups
+
+The `backup` service writes a daily database dump and an uploads tarball to the
+`backups` volume (kept `BACKUP_KEEP_DAYS` days, default 30), and the app dumps
+the database before every migration. Copy the volume off the host regularly.
+Restore steps are in [`docs/DEPLOY-COOLIFY.md`](docs/DEPLOY-COOLIFY.md#5-restore).
+
+### Deploying on Coolify
+
+See [`docs/DEPLOY-COOLIFY.md`](docs/DEPLOY-COOLIFY.md) for the full guide,
+including every production environment variable.
+
+### Timestamps
+
+`DateTime` columns store naive UTC (`app/clock.py: utcnow_naive`). Calendar
+dates (bill due dates, "today") are evaluated in `APP_TIMEZONE`.
 
 ---
 
@@ -70,14 +100,14 @@ Data is persisted in `./data/` (SQLite) and `./uploads/` (receipts).
 | `APP_SECRET_KEY` | `change-me` | Secret for signing session cookies. **Change in production.** |
 | `DEBUG` | `false` | Enable FastAPI debug mode |
 | `APP_TIMEZONE` | `UTC` | Calendar timezone for scheduled work. Bill due dates are local calendar dates, so set this to your zone (e.g. `Europe/Athens`) or bills can be judged due a day late |
-| `ENABLE_SCHEDULER` | `true` | Run the daily auto-pay / reminder job in this process. Each uvicorn worker starts its own scheduler; the job is idempotent, so this only avoids redundant work |
+| `ENABLE_SCHEDULER` | `true` | Run the daily auto-pay / reminder job. On PostgreSQL only one worker holds the advisory lock and runs it; on SQLite the process always does |
 | `TRUST_PROXY_HEADERS` | `false` | Honour `X-Forwarded-For`. Enable **only** behind a proxy that overwrites it, otherwise clients can spoof their IP in logs and rate-limit buckets |
 | `RATE_LIMIT_STORAGE_URI` | *(memory)* | e.g. `redis://host:6379`. Without it, login/2FA limits are counted per worker |
 | `JWT_SECRET_KEY` | *(uses `APP_SECRET_KEY`)* | Separate signing key for mobile/API tokens |
 | `CORS_ALLOWED_ORIGINS` | *(none)* | Space-separated allowed origins |
 | `VAPID_PRIVATE_KEY` / `VAPID_PUBLIC_KEY` | *(none)* | Web-push keys; push is silently disabled without them |
 
-See [`.env.example`](.env.example) for a commented template.
+This is the common subset. Production variables (`FIELD_ENCRYPTION_KEY`, `APP_BASE_URL`, `POSTGRES_PASSWORD`, backups, ...) are documented in [`docs/DEPLOY-COOLIFY.md`](docs/DEPLOY-COOLIFY.md); see also [`.env.example`](.env.example).
 
 ---
 
@@ -97,8 +127,8 @@ npm run css:watch    # rebuild on change while developing
 some class names are constructed at runtime in JavaScript (the offline-queue
 pill picks its colour by state) and would otherwise be purged.
 
-`tests/test_frontend_wiring.py` guards the build: it fails if the CDN comes
-back, if the stylesheet is missing or truncated, or if a class known to be
+`tests/test_frontend_wiring.py` guards the build: it fails if a CDN reference comes
+back (assets are vendored), if the stylesheet is missing or truncated, or if a class known to be
 runtime-constructed has been purged.
 
 ---
@@ -108,11 +138,11 @@ runtime-constructed has been purged.
 ```bash
 pip install -r requirements.txt -r requirements-dev.txt
 pytest                       # full suite
-pytest --cov=app             # with coverage
+pytest --cov=app             # with coverage (CI enforces >= 80%)
 pytest tests/test_scheduler.py -v
 ```
 
-Each test builds its own throwaway SQLite database, so the suite never touches
+Each test builds its own throwaway SQLite database (or Postgres, with `TEST_DATABASE_URL`), so the suite never touches
 your real data. Coverage focuses on the parts where a bug costs money or leaks
 data:
 
@@ -159,8 +189,8 @@ credited to nobody, which made both members appear to owe an outsider.
 | Templates | Jinja2 3.1 |
 | ORM | SQLAlchemy 2.0 + Alembic |
 | Database | SQLite (dev) / PostgreSQL (prod) |
-| Auth | `itsdangerous` signed cookies + `passlib[bcrypt]` |
-| Frontend | HTMX 1.9 + Alpine.js 3 + TailwindCSS (prebuilt, no CDN) |
+| Auth | `itsdangerous` signed cookies + `bcrypt`, PyJWT for API tokens |
+| Frontend | HTMX 1.9 + Alpine.js 3 + TailwindCSS (prebuilt; all JS/CSS vendored under `static/`, no CDN at runtime) |
 
 ---
 

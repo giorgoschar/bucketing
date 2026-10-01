@@ -225,8 +225,9 @@ async def push_test(
     try:
         body = await request.json()
         endpoint = body.get("endpoint") or None
-    except Exception:
-        pass
+    except (ValueError, AttributeError) as exc:
+        # Empty / non-JSON / non-object body: fall back to all devices.
+        logger.warning("push/test: ignoring unparseable request body (%s)", type(exc).__name__)
 
     if endpoint:
         target_sub = db.query(PushSubscription).filter(

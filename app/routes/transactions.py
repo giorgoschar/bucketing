@@ -275,7 +275,7 @@ async def scan_qr(
     # SSRF guard — whitelist only the known AADE host and path
     try:
         parsed_url = urlparse(url)
-    except Exception:
+    except ValueError:
         raise HTTPException(status_code=400, detail="Invalid URL") from None
 
     if (
