@@ -1,4 +1,4 @@
-const CACHE_NAME = 'expenses-v9';
+const CACHE_NAME = 'expenses-v10';
 
 const STATIC_ASSETS = [
   '/static/manifest.json',
@@ -12,6 +12,7 @@ const STATIC_ASSETS = [
   '/static/expense-wizard.js',
   '/static/app-components.js',
   '/static/receipt-scanner.js',
+  '/static/stock.js',
   '/static/chart-tooltip.js',
   '/static/css/app.css',
 ];

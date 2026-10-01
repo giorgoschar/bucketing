@@ -15,6 +15,7 @@ from app.routes.api import (
     insights,
     notifications,
     settings,
+    stock,
     transactions,
 )
 
@@ -32,3 +33,5 @@ router.include_router(income.router)
 router.include_router(insights.router)
 router.include_router(notifications.router)
 router.include_router(settings.router)
+router.include_router(stock.router)
+router.include_router(stock.products_router)

@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Stock{% endblock %}
+{% block header_title %}Stock{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto space-y-4" x-data="stockAdd()">
+
+  <div class="flex items-center gap-2">
+    <button type="button" @click="open = !open"
+            class="flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white font-semibold rounded-xl text-sm">
+      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4" /></svg>
+      Add product
+    </button>
+  </div>
+
+  {% if notice %}
+  <div class="px-4 py-2.5 rounded-xl text-sm bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300">{{ notice }}</div>
+  {% endif %}
+  {% if not posokanei_enabled %}
+  <div class="px-4 py-2.5 rounded-xl text-sm bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300">
+    Live prices unavailable — PosoKanei lookups are turned off on this server. Stock tracking still works.
+  </div>
+  {% endif %}
+
+  {# ===== Add product ===== #}
+  <div x-show="open" x-cloak class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800 space-y-4">
+    <div>
+      <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Search PosoKanei</p>
+      <input type="search" name="q" placeholder="e.g. γάλα, φέτα, olive oil" autocomplete="off"
+             hx-get="/stock/search" hx-trigger="input changed delay:400ms, search" hx-target="#stock-lookup-results"
+             class="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm" />
+    </div>
+
+    <div>
+      <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Barcode</p>
+      <form hx-get="/stock/barcode" hx-target="#stock-lookup-results" class="flex gap-2">
+        <input id="stock-barcode-input" type="text" name="code" inputmode="numeric" pattern="[0-9]{6,14}"
+               placeholder="EAN-13, e.g. 5201234567890"
+               class="flex-1 px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm" />
+        <button class="px-3 py-2 rounded-xl bg-gray-100 dark:bg-gray-800 text-sm font-semibold">Look up</button>
+        <button type="button" x-show="scanSupported" @click="startScan()"
+                class="px-3 py-2 rounded-xl bg-gray-100 dark:bg-gray-800 text-sm font-semibold">Scan</button>
+      </form>
+      <p x-show="scanError" x-text="scanError" class="mt-1 text-xs text-amber-600"></p>
+      <div x-show="scanning" x-cloak class="mt-2 relative">
+        <video x-ref="video" playsinline muted class="w-full max-h-64 rounded-xl bg-black object-cover"></video>
+        <button type="button" @click="stopScan()"
+                class="absolute top-2 right-2 px-3 py-1 rounded-lg bg-white/90 text-gray-900 text-xs font-semibold">Cancel</button>
+      </div>
+    </div>
+
+    <div id="stock-lookup-results" aria-live="polite"></div>
+
+    <details class="text-sm">
+      <summary class="cursor-pointer text-gray-500 select-none">Add manually</summary>
+      <form method="POST" action="/stock" class="mt-3 grid grid-cols-2 gap-3">
+        <label class="col-span-2 flex flex-col gap-1 text-xs text-gray-500">Name
+          <input name="name" required maxlength="200" class="px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100" />
+        </label>
+        <label class="flex flex-col gap-1 text-xs text-gray-500">Brand
+          <input name="brand" maxlength="100" class="px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100" />
+        </label>
+        <label class="flex flex-col gap-1 text-xs text-gray-500">Barcode
+          <input name="barcode" inputmode="numeric" pattern="[0-9]{6,14}" class="px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100" />
+        </label>
+        <label class="flex flex-col gap-1 text-xs text-gray-500">In stock
+          <input name="quantity" type="number" min="0" step="0.5" value="0" class="px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100" />
+        </label>
+        <label class="flex flex-col gap-1 text-xs text-gray-500">Minimum
+          <input name="min_quantity" type="number" min="0" step="0.5" value="1" class="px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100" />
+        </label>
+        <div class="col-span-2">
+          <button class="px-4 py-2 rounded-xl bg-primary-500 hover:bg-primary-600 text-white text-sm font-semibold">Add</button>
+        </div>
+      </form>
+    </details>
+  </div>
+
+  {# ===== Stock list ===== #}
+  <div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
+    {% if not rows %}
+    <p class="px-5 py-8 text-center text-sm text-gray-400">Nothing tracked yet. Add the things you keep at home to get low-stock alerts and price advice.</p>
+    {% else %}
+    <div class="divide-y divide-gray-100 dark:divide-gray-800">
+      {% for row in rows %}
+        {% include "stock/_row.html" %}
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+  <p class="text-[11px] text-gray-400 px-1">
+    Prices from PosoKanei (posokanei.gov.gr), refreshed daily. "Buy now" / "Wait" and run-out dates are estimates from past prices and your own usage, not guarantees.
+  </p>
+</div>
+{% endblock %}

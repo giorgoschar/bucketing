@@ -27,6 +27,7 @@ HEAD_LOADED = {
     "notifCenter": "static/app-components.js",
     "pushSettings": "static/app-components.js",
     "receiptScanner": "static/receipt-scanner.js",
+    "stockAdd": "static/stock.js",
 }
 
 
