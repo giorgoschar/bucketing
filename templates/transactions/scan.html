@@ -332,11 +332,11 @@ function receiptScanner() {
 
     result: {
       amount: '',
-      currency: '{{ household.default_currency if household else "EUR" }}',
-      date: '{{ today }}',
+      currency: {{ (household.default_currency if household else "EUR") | tojson }},
+      date: {{ today | tojson }},
       merchant: '',
       category_id: '',
-      bucket_id: '{{ buckets[0].id if buckets else "" }}',
+      bucket_id: {{ (buckets[0].id if buckets else "") | tojson }},
       paid_by: '',
     },
 

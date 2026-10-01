@@ -10,6 +10,7 @@ when Alpine initialises the nodes being inserted — it threw
 These are cheap guards against that regressing. Behaviour is verified in a real
 browser separately; these keep the structural invariant honest.
 """
+import json
 import re
 from pathlib import Path
 
@@ -329,26 +330,43 @@ def test_service_worker_precaches_the_tooltip_listener():
 # ---------------------------------------------------------------------------
 
 _JS_ATTR = re.compile(
-    r"""(?<![\w-])(?P<attr>x-[a-z:.-]+|@[a-z.:-]+|:[a-z-]+|on[a-z]+|hx-[a-z]+)="(?P<body>[^"]*\{\{[^"]*)\"""",
+    r"""(?<![\w-])(?P<attr>x-[a-z:.-]+|@[a-z.:-]+|:[a-z-]+|on[a-z]+|hx-[a-z]+)"""
+    r"""=(?:"(?P<dq>[^"]*)"|'(?P<sq>[^']*)')""",
 )
-# Server-generated, non-user-controlled values may stay: UUID primary keys,
-# enum values, loop counters/presets/keys and amounts.
-_SAFE_EXPR = re.compile(
-    r"\{\{\s*(?:[\w.]+\.(?:id|value)|\w+\.\w+_id|[pi]|key|value|amt|"
-    r"'true' if [^}]*|none \| tojson[^}]*)\s*\}\}"
-)
+_INLINE_SCRIPT = re.compile(r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", re.S)
+_EXPR = re.compile(r"\{\{.*?\}\}", re.S)
+# Exact interpolations allowed inside JS attributes: server-generated UUIDs,
+# enum values, loop counters and literal true/false. Anything else (a name, a
+# URL, a currency...) must go through data-* attributes or `| tojson` in a
+# <script> block. New interpolations fail by default; add here only after
+# proving the value is not user-controlled.
+_ALLOWED_ATTR_EXPRS = {
+    "{{ bill.id }}", "{{ bucket.type.value }}", "{{ bucket.id }}",
+    "{{ cat.id }}", "{{ u.id }}", "{{ member.id }}", "{{ p }}",
+    "{{ value }}", "{{ key }}", "{{ amt }}", "{{ i }}",
+    "{{ 'true' if bill.is_auto_pay else 'false' }}",
+    "{{ 'true' if bill.splits else 'false' }}",
+    "{{ 'true' if not bill.amount else 'false' }}",
+    "{{ 'true' if txn.splits else 'false' }}",
+}
 
 
 def _js_attr_interpolations():
     for path in sorted(TEMPLATES.rglob("*.html")):
-        for n, line in enumerate(path.read_text().splitlines(), 1):
-            for m in _JS_ATTR.finditer(line):
-                # URL/target attributes are not JavaScript.
-                if m.group("attr") in ("hx-get", "hx-post", "hx-target"):
-                    continue
-                rest = _SAFE_EXPR.sub("", m.group("body"))
-                if "{{" in rest or "{%" in rest:
-                    yield f"{path}:{n}: {m.group('body')[:90]}"
+        text = path.read_text()
+        for m in _JS_ATTR.finditer(text):
+            if m.group("attr") in ("hx-get", "hx-post", "hx-target"):
+                continue  # URLs, not JavaScript
+            body = m.group("dq") if m.group("dq") is not None else m.group("sq")
+            for expr in _EXPR.findall(body):
+                if expr not in _ALLOWED_ATTR_EXPRS:
+                    line = text.count("\n", 0, m.start()) + 1
+                    yield f"{path}:{line}: attribute {expr}"
+        for m in _INLINE_SCRIPT.finditer(text):
+            for expr in _EXPR.findall(m.group(1)):
+                if not re.search(r"\|\s*tojson\s*\}\}$", expr):
+                    line = text.count("\n", 0, m.start(1)) + 1
+                    yield f"{path}:~{line}: <script> {expr} (needs | tojson)"
 
 
 def test_no_user_data_in_template_built_js_strings():
@@ -447,3 +465,31 @@ def test_api_settings_reject_bad_colors(client, make_household):
     ok = client.post("/api/v1/settings/categories", headers=h,
                      json={"name": "X", "color": "#ABCDEF"})
     assert ok.status_code == 201 and ok.json()["color"] == "#abcdef"
+
+
+def test_scan_page_renders_currency_as_json(client, db, authed):
+    from app.models import Household, HouseholdMember
+    hh = db.get(Household, db.query(HouseholdMember).first().household_id)
+    r = client.get("/transactions/scan")
+    assert r.status_code == 200
+    assert f"currency: {json.dumps(hh.default_currency)}," in r.text
+    assert "currency: '" not in r.text
+
+
+def test_api_household_rejects_script_currency(client, make_household):
+    import pyotp
+
+    from tests.conftest import PASSWORD
+    hh = make_household()
+    r = client.post("/api/v1/auth/login",
+                    json={"username": hh.username, "password": PASSWORD})
+    r = client.post("/api/v1/auth/totp/verify", json={
+        "pending_token": r.json()["pending_token"],
+        "code": pyotp.TOTP(hh.secret).now()})
+    h = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    bad = client.put("/api/v1/settings/household", headers=h,
+                     json={"name": "H", "default_currency": "');alert(1);//"})
+    assert bad.status_code == 400
+    ok = client.put("/api/v1/settings/household", headers=h,
+                    json={"name": "H", "default_currency": "EUR"})
+    assert ok.status_code == 200

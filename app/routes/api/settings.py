@@ -144,6 +144,8 @@ def update_household(
     my_membership = db.query(HouseholdMember).filter_by(user_id=user.id, household_id=hh_id).first()
     if not my_membership or my_membership.role != MemberRole.owner:
         raise HTTPException(status_code=403, detail="Only the household owner can update household settings")
+    if body.default_currency not in settings.currencies:
+        raise HTTPException(status_code=400, detail="Unsupported currency.")
     household = db.get(Household, hh_id)
     household.name             = body.name.strip()
     household.default_currency = body.default_currency
