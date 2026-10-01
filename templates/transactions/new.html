@@ -12,7 +12,7 @@
        data-init='{
          "selectedBucketId": {{ selected_bucket_id | tojson }},
          "today": {{ today | tojson }},
-         "currency": {{ (household.default_currency if household else "EUR") | tojson }},
+         "currency": {{ ((prefill or {}).currency or (household.default_currency if household else "EUR")) | tojson }},
          "currentUserId": {{ user.id | tojson }},
          "prefill": {{ (prefill or {}) | tojson }},
          "buckets": { {% for bucket in buckets %}{{ bucket.id | tojson }}: {{ (bucket.icon ~ " " ~ bucket.name) | tojson }}{% if not loop.last %},{% endif %}{% endfor %} }

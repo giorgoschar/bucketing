@@ -117,6 +117,7 @@ def new_transaction(
     category_id: str = "",
     notes: str = "",
     merchant: str = "",
+    currency: str = "",
     db: Session = Depends(get_db),
     auth=Depends(require_auth),
 ):
@@ -136,6 +137,8 @@ def new_transaction(
         "notes": notes.strip()[:500],
         "merchant": merchant.strip()[:200],
     }
+    if currency.strip().upper() in settings.currencies:
+        prefill["currency"] = currency.strip().upper()
 
     # If a bucket is pre-selected, respect its show_income setting
     show_income = True

@@ -283,16 +283,18 @@ async def shopping_bought(request: Request, db: Session = Depends(get_db), auth=
     db.commit()
 
     retailer_name = stock_svc.retailer_label(retailer) if retailer else None
-    expense_url = None
+    # Always offer the expense link: with no prices (PosoKanei unavailable) the
+    # amount is simply left for the user to type. Prices are EUR.
+    params = {"currency": "EUR",
+              "notes": f"Groceries at {retailer_name}" if retailer_name else "Groceries"}
     if total > 0:
-        params = {"amount": f"{total:.2f}",
-                  "notes": f"Groceries at {retailer_name}" if retailer_name else "Groceries"}
-        if retailer_name:
-            params["merchant"] = retailer_name
-        cat_id = _groceries_category_id(db, hh_id)
-        if cat_id:
-            params["category_id"] = cat_id
-        expense_url = "/transactions/new?" + urlencode(params)
+        params["amount"] = f"{total:.2f}"
+    if retailer_name:
+        params["merchant"] = retailer_name
+    cat_id = _groceries_category_id(db, hh_id)
+    if cat_id:
+        params["category_id"] = cat_id
+    expense_url = "/transactions/new?" + urlencode(params)
     bought = {"count": len(picked), "total": total, "retailer_name": retailer_name,
               "expense_url": expense_url}
     return templates.TemplateResponse("stock/shopping.html",
