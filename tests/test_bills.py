@@ -201,3 +201,118 @@ def test_split_must_sum_to_bill_amount(client, db, authed):
     }, headers=authed.headers)
     assert r.status_code == 400
     assert db.query(RecurringBill).count() == 0
+
+
+# ---------------------------------------------------------------------------
+# pay_occurrence service: scaled splits, atomic claim
+# ---------------------------------------------------------------------------
+
+def _bill_with_splits(db, authed, make_bill, split_amounts, *, bill_amount, **kw):
+    """Bill whose default splits are `split_amounts` (owner first, then new members)."""
+    from decimal import Decimal
+
+    from app.models import RecurringBillSplit
+    from tests.test_household_settlement import _add_member
+
+    bill, occ = make_bill(authed.household_id, authed.bucket_id, amount=bill_amount,
+                          auto_pay=kw.pop("auto_pay", False), paid_by=authed.user_id, **kw)
+    users = [authed.user_id]
+    for i in range(len(split_amounts) - 1):
+        users.append(_add_member(db, authed.household_id, f"splitter{bill.id[:6]}{i}").id)
+    for uid, amt in zip(users, split_amounts, strict=True):
+        db.add(RecurringBillSplit(bill_id=bill.id, user_id=uid, amount=Decimal(str(amt))))
+    db.commit()
+    return bill, occ, users
+
+
+def _split_map(db, txn):
+    from decimal import Decimal
+
+    from app.models import TransactionSplit
+    return {s.user_id: Decimal(s.amount)
+            for s in db.query(TransactionSplit).filter_by(transaction_id=txn.id)}
+
+
+def test_variable_bill_splits_scale_to_paid_amount(db, authed, make_bill):
+    from decimal import Decimal
+
+    from app.bills_service import pay_occurrence
+    from app.clock import utcnow_naive
+
+    bill, occ, users = _bill_with_splits(db, authed, make_bill, [50, 50], bill_amount=100)
+    txn = pay_occurrence(db, occ, amount=Decimal("80"), paid_by=authed.user_id,
+                         paid_on=utcnow_naive())
+    db.commit()
+    assert txn is not None and txn.deleted_at is None
+    assert _split_map(db, txn) == {users[0]: Decimal("40"), users[1]: Decimal("40")}
+
+
+def test_uneven_split_remainder_goes_to_payer(db, authed, make_bill):
+    from decimal import Decimal
+
+    from app.bills_service import pay_occurrence
+    from app.clock import utcnow_naive
+
+    # 1/3 each of 100 -> 33.33 / 33.33 / 33.33 = 99.99; the payer absorbs the cent.
+    bill, occ, u = _bill_with_splits(db, authed, make_bill, [1, 1, 1], bill_amount=3)
+    txn = pay_occurrence(db, occ, amount=Decimal("100"), paid_by=u[2],
+                         paid_on=utcnow_naive())
+    db.commit()
+    s = _split_map(db, txn)
+    assert s[u[0]] == s[u[1]] == Decimal("33.33")
+    assert s[u[2]] == Decimal("33.34")
+    assert sum(s.values()) == Decimal("100.00")
+
+
+def test_split_overrides_must_sum_to_amount(db, authed, make_bill):
+    from decimal import Decimal
+
+    from app.bills_service import pay_occurrence
+    from app.clock import utcnow_naive
+
+    bill, occ, users = _bill_with_splits(db, authed, make_bill, [50, 50], bill_amount=100)
+    with pytest.raises(ValueError):
+        pay_occurrence(db, occ, amount=Decimal("100"), paid_by=users[0],
+                       paid_on=utcnow_naive(),
+                       split_overrides={users[0]: Decimal("10"), users[1]: Decimal("10")})
+    db.rollback()
+    db.expire_all()
+    assert db.get(BillOccurrence, occ.id).status == OccurrenceStatus.unpaid
+
+
+def test_second_pay_of_same_occurrence_is_a_noop(db, authed, make_bill):
+    from decimal import Decimal
+
+    from app.bills_service import pay_occurrence
+    from app.clock import utcnow_naive
+
+    bill, occ = make_bill(authed.household_id, authed.bucket_id, amount=45,
+                          auto_pay=False, paid_by=authed.user_id)
+    first = pay_occurrence(db, occ, amount=Decimal("45"), paid_by=authed.user_id,
+                           paid_on=utcnow_naive())
+    db.commit()
+    second = pay_occurrence(db, occ, amount=Decimal("45"), paid_by=authed.user_id,
+                            paid_on=utcnow_naive())
+    db.commit()
+    assert first is not None and second is None
+    assert db.query(Transaction).count() == 1
+
+
+def test_auto_pay_job_uses_scaled_service_path(db, authed, make_bill, monkeypatch, SessionLocal):
+    """Scheduler auto-pay creates the transaction through pay_occurrence."""
+    import app.bills_service as bs
+    import app.database as database
+    import app.scheduler as scheduler
+
+    monkeypatch.setattr(database, "SessionLocal", SessionLocal, raising=False)
+    calls = []
+    real = bs.pay_occurrence
+    monkeypatch.setattr(bs, "pay_occurrence",
+                        lambda *a, **k: calls.append(1) or real(*a, **k))
+    bill, occ, users = _bill_with_splits(db, authed, make_bill, [50, 50], bill_amount=100,
+                                         auto_pay=True, occ_amount=80)
+    scheduler.auto_mark_paid_job()
+    db.expire_all()
+    assert calls
+    txn = db.query(Transaction).one()
+    assert sorted(float(s.amount) for s in txn.splits) == [40.0, 40.0]

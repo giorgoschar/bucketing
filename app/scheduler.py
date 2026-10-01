@@ -136,9 +136,6 @@ def _auto_pay_due_bills(db, today: date) -> int:
         NotificationType,
         OccurrenceStatus,
         RecurringBill,
-        Transaction,
-        TransactionSplit,
-        TransactionType,
     )
 
     occs = (
@@ -179,58 +176,27 @@ def _auto_pay_due_bills(db, today: date) -> int:
             "paid_by_default": bill.paid_by_default,
             "currency":        bill.currency,
             "name":            bill.name,
-            "splits": [(s.user_id, s.amount) for s in bill.splits],
         })
 
     count = 0
     for item in pending:
-        # Atomically claim the occurrence. If another worker (or an earlier run
-        # of this job) already claimed it, the UPDATE matches zero rows and we
-        # skip it — this is what prevents duplicate auto-pay transactions.
-        claimed = (
-            db.query(BillOccurrence)
-            .filter(
-                BillOccurrence.id == item["occ_id"],
-                BillOccurrence.status == OccurrenceStatus.unpaid,
-                BillOccurrence.transaction_id.is_(None),
-            )
-            .update(
-                {
-                    BillOccurrence.status:  OccurrenceStatus.paid,
-                    BillOccurrence.paid_at: _utcnow(),
-                    BillOccurrence.paid_by: item["paid_by_default"],
-                },
-                synchronize_session=False,
-            )
-        )
-        if claimed != 1:
+        # pay_occurrence atomically claims the occurrence (and creates the
+        # transaction with scaled splits). If another worker (or an earlier run
+        # of this job) already claimed it nothing is written — this is what
+        # prevents duplicate auto-pay transactions.
+        from app.bills_service import settle_occurrence
+
+        occ = db.get(BillOccurrence, item["occ_id"])
+        if not settle_occurrence(
+            db, occ,
+            amount=item["amount"],
+            paid_by=item["paid_by_default"],
+            paid_on=_utcnow(),
+            note_prefix="Auto-pay",
+        ):
             logger.info("Occurrence %s already claimed elsewhere — skipping", item["occ_id"])
             db.rollback()
             continue
-
-        if item["bucket_id"]:
-            txn = Transaction(
-                bucket_id=item["bucket_id"],
-                household_id=item["household_id"],
-                amount=item["amount"],
-                currency=item["currency"],
-                type=TransactionType.expense,
-                paid_by=item["paid_by_default"],
-                category_id=item["category_id"],
-                notes=f"Auto-pay: {item['name']}",
-                transaction_date=item["due_date"],
-            )
-            db.add(txn)
-            db.flush()
-            db.query(BillOccurrence).filter(BillOccurrence.id == item["occ_id"]).update(
-                {BillOccurrence.transaction_id: txn.id}, synchronize_session=False
-            )
-            for user_id, amount in item["splits"]:
-                db.add(TransactionSplit(
-                    transaction_id=txn.id,
-                    user_id=user_id,
-                    amount=amount,
-                ))
 
         _notify_members(
             db,
