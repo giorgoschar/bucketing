@@ -21,10 +21,13 @@ services:
     ports:
       - "${APP_BIND_ADDRESS:-127.0.0.1}:8000:8000"
     volumes:
-      - uploads_data:/app/uploads
+      # Bind mount, as in v1: existing receipts live in ./uploads on the host.
+      # The container runs as uid 10001 — see docs/DEPLOY-COOLIFY.md for the
+      # one-time `chown -R 10001 ./uploads`.
+      - ./uploads:/app/uploads
       - backups:/backups
     environment:
-      - DATABASE_URL=postgresql://expenses_user:${POSTGRES_PASSWORD:-localdevpassword}@db:5432/expenses
+      - DATABASE_URL=${DATABASE_URL:-postgresql://expenses_user:${POSTGRES_PASSWORD:-localdevpassword}@db:5432/expenses}
       - APP_SECRET_KEY=${APP_SECRET_KEY:?set APP_SECRET_KEY}
       - FIELD_ENCRYPTION_KEY=${FIELD_ENCRYPTION_KEY:-}
       - DEBUG=false
@@ -34,6 +37,15 @@ services:
       - TRUST_PROXY_HEADERS=true
       - ENABLE_SCHEDULER=true
       - RATE_LIMIT_STORAGE_URI=${RATE_LIMIT_STORAGE_URI:-}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-}
+      - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-false}
+      - BACKUP_BEFORE_MIGRATE=${BACKUP_BEFORE_MIGRATE:-true}
+      - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY:-}
+      - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY:-}
+      - VAPID_CLAIMS_EMAIL=${VAPID_CLAIMS_EMAIL:-admin@localhost}
+      - POSOKANEI_ENABLED=${POSOKANEI_ENABLED:-true}
+      - POSOKANEI_BASE_URL=${POSOKANEI_BASE_URL:-https://api.posokanei.gov.gr}
     depends_on:
       db:
         condition: service_healthy
@@ -54,25 +66,35 @@ services:
     profiles: ["redis"]
     command: ["redis-server", "--save", "", "--appendonly", "no"]
 
-  # Daily pg_dump + uploads tarball into the `backups` volume.
+  # Daily pg_dump + uploads tarball into the `backups` volume. Runs from the
+  # app image: its pg_dump (v17) can dump a 16 or 17 server, and the script is
+  # baked in (no relative ./scripts bind that Coolify may not provide).
   # Drop this service when the database is a Coolify-managed Postgres with
   # Coolify's own scheduled backups enabled (see docs/DEPLOY-COOLIFY.md).
   backup:
-    image: postgres:16-alpine
+    build: .
     restart: unless-stopped
-    command: ["sh", "-c", "while true; do /scripts/backup.sh; sleep 86400; done"]
+    user: "10001"
+    # Override the image entrypoint (which would run migrations + uvicorn).
+    entrypoint: ["sh", "-c", "while true; do /app/scripts/backup.sh || echo 'BACKUP FAILED' >&2; sleep 86400; done"]
     environment:
-      - DATABASE_URL=postgresql://expenses_user:${POSTGRES_PASSWORD:-localdevpassword}@db:5432/expenses
+      - DATABASE_URL=${DATABASE_URL:-postgresql://expenses_user:${POSTGRES_PASSWORD:-localdevpassword}@db:5432/expenses}
       - BACKUP_KEEP_DAYS=${BACKUP_KEEP_DAYS:-30}
     volumes:
-      - ./scripts:/scripts:ro
-      - uploads_data:/app/uploads:ro
+      - ./uploads:/app/uploads:ro
       - backups:/backups
     depends_on:
       db:
         condition: service_healthy
+    # Unhealthy when the newest database dump is older than ~26h, so a
+    # silently failing backup shows up in Coolify / `docker compose ps`.
+    healthcheck:
+      test: ["CMD-SHELL", "find /backups -maxdepth 1 -name 'db-*.sql.gz' -mmin -1560 | grep -q ."]
+      interval: 1h
+      timeout: 10s
+      start_period: 10m
+      retries: 1
 
 volumes:
   postgres_data:
-  uploads_data:
   backups:

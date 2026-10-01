@@ -21,6 +21,8 @@ from app.auth import (
     get_current_session,
     hash_password,
     invalidate_user_sessions,
+    is_locked,
+    register_failed_login,
     require_auth,
     require_csrf,
     security_logger,
@@ -54,6 +56,9 @@ AVATAR_COLORS = [
     "#f97316", "#f59e0b", "#10b981", "#06b6d4",
     "#3b82f6", "#84cc16",
 ]
+
+
+LOCKED_MESSAGE = "Too many failed attempts: the account is temporarily locked. Try again later."
 
 
 def _require_owner(db: Session, user_id: str, hh_id: str) -> HouseholdMember:
@@ -214,7 +219,14 @@ def change_password(
     auth=Depends(require_auth),
 ):
     user, hh_id = auth
+    # A session holder must not get unlimited guesses at the password: these
+    # checks share the login lockout.
+    if is_locked(user):
+        ctx = base_ctx(db, user, hh_id)
+        ctx.update({"request": request, "user": user, "pw_error": LOCKED_MESSAGE})
+        return templates.TemplateResponse("settings/index.html", ctx)
     if not verify_password(current_password, user.password_hash):
+        register_failed_login(db, user)
         ctx = base_ctx(db, user, hh_id)
         ctx.update({"request": request, "user": user, "pw_error": "Current password is incorrect."})
         return templates.TemplateResponse("settings/index.html", ctx)
@@ -366,24 +378,45 @@ def _generate_qr_base64(totp_uri: str) -> str:
     return base64.b64encode(buf.getvalue()).decode()
 
 
-@router.get("/2fa/enroll", response_class=HTMLResponse)
-def enroll_totp_page(request: Request, db: Session = Depends(get_db)):
-    """Accessible with a pending 2fa_enroll session OR a full authenticated session (for re-enroll)."""
-    pending = None
-    user = None
+def _enroll_identity(request: Request, db: Session):
+    """Who is enrolling: (user, hh_id, pending) or None.
+
+    A full session counts only while it is still valid (session_version and
+    household membership), exactly like require_auth: an invalidated cookie —
+    e.g. after an owner reset this member's 2FA — must not be able to enrol its
+    own authenticator. Otherwise fall through to the pending 2fa_enroll cookie,
+    which matters after a self-disable: the legit browser then holds a stale
+    session cookie next to the fresh pending one.
+    """
+    from app.auth import get_pending_session
 
     session = get_current_session(request)
     if session and session.get("state") == "authenticated":
-        user = db.get(User, session["user_id"])
-    else:
-        from app.auth import get_pending_session
-        pending = get_pending_session(request)
-        if not pending or pending.get("state") != "2fa_enroll":
-            return RedirectResponse("/login", status_code=302)
-        user = db.get(User, pending["user_id"])
+        user = db.get(User, session.get("user_id"))
+        hh_id = session.get("hh_id")
+        if (
+            user
+            and session.get("sv", -1) == user.session_version
+            and db.query(HouseholdMember).filter_by(household_id=hh_id, user_id=user.id).first()
+        ):
+            return user, hh_id, None
 
+    pending = get_pending_session(request)
+    if not pending or pending.get("state") != "2fa_enroll":
+        return None
+    user = db.get(User, pending["user_id"])
     if not user:
+        return None
+    return user, pending["hh_id"], pending
+
+
+@router.get("/2fa/enroll", response_class=HTMLResponse)
+def enroll_totp_page(request: Request, db: Session = Depends(get_db)):
+    """Accessible with a pending 2fa_enroll session OR a full authenticated session (for re-enroll)."""
+    identity = _enroll_identity(request, db)
+    if identity is None:
         return RedirectResponse("/login", status_code=302)
+    user, _hh_id, pending = identity
 
     if user.totp_enabled:
         return RedirectResponse("/settings", status_code=302)
@@ -423,25 +456,10 @@ def enroll_totp_submit(
     The secret is deliberately NOT read from the request: it lives on the user
     row (with totp_enabled=False) from the moment the QR code is rendered.
     """
-    from app.auth import get_pending_session
-
-    pending = None
-    user = None
-    hh_id = None
-
-    session = get_current_session(request)
-    if session and session.get("state") == "authenticated":
-        user = db.get(User, session["user_id"])
-        hh_id = session["hh_id"]
-    else:
-        pending = get_pending_session(request)
-        if not pending or pending.get("state") != "2fa_enroll":
-            return RedirectResponse("/login", status_code=302)
-        user = db.get(User, pending["user_id"])
-        hh_id = pending["hh_id"]
-
-    if not user:
+    identity = _enroll_identity(request, db)
+    if identity is None:
         return RedirectResponse("/login", status_code=302)
+    user, hh_id, pending = identity
 
     # Enrollment can only ever move a user from "no 2FA" to "2FA". Without this
     # check, anyone holding a session cookie could silently re-enroll a secret
@@ -513,12 +531,19 @@ def disable_totp(
 ):
     user, hh_id = auth
 
+    if is_locked(user):
+        ctx = base_ctx(db, user, hh_id)
+        ctx.update({"request": request, "user": user, "totp_error": LOCKED_MESSAGE})
+        return templates.TemplateResponse("settings/index.html", ctx)
+
     if not verify_password(current_password, user.password_hash):
+        register_failed_login(db, user)
         ctx = base_ctx(db, user, hh_id)
         ctx.update({"request": request, "user": user, "totp_error": "Incorrect password."})
         return templates.TemplateResponse("settings/index.html", ctx)
 
     if not user.totp_secret or not verify_totp(db, user, code):
+        register_failed_login(db, user)
         ctx = base_ctx(db, user, hh_id)
         ctx.update({"request": request, "user": user, "totp_error": "Invalid authenticator code."})
         return templates.TemplateResponse("settings/index.html", ctx)
@@ -526,6 +551,9 @@ def disable_totp(
     user.totp_secret = None
     user.totp_enabled = False
     user.totp_backup_codes = None
+    # The step counter belongs to the old secret; keeping it would reject the
+    # new secret's first codes as "replays".
+    user.last_totp_step = None
     invalidate_user_sessions(db, user)
     revoke_user_tokens(db, user.id)
     db.commit()
@@ -574,6 +602,7 @@ def admin_reset_member_totp(
     target_user.totp_secret = None
     target_user.totp_enabled = False
     target_user.totp_backup_codes = None
+    target_user.last_totp_step = None
     invalidate_user_sessions(db, target_user)
     revoke_user_tokens(db, target_user.id)
     db.commit()

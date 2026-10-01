@@ -15,7 +15,9 @@ mkdir -p "$BACKUP_DIR"
 stamp=$(date +%F-%H%M)
 db_file="$BACKUP_DIR/db-$stamp.sql.gz"
 # Write to a temp name first so a failed dump never looks like a good backup.
-pg_dump "$DATABASE_URL" | gzip > "$db_file.partial"
+# libpq rejects SQLAlchemy's "postgresql+driver://" scheme.
+pg_url=$(printf '%s' "$DATABASE_URL" | sed -E 's#^postgres(ql)?\+[^:]*://#postgresql://#')
+pg_dump "$pg_url" | gzip > "$db_file.partial"
 mv "$db_file.partial" "$db_file"
 echo "backup: wrote $db_file"
 
