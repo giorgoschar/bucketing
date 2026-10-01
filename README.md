@@ -50,10 +50,16 @@ Open http://localhost:8000 — you'll be redirected to the setup wizard on first
 ```bash
 # Copy and edit env
 cp .env.example .env
-# Set APP_SECRET_KEY in .env
+# Set in .env (compose refuses to start without both):
+#   APP_SECRET_KEY  - python -c "import secrets; print(secrets.token_hex(32))"
+#   APP_BASE_URL    - public URL, e.g. https://expenses.example.com
+#                     (http://localhost:8000 for a local try-out, with DEBUG=true)
+
+# Receipts live in ./uploads; the container runs as uid 10001
+mkdir -p uploads && sudo chown -R 10001 uploads
 
 # Start
-docker-compose up -d
+docker compose up -d
 
 # Open http://localhost:8000
 ```
@@ -61,13 +67,20 @@ docker-compose up -d
 The compose stack runs three services: `db` (PostgreSQL 16), `app` (uvicorn,
 2 workers) and `backup` (daily `pg_dump` + uploads tarball).
 
-Persistent data lives in named Docker volumes:
+Persistent data:
 
-| Volume | Holds |
+| Storage | Holds |
 |---|---|
-| `postgres_data` | the PostgreSQL database |
-| `uploads_data` | receipt images (`/app/uploads`) |
-| `backups` | daily dumps, plus a pre-migration dump on each deploy |
+| `postgres_data` (named volume) | the PostgreSQL database |
+| `./uploads` (host bind mount) | receipt images (`/app/uploads`) |
+| `backups` (named volume) | daily dumps, plus a pre-migration dump on each deploy |
+
+**Upgrading from v1?** Follow the checklist in
+[`docs/DEPLOY-COOLIFY.md`](docs/DEPLOY-COOLIFY.md#0-upgrading-an-existing-v1-deployment-first-v2-deploy--checklist)
+first: manual `pg_dump`, `tar czf uploads-pre-v2.tgz uploads`, keep your existing
+`APP_SECRET_KEY`, set `APP_BASE_URL` and a valid `FIELD_ENCRYPTION_KEY`. Everyone
+logs in again once after the upgrade. To roll back, restore the pre-migrate dump —
+never `alembic downgrade`, which drops v2 data.
 
 Migrations run automatically on start (`alembic upgrade head`). With two
 workers, only the process that wins a PostgreSQL advisory lock runs the
@@ -97,7 +110,7 @@ dates (bill due dates, "today") are evaluated in `APP_TIMEZONE`.
 | Variable | Default | Description |
 |---|---|---|
 | `DATABASE_URL` | `sqlite:///./expenses.db` | SQLAlchemy DB URL. Use `postgresql://...` for PostgreSQL in production |
-| `APP_SECRET_KEY` | `change-me` | Secret for signing session cookies. **Change in production.** |
+| `APP_SECRET_KEY` | *(required)* | Secret for signing session cookies. Placeholder values (`change-me...`) are rejected when `DEBUG=false`. |
 | `DEBUG` | `false` | Enable FastAPI debug mode |
 | `APP_TIMEZONE` | `UTC` | Calendar timezone for scheduled work. Bill due dates are local calendar dates, so set this to your zone (e.g. `Europe/Athens`) or bills can be judged due a day late |
 | `ENABLE_SCHEDULER` | `true` | Run the daily auto-pay / reminder job. On PostgreSQL only one worker holds the advisory lock and runs it; on SQLite the process always does |
