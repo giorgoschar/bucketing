@@ -58,6 +58,14 @@ from app.services.money import (  # noqa: F401
 from app.services.person import (  # noqa: F401
     get_person_summary,
 )
+from app.services.personal_tokens import (  # noqa: F401
+    active_household_bucket,
+    hash_personal_token,
+    issue_personal_token,
+    list_personal_tokens,
+    revoke_personal_token,
+    token_dict,
+)
 from app.services.settlement import (  # noqa: F401
     compute_bucket_net,
     get_bucket_settlement,

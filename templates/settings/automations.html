@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Automations{% endblock %}
+{% block header_title %}Automations{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto space-y-6">
+
+  <a href="/settings" class="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+    Settings
+  </a>
+
+  {% if error %}
+  <div class="px-4 py-3 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800 rounded-xl text-sm text-red-700 dark:text-red-300">
+    {{ error }}
+  </div>
+  {% endif %}
+
+  {% if new_token %}
+  <!-- ===== Freshly created token: shown exactly once ===== -->
+  <div class="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-2xl px-6 py-5 space-y-3">
+    <p class="text-sm font-semibold text-emerald-800 dark:text-emerald-300">Your new token</p>
+    <p class="text-xs text-emerald-700 dark:text-emerald-400">
+      Copy it now and paste it into the Shortcut. It is stored only as a hash, so it
+      <strong>cannot be shown again</strong> — if you lose it, revoke it and create another.
+    </p>
+    <div class="flex items-center gap-2">
+      <code class="flex-1 min-w-0 break-all text-xs font-mono bg-white dark:bg-gray-900 border border-emerald-200 dark:border-emerald-800 px-3 py-2 rounded-lg select-all">{{ new_token }}</code>
+      <button type="button" data-token="{{ new_token }}"
+              onclick="navigator.clipboard.writeText(this.dataset.token).then(() => this.textContent = 'Copied!')"
+              class="flex-shrink-0 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg transition-colors">
+        Copy
+      </button>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- ===== Personal ingest tokens ===== -->
+  <div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
+    <div class="px-6 py-4 border-b border-gray-50 dark:border-gray-800">
+      <p class="text-sm font-semibold">Ingest tokens</p>
+      <p class="text-xs text-gray-400 mt-0.5">
+        A token lets an iOS Shortcut add Apple Pay purchases as your expenses in
+        {{ household.name if household else 'this household' }}. It can only add expenses (scope <code>ingest</code>).
+      </p>
+    </div>
+    <div class="px-6 py-5">
+      {% if tokens %}
+      <div class="space-y-2 mb-5">
+        {% for t in tokens %}
+        <div class="flex items-center gap-3 py-1.5">
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium truncate">{{ t.name }}</p>
+            <p class="text-xs text-gray-400">
+              <code class="font-mono">{{ t.prefix }}…</code>
+              · {% if t.last_used_at %}last used {{ t.last_used_at | dmy }}{% else %}never used{% endif %}
+              {% if t.default_bucket_id and bucket_names.get(t.default_bucket_id) %}· → {{ bucket_names[t.default_bucket_id] }}{% endif %}
+            </p>
+          </div>
+          <form method="POST" action="/settings/automations/tokens/{{ t.id }}/revoke" class="flex-shrink-0">
+            <input type="hidden" name="_csrf_token" value="{{ request.state.csrf_token }}">
+            <button type="submit" class="text-xs font-semibold text-red-500 hover:text-red-600">Revoke</button>
+          </form>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="text-sm text-gray-400 mb-5">No tokens yet.</p>
+      {% endif %}
+
+      <form method="POST" action="/settings/automations/tokens" class="flex flex-wrap gap-2">
+        <input type="hidden" name="_csrf_token" value="{{ request.state.csrf_token }}">
+        <input type="text" name="name" required maxlength="60" placeholder="Token name, e.g. My iPhone"
+               class="flex-1 min-w-[10rem] px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm outline-none focus:border-primary-500" />
+        <select name="default_bucket_id" aria-label="Default bucket"
+                class="px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm outline-none focus:border-primary-500">
+          <option value="">First day-to-day bucket</option>
+          {% for b in active_buckets %}
+          <option value="{{ b.id }}">{{ b.icon }} {{ b.name }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit"
+                class="px-4 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-semibold rounded-xl text-sm transition-colors">
+          Create token
+        </button>
+      </form>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
