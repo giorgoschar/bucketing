@@ -294,7 +294,7 @@ def test_api_login_is_rate_limited(client, make_household):
 
 
 def test_api_totp_verify_is_rate_limited(client, make_household):
-    hh = make_household()
+    make_household()
     codes = []
     for _ in range(11):
         r = client.post("/api/v1/auth/totp/verify",

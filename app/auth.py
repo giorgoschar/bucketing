@@ -6,16 +6,20 @@ Session cookie payload:
   Pending session: {"user_id": "...", "hh_id": "...", "state": "2fa_pending"|"2fa_enroll"}
 """
 import hashlib
+import hmac
 import logging
 import secrets
+import time
 from datetime import UTC, datetime, timedelta
 
 import bcrypt as _bcrypt
+import pyotp
 from fastapi import Depends, HTTPException, Request
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.crypto import is_encrypted
 from app.database import get_db
 from app.models import HouseholdMember, RefreshToken, User
 
@@ -105,6 +109,38 @@ def clear_failed_logins(db: Session, user: User) -> None:
         user.failed_logins = 0
         user.locked_until = None
         db.commit()
+
+
+def log_id(identifier: str) -> str:
+    """Short hash of a user-typed login identifier, safe to put in logs."""
+    return hashlib.sha256(identifier.encode()).hexdigest()[:8]
+
+
+def verify_totp(db: Session, user: User, code: str) -> bool:
+    """Check a TOTP code for `user`, rejecting replays.
+
+    The code may belong to the previous, current or next 30s step (valid_window=1);
+    the step it actually matches must be newer than the last one accepted, which
+    is then stored. A legacy plaintext secret is re-encrypted on success.
+    """
+    stored = user.totp_secret
+    secret = user.get_totp_secret()
+    if not secret or not code:
+        return False
+    code = code.strip()
+    totp = pyotp.TOTP(secret)
+    now_step = int(time.time()) // totp.interval
+    for step in (now_step - 1, now_step, now_step + 1):
+        if not hmac.compare_digest(totp.at(step * totp.interval), code):
+            continue
+        if user.last_totp_step is not None and step <= user.last_totp_step:
+            continue  # replay
+        user.last_totp_step = step
+        if not is_encrypted(stored):
+            user.set_totp_secret(secret)  # lazy migration of legacy plaintext
+        db.commit()
+        return True
+    return False
 
 
 # ---------------------------------------------------------------------------

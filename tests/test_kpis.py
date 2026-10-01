@@ -193,6 +193,8 @@ def test_charts_are_server_rendered_svg(client, db, spread):
 
 
 def test_api_exposes_kpis(client, db, spread, make_household):
+    import time
+
     import pyotp
 
     from tests.conftest import PASSWORD
@@ -202,7 +204,7 @@ def test_api_exposes_kpis(client, db, spread, make_household):
     pending = r.json()["pending_token"]
     tok = client.post("/api/v1/auth/totp/verify",
                       json={"pending_token": pending,
-                            "code": pyotp.TOTP(spread.secret).now()}).json()["access_token"]
+                            "code": pyotp.TOTP(spread.secret).at(time.time() + 30)}).json()["access_token"]
 
     body = client.get("/api/v1/insights?preset=all_time",
                       headers={"Authorization": f"Bearer {tok}"}).json()
