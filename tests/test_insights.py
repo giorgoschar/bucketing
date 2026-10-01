@@ -332,3 +332,51 @@ def test_paid_and_share_both_sum_to_total_with_edge_cases(db, duo):
     assert s["paid_by"][gone_id]["name"].startswith("Former member")
     assert s["paid_by"]["unassigned"]["share"] == Decimal("20")
     assert db.get(User, gone_id) is not None
+
+
+def test_forecast_ignores_one_off_purchases(db, authed):
+    from app.models import TransactionType
+    from app.services import get_forecast
+    today = local_today()
+
+    def add(amount, when, one_off=False):
+        db.add(Transaction(
+            bucket_id=authed.bucket_id, household_id=authed.household_id,
+            amount=amount, currency="EUR", exchange_rate=1, type=TransactionType.expense,
+            transaction_date=when, paid_by=authed.user_id, exclude_from_forecast=one_off,
+        ))
+
+    # three complete past months of history, plus this month's spend
+    y, m = today.year, today.month
+    for back in (1, 2, 3):
+        mm = m - back
+        yy = y + (mm - 1) // 12
+        mm = (mm - 1) % 12 + 1
+        add(300, date(yy, mm, 10))
+        add(500, date(yy, mm, 11), one_off=True)     # one-off history must not lift the baseline
+    add(Decimal("127.60"), today)
+    db.commit()
+    base = get_forecast(db, authed.household_id)
+
+    add(99, today, one_off=True)
+    db.commit()
+    with_one_off = get_forecast(db, authed.household_id)
+
+    assert base["spend_so_far"] == Decimal("127.60")
+    assert base["baseline"] == Decimal("300")
+    for key in ("spend_so_far", "projected", "baseline"):
+        assert with_one_off[key] == base[key]
+
+
+def test_dashboard_month_and_all_time_summary_count_one_offs(db, authed):
+    from app.services import get_all_time_summary, get_month_summary
+    today = local_today()
+    for amount, one_off in ((Decimal("127.60"), False), (Decimal("99"), True)):
+        db.add(Transaction(
+            bucket_id=authed.bucket_id, household_id=authed.household_id,
+            amount=amount, currency="EUR", type="expense", transaction_date=today,
+            paid_by=authed.user_id, exclude_from_forecast=one_off,
+        ))
+    db.commit()
+    assert get_month_summary(db, authed.household_id, today.year, today.month)["total_spent"] == Decimal("226.60")
+    assert get_all_time_summary(db, authed.household_id)["total_spent"] == Decimal("226.60")
