@@ -216,6 +216,29 @@ def test_placeholder_app_secret_key_is_rejected_in_production():
         _prod(app_secret_key="CHANGE-ME-please-this-is-long-enough-for-32")
 
 
+def test_ingest_url_uses_app_base_url(client, authed, monkeypatch):
+    """Behind the proxy request.base_url is http://; the Shortcut needs https."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "app_base_url", "https://expenses.example.org/")
+    text = client.get("/settings/automations").text
+    assert "https://expenses.example.org/api/v1/ingest/apple-pay" in text
+    assert "http://testserver/api/v1/ingest" not in text
+
+
+def test_token_page_is_kept_out_of_htmx_history(client, authed):
+    """hx-boost would push /settings/automations/tokens (refresh -> 405) and
+    snapshot the page, plaintext pat_ token included, into localStorage."""
+    import re
+
+    r = client.post("/settings/automations/tokens", headers=authed.headers,
+                    data={"name": "Phone"})
+    assert "pat_" in r.text
+    assert 'hx-history="false"' in r.text
+    form = re.search(r'<form[^>]*action="/settings/automations/tokens"[^>]*>', r.text)
+    assert form and 'hx-push-url="false"' in form.group(0)
+
+
 def test_env_example_is_production_safe():
     text = (Path(__file__).resolve().parent.parent / ".env.example").read_text()
     assert "\nDEBUG=false" in text

@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.auth import require_auth, require_csrf
+from app.config import settings
 from app.database import get_db
 from app.models import Bucket, BucketStatus
 from app.services import (
@@ -40,7 +41,9 @@ def _render(request: Request, db: Session, user, hh_id: str, *,
         "bucket_names": {b.id: b.name for b in buckets},
         "new_token": new_token,
         "error": error,
-        "ingest_url": f"{str(request.base_url).rstrip('/')}/api/v1/ingest/apple-pay",
+        # APP_BASE_URL first: behind the proxy request.base_url is http://.
+        "ingest_url": f"{(settings.app_base_url or str(request.base_url)).rstrip('/')}"
+                      "/api/v1/ingest/apple-pay",
     })
     response = templates.TemplateResponse("settings/automations.html", ctx, status_code=status_code)
     # The page may carry a freshly issued plaintext token: never cache it.
