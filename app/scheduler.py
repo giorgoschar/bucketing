@@ -694,6 +694,10 @@ def _acquire_scheduler_lock(engine=None) -> bool:
     from sqlalchemy import text
 
     conn = engine.connect()
+    # AUTOCOMMIT: otherwise SQLAlchemy's autobegin leaves this long-lived
+    # connection idle-in-transaction, and idle_in_transaction_session_timeout
+    # would silently kill it (and the lock with it).
+    conn.execution_options(isolation_level="AUTOCOMMIT")
     try:
         got = bool(conn.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": SCHEDULER_LOCK_KEY}).scalar())
     except Exception:
