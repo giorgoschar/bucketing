@@ -125,6 +125,35 @@ def test_offline_js_generates_a_client_id():
     assert "randomUUID" in js
 
 
+def test_offline_js_does_not_treat_a_login_redirect_as_sent():
+    """C2: with a stale session the replay POST is redirected to /login, which
+    fetch follows to a 200 — the queued expense used to be deleted as "sent"
+    and silently lost. Only a redirect to the success destination counts."""
+    import re
+    js = open("static/offline.js").read()
+    assert not re.search(r"resp\.ok\s*\|\|\s*resp\.redirected", js), "a redirect alone is not success"
+    assert "_replaySucceeded(resp)" in js
+    body = js[js.index("function _replaySucceeded"):]
+    body = body[:body.index("\n}\n")]
+    assert "resp.redirected" in body and "resp.url" in body
+    assert "/buckets/" in body and "/transactions" in body
+
+
+def test_stale_session_replay_ends_at_login_with_no_row(app, db, authed):
+    """Server face of C2: the queued POST from a signed-out browser is
+    redirected to /login (or refused) and stores nothing — so the client must
+    keep the record queued rather than delete it."""
+    from fastapi.testclient import TestClient
+    fresh = TestClient(app)  # no session cookie: a stale/expired session
+    r = fresh.post("/transactions", data={
+        "bucket_id": authed.bucket_id, "transaction_date": "2026-07-20",
+        "amount": "9.99", "type": "expense", "client_id": "offline-stale-1",
+    }, follow_redirects=True)
+    assert db.query(Transaction).count() == 0
+    final = str(r.url)
+    assert r.status_code == 403 or "/login" in final, (r.status_code, final)
+
+
 def test_base_template_exposes_queue_controls():
     html = open("templates/base.html").read()
     for hook in ("flushOfflineQueue", "refreshOfflineBadge", "offline-queue-pill"):
