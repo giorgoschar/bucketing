@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
+from app.api_auth import revoke_member_access
 from app.auth import (
     clear_session,
     get_current_session,
@@ -588,6 +589,9 @@ def remove_member(
         raise HTTPException(status_code=400, detail="Cannot remove another owner. Transfer ownership first.")
 
     db.delete(target_membership)
+    target_user = db.get(User, member_id)
+    if target_user:
+        revoke_member_access(db, target_user, hh_id)
     db.commit()
 
     security_logger.info(

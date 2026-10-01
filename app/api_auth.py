@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.models import RefreshToken, User
+from app.models import HouseholdMember, RefreshToken, User
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -64,6 +64,25 @@ def create_pending_token(user_id: str, household_id: str) -> str:
         "exp":   expire,
     }
     return jwt.encode(payload, settings.effective_jwt_secret, algorithm=_ALGORITHM)
+
+
+def _is_member(db: Session, household_id: str | None, user_id: str) -> bool:
+    return db.query(HouseholdMember).filter_by(
+        household_id=household_id, user_id=user_id
+    ).first() is not None
+
+
+def revoke_member_access(db: Session, user: User, household_id: str) -> None:
+    """Kill a removed member's sessions and refresh tokens for this household.
+
+    Bumping session_version logs the user out everywhere (cookies and access
+    tokens carry it); revoking refresh tokens stops new access tokens being
+    minted. The caller commits.
+    """
+    user.session_version = (user.session_version or 0) + 1
+    db.query(RefreshToken).filter_by(user_id=user.id, household_id=household_id).update(
+        {RefreshToken.revoked: True}, synchronize_session=False
+    )
 
 
 def _hash_token(raw: str) -> str:
@@ -148,6 +167,13 @@ def require_api_auth(
             detail="Session invalidated — please log in again",
         )
 
+    if not _is_member(db, claims.get("hh"), user.id):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not a member of this household",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     if not user.totp_enabled:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -212,6 +238,11 @@ def rotate_refresh_token(raw_token: str, db: Session) -> tuple[str, str]:
     user = db.get(User, record.user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+
+    if not _is_member(db, record.household_id, user.id):
+        record.revoked = True
+        db.commit()
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not a member of this household")
 
     if not user.totp_enabled:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="TOTP enrollment required")

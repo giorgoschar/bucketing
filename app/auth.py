@@ -112,6 +112,11 @@ def set_pending_session(response, user_id: str, household_id: str, state: str):
     response.set_cookie(PENDING_COOKIE_NAME, value, **_cookie_kwargs(PENDING_MAX_AGE))
 
 
+def _expired_session_cookie() -> str:
+    """A Set-Cookie header value that deletes the session cookie."""
+    return f"{COOKIE_NAME}=; Max-Age=0; Path=/; HttpOnly; SameSite=lax"
+
+
 def clear_session(response):
     response.delete_cookie(COOKIE_NAME)
     response.delete_cookie(PENDING_COOKIE_NAME)
@@ -195,14 +200,24 @@ def require_auth(request: Request, db: Session = Depends(get_db)):
     if session.get("sv", -1) != user.session_version:
         raise HTTPException(status_code=302, headers={"Location": "/login"})
 
+    # Membership check — a removed member's cookie still names the household
+    hh_id = session.get("hh_id")
+    if not db.query(HouseholdMember).filter_by(household_id=hh_id, user_id=user.id).first():
+        raise HTTPException(
+            status_code=302,
+            headers={"Location": "/login", "Set-Cookie": _expired_session_cookie()},
+        )
+
     # TOTP enrollment enforcement — every authenticated user must enroll
     if not user.totp_enabled:
         raise HTTPException(status_code=302, headers={"Location": "/settings/2fa/enroll"})
 
-    # Expose CSRF token to templates via request.state
+    # Expose CSRF token to templates via request.state; the security-headers
+    # middleware only (re)issues a CSRF cookie for requests that got this far.
     request.state.csrf_token = request.cookies.get(CSRF_COOKIE_NAME, "")
+    request.state.user = user
 
-    return user, session["hh_id"]
+    return user, hh_id
 
 
 def require_household_member(

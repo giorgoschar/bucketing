@@ -146,3 +146,167 @@ def test_non_owner_cannot_rename_household(client, db, make_household, login):
     assert r.status_code == 403
     db.expire_all()
     assert db.get(Household, owner.household_id).name == "Shared"
+
+
+# ---------------------------------------------------------------------------
+# C1/H2: a removed member's cached cookie or token must stop working.
+# ---------------------------------------------------------------------------
+
+def _add_member_user(db, household_id, username="member"):
+    import pyotp
+
+    from app.auth import hash_password
+    from app.models import HouseholdMember, MemberRole, User
+    from tests.conftest import PASSWORD
+
+    secret = pyotp.random_base32()
+    user = User(username=username, display_name=username.title(),
+                email=f"{username}@example.com", password_hash=hash_password(PASSWORD),
+                totp_secret=secret, totp_enabled=True, session_version=0)
+    db.add(user)
+    db.flush()
+    db.add(HouseholdMember(household_id=household_id, user_id=user.id, role=MemberRole.member))
+    db.commit()
+    return user, secret
+
+
+def _web_login(app, username, secret):
+    import pyotp
+    from fastapi.testclient import TestClient
+
+    from tests.conftest import PASSWORD
+
+    c = TestClient(app, follow_redirects=False)
+    assert c.post("/login", data={"username": username, "password": PASSWORD}).status_code == 302
+    assert c.post("/login/verify", data={"code": pyotp.TOTP(secret).now()}).status_code == 302
+    return c
+
+
+def _api_login(client, username, secret):
+    import pyotp
+
+    from tests.conftest import PASSWORD
+
+    r = client.post("/api/v1/auth/login", json={"username": username, "password": PASSWORD})
+    r = client.post("/api/v1/auth/totp/verify",
+                    json={"pending_token": r.json()["pending_token"],
+                          "code": pyotp.TOTP(secret).now()})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def _drop_membership(db, household_id, user_id):
+    """Remove membership behind the app's back: no session_version bump."""
+    from app.models import HouseholdMember
+
+    db.query(HouseholdMember).filter_by(household_id=household_id, user_id=user_id).delete()
+    db.commit()
+
+
+def test_removed_member_cookie_is_rejected(app, db, make_household):
+    owner = make_household(name="Shared", username="owner")
+    member, secret = _add_member_user(db, owner.household_id)
+    member_client = _web_login(app, "member", secret)
+    assert member_client.get("/dashboard").status_code == 200
+
+    owner_client = _web_login(app, "owner", owner.secret)
+    r = owner_client.post(f"/settings/remove-member/{member.id}",
+                          headers={"X-CSRF-Token": owner_client.cookies.get("csrf_token")})
+    assert r.status_code == 302
+
+    r = member_client.get("/dashboard")
+    assert r.status_code == 302 and r.headers["location"] == "/login"
+
+
+def test_session_without_membership_is_rejected(app, db, make_household):
+    owner = make_household(name="Shared", username="owner")
+    member, secret = _add_member_user(db, owner.household_id)
+    member_client = _web_login(app, "member", secret)
+
+    _drop_membership(db, owner.household_id, member.id)
+
+    for path in ("/dashboard", "/settings", "/insights"):
+        r = member_client.get(path)
+        assert r.status_code == 302 and r.headers["location"] == "/login", path
+
+
+def test_access_token_without_membership_is_401(client, db, make_household):
+    owner = make_household(name="Shared", username="owner")
+    member, secret = _add_member_user(db, owner.household_id)
+    tokens = _api_login(client, "member", secret)
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+    assert client.get("/api/v1/buckets", headers=headers).status_code == 200
+
+    _drop_membership(db, owner.household_id, member.id)
+
+    assert client.get("/api/v1/buckets", headers=headers).status_code == 401
+
+
+def test_refresh_token_without_membership_is_401_and_revoked(client, db, make_household):
+    from app.api_auth import _hash_token
+    from app.models import RefreshToken
+
+    owner = make_household(name="Shared", username="owner")
+    member, secret = _add_member_user(db, owner.household_id)
+    tokens = _api_login(client, "member", secret)
+
+    _drop_membership(db, owner.household_id, member.id)
+
+    r = client.post("/api/v1/auth/token/refresh", json={"refresh_token": tokens["refresh_token"]})
+    assert r.status_code == 401
+    db.expire_all()
+    record = db.query(RefreshToken).filter_by(token_hash=_hash_token(tokens["refresh_token"])).one()
+    assert record.revoked
+
+
+def test_api_removal_revokes_member_refresh_tokens(client, db, make_household):
+    owner = make_household(name="Shared", username="owner")
+    member, secret = _add_member_user(db, owner.household_id)
+    member_tokens = _api_login(client, "member", secret)
+    owner_tokens = _api_login(client, "owner", owner.secret)
+
+    r = client.delete(f"/api/v1/settings/household/members/{member.id}",
+                      headers={"Authorization": f"Bearer {owner_tokens['access_token']}"})
+    assert r.status_code == 204, r.text
+
+    r = client.post("/api/v1/auth/token/refresh",
+                    json={"refresh_token": member_tokens["refresh_token"]})
+    assert r.status_code == 401
+    r = client.get("/api/v1/buckets",
+                   headers={"Authorization": f"Bearer {member_tokens['access_token']}"})
+    assert r.status_code == 401
+
+
+def test_switch_does_not_revive_an_invalidated_cookie(app, db, make_household):
+    from app.models import HouseholdMember, MemberRole, User
+
+    hh = make_household(name="Home", username="owner")
+    other = make_household(name="Other", username="other")
+    db.add(HouseholdMember(household_id=other.household_id, user_id=hh.user_id,
+                           role=MemberRole.member))
+    db.commit()
+    c = _web_login(app, "owner", hh.secret)
+    csrf = c.cookies.get("csrf_token")
+
+    user = db.get(User, hh.user_id)
+    user.session_version += 1  # e.g. password changed on another device
+    db.commit()
+
+    r = c.post("/household/switch", data={"household_id": other.household_id},
+               headers={"X-CSRF-Token": csrf})
+    assert r.status_code == 302 and r.headers["location"] == "/login"
+    assert "session" not in r.headers.get("set-cookie", "")
+
+
+def test_no_csrf_cookie_for_invalidated_session(app, db, make_household):
+    from app.models import User
+
+    hh = make_household(username="owner")
+    c = _web_login(app, "owner", hh.secret)
+    user = db.get(User, hh.user_id)
+    user.session_version += 1
+    db.commit()
+
+    c.cookies.delete("csrf_token")
+    r = c.get("/login")
+    assert "csrf_token" not in r.headers.get("set-cookie", "")

@@ -15,6 +15,7 @@ from app.auth import (
     get_current_session,
     get_pending_session,
     hash_password,
+    require_auth,
     require_csrf,
     security_logger,
     set_pending_session,
@@ -308,12 +309,9 @@ def switch_household(
     request: Request,
     household_id: str = Form(...),
     db: Session = Depends(get_db),
+    auth=Depends(require_auth),
 ):
-    session = get_current_session(request)
-    if not session or session.get("state") != "authenticated":
-        return RedirectResponse("/login", status_code=302)
-
-    user = db.get(User, session["user_id"])
+    user, _ = auth
     membership = db.query(HouseholdMember).filter_by(
         user_id=user.id, household_id=household_id
     ).first()

@@ -95,11 +95,13 @@ async def security_headers(request: Request, call_next):
     # If the user has a valid authenticated session but no CSRF cookie (e.g. it was
     # previously wiped by an aggressive error handler), issue a fresh one so that
     # the very next state-changing request will pass CSRF validation again.
+    # Only require_auth sets request.state.user, after checking session_version
+    # and membership — a merely well-signed cookie gets nothing.
     if not request.cookies.get(CSRF_COOKIE_NAME) and request.cookies.get(COOKIE_NAME):
-        from app.auth import decode_cookie, generate_csrf_token
-        session = decode_cookie(request.cookies.get(COOKIE_NAME))
-        if session and session.get("state") == "authenticated":
-            csrf_val = generate_csrf_token(session["user_id"])
+        from app.auth import generate_csrf_token
+        authed_user = getattr(request.state, "user", None)
+        if authed_user is not None:
+            csrf_val = generate_csrf_token(authed_user.id)
             response.set_cookie(
                 CSRF_COOKIE_NAME, csrf_val,
                 httponly=False, samesite="strict",

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.api_auth import require_api_auth
+from app.api_auth import require_api_auth, revoke_member_access
 from app.auth import hash_password, security_logger, verify_password
 from app.config import settings
 from app.database import get_db
@@ -186,6 +186,9 @@ def remove_member(
     if not membership:
         raise HTTPException(status_code=404, detail="Member not found")
     db.delete(membership)
+    target_user = db.get(User, member_user_id)
+    if target_user:
+        revoke_member_access(db, target_user, hh_id)
     db.commit()
 
 
