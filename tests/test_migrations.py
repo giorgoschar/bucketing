@@ -230,3 +230,54 @@ def test_security_hardening_migration_preserves_data(tmp_path):
     up = _alembic(["upgrade", "head"], db_url)
     assert up.returncode == 0, up.stderr
     check()
+
+
+def test_stock_migration_tables_and_barcode_uniqueness(tmp_path):
+    """Phase 6: stock/price tables exist; barcode is unique per household only
+    when set (many products may have no barcode)."""
+    import uuid
+
+    import pytest
+    from sqlalchemy import text
+    from sqlalchemy.exc import IntegrityError
+
+    db_url = _db_url(tmp_path, "stock.db")
+    up = _alembic(["upgrade", "head"], db_url)
+    assert up.returncode == 0, up.stderr
+
+    engine = create_engine(db_url)
+    tables = set(inspect(engine).get_table_names())
+    assert {"products", "stock_items", "stock_movements", "price_snapshots"} <= tables
+
+    hh1, hh2 = str(uuid.uuid4()), str(uuid.uuid4())
+
+    def add_product(conn, hh, barcode):
+        conn.execute(text(
+            "INSERT INTO products (id, household_id, name, barcode) VALUES (:i, :h, 'Milk', :b)"
+        ), {"i": str(uuid.uuid4()), "h": hh, "b": barcode})
+
+    with engine.begin() as conn:
+        for hh in (hh1, hh2):
+            conn.execute(text(
+                "INSERT INTO households (id, name, default_currency) VALUES (:i, 'H', 'EUR')"
+            ), {"i": hh})
+        add_product(conn, hh1, None)
+        add_product(conn, hh1, None)              # NULL barcodes never collide
+        add_product(conn, hh1, "5201054017906")
+        add_product(conn, hh2, "5201054017906")   # other household: fine
+    with pytest.raises(IntegrityError), engine.begin() as conn:
+        add_product(conn, hh1, "5201054017906")
+    engine.dispose()
+
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "stock_mig", ROOT / "alembic" / "versions" / "a5b6c7d8e9f0_stock_and_prices.py")
+    mig = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mig)
+    down = _alembic(["downgrade", mig.down_revision], db_url)
+    assert down.returncode == 0, down.stderr
+    tables = set(inspect(create_engine(db_url)).get_table_names())
+    assert not {"products", "stock_items", "stock_movements", "price_snapshots"} & tables
+    up = _alembic(["upgrade", "head"], db_url)
+    assert up.returncode == 0, up.stderr

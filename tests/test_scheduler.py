@@ -253,3 +253,226 @@ def test_bill_due_today_local_is_paid(db, make_household, make_bill, run_job, mo
 
     run_job()
     assert db.query(Transaction).count() == 1
+
+
+# ---------------------------------------------------------------------------
+# Phase 6: daily price refresh, low-stock and price-drop alerts
+# ---------------------------------------------------------------------------
+
+def _stock_fixtures():
+    from decimal import Decimal
+
+    from app.posokanei import PosokaneiUnavailable, PriceStats, ProductSummary, RetailerPrice
+
+    def summary(pid, price="1.50"):
+        return ProductSummary(
+            id=pid, name="Milk", brand=None, barcode=None, unit=None, unit_quantity=None,
+            image_url=None,
+            retailer_prices=[RetailerPrice("lidl", "Lidl", Decimal(price), None, False, None, None)],
+            price_stats=PriceStats(Decimal(price), Decimal(price), Decimal(price)),
+        )
+
+    class Fake:
+        def __init__(self, fail=False):
+            self.fail = fail
+            self.calls = []
+
+        def get(self, pid, include_history=True):
+            self.calls.append(pid)
+            if self.fail:
+                raise PosokaneiUnavailable("down")
+            return summary(pid)
+
+    return Fake
+
+
+@pytest.fixture()
+def fake_posokanei(monkeypatch):
+    from app import posokanei
+
+    Fake = _stock_fixtures()
+    client = Fake()
+    monkeypatch.setattr(posokanei, "_client", client)
+    return client
+
+
+def _stock_item(db, hh, name="Milk", posokanei_id="p-1", qty="1", min_qty="1", track=True):
+    from decimal import Decimal
+
+    from app.services import stock as stock_svc
+
+    item = stock_svc.add_product(db, hh.household_id, hh.user_id, name=name,
+                                 posokanei_id=posokanei_id, quantity=Decimal(qty),
+                                 min_quantity=Decimal(min_qty))
+    item.track_price = track
+    db.commit()
+    return item
+
+
+def test_price_refresh_snapshots_tracked_products_once_a_day(db, make_household, run_job, fake_posokanei):
+    from app.models import PriceSnapshot
+    from app.services import stock as stock_svc
+
+    hh = make_household()
+    tracked = _stock_item(db, hh, "Milk", "p-1")
+    _stock_item(db, hh, "Untracked", "p-2", track=False)
+    _stock_item(db, hh, "Manual", None)
+    archived = _stock_item(db, hh, "Gone", "p-3")
+    stock_svc.archive_product(db, hh.household_id, archived.id)
+    db.commit()
+
+    run_job()
+    run_job()
+
+    assert fake_posokanei.calls == ["p-1"]          # skipped when today's snapshot exists
+    snaps = db.query(PriceSnapshot).all()
+    assert [(s.product_id, s.retailer, s.snapshot_date) for s in snaps] == [
+        (tracked.product_id, "lidl", today_local())
+    ]
+
+
+def test_price_refresh_down_logs_and_job_continues(db, make_household, make_bill, run_job,
+                                                   monkeypatch, caplog):
+    from app import posokanei
+    from app.models import PriceSnapshot
+
+    Fake = _stock_fixtures()
+    down = Fake(fail=True)
+    monkeypatch.setattr(posokanei, "_client", down)
+    hh = make_household()
+    for n in range(5):
+        _stock_item(db, hh, f"P{n}", f"p-{n}")
+    make_bill(hh.household_id, hh.bucket_id, amount=45, paid_by=hh.user_id)
+
+    with caplog.at_level("WARNING"):
+        run_job()
+
+    assert db.query(PriceSnapshot).count() == 0
+    assert len(down.calls) == 3                     # gives up after 3 straight failures
+    assert "PosoKanei unavailable" in caplog.text
+    # Other stages still ran.
+    assert db.query(Transaction).count() == 1
+
+
+def test_stock_low_notifies_when_crossing_once_a_day(db, make_household, run_job, fake_posokanei):
+    from decimal import Decimal
+
+    from app.models import NotificationType
+    from app.services import stock as stock_svc
+
+    hh = make_household()
+    item = _stock_item(db, hh, "Coffee", None, qty="2", min_qty="1")
+    stock_svc.adjust_stock(db, hh.household_id, item.id, Decimal("-1"), hh.user_id)  # 2 → 1
+    db.commit()
+
+    run_job()
+    run_job()
+
+    notes = db.query(Notification).filter_by(type=NotificationType.stock_low).all()
+    assert len(notes) == 1
+    assert notes[0].dedupe_key == f"stock_low:{item.id}:{today_local()}"
+    assert "Coffee" in notes[0].title
+
+
+def test_stock_low_is_quiet_when_it_was_already_low(db, make_household, run_job, fake_posokanei):
+    from app.models import NotificationType
+
+    hh = make_household()
+    _stock_item(db, hh, "Salt", None, qty="0", min_qty="1")   # no recent movement
+    run_job()
+    assert db.query(Notification).filter_by(type=NotificationType.stock_low).count() == 0
+
+
+def test_price_drop_notifies_once(db, make_household, run_job, fake_posokanei):
+    from datetime import timedelta
+    from decimal import Decimal
+
+    from app.models import NotificationType, PriceSnapshot
+
+    hh = make_household()
+    item = _stock_item(db, hh, "Feta", "p-9", qty="5", min_qty="1")
+    today = today_local()
+    for d in range(1, 15):
+        db.add(PriceSnapshot(product_id=item.product_id, retailer="lidl", price=Decimal("2.00"),
+                             snapshot_date=today - timedelta(days=d)))
+    db.commit()
+    # The refresh stage stores today's 1.50 (fake), i.e. 25% under the median.
+
+    run_job()
+    run_job()
+
+    notes = db.query(Notification).filter_by(type=NotificationType.price_drop).all()
+    assert len(notes) == 1
+    assert notes[0].dedupe_key == f"price_drop:{item.product_id}:{today}"
+    assert "Feta" in notes[0].title
+
+
+def test_no_price_drop_for_a_normal_price(db, make_household, run_job, fake_posokanei):
+    from datetime import timedelta
+    from decimal import Decimal
+
+    from app.models import NotificationType, PriceSnapshot
+
+    hh = make_household()
+    item = _stock_item(db, hh, "Feta", "p-9", qty="5", min_qty="1")
+    today = today_local()
+    for d in range(1, 15):
+        db.add(PriceSnapshot(product_id=item.product_id, retailer="lidl", price=Decimal("1.55"),
+                             snapshot_date=today - timedelta(days=d)))
+    db.commit()
+    run_job()
+    assert db.query(Notification).filter_by(type=NotificationType.price_drop).count() == 0
+
+
+def test_dead_product_ids_do_not_starve_the_refresh(db, make_household, run_job, monkeypatch):
+    """404s are per-product misses: skipped, never counted as an outage."""
+    from app import posokanei
+    from app.models import PriceSnapshot
+    from app.posokanei import PosokaneiNotFound
+
+    Fake = _stock_fixtures()
+
+    class Mixed(Fake):
+        def get(self, pid, include_history=True):
+            if pid.startswith("dead"):
+                self.calls.append(pid)
+                raise PosokaneiNotFound(pid)
+            return super().get(pid, include_history)
+
+    client = Mixed()
+    monkeypatch.setattr(posokanei, "_client", client)
+    hh = make_household()
+    for n in range(3):
+        _stock_item(db, hh, f"Dead {n}", f"dead-{n}")
+    good = _stock_item(db, hh, "Good", "zz-good")      # sorts last by id/name either way
+
+    run_job()
+
+    assert "zz-good" in client.calls
+    snaps = db.query(PriceSnapshot).all()
+    assert [(s.product_id, s.snapshot_date) for s in snaps] == [(good.product_id, today_local())]
+
+
+def test_refresh_order_is_oldest_snapshot_first(db, make_household, run_job, monkeypatch):
+    from datetime import timedelta
+    from decimal import Decimal
+
+    from app import posokanei
+    from app.models import PriceSnapshot
+
+    Fake = _stock_fixtures()
+    client = Fake()
+    monkeypatch.setattr(posokanei, "_client", client)
+    hh = make_household()
+    recent = _stock_item(db, hh, "Recent", "p-recent")
+    stale = _stock_item(db, hh, "Stale", "p-stale")
+    _stock_item(db, hh, "Never", "p-never")
+    today = today_local()
+    for item, age in ((recent, 1), (stale, 20)):
+        db.add(PriceSnapshot(product_id=item.product_id, retailer="lidl", price=Decimal("1"),
+                             snapshot_date=today - timedelta(days=age)))
+    db.commit()
+
+    run_job()
+
+    assert client.calls == ["p-never", "p-stale", "p-recent"]

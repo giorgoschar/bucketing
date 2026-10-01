@@ -14,6 +14,7 @@
          "today": {{ today | tojson }},
          "currency": {{ (household.default_currency if household else "EUR") | tojson }},
          "currentUserId": {{ user.id | tojson }},
+         "prefill": {{ (prefill or {}) | tojson }},
          "buckets": { {% for bucket in buckets %}{{ bucket.id | tojson }}: {{ (bucket.icon ~ " " ~ bucket.name) | tojson }}{% if not loop.last %},{% endif %}{% endfor %} }
        }'>
 

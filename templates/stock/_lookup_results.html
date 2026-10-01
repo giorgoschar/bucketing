@@ -1,0 +1,38 @@
+{# PosoKanei search / barcode results inside the add-product panel. #}
+{% if error %}
+<div class="px-3 py-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 text-sm">
+  Prices unavailable — PosoKanei could not be reached. You can still add the product manually below.
+</div>
+{% elif not results %}
+<p class="px-1 py-2 text-sm text-gray-400">{{ empty_msg }}</p>
+{% else %}
+<ul class="divide-y divide-gray-100 dark:divide-gray-800 rounded-xl border border-gray-100 dark:border-gray-800">
+  {% for p in results %}
+  {% set best = p.cheapest %}
+  <li class="px-3 py-2.5">
+    <form method="POST" action="/stock" class="flex items-center gap-3">
+      <input type="hidden" name="name" value="{{ p.name }}" />
+      <input type="hidden" name="brand" value="{{ p.brand or '' }}" />
+      <input type="hidden" name="barcode" value="{{ p.barcode or '' }}" />
+      <input type="hidden" name="posokanei_id" value="{{ p.id }}" />
+      <input type="hidden" name="unit" value="{{ p.unit or '' }}" />
+      <input type="hidden" name="unit_quantity" value="{{ p.unit_quantity if p.unit_quantity is not none else '' }}" />
+      <div class="flex-1 min-w-0">
+        <p class="text-sm font-medium truncate">{{ p.name }}</p>
+        <p class="text-xs text-gray-400 truncate">
+          {% if p.brand %}{{ p.brand }}{% endif %}
+          {% if best %} · from {{ best.price | currency('EUR') }} at {{ best.display_name or retailer_label(best.retailer) }}{% else %} · no current price{% endif %}
+        </p>
+      </div>
+      <label class="flex items-center gap-1 text-xs text-gray-500">
+        min
+        <input type="number" name="min_quantity" value="1" min="0" step="0.5"
+               class="w-14 px-1.5 py-1 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800" />
+      </label>
+      <button class="px-3 py-1.5 rounded-lg bg-primary-500 hover:bg-primary-600 text-white text-xs font-semibold">Add</button>
+    </form>
+  </li>
+  {% endfor %}
+</ul>
+<p class="mt-1 text-[11px] text-gray-400">Prices: PosoKanei (posokanei.gov.gr)</p>
+{% endif %}

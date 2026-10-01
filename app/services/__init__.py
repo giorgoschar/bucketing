@@ -83,6 +83,22 @@ from app.services.settlement import (  # noqa: F401
     record_household_settlement,
     simplify_debts,
 )
+from app.services.stock import (  # noqa: F401
+    StockError,
+    add_product,
+    adjust_stock,
+    archive_product,
+    current_prices,
+    get_stock_item,
+    list_stock,
+    predicted_runout_days,
+    price_advice,
+    record_snapshots,
+    retailer_label,
+    rotation_suggestions,
+    shopping_list,
+    update_stock_settings,
+)
 from app.services.transactions import (  # noqa: F401
     ALLOWED_RECEIPT_EXTENSIONS,
     MAX_RECEIPT_SIZE,

@@ -469,6 +469,145 @@ def _notify_budget_thresholds(db, today: date) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Stock & prices (Phase 6)
+# ---------------------------------------------------------------------------
+
+# Consecutive PosoKanei failures after which the refresh stage gives up for
+# the day: when the API is down every call would fail, so stop knocking.
+PRICE_REFRESH_MAX_FAILURES = 3
+PRICE_DROP_RATIO = 0.9   # current min ≤ 90% of the 30-day median
+
+
+def _refresh_tracked_prices(db, today: date) -> int:
+    """Store today's PosoKanei prices for every tracked, linked product.
+
+    Idempotent: products that already have a snapshot for today are skipped.
+    Requests are spaced by the client (≥ 250 ms, so ≤ 4 req/s). PosoKanei
+    being unavailable is logged and ends the stage; the job carries on.
+    """
+    from sqlalchemy import func
+
+    from app import posokanei
+    from app.models import PriceSnapshot, Product, StockItem
+    from app.services.stock import record_snapshots
+
+    last_snap = (db.query(PriceSnapshot.product_id.label("pid"),
+                          func.max(PriceSnapshot.snapshot_date).label("last"))
+                 .group_by(PriceSnapshot.product_id)
+                 .subquery())
+    rows = (db.query(Product.id, last_snap.c.last)
+            .join(StockItem, StockItem.product_id == Product.id)
+            .outerjoin(last_snap, last_snap.c.pid == Product.id)
+            .filter(Product.posokanei_id.isnot(None),
+                    Product.archived_at.is_(None),
+                    StockItem.track_price.is_(True))
+            .all())
+    # Deterministic and fair: never-priced first, then the stalest, so a
+    # stage cut short by an outage starts where it left off next time.
+    product_ids = [
+        pid for pid, last in sorted(rows, key=lambda r: (r[1] is not None, r[1] or today, r[0]))
+        if last is None or last < today
+    ]
+    stored = failures = 0
+    for pid in product_ids:
+        product = db.get(Product, pid)
+        try:
+            summary = posokanei.get(product.posokanei_id)
+        except posokanei.PosokaneiNotFound as exc:
+            # One delisted/bogus id: skip it, it says nothing about an outage.
+            logger.info("PosoKanei has no product %s (%s); skipping", product.posokanei_id, exc)
+            continue
+        except posokanei.PosokaneiUnavailable as exc:
+            failures += 1
+            logger.warning("PosoKanei unavailable for product %s: %s", pid, exc)
+            if failures >= PRICE_REFRESH_MAX_FAILURES:
+                logger.warning("PosoKanei unavailable — skipping today's remaining price refresh")
+                break
+            continue
+        failures = 0
+        stored += record_snapshots(db, product, summary, today)
+        db.commit()
+    if stored:
+        logger.info("Stored %d price snapshot(s)", stored)
+    return stored
+
+
+def _notify_stock_and_prices(db, today: date) -> None:
+    """stock_low when an item crossed down to its minimum since yesterday;
+    price_drop when a tracked product's price today is ≤ 90% of its 30-day
+    median. Both at most once per item per day."""
+    from decimal import Decimal
+
+    from app.models import NotificationType, Product, StockItem, StockMovement
+    from app.money import to_decimal
+    from app.services.stock import price_advice_bulk
+
+    items = (db.query(StockItem)
+             .join(Product, Product.id == StockItem.product_id)
+             .filter(Product.archived_at.is_(None))
+             .all())
+    if not items:
+        return
+    members_by_hh = _members_by_household(db, {i.household_id for i in items})
+
+    # --- stock_low: "crossing" = it was above the minimum at some point
+    # since the start of yesterday, and is at/below it now.
+    since = datetime.combine(today - timedelta(days=1), datetime.min.time())
+    low = [i for i in items if to_decimal(i.quantity) <= to_decimal(i.min_quantity)]
+    recent: dict[str, list] = {}
+    if low:
+        for m in (db.query(StockMovement)
+                  .filter(StockMovement.stock_item_id.in_([i.id for i in low]),
+                          StockMovement.created_at >= since)
+                  .order_by(StockMovement.created_at.desc())):
+            recent.setdefault(m.stock_item_id, []).append(m)
+    for item in low:
+        qty, crossed = to_decimal(item.quantity), False
+        for m in recent.get(item.id, []):          # newest first: undo each
+            qty -= to_decimal(m.delta)
+            if qty > to_decimal(item.min_quantity):
+                crossed = True
+                break
+        if not crossed:
+            continue
+        name = item.product.name
+        _notify_members(
+            db, members_by_hh.get(item.household_id, []),
+            household_id=item.household_id,
+            type=NotificationType.stock_low,
+            title=f"Running low: {name}",
+            body=f"{to_decimal(item.quantity):g} left (minimum {to_decimal(item.min_quantity):g}).",
+            link="/stock/shopping",
+            dedupe_key=f"stock_low:{item.id}:{today}",
+        )
+
+    # --- price_drop
+    tracked = [i for i in items if i.track_price and i.product.posokanei_id]
+    advice = price_advice_bulk(db, [i.product_id for i in tracked], today)
+    ratio = Decimal(str(PRICE_DROP_RATIO))
+    for item in tracked:
+        a = advice[item.product_id]
+        current, median = a["current_min"], a["median_30d"]
+        # Only fresh data: a stale price (refresh failed today) is not news.
+        if a["advice"] == "unknown" or a["as_of"] != today or current is None or not median:
+            continue
+        if current > median * ratio:
+            continue
+        product = item.product
+        pct = (1 - current / median) * 100
+        _notify_members(
+            db, members_by_hh.get(item.household_id, []),
+            household_id=item.household_id,
+            type=NotificationType.price_drop,
+            title=f"Price drop: {product.name} {pct:.0f}% below usual",
+            body=f"{_money(current, 'EUR')} vs {_money(median, 'EUR')} 30-day median (PosoKanei).",
+            link="/stock",
+            dedupe_key=f"price_drop:{product.id}:{today}",
+        )
+    db.commit()
+
+
+# ---------------------------------------------------------------------------
 # Receipt trash
 # ---------------------------------------------------------------------------
 
@@ -521,6 +660,8 @@ def auto_mark_paid_job() -> None:
             _notify_contracts_expiring,
             _notify_bill_drift,
             _notify_budget_thresholds,
+            _refresh_tracked_prices,
+            _notify_stock_and_prices,
             _purge_trash,
         ):
             try:

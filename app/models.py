@@ -14,6 +14,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import relationship
@@ -84,6 +85,8 @@ class NotificationType(str, enum.Enum):
     budget_warning     = "budget_warning"   # bucket spend crossed a budget threshold
     ingest_created     = "ingest_created"   # an expense arrived via the Apple Pay Shortcut
     general            = "general"
+    stock_low          = "stock_low"        # a stock item fell to its minimum
+    price_drop         = "price_drop"       # tracked product ≥10% under its 30-day median
     # WARNING: on PostgreSQL this is a native ENUM type (created in migration
     # 2c1adaf99fa2), so adding a member here REQUIRES a migration running
     # ALTER TYPE notificationtype ADD VALUE — otherwise inserts fail at runtime
@@ -569,3 +572,102 @@ class PersonalApiToken(Base):
     @property
     def scope_list(self) -> list[str]:
         return [s.strip() for s in (self.scopes or "").split(",") if s.strip()]
+
+
+# ---------------------------------------------------------------------------
+# Stock & prices (Phase 6)
+# ---------------------------------------------------------------------------
+
+class StockReason(str, enum.Enum):
+    buy = "buy"
+    use = "use"
+    adjust = "adjust"
+
+
+class Product(Base):
+    """A product the household keeps in stock, optionally linked to PosoKanei.
+
+    Never hard-deleted from the UI: "remove" sets archived_at so the price
+    history and consumption log that hang off it are preserved.
+    """
+    __tablename__ = "products"
+    __table_args__ = (
+        # Unique per household only when a barcode is set: a partial index on
+        # Postgres; on SQLite a plain unique index behaves the same because
+        # NULLs never collide.
+        Index(
+            "uq_products_household_barcode", "household_id", "barcode",
+            unique=True, postgresql_where=text("barcode IS NOT NULL"),
+        ),
+        Index("ix_products_household_id", "household_id"),
+    )
+
+    id            = Column(String, primary_key=True, default=gen_id)
+    household_id  = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False)
+    name          = Column(String(200), nullable=False)
+    brand         = Column(String(100), nullable=True)
+    barcode       = Column(String(32), nullable=True)
+    posokanei_id  = Column(String(64), nullable=True)
+    unit          = Column(String(20), nullable=True)
+    unit_quantity = Column(Numeric(10, 3), nullable=True)
+    category_id   = Column(String, ForeignKey("categories.id", ondelete="SET NULL"), nullable=True)
+    image_url     = Column(String(500), nullable=True)
+    created_at    = Column(DateTime, default=utcnow_naive)
+    archived_at   = Column(DateTime, nullable=True)
+
+    stock_item = relationship("StockItem", back_populates="product", uselist=False)
+    snapshots  = relationship("PriceSnapshot", back_populates="product")
+
+
+class StockItem(Base):
+    __tablename__ = "stock_items"
+    __table_args__ = (
+        Index("ix_stock_items_household_id", "household_id"),
+    )
+
+    id           = Column(String, primary_key=True, default=gen_id)
+    household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False)
+    product_id   = Column(String, ForeignKey("products.id", ondelete="CASCADE"), nullable=False, unique=True)
+    quantity     = Column(Numeric(10, 2), default=0, nullable=False)
+    min_quantity = Column(Numeric(10, 2), default=1, nullable=False)
+    track_price  = Column(Boolean, default=True, nullable=False)
+    updated_at   = Column(DateTime, default=utcnow_naive, onupdate=utcnow_naive)
+
+    product   = relationship("Product", back_populates="stock_item")
+    movements = relationship("StockMovement", back_populates="stock_item")
+
+
+class StockMovement(Base):
+    """Consumption/purchase log; drives run-out prediction."""
+    __tablename__ = "stock_movements"
+    __table_args__ = (
+        Index("ix_stock_movements_item_created", "stock_item_id", "created_at"),
+    )
+
+    id            = Column(String, primary_key=True, default=gen_id)
+    stock_item_id = Column(String, ForeignKey("stock_items.id", ondelete="CASCADE"), nullable=False)
+    delta         = Column(Numeric(10, 2), nullable=False)
+    reason        = Column(String(12), nullable=False)  # StockReason value
+    created_at    = Column(DateTime, default=utcnow_naive)
+    created_by    = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    stock_item = relationship("StockItem", back_populates="movements")
+
+
+class PriceSnapshot(Base):
+    """One retailer's price for a product on a day (from PosoKanei)."""
+    __tablename__ = "price_snapshots"
+    __table_args__ = (
+        UniqueConstraint("product_id", "retailer", "snapshot_date", name="uq_price_snapshot"),
+        Index("ix_price_snapshots_product_date", "product_id", "snapshot_date"),
+    )
+
+    id            = Column(String, primary_key=True, default=gen_id)
+    product_id    = Column(String, ForeignKey("products.id", ondelete="CASCADE"), nullable=False)
+    retailer      = Column(String(40), nullable=False)
+    price         = Column(Numeric(10, 2), nullable=False)
+    unit_price    = Column(Numeric(10, 4), nullable=True)
+    is_discount   = Column(Boolean, default=False, nullable=False)
+    snapshot_date = Column(Date, nullable=False)
+
+    product = relationship("Product", back_populates="snapshots")

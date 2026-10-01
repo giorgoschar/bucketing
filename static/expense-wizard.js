@@ -27,6 +27,12 @@ function expenseWizard() {
       // were charged to members but the money was credited to nobody, so both
       // members appeared to owe a third party who does not exist.
       this.form.paid_by = cfg.currentUserId || '';
+      // Optional prefill from a link (e.g. stock "Mark bought"); the server
+      // already validated amount and category.
+      const pre = cfg.prefill || {};
+      for (const key of ['amount', 'category_id', 'notes', 'merchant']) {
+        if (pre[key]) this.form[key] = String(pre[key]);
+      }
       this._wireOfflineSubmit();
     },
 

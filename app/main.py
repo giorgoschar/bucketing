@@ -31,6 +31,7 @@ from app.routes import insights as insights_router
 from app.routes import notifications as notifications_router
 from app.routes import settings as settings_router
 from app.routes import settlement as settlement_router
+from app.routes import stock as stock_router
 from app.routes.api import router as api_router
 from app.scheduler import start_scheduler, stop_scheduler
 
@@ -180,6 +181,7 @@ app.include_router(notifications_router.router)
 app.include_router(insights_router.router)
 app.include_router(settlement_router.router)
 app.include_router(cash.router)
+app.include_router(stock_router.router)
 app.include_router(api_router)
 
 
