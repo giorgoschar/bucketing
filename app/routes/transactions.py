@@ -24,10 +24,8 @@ from app.models import (
     Bucket,
     Category,
     Transaction,
-    TransactionSplit,
-    TransactionType,
 )
-from app.schemas import TransactionCreate, _clean_merchant, parse_payment_method
+from app.schemas import TransactionCreate, TransactionUpdate
 from app.services import (
     DeletedTransactionReplay,
     DuplicateTransaction,
@@ -35,14 +33,11 @@ from app.services import (
 from app.services import create_transaction as create_transaction_service
 from app.services import delete_transaction as delete_transaction_soft
 from app.services import full_ctx as _full_ctx
+from app.services import update_transaction as update_transaction_service
 from app.templates import templates
 from app.validators import (
     parse_amount,
     require_bucket,
-    require_category,
-    require_member,
-    validate_currency,
-    validate_split_users,
 )
 
 logger = logging.getLogger(__name__)
@@ -68,23 +63,6 @@ def _parse_txn_date(value: str) -> date:
         return date.fromisoformat(value.strip())
     except (ValueError, AttributeError):
         raise HTTPException(status_code=400, detail="Date must be a valid date (YYYY-MM-DD).") from None
-
-
-def _parse_txn_type(value: str) -> TransactionType:
-    try:
-        return TransactionType(value)
-    except ValueError:
-        raise HTTPException(status_code=400, detail=f"Unknown transaction type '{value}'.") from None
-
-
-def _parse_rate(value) -> float:
-    try:
-        rate = float(value)
-    except (TypeError, ValueError):
-        raise HTTPException(status_code=400, detail="Exchange rate must be a number.") from None
-    if not (0 < rate <= 1_000_000):
-        raise HTTPException(status_code=400, detail="Exchange rate is out of range.")
-    return rate
 
 
 # ---------------------------------------------------------------------------
@@ -322,9 +300,9 @@ async def edit_transaction(
     request: Request,
     bucket_id: str = Form(...),
     transaction_date: str = Form(...),
-    amount: float = Form(...),
+    amount: str = Form(...),
     currency: str = Form("EUR"),
-    exchange_rate: float = Form(1.0),
+    exchange_rate: str = Form("1"),
     type: str = Form("expense"),
     category_id: str = Form(""),
     paid_by: str = Form(""),
@@ -346,37 +324,31 @@ async def edit_transaction(
     # or leaking an id.
     require_bucket(db, bucket_id, hh_id)
 
-    txn.bucket_id = bucket_id
-    txn.transaction_date = _parse_txn_date(transaction_date)
-    txn.amount = parse_amount(amount, field="Amount")
-    txn.currency = validate_currency(currency)
-    txn.exchange_rate = _parse_rate(exchange_rate)
-    txn.type = _parse_txn_type(type)
-    txn.paid_by = require_member(db, paid_by, hh_id)
-    txn.category_id = require_category(db, category_id, hh_id)
-    txn.notes = notes.strip() or None
+    # Same field validation as create (TransactionCreate): currency, rate > 0,
+    # Decimal amounts, splits <= total, payment method.
     try:
-        txn.payment_method = parse_payment_method(payment_method)
-        txn.merchant = _clean_merchant(merchant)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from None
-    txn.exclude_from_forecast = (exclude_from_forecast == "on")
-    txn.exclude_from_settlement = (exclude_from_settlement == "on")
+        data = TransactionUpdate(
+            bucket_id=bucket_id,
+            amount=amount,
+            currency=currency,
+            exchange_rate=exchange_rate,
+            type=type,
+            paid_by=paid_by,
+            category_id=category_id,
+            notes=notes,
+            transaction_date=_parse_txn_date(transaction_date),
+            splits=await _parse_split_fields(request),
+            payment_method=payment_method,
+            merchant=merchant,
+            exclude_from_forecast=(exclude_from_forecast == "on"),
+            exclude_from_settlement=(exclude_from_settlement == "on"),
+        )
+    except ValidationError as exc:
+        ctx = _get_context(db, user, hh_id)
+        ctx.update({"request": request, "user": user, "txn": txn, "error": _first_error(exc)})
+        return templates.TemplateResponse("transactions/edit.html", ctx, status_code=400)
 
-    # Replace splits
-    db.query(TransactionSplit).filter_by(transaction_id=txn.id).delete(synchronize_session=False)
-    form_data = await request.form()
-    splits: list[tuple[str, object]] = []
-    for key, value in form_data.items():
-        if key.startswith("split_") and str(value).strip():
-            split_amount = parse_amount(value, field="Split amount", allow_blank=True)
-            if split_amount and split_amount > 0:
-                splits.append((key[6:], split_amount))
-    if splits:
-        validate_split_users([uid for uid, _ in splits], hh_id, db)
-        for uid, split_amount in splits:
-            db.add(TransactionSplit(transaction_id=txn.id, user_id=uid, amount=split_amount))
-
+    update_transaction_service(db, txn, household_id=hh_id, user=user, data=data)
     db.commit()
 
     return RedirectResponse(f"/buckets/{txn.bucket_id}", status_code=302)

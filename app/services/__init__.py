@@ -110,4 +110,5 @@ from app.services.transactions import (  # noqa: F401
     DuplicateTransaction,
     create_transaction,
     delete_transaction,
+    update_transaction,
 )

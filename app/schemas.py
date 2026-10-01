@@ -152,3 +152,23 @@ class TransactionCreate(BaseModel):
                     f"transaction total ({float(self.amount):.2f})."
                 )
         return self
+
+
+class TransactionUpdate(TransactionCreate):
+    """Edit input: the same field checks as create (currency, rate > 0,
+    amount, splits ≤ total, payment method), except a blank date keeps the
+    existing one instead of meaning "today". ``client_id`` is ignored."""
+
+    transaction_date: date | None = None
+
+    @field_validator("transaction_date", mode="before")
+    @classmethod
+    def _date(cls, v: Any) -> date | None:
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return None
+        if isinstance(v, str):
+            try:
+                return date.fromisoformat(v.strip())
+            except ValueError:
+                raise ValueError("Date must be a valid date (YYYY-MM-DD).") from None
+        return v

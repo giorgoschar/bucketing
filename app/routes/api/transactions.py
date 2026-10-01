@@ -3,37 +3,30 @@ API transactions routes — full CRUD + receipt scan.
 """
 import uuid
 from datetime import date
-from decimal import Decimal
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
-from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session, joinedload
 
 from app.api_auth import require_api_auth
-from app.clock import local_today
 from app.database import get_db
 from app.models import (
     Bucket,
     Category,
     Transaction,
-    TransactionSplit,
     TransactionType,
 )
 from app.money import quantize
 from app.receipt_parser import match_category, parse_receipt_text
-from app.schemas import TransactionCreate, _clean_merchant, parse_payment_method
+from app.schemas import TransactionCreate, TransactionUpdate
 from app.services import DeletedTransactionReplay, DuplicateTransaction
 from app.services import create_transaction as create_transaction_service
 from app.services import delete_transaction as delete_transaction_soft
+from app.services import update_transaction as update_transaction_service
 from app.validators import (
-    parse_amount,
     parse_year_month,
     require_bucket,
-    require_category,
-    require_member,
     require_receipt_content,
-    validate_split_users,
 )
 
 UPLOADS_DIR = "uploads"
@@ -46,38 +39,6 @@ router = APIRouter(prefix="/transactions", tags=["transactions"])
 # ---------------------------------------------------------------------------
 # Schemas
 # ---------------------------------------------------------------------------
-
-class SplitIn(BaseModel):
-    user_id: str
-    amount:  Decimal
-
-
-class TransactionIn(BaseModel):
-    bucket_id:    str
-    amount:       Decimal
-    currency:     str   = "EUR"
-    exchange_rate: Decimal = Decimal("1")
-    type:         str   = "expense"
-    paid_by:      str | None = None
-    category_id:  str | None = None
-    notes:        str | None = None
-    transaction_date: str   = ""   # ISO date; defaults to today
-    exclude_from_forecast: bool = False
-    exclude_from_settlement: bool = False
-    payment_method: str = "card"
-    merchant:     str | None = None
-    splits:       list[SplitIn] = []
-
-    @field_validator("payment_method", mode="before")
-    @classmethod
-    def _payment_method(cls, v):
-        return parse_payment_method(v)
-
-    @field_validator("merchant")
-    @classmethod
-    def _merchant(cls, v):
-        return _clean_merchant(v)
-
 
 def _txn_dict(t: Transaction) -> dict:
     return {
@@ -109,37 +70,6 @@ def _assert_bucket_in_household(bucket_id: str, hh_id: str, db: Session):
     bucket = db.get(Bucket, bucket_id)
     if not bucket or bucket.household_id != hh_id:
         raise HTTPException(status_code=404, detail="Bucket not found")
-
-
-def _validate_txn_refs(body: "TransactionIn", hh_id: str, db: Session) -> None:
-    """Assert category/payer/split users all belong to the caller's household.
-
-    These ids came straight from the request body, so a client could previously
-    tag a transaction with another household's category or split it onto users
-    outside the household.
-    """
-    require_category(db, body.category_id, hh_id)
-    require_member(db, body.paid_by, hh_id)
-    if body.splits:
-        validate_split_users([s.user_id for s in body.splits], hh_id, db)
-        for s in body.splits:
-            parse_amount(s.amount, field="split amount")
-
-
-def _parse_body_date(value: str) -> date:
-    if not value:
-        return local_today()
-    try:
-        return date.fromisoformat(value)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="transaction_date must be an ISO date (YYYY-MM-DD)") from None
-
-
-def _parse_body_type(value: str) -> TransactionType:
-    try:
-        return TransactionType(value)
-    except ValueError:
-        raise HTTPException(status_code=400, detail=f"Unknown transaction type '{value}'") from None
 
 
 # ---------------------------------------------------------------------------
@@ -242,40 +172,20 @@ def get_transaction(
 @router.put("/{txn_id}")
 def update_transaction(
     txn_id: str,
-    body: TransactionIn,
+    body: TransactionUpdate,
     auth=Depends(require_api_auth),
     db: Session = Depends(get_db),
 ):
+    """Replace a transaction. Validated exactly like create (422 on bad input);
+    a blank payer keeps the current one, a blank date keeps the current date."""
     user, hh_id = auth
     txn = db.query(Transaction).filter(Transaction.active()).filter_by(id=txn_id, household_id=hh_id).first()
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
     _assert_bucket_in_household(body.bucket_id, hh_id, db)
-    _validate_txn_refs(body, hh_id, db)
-
-    txn.bucket_id    = body.bucket_id
-    txn.amount       = parse_amount(body.amount, field="amount")
-    txn.currency     = body.currency
-    txn.exchange_rate = body.exchange_rate
-    txn.type         = _parse_body_type(body.type)
-    txn.paid_by      = body.paid_by or txn.paid_by
-    txn.category_id  = body.category_id or None
-    txn.notes        = body.notes
-    txn.payment_method = body.payment_method
-    txn.merchant     = body.merchant
-    txn.exclude_from_forecast = body.exclude_from_forecast
-    txn.exclude_from_settlement = body.exclude_from_settlement
-    if body.transaction_date:
-        txn.transaction_date = _parse_body_date(body.transaction_date)
-
-    # Replace splits
-    for s in txn.splits:
-        db.delete(s)
-    db.flush()
-    for s in body.splits:
-        db.add(TransactionSplit(transaction_id=txn.id, user_id=s.user_id, amount=s.amount))
-
+    body.paid_by = body.paid_by or txn.paid_by
+    update_transaction_service(db, txn, household_id=hh_id, user=user, data=body)
     db.commit()
     db.refresh(txn)
     return _txn_dict(txn)

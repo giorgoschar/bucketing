@@ -15,7 +15,7 @@ from app.models import (
     Transaction,
     TransactionSplit,
 )
-from app.schemas import TransactionCreate
+from app.schemas import TransactionCreate, TransactionUpdate
 from app.validators import (
     require_category,
     require_member,
@@ -191,4 +191,50 @@ def create_transaction(
             _raise_if_replay()
         raise
     db.refresh(txn)
+    return txn
+
+
+def update_transaction(
+    db: Session,
+    txn: Transaction,
+    *,
+    household_id: str,
+    user,
+    data: TransactionUpdate,
+) -> Transaction:
+    """Apply a validated edit (see app.schemas.TransactionUpdate). Callers commit.
+
+    Mirrors create_transaction's database checks: bucket, category, payer and
+    split users must belong to ``household_id``; a split expense always keeps a
+    payer (the existing one, else the editor) so settle-up never drops it.
+    """
+    from app.validators import require_bucket
+
+    require_bucket(db, data.bucket_id, household_id)
+    paid_by = require_member(db, data.paid_by, household_id)
+    category_id = require_category(db, data.category_id, household_id)
+    if data.splits:
+        validate_split_users([s.user_id for s in data.splits], household_id, db)
+    if not paid_by and data.type.value == "expense" and data.splits:
+        paid_by = txn.paid_by or user.id
+
+    txn.bucket_id = data.bucket_id
+    txn.amount = data.amount
+    txn.currency = data.currency
+    txn.exchange_rate = data.exchange_rate
+    txn.type = data.type
+    txn.paid_by = paid_by
+    txn.category_id = category_id
+    txn.notes = data.notes
+    txn.payment_method = data.payment_method
+    txn.merchant = data.merchant
+    txn.exclude_from_forecast = data.exclude_from_forecast
+    txn.exclude_from_settlement = data.exclude_from_settlement
+    if data.transaction_date is not None:
+        txn.transaction_date = data.transaction_date
+
+    db.query(TransactionSplit).filter_by(transaction_id=txn.id).delete(synchronize_session=False)
+    db.expire(txn, ["splits"])
+    for s in data.splits:
+        db.add(TransactionSplit(transaction_id=txn.id, user_id=s.user_id, amount=s.amount))
     return txn
