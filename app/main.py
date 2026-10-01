@@ -116,16 +116,18 @@ async def security_headers(request: Request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     # Tailwind is a local stylesheet now, so cdn.tailwindcss.com is gone from
-    # every directive. jsdelivr stays: the receipt scanner loads qr-scanner,
-    # tesseract.js and pdf.js from it. 'unsafe-eval' stays because Alpine
-    # compiles its expressions with new Function().
+    # every directive, and the receipt-scanner libraries (qr-scanner,
+    # tesseract.js, pdf.js) are vendored under /static/vendor, so no CDN either.
+    # 'unsafe-eval' stays because Alpine compiles its expressions with
+    # new Function(); it also covers WebAssembly compilation for tesseract's
+    # core, so 'wasm-unsafe-eval' is not needed.
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval' cdn.jsdelivr.net; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
         "style-src 'self' 'unsafe-inline'; "
         "worker-src blob: 'self'; "
         "img-src 'self' data: blob:; "
-        "connect-src 'self' cdn.jsdelivr.net blob:; "
+        "connect-src 'self' blob:; "
         "object-src 'none'; "
         "base-uri 'self'; "
         "form-action 'self'"

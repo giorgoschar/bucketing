@@ -363,39 +363,3 @@
   </div>
 </div>
 {% endblock %}
-
-{% block scripts %}
-
-<script>
-// Intercept form submission when offline — queue in IndexedDB + register Background Sync
-// Guarded: on an hx-boost swap this script runs again, and the element may be
-// absent if the swap failed. Without the check this threw and took the rest of
-// the block with it.
-const _expenseForm = document.getElementById('expense-form');
-if (_expenseForm) _expenseForm.addEventListener('submit', async function(e) {
-  if (navigator.onLine) return; // let normal submission proceed
-  e.preventDefault();
-  e.stopImmediatePropagation();
-  if (!window.offlineExpenses) {
-    alert('Offline support is loading. Please try again in a moment.');
-    return;
-  }
-  const formData = new FormData(this);
-  await window.offlineExpenses.saveOfflineTransaction(formData);
-  // Register Background Sync if supported
-  if ('serviceWorker' in navigator && 'SyncManager' in window) {
-    const reg = await navigator.serviceWorker.ready;
-    await reg.sync.register('submit-expense').catch(() => {});
-  }
-  // Show toast and reset wizard
-  const result = document.getElementById('wizard-result');
-  result.innerHTML = '<div class="mt-6 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl text-center"><p class="text-sm font-medium text-amber-700 dark:text-amber-400">📶 You\'re offline. Your expense has been saved and will sync automatically when you reconnect.</p></div>';
-  // Move Alpine wizard to step 5 to hide the form
-  const wizardEl = document.querySelector('[x-data="expenseWizard()"]');
-  if (wizardEl && wizardEl._x_dataStack) {
-    const data = Alpine.$data(wizardEl);
-    if (data) data.step = 5;
-  }
-});
-</script>
-{% endblock %}

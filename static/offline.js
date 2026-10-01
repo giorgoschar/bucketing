@@ -23,18 +23,6 @@ function _openDB() {
   });
 }
 
-/** Read the CSRF token from the cookie.
- *
- * Deliberately the cookie and not the <meta> tag: the tag is rendered once at
- * page load, while the cookie is refreshed mid-session by the server. A queued
- * expense flushed after that refresh was being rejected with 403 and left
- * stuck in the queue forever, with no way for the user to notice.
- */
-function _csrf() {
-  const m = document.cookie.split('; ').find(r => r.startsWith('csrf_token='));
-  return m ? m.split('=').slice(1).join('=') : '';
-}
-
 /** Persist a FormData payload (as plain object) into IndexedDB. */
 async function saveOfflineTransaction(formData) {
   const db = await _openDB();
@@ -113,7 +101,9 @@ async function flushPendingTransactions() {
     const body = new FormData();
     for (const [k, v] of Object.entries(fields)) body.append(k, v);
 
-    const csrf = _csrf();
+    // app.csrfToken() reads the cookie, which the server refreshes mid-session; a
+    // queued expense flushed after a refresh used to be rejected with 403.
+    const csrf = app.csrfToken();
     if (csrf) body.append('_csrf_token', csrf);
 
     try {

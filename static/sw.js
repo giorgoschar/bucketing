@@ -1,5 +1,4 @@
-const CACHE_NAME = 'expenses-v7';
-const CDN_CACHE = 'expenses-cdn-v6';
+const CACHE_NAME = 'expenses-v8';
 
 const STATIC_ASSETS = [
   '/static/manifest.json',
@@ -12,16 +11,15 @@ const STATIC_ASSETS = [
   '/static/insights.js',
   '/static/expense-wizard.js',
   '/static/app-components.js',
+  '/static/receipt-scanner.js',
   '/static/chart-tooltip.js',
   '/static/css/app.css',
 ];
 
-// CDN origins to cache with stale-while-revalidate
-const CDN_ORIGINS = [
-  // Tailwind is now a precached local asset, not a CDN script.
-  'cdn.jsdelivr.net',
-  'unpkg.com',
-];
+// No third-party origins: every script, including the receipt-scanner libraries
+// under /static/vendor/, is same-origin. The large scanner files (OCR core,
+// language data, pdf.js; ~14 MB) are deliberately not precached; the
+// cache-first /static/ handler below stores them the first time a scan runs.
 
 // Branded offline page shown when a navigation fails and no cached page exists
 const OFFLINE_HTML = `<!DOCTYPE html>
@@ -102,7 +100,7 @@ self.addEventListener('activate', event => {
     caches.keys().then(keys =>
       Promise.all(
         keys
-          .filter(k => k !== CACHE_NAME && k !== CDN_CACHE)
+          .filter(k => k !== CACHE_NAME)
           .map(k => caches.delete(k))
       )
     )
@@ -113,22 +111,6 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   const { request } = event;
   const url = new URL(request.url);
-
-  // --- CDN assets: stale-while-revalidate ---
-  if (CDN_ORIGINS.includes(url.hostname)) {
-    event.respondWith(
-      caches.open(CDN_CACHE).then(async cache => {
-        const cached = await cache.match(request);
-        const fetchPromise = fetch(request).then(response => {
-          if (response.ok) cache.put(request, response.clone());
-          return response;
-        }).catch(() => null);
-        // Serve cached immediately; background-revalidate
-        return cached || fetchPromise;
-      })
-    );
-    return;
-  }
 
   // Only handle same-origin from here on
   if (url.origin !== location.origin) return;
