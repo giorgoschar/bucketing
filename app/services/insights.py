@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
 
-from sqlalchemy import func, or_
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from app.clock import local_today
@@ -18,12 +18,13 @@ from app.models import (
     HouseholdMember,
     RecurringBill,
     Transaction,
-    TransactionSplit,
     TransactionType,
     User,
 )
 from app.money import TENTH, ZERO, quantize, to_decimal
-from app.services.money import base_amount_expr, split_to_base, to_base
+from app.services.money import base_amount_expr, shares_for, to_base
+
+UNASSIGNED_PAYER = "unassigned"
 
 # ---------------------------------------------------------------------------
 # New analytics functions
@@ -103,6 +104,7 @@ def get_monthly_trend(
     bucket_ids: list | None = None,
     category_ids: list | None = None,
     paid_by: str | None = None,
+    include_one_offs: bool = True,
 ) -> list[dict]:
     """Expense totals for the last n_months calendar months (oldest → newest).
 
@@ -122,6 +124,7 @@ def get_monthly_trend(
         bucket_ids=bucket_ids,
         category_ids=category_ids,
         paid_by=paid_by,
+        include_one_offs=include_one_offs,
     )
 
     return [
@@ -145,7 +148,8 @@ def get_forecast(db: Session, household_id: str) -> dict:
     Returns empty dict if less than 3 months of history.
     """
     today = local_today()
-    trend = get_monthly_trend(db, household_id, n_months=4)
+    # Projections ignore one-off purchases; the trend chart shows actual spend.
+    trend = get_monthly_trend(db, household_id, n_months=4, include_one_offs=False)
     past = [m for m in trend if not m["is_current"]]
     if len(past) < 3:
         return {}
@@ -294,17 +298,23 @@ def _build_expense_query(
     bucket_ids: list | None = None,
     category_ids: list | None = None,
     paid_by: str | None = None,
+    include_one_offs: bool = True,
 ):
-    """Return a base Transaction query pre-filtered by all insight dimensions."""
+    """Return a base Transaction query pre-filtered by all insight dimensions.
+
+    One-off purchases (exclude_from_forecast) are actual spend, so they are
+    included unless a projection asks for ``include_one_offs=False``.
+    """
     q = (
         db.query(Transaction)
         .filter(
             Transaction.active(),
             Transaction.household_id == household_id,
             Transaction.type == TransactionType.expense,
-            Transaction.exclude_from_forecast == False,  # noqa: E712
         )
     )
+    if not include_one_offs:
+        q = q.filter(Transaction.exclude_from_forecast == False)  # noqa: E712
     if start:
         q = q.filter(Transaction.transaction_date >= start)
     if end:
@@ -318,17 +328,8 @@ def _build_expense_query(
     if category_ids:
         q = q.filter(Transaction.category_id.in_(category_ids))
     if paid_by:
-        split_subq = (
-            db.query(TransactionSplit.transaction_id)
-            .filter(TransactionSplit.user_id == paid_by)
-            .scalar_subquery()
-        )
-        q = q.filter(
-            or_(
-                Transaction.paid_by == paid_by,
-                Transaction.id.in_(split_subq),
-            )
-        )
+        # "Paid by" means the payer: who fronted the money, not who owes a share.
+        q = q.filter(Transaction.paid_by == paid_by)
     return q
 
 
@@ -343,6 +344,7 @@ def _sum_expenses_by(
     bucket_ids: list | None = None,
     category_ids: list | None = None,
     paid_by: str | None = None,
+    include_one_offs: bool = True,
 ) -> dict:
     """Sum filtered expenses grouped by one dimension, in a single round trip.
 
@@ -352,9 +354,7 @@ def _sum_expenses_by(
     month, which is what made the filter bar feel sluggish: a single filter
     change cost ~38 queries. Everything now aggregates in one pass.
 
-    When ``paid_by`` is set the per-user share has to come from the split rows,
-    so the transactions are loaded with their splits and folded in Python;
-    otherwise the database does the aggregation.
+    ``paid_by`` filters on the payer, so the database does the aggregation.
     """
     q = _build_expense_query(
         db, household_id, start, end,
@@ -362,6 +362,7 @@ def _sum_expenses_by(
         bucket_ids=bucket_ids,
         category_ids=category_ids,
         paid_by=paid_by,
+        include_one_offs=include_one_offs,
     )
 
     def key_for(bucket_id, category_id, txn_date):
@@ -375,12 +376,7 @@ def _sum_expenses_by(
 
     totals: dict = defaultdict(Decimal)
 
-    if paid_by:
-        for t in q.options(joinedload(Transaction.splits)).all():
-            totals[key_for(t.bucket_id, t.category_id, t.transaction_date)] += _effective_amount(t, paid_by)
-        return dict(totals)
-
-    # No split apportioning needed — let SQL do the grouping.
+    # The payer filter is a plain column filter, so SQL does the grouping.
     if group_by == "bucket":
         cols = [Transaction.bucket_id]
     elif group_by == "category":
@@ -403,16 +399,8 @@ def _sum_expenses_by(
     return dict(totals)
 
 
-def _effective_amount(t: Transaction, paid_by: str | None) -> Decimal:
-    """When a paid_by filter is active, return only that user's share of the transaction.
-    For split transactions: returns the user's split amount (0 if they have no split).
-    Without a filter: returns the full transaction amount.
-    """
-    if paid_by and t.splits:
-        for s in t.splits:
-            if s.user_id == paid_by:
-                return split_to_base(s, t)
-        return ZERO
+def _effective_amount(t: Transaction) -> Decimal:
+    """The full amount of the transaction in household currency."""
     return to_base(t.amount, t.exchange_rate)
 
 
@@ -429,17 +417,20 @@ def get_insights_summary(
     """Unified summary: total expenses + paid-by breakdown for any date range + filters."""
     q = _build_expense_query(db, household_id, start, end, bucket_type, bucket_ids, category_ids, paid_by)
     txns = q.options(joinedload(Transaction.splits)).all()
-    total_spent = sum(_effective_amount(t, paid_by) for t in txns)
+    total_spent = sum(_effective_amount(t) for t in txns)
 
-    paid_by_acc: dict[str, Decimal] = defaultdict(Decimal)
+    paid_acc: dict[str, Decimal] = defaultdict(Decimal)
+    share_acc: dict[str, Decimal] = defaultdict(Decimal)
     for t in txns:
-        if t.splits:
-            for s in t.splits:
-                if paid_by is None or s.user_id == paid_by:
-                    paid_by_acc[s.user_id] += split_to_base(s, t)
-        elif t.paid_by:
-            if paid_by is None or t.paid_by == paid_by:
-                paid_by_acc[t.paid_by] += to_base(t.amount, t.exchange_rate)
+        # Full amount is credited to whoever fronted it; expenses with no payer
+        # go to an "Unassigned" row so the bars still sum to total_spent.
+        paid_acc[t.paid_by or UNASSIGNED_PAYER] += to_base(t.amount, t.exchange_rate)
+        shares = shares_for(t)
+        assigned = sum(shares.values(), ZERO)
+        for uid, share in shares.items():
+            share_acc[uid] += share
+        # With no payer there is nobody to absorb the unsplit remainder.
+        share_acc[UNASSIGNED_PAYER] += (to_base(t.amount, t.exchange_rate) - assigned) if not t.paid_by else ZERO
 
     members = (
         db.query(User)
@@ -448,15 +439,30 @@ def get_insights_summary(
         .all()
     )
     member_map = {m.id: m for m in members}
+    # Payers / split users who left the household still hold real money.
+    missing = {uid for uid in set(paid_acc) | set(share_acc) if uid != UNASSIGNED_PAYER} - set(member_map)
+    former = {u.id: u for u in db.query(User).filter(User.id.in_(missing)).all()} if missing else {}
     paid_by_detail = {}
-    for uid, amount in paid_by_acc.items():
-        u = member_map.get(uid)
-        if u:
-            paid_by_detail[uid] = {
-                "name":   u.display_name,
-                "color":  u.avatar_color,
-                "amount": quantize(amount),
-            }
+    for uid in sorted(set(paid_acc) | set(share_acc), key=lambda k: (-paid_acc.get(k, ZERO), k)):
+        paid = paid_acc.get(uid, ZERO)
+        share = share_acc.get(uid, ZERO)
+        if uid == UNASSIGNED_PAYER:
+            if not paid and abs(share) < Decimal("0.005"):
+                continue
+            name, color = "Unassigned", "#9ca3af"
+        elif uid in member_map:
+            name, color = member_map[uid].display_name, member_map[uid].avatar_color
+        else:
+            u = former.get(uid)
+            name, color = f"Former member: {u.display_name if u else 'unknown'}", "#9ca3af"
+        paid_q = quantize(paid)
+        paid_by_detail[uid] = {
+            "name":   name,
+            "color":  color,
+            "paid":   paid_q,
+            "share":  quantize(share),
+            "amount": paid_q,  # alias of ``paid``, kept for one release
+        }
 
     return {
         "total_spent": quantize(total_spent),
@@ -498,17 +504,7 @@ def get_insights_income(
     if category_ids:
         q = q.filter(Transaction.category_id.in_(category_ids))
     if paid_by:
-        split_subq = (
-            db.query(TransactionSplit.transaction_id)
-            .filter(TransactionSplit.user_id == paid_by)
-            .scalar_subquery()
-        )
-        q = q.filter(
-            or_(
-                Transaction.paid_by == paid_by,
-                Transaction.id.in_(split_subq),
-            )
-        )
+        q = q.filter(Transaction.paid_by == paid_by)
     return quantize(q.scalar())
 
 
@@ -568,7 +564,7 @@ def get_insights_category_breakdown(
 
     totals: dict[str | None, Decimal] = defaultdict(Decimal)
     for t in txns:
-        totals[t.category_id] += _effective_amount(t, paid_by)
+        totals[t.category_id] += _effective_amount(t)
 
     grand = sum(totals.values()) or 1
     cat_ids = [cid for cid in totals if cid is not None]
@@ -747,10 +743,9 @@ def get_insights_budget_status(
             Transaction.active(),
             Transaction.bucket_id.in_(ids),
             Transaction.type == TransactionType.expense,
-            # Excluded transactions are left out of every other spend figure;
-            # counting them here made a bucket look over budget on the same
-            # page that reported it under.
-            Transaction.exclude_from_forecast == False,  # noqa: E712
+            # One-off purchases (exclude_from_forecast) still count: the flag
+            # only keeps them out of projections, not out of actual spend, so
+            # this matches the dashboard's bucket spend.
         )
     )
     if start:
@@ -901,7 +896,7 @@ def get_insights_kpis(
     )
     txns = q.options(joinedload(Transaction.splits), joinedload(Transaction.category)).all()
 
-    amounts = [(t, _effective_amount(t, paid_by)) for t in txns]
+    amounts = [(t, _effective_amount(t)) for t in txns]
     amounts = [(t, a) for t, a in amounts if a]
     total = sum((a for _, a in amounts), ZERO)
     count = len(amounts)
@@ -962,7 +957,7 @@ def get_insights_kpis(
             category_ids=category_ids, paid_by=paid_by,
         )
         prev_txns = prev_q.options(joinedload(Transaction.splits)).all()
-        previous_total = quantize(sum(_effective_amount(t, paid_by) for t in prev_txns))
+        previous_total = quantize(sum(_effective_amount(t) for t in prev_txns))
         if previous_total > 0:
             change_pct = quantize((total - previous_total) / previous_total * 100, TENTH)
 

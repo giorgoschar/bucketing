@@ -343,14 +343,19 @@
         <div class="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
              style="background-color: {{ data.color }}">{{ data.name | initials }}</div>
         <div class="flex-1 min-w-0">
-          <div class="flex items-center justify-between">
-            <span class="text-sm font-medium">{{ data.name }}</span>
-            <span class="text-sm font-semibold">{{ data.amount | currency(household.default_currency) }}</span>
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-sm font-medium truncate">{{ data.name }}</span>
+            <span class="text-sm font-semibold whitespace-nowrap">{{ data.paid | currency(household.default_currency) }}
+              <span class="text-xs font-normal text-gray-400">paid</span>
+              <span class="text-xs font-normal text-gray-400">/ {{ data.share | currency(household.default_currency) }} share</span></span>
           </div>
           {% if summary.total_spent > 0 %}
-          <div class="mt-1 h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+          <div class="relative mt-1 h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden"
+               role="img" aria-label="{{ data.name }} paid {{ data.paid | currency(household.default_currency) }}, share {{ data.share | currency(household.default_currency) }}">
             <div class="h-full rounded-full"
-                 style="width: {{ (data.amount / summary.total_spent * 100) | round(1) }}%; background-color: {{ data.color }}"></div>
+                 style="width: {{ (data.paid / summary.total_spent * 100) | round(1) }}%; background-color: {{ data.color }}"></div>
+            <div class="absolute top-0 h-full w-0.5 bg-gray-900 dark:bg-white opacity-70"
+                 style="left: calc({{ [(data.share / summary.total_spent * 100), 100] | min | round(1) }}% - 1px)"></div>
           </div>
           {% endif %}
         </div>
