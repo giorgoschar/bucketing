@@ -25,12 +25,13 @@ from app.validators import (
     parse_year_month,
     require_category,
     require_member,
+    require_receipt_content,
     validate_split_users,
 )
 
 UPLOADS_DIR = "uploads"
 MAX_RECEIPT_SIZE = 10 * 1024 * 1024
-ALLOWED_RECEIPT_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".pdf"}
+ALLOWED_RECEIPT_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".pdf", ".heic", ".heif"}
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
@@ -303,6 +304,7 @@ async def upload_receipt(
     content = await file.read(MAX_RECEIPT_SIZE + 1)
     if len(content) > MAX_RECEIPT_SIZE:
         raise HTTPException(status_code=413, detail="File too large (max 10 MB)")
+    require_receipt_content(ext, content)
 
     # Delete old receipt
     if txn.receipt_path:

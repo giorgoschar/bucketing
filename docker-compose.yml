@@ -28,6 +28,7 @@ services:
       - APP_SECRET_KEY=${APP_SECRET_KEY:?set APP_SECRET_KEY}
       - FIELD_ENCRYPTION_KEY=${FIELD_ENCRYPTION_KEY:-}
       - DEBUG=false
+      - APP_BASE_URL=${APP_BASE_URL:?set APP_BASE_URL (public https URL, used in invite links)}
       - APP_NAME=Expenses
       - APP_TIMEZONE=${APP_TIMEZONE:-Europe/Athens}
       - TRUST_PROXY_HEADERS=true

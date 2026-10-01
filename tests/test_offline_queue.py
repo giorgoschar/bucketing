@@ -50,7 +50,7 @@ def test_client_id_is_scoped_per_household(app, client, db, authed, make_househo
     import pyotp
     from fastapi.testclient import TestClient
 
-    from tests.conftest import PASSWORD
+    from tests.conftest import PASSWORD, form_csrf
 
     other = make_household(name="Other", username="offlineother")
     _post(client, authed, client_id="collide")
@@ -58,8 +58,8 @@ def test_client_id_is_scoped_per_household(app, client, db, authed, make_househo
     # A second browser: signing the other user in on the same client would be
     # rejected by CSRF, since that client already holds the first user's session.
     other_client = TestClient(app, follow_redirects=False)
-    other_client.post("/login", data={"username": other.username, "password": PASSWORD})
-    other_client.post("/login/verify", data={"code": pyotp.TOTP(other.secret).now()})
+    other_client.post("/login", data={**form_csrf(other_client, "/login"), "username": other.username, "password": PASSWORD})
+    other_client.post("/login/verify", data={**form_csrf(other_client, "/login/verify"), "code": pyotp.TOTP(other.secret).now()})
     token = other_client.cookies.get("csrf_token")
 
     r = other_client.post("/transactions", data={

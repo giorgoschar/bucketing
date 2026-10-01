@@ -9,6 +9,7 @@
 {% endif %}
 
 <form method="POST" action="/setup" class="space-y-4">
+  <input type="hidden" name="_csrf_token" value="{{ form_csrf_token(request) }}">
   <div>
     <label class="block text-sm font-medium text-gray-700 mb-1.5">Household name</label>
     <input type="text" name="household_name" placeholder="e.g. George & Georgia" required autofocus

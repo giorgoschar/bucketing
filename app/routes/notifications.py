@@ -2,6 +2,7 @@
 Notification and web push routes.
 """
 import logging
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
@@ -112,6 +113,24 @@ def vapid_public_key():
     return {"public_key": settings.vapid_public_key}
 
 
+_PUSH_HOSTS = {"fcm.googleapis.com", "updates.push.services.mozilla.com", "web.push.apple.com"}
+_PUSH_HOST_SUFFIXES = (".notify.windows.com", ".push.apple.com")
+
+
+def _is_allowed_push_endpoint(endpoint: str) -> bool:
+    """Only the browser vendors' push services; the server POSTs to this URL,
+    so anything else would be a server-side request forgery primitive."""
+    try:
+        parsed = urlparse(endpoint)
+        host = (parsed.hostname or "").lower()
+        # Credentials, or an explicit non-default port, have no place here.
+        if parsed.username or parsed.password or parsed.port not in (None, 443):
+            return False
+    except ValueError:
+        return False
+    return parsed.scheme == "https" and (host in _PUSH_HOSTS or host.endswith(_PUSH_HOST_SUFFIXES))
+
+
 @router.post("/push/subscribe", response_class=JSONResponse)
 async def push_subscribe(
     request: Request,
@@ -127,8 +146,10 @@ async def push_subscribe(
     except (KeyError, ValueError):
         raise HTTPException(status_code=422, detail="Invalid subscription payload") from None
 
-    if not isinstance(endpoint, str) or not endpoint.startswith("https://") or len(endpoint) > 2000:
+    if not isinstance(endpoint, str) or len(endpoint) > 2000:
         raise HTTPException(status_code=422, detail="Invalid subscription endpoint")
+    if not _is_allowed_push_endpoint(endpoint):
+        raise HTTPException(status_code=400, detail="Push service not allowed")
 
     # Upsert: update keys if this user already registered this endpoint.
     # Scoping by user_id matters — the previous lookup matched on endpoint
@@ -143,11 +164,10 @@ async def push_subscribe(
         existing.auth         = auth_key
         existing.household_id = hh_id
     else:
-        # A browser endpoint belongs to one profile; if it is registered to a
-        # different user the device was re-provisioned, so retire the old row.
-        db.query(PushSubscription).filter(
-            PushSubscription.endpoint == endpoint
-        ).delete(synchronize_session=False)
+        # Endpoints are globally unique. If another account already holds this
+        # one we neither take it over nor delete their row (data is kept).
+        if db.query(PushSubscription.id).filter(PushSubscription.endpoint == endpoint).first():
+            raise HTTPException(status_code=409, detail="Endpoint already registered to another account")
         db.add(PushSubscription(
             user_id=user.id,
             household_id=hh_id,

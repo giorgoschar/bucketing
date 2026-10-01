@@ -8,6 +8,7 @@ Session cookie payload:
 import hashlib
 import hmac
 import logging
+import re
 import secrets
 import time
 from datetime import UTC, datetime, timedelta
@@ -185,6 +186,7 @@ def set_session(response, user_id: str, household_id: str, session_version: int)
     })
     response.set_cookie(COOKIE_NAME, value, **_cookie_kwargs(settings.session_max_age_seconds))
     response.delete_cookie(PENDING_COOKIE_NAME)
+    response.delete_cookie(PRE_CSRF_COOKIE_NAME)
     # Non-httponly CSRF token cookie — JS reads it for double-submit validation
     csrf_val = generate_csrf_token(user_id)
     response.set_cookie(
@@ -270,6 +272,61 @@ def verify_csrf_token(token: str, user_id: str) -> bool:
         return data.get("uid") == user_id
     except Exception:
         return False
+
+
+# Pre-session (login) CSRF: forms served before any session exists carry a
+# short-lived signed token, so a third-party page cannot blind-POST a login,
+# 2FA code, enrollment or setup on a victim's browser. Its own salt means a
+# user CSRF token can't be replayed here and vice versa.
+_pre_csrf_serializer = URLSafeTimedSerializer(settings.app_secret_key, salt="pre-session-csrf")
+PRE_SESSION_CSRF_MAX_AGE = 600  # 10 minutes
+
+
+PRE_CSRF_COOKIE_NAME = "csrf_pre"
+_NONCE_RE = re.compile(r"^[0-9a-f]{32}$")
+
+
+def _pre_csrf_cookie_nonce(request: Request) -> str | None:
+    value = request.cookies.get(PRE_CSRF_COOKIE_NAME, "")
+    return value if _NONCE_RE.match(value) else None
+
+
+def generate_pre_session_csrf_token(nonce: str | None = None) -> str:
+    """Signed token carrying the nonce that is also in the browser's csrf_pre
+    cookie, so a token copied to another browser does not validate there."""
+    return _pre_csrf_serializer.dumps({"n": nonce or secrets.token_hex(16)})
+
+
+def verify_pre_session_csrf_token(token: str, cookie_nonce: str | None) -> bool:
+    if not cookie_nonce:
+        return False
+    try:
+        data = _pre_csrf_serializer.loads(token, max_age=PRE_SESSION_CSRF_MAX_AGE)
+        return hmac.compare_digest(str(data.get("n", "")), cookie_nonce)
+    except Exception:
+        return False
+
+
+def set_pre_csrf_cookie(response, nonce: str) -> None:
+    response.set_cookie(
+        PRE_CSRF_COOKIE_NAME, nonce, httponly=True, samesite="lax",
+        max_age=PRE_SESSION_CSRF_MAX_AGE, secure=not settings.debug,
+    )
+
+
+def form_csrf_token(request: Request) -> str:
+    """Value for the hidden ``_csrf_token`` field of forms that may be shown with
+    or without a session (e.g. 2FA enrollment): the user's double-submit token
+    when logged in, otherwise a pre-session token bound to the csrf_pre cookie
+    (reused if the browser already has one, so several tabs work). The
+    security-headers middleware sets the cookie from request.state."""
+    session = get_current_session(request)
+    cookie_token = request.cookies.get(CSRF_COOKIE_NAME)
+    if session and session.get("state") == "authenticated" and cookie_token:
+        return cookie_token
+    nonce = _pre_csrf_cookie_nonce(request) or secrets.token_hex(16)
+    request.state.pre_csrf_nonce = nonce
+    return generate_pre_session_csrf_token(nonce)
 
 
 # ---------------------------------------------------------------------------
@@ -377,8 +434,10 @@ def require_pending_session(request: Request) -> dict:
 
 async def require_csrf(request: Request) -> None:
     """
-    Validates the CSRF double-submit cookie for state-changing requests.
-    Skips validation for safe HTTP methods and unauthenticated requests.
+    Validates CSRF for state-changing requests.
+    * Authenticated: the double-submit cookie must match the submitted token.
+    * Not authenticated (login, 2FA, enroll, setup, join): a valid signed
+      pre-session token is required.
     Accepts the token from X-CSRF-Token header (HTMX) or a _csrf_token
     hidden form field (traditional form submits).
     """
@@ -386,14 +445,9 @@ async def require_csrf(request: Request) -> None:
         return
 
     session_cookie = request.cookies.get(COOKIE_NAME)
-    if not session_cookie:
-        return  # Unauthenticated — nothing to protect here
+    session = decode_cookie(session_cookie) if session_cookie else None
+    authenticated = bool(session and session.get("state") == "authenticated")
 
-    session = decode_cookie(session_cookie)
-    if not session or session.get("state") != "authenticated":
-        return  # Not fully authenticated
-
-    user_id = session["user_id"]
     csrf_cookie = request.cookies.get(CSRF_COOKIE_NAME)
 
     # Try header first (set by HTMX via htmx:configRequest listener in base.html)
@@ -408,6 +462,19 @@ async def require_csrf(request: Request) -> None:
         ):
             form = await request.form()
             csrf_token = form.get("_csrf_token", "") or ""
+
+    if not authenticated:
+        if not csrf_token or not verify_pre_session_csrf_token(
+            csrf_token, _pre_csrf_cookie_nonce(request)
+        ):
+            security_logger.warning(
+                "Pre-session CSRF validation failed from %s",
+                request.client.host if request.client else "unknown",
+            )
+            raise CSRFError()
+        return
+
+    user_id = session["user_id"]
 
     if (
         not csrf_cookie

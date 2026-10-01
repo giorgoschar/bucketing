@@ -252,6 +252,7 @@ def create_invite(
     auth=Depends(require_auth),
 ):
     user, hh_id = auth
+    _require_owner(db, user.id, hh_id)
     invite = Invitation(
         household_id=hh_id,
         token=secrets.token_urlsafe(32),
@@ -261,7 +262,11 @@ def create_invite(
     db.add(invite)
     db.commit()
 
-    invite_url = str(request.base_url) + f"join/{invite.token}"
+    # Never build the link from the Host header: a forged Host would put an
+    # attacker's domain into a link the owner then shares. Production requires
+    # APP_BASE_URL; the request URL is only a debug-mode fallback.
+    base = (settings.app_base_url or str(request.base_url)).rstrip("/")
+    invite_url = f"{base}/join/{invite.token}"
     if request.headers.get("HX-Request"):
         return templates.TemplateResponse(
             "partials/invite_link.html",

@@ -68,6 +68,11 @@ class Settings(BaseSettings):
     # share counters across workers.
     rate_limit_storage_uri: str = ""
 
+    # Public base URL used in invite links, e.g. "https://expenses.example.com".
+    # Required in production: building links from the request Host header lets a
+    # forged Host poison the link an owner shares.
+    app_base_url: str | None = None
+
     # Web Push (VAPID) — set via environment variables in production
     # Generate with: vapid --gen  (after installing pywebpush)
     vapid_private_key: str = ""
@@ -86,6 +91,11 @@ class Settings(BaseSettings):
                 raise RuntimeError(
                     "APP_SECRET_KEY is too short (minimum 32 characters). "
                     "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+                )
+            if not self.app_base_url:
+                raise RuntimeError(
+                    "APP_BASE_URL must be set in production (e.g. https://expenses.example.com); "
+                    "invite links are built from it, never from the Host header."
                 )
         return self
 

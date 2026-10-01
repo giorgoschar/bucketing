@@ -123,3 +123,44 @@ def validate_split_users(user_ids, hh_id: str, db: Session) -> None:
             status_code=400,
             detail="Splits can only be assigned to members of this household.",
         )
+
+
+# ---------------------------------------------------------------------------
+# Upload sniffing
+# ---------------------------------------------------------------------------
+
+# Receipt extension -> the kind of content it must actually contain.
+RECEIPT_KIND_BY_EXT = {
+    ".jpg": "jpg", ".jpeg": "jpg", ".png": "png", ".gif": "gif",
+    ".webp": "webp", ".pdf": "pdf", ".heic": "heic", ".heif": "heic",
+}
+
+_HEIC_BRANDS = {b"heic", b"heix", b"mif1", b"heif", b"hevc"}
+
+
+def sniff_upload(head: bytes) -> str | None:
+    """Detect an upload's real type from its leading bytes, or None if unknown.
+
+    The file extension and client Content-Type are attacker-controlled; this is
+    what stops an HTML/script payload being stored (and later served) as
+    ``receipt.jpg``.
+    """
+    if head.startswith(b"\xff\xd8\xff"):
+        return "jpg"
+    if head.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if head.startswith((b"GIF87a", b"GIF89a")):
+        return "gif"
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "webp"
+    if head.startswith(b"%PDF-"):
+        return "pdf"
+    if head[4:8] == b"ftyp" and head[8:12] in _HEIC_BRANDS:
+        return "heic"
+    return None
+
+
+def require_receipt_content(ext: str, content: bytes) -> None:
+    """Raise 400 unless the bytes really are the type the extension claims."""
+    if sniff_upload(content[:16]) != RECEIPT_KIND_BY_EXT.get(ext):
+        raise HTTPException(status_code=400, detail="File content does not match its type.")
