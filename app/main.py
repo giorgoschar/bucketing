@@ -108,6 +108,10 @@ async def security_headers(request: Request, call_next):
                 max_age=settings.session_max_age_seconds,
                 secure=not settings.debug,
             )
+    pre_nonce = getattr(request.state, "pre_csrf_nonce", None)
+    if pre_nonce:
+        from app.auth import set_pre_csrf_cookie
+        set_pre_csrf_cookie(response, pre_nonce)
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"

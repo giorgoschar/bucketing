@@ -217,6 +217,42 @@ def test_login_with_token_works(client, make_household):
     _password_step(client, hh)
 
 
+def test_token_from_another_browser_is_rejected(app, client, make_household):
+    """Login CSRF: the attacker's own valid token, copied into the victim's
+    browser (different cookie jar), must not validate."""
+    hh = make_household()
+    attacker = TestClient(app, follow_redirects=False)
+    attacker_token = _token(attacker.get("/login").text)
+    client.get("/login")  # victim has their own csrf_pre cookie
+    r = client.post("/login", data={"username": hh.username, "password": PASSWORD,
+                                    "_csrf_token": attacker_token})
+    assert r.status_code == 403
+    # ...and with no cookie at all.
+    fresh = TestClient(app, follow_redirects=False)
+    r = fresh.post("/login", data={"username": hh.username, "password": PASSWORD,
+                                   "_csrf_token": attacker_token})
+    assert r.status_code == 403
+
+
+def test_pre_csrf_cookie_is_httponly_reused_and_cleared_on_login(client, make_household):
+    hh = make_household()
+    r = client.get("/login")
+    set_cookie = r.headers["set-cookie"].lower()
+    assert "csrf_pre=" in set_cookie and "httponly" in set_cookie and "samesite=lax" in set_cookie
+    first = client.cookies.get("csrf_pre")
+    t1 = _token(r.text)
+    t2 = _token(client.get("/login").text)  # second tab
+    assert client.cookies.get("csrf_pre") == first
+    for t in (t1, t2):  # both tabs' tokens share the nonce
+        assert client.post("/login", data={"username": "nobody", "password": "x" * 12,
+                                           "_csrf_token": t}).status_code == 200
+    _password_step(client, hh)
+    r = client.post("/login/verify", data={
+        "code": pyotp.TOTP(hh.secret).now(), "_csrf_token": _token(client.get("/login/verify").text)})
+    assert r.status_code == 302
+    assert not client.cookies.get("csrf_pre")
+
+
 def test_login_accepts_header_token(client, make_household):
     hh = make_household()
     token = _token(client.get("/login").text)
@@ -283,7 +319,7 @@ def test_enroll_requires_token(client, db):
         "email": "ann@example.com", "password": "a-very-long-password",
         "_csrf_token": _token(client.get("/setup").text)})
     page = client.get("/settings/2fa/enroll")
-    secret = db.query(User).filter_by(username="ann").one().totp_secret
+    secret = db.query(User).filter_by(username="ann").one().get_totp_secret()
     code = pyotp.TOTP(secret).now()
     assert client.post("/settings/2fa/enroll", data={"code": code}).status_code == 403
     r = client.post("/settings/2fa/enroll", data={"code": code, "_csrf_token": _token(page.text)})
