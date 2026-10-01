@@ -19,6 +19,7 @@ from app.models import (
 )
 from app.money import TENTH, ZERO, quantize, to_decimal
 from app.services import (
+    SettlementChanged,
     base_amount_expr,
     base_ctx,
     get_bucket_balance,
@@ -28,6 +29,7 @@ from app.services import (
     get_savings_summary,
     get_trip_summary,
     record_household_settlement,
+    settlement_fingerprint,
 )
 from app.templates import templates
 from app.validators import parse_amount, parse_color, parse_year_month, require_member
@@ -260,6 +262,8 @@ def bucket_detail(
             "trip": trip,
             "savings": savings,
             "settlement": settlement,
+            "settle_fingerprint": settlement_fingerprint(settlement),
+            "settle_stale": request.query_params.get("settle") == "stale",
             "settlement_history": settlement_history,
             "budget_pct": budget_pct,
             "page": page,
@@ -343,6 +347,7 @@ def settle_bucket(
     to_user_id: str = Form(""),
     amount: str = Form(""),
     note: str = Form(""),
+    expected: str | None = Form(None),
     db: Session = Depends(get_db),
     auth=Depends(require_auth),
 ):
@@ -368,15 +373,21 @@ def settle_bucket(
 
     value = parse_amount(amount, field="Amount", allow_blank=True)
 
-    created = record_household_settlement(
-        db, hh_id,
-        bucket_id=bucket_id,
-        created_by=user.id,
-        from_user_id=payer,
-        to_user_id=payee,
-        amount=value,
-        note=note.strip() or None,
-    )
+    try:
+        created = record_household_settlement(
+            db, hh_id,
+            bucket_id=bucket_id,
+            created_by=user.id,
+            from_user_id=payer,
+            to_user_id=payee,
+            amount=value,
+            note=note.strip() or None,
+            expected=expected,
+        )
+    except SettlementChanged:
+        # Double submit / stale tab: the displayed transfers no longer apply.
+        db.rollback()
+        return RedirectResponse(f"/buckets/{bucket_id}?settle=stale", status_code=303)
     db.commit()
 
     if not created:

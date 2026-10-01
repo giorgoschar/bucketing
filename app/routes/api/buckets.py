@@ -18,6 +18,7 @@ from app.models import (
 )
 from app.money import quantize
 from app.services import (
+    SettlementChanged,
     get_bucket_balance,
     get_bucket_settlement,
     get_bucket_settlement_history,
@@ -25,6 +26,7 @@ from app.services import (
     get_household_settlement_history,
     get_member_balances,
     record_household_settlement,
+    settlement_fingerprint,
 )
 from app.validators import parse_amount, parse_color, validate_split_users
 
@@ -196,9 +198,11 @@ def get_settlement(
     if not bucket.enable_settlement:
         raise HTTPException(status_code=400, detail="Settlement is not enabled for this bucket")
 
+    rows = get_bucket_settlement(db, bucket_id)
     return {
         "bucket_id":   bucket_id,
-        "settlements": get_bucket_settlement(db, bucket_id),
+        "settlements": rows,
+        "fingerprint": settlement_fingerprint(rows),
         "history":     get_bucket_settlement_history(db, bucket_id),
     }
 
@@ -208,6 +212,10 @@ class SettleIn(BaseModel):
     to_user_id:   str | None = None
     amount:       Decimal | None = None
     note:         str | None = None
+    # settlement_fingerprint of the transfers the client displayed (the
+    # "fingerprint" from GET .../settlement). When sent, a mismatch → 409, so
+    # a retried/double submit cannot record the same payment twice.
+    expected:     str | None = None
 
 
 @router.post("/{bucket_id}/settle", status_code=status.HTTP_200_OK)
@@ -243,15 +251,20 @@ def settle_bucket(
     if body.amount is not None:
         parse_amount(body.amount, field="amount")
 
-    created = record_household_settlement(
-        db, hh_id,
-        bucket_id=bucket_id,
-        created_by=user.id,
-        from_user_id=body.from_user_id,
-        to_user_id=body.to_user_id,
-        amount=body.amount,
-        note=body.note,
-    )
+    try:
+        created = record_household_settlement(
+            db, hh_id,
+            bucket_id=bucket_id,
+            created_by=user.id,
+            from_user_id=body.from_user_id,
+            to_user_id=body.to_user_id,
+            amount=body.amount,
+            note=body.note,
+            expected=body.expected,
+        )
+    except SettlementChanged as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(exc)) from None
     db.commit()
 
     return {
@@ -282,8 +295,10 @@ def household_settlement(
 ):
     """Outstanding household balances, per-member positions, and payment history."""
     user, hh_id = auth
+    rows = get_household_settlement(db, hh_id)
     return {
-        "settlements": get_household_settlement(db, hh_id),
+        "settlements": rows,
+        "fingerprint": settlement_fingerprint(rows),
         "balances":    get_member_balances(db, hh_id),
         "history":     get_household_settlement_history(db, hh_id),
     }
@@ -308,14 +323,19 @@ def settle_household(
     if body.amount is not None:
         parse_amount(body.amount, field="amount")
 
-    created = record_household_settlement(
-        db, hh_id,
-        created_by=user.id,
-        from_user_id=body.from_user_id,
-        to_user_id=body.to_user_id,
-        amount=body.amount,
-        note=body.note,
-    )
+    try:
+        created = record_household_settlement(
+            db, hh_id,
+            created_by=user.id,
+            from_user_id=body.from_user_id,
+            to_user_id=body.to_user_id,
+            amount=body.amount,
+            note=body.note,
+            expected=body.expected,
+        )
+    except SettlementChanged as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(exc)) from None
     db.commit()
     return {
         "recorded": [

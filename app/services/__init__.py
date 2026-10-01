@@ -73,6 +73,7 @@ from app.services.personal_tokens import (  # noqa: F401
     token_dict,
 )
 from app.services.settlement import (  # noqa: F401
+    SettlementChanged,
     compute_bucket_net,
     get_bucket_settlement,
     get_bucket_settlement_history,
@@ -81,6 +82,7 @@ from app.services.settlement import (  # noqa: F401
     get_member_balances,
     get_settlement_exclusions,
     record_household_settlement,
+    settlement_fingerprint,
     simplify_debts,
 )
 from app.services.stock import (  # noqa: F401

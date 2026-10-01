@@ -1,6 +1,7 @@
 """
 Bucket and household settlement calculations.
 """
+import hashlib
 from collections import defaultdict
 from decimal import Decimal
 
@@ -17,6 +18,21 @@ from app.models import (
 )
 from app.money import ZERO, quantize, to_decimal
 from app.services.money import base_amount_expr, shares_for, to_base
+
+
+class SettlementChanged(Exception):
+    """The outstanding transfers differ from the ones the client displayed."""
+
+
+def settlement_fingerprint(rows: list[dict]) -> str:
+    """Stable short hash of the suggested transfers a page/client displayed.
+
+    Settle-up forms post it back; the server recomputes and refuses when it no
+    longer matches, so a double submit (or a stale tab) cannot record the same
+    payment twice and reverse the debt.
+    """
+    parts = sorted(f"{r['from_id']}|{r['to_id']}|{quantize(to_decimal(r['amount']))}" for r in rows)
+    return hashlib.sha256("\n".join(parts).encode()).hexdigest()[:24]
 
 
 def compute_bucket_net(db: Session, bucket_id: str) -> dict[str, Decimal]:
@@ -226,6 +242,7 @@ def record_household_settlement(
     to_user_id: str | None = None,
     amount: Decimal | None = None,
     note: str | None = None,
+    expected: str | None = None,
 ) -> list[Settlement]:
     """Record debt payment(s) and return the rows created. Callers must commit.
 
@@ -235,11 +252,17 @@ def record_household_settlement(
     With no from/to/amount, settles everything currently outstanding: one row
     per suggested transfer. Passing them records a single (possibly partial)
     payment instead.
+
+    ``expected`` is the ``settlement_fingerprint`` of the transfers the client
+    displayed; when given and the outstanding transfers no longer match,
+    ``SettlementChanged`` is raised and nothing is recorded.
     """
     outstanding = (
         get_bucket_settlement(db, bucket_id) if bucket_id
         else get_household_settlement(db, household_id)
     )
+    if expected is not None and settlement_fingerprint(outstanding) != expected.strip():
+        raise SettlementChanged("Balances changed since this page was loaded — review and try again.")
 
     if from_user_id and to_user_id:
         if amount is None:
