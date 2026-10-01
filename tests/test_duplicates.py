@@ -7,8 +7,6 @@ anything, because a genuine repeat (two coffees the same day) is legitimate.
 """
 from datetime import date, timedelta
 
-import pytest
-
 from app.models import Bucket, Transaction, TransactionType
 from app.services import find_duplicate_candidates, find_household_duplicates
 

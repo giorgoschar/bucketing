@@ -11,8 +11,14 @@ import pytest
 
 from app.auth import hash_password
 from app.models import (
-    Bucket, HouseholdMember, MemberRole, Settlement, Transaction,
-    TransactionSplit, TransactionType, User,
+    Bucket,
+    HouseholdMember,
+    MemberRole,
+    Settlement,
+    Transaction,
+    TransactionSplit,
+    TransactionType,
+    User,
 )
 from app.services import (
     get_bucket_settlement,

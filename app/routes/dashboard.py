@@ -7,17 +7,17 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
-from app.database import get_db
 from app.auth import require_auth, require_csrf
-from app.models import Household, HouseholdMember, Transaction, TransactionType
+from app.database import get_db
+from app.models import Transaction, TransactionType
 from app.services import (
-    get_month_summary,
-    get_income_total,
-    get_bills_due_month_total,
-    get_upcoming_bills,
-    get_overdue_bills,
-    get_bucket_spend_this_month,
     base_ctx,
+    get_bills_due_month_total,
+    get_bucket_spend_this_month,
+    get_income_total,
+    get_month_summary,
+    get_overdue_bills,
+    get_upcoming_bills,
 )
 from app.templates import templates
 

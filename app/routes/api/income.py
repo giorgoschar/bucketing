@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.api_auth import require_api_auth
 from app.database import get_db
-from app.models import Transaction, TransactionType, Bucket
+from app.models import Bucket, Transaction, TransactionType
 
 router = APIRouter(prefix="/income", tags=["income"])
 

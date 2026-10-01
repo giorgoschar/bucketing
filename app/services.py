@@ -1,20 +1,28 @@
 """
 Balance and summary calculations for dashboards and bucket views.
 """
-from datetime import date, timedelta
 from collections import defaultdict
-from typing import Optional
+from datetime import date, timedelta
 
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func, and_, case, or_
 
 from app.models import (
-    Transaction, TransactionSplit, TransactionType,
-    BillOccurrence, OccurrenceStatus, RecurringBill,
-    User, HouseholdMember, Bucket, BucketType, BucketStatus, Category, Household,
+    BillOccurrence,
+    Bucket,
+    BucketStatus,
+    BucketType,
+    Category,
+    Household,
+    HouseholdMember,
+    OccurrenceStatus,
+    RecurringBill,
     Settlement,
+    Transaction,
+    TransactionSplit,
+    TransactionType,
+    User,
 )
-
 
 # ---------------------------------------------------------------------------
 # Currency normalisation

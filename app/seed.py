@@ -3,6 +3,7 @@ Seed system-default categories into a household.
 Called after household creation.
 """
 from sqlalchemy.orm import Session
+
 from app.models import Category
 
 SYSTEM_CATEGORIES = [

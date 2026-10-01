@@ -3,25 +3,25 @@ Insights / Analytics route.
 """
 from datetime import date
 
-from fastapi import APIRouter, Depends, Request, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
-from app.database import get_db
 from app.auth import require_auth
+from app.database import get_db
 from app.models import Bucket, BucketStatus, Category, Household, HouseholdMember, User
 from app.services import (
-    resolve_insight_period,
-    get_insights_summary,
-    get_insights_income,
-    get_insights_bills_due,
-    get_insights_category_breakdown,
-    get_insights_bucket_breakdown,
-    get_insights_category_trend,
-    get_insights_budget_status,
-    get_insights_kpis,
-    get_monthly_trend,
     get_forecast,
+    get_insights_bills_due,
+    get_insights_bucket_breakdown,
+    get_insights_budget_status,
+    get_insights_category_breakdown,
+    get_insights_category_trend,
+    get_insights_income,
+    get_insights_kpis,
+    get_insights_summary,
+    get_monthly_trend,
+    resolve_insight_period,
 )
 from app.templates import templates
 

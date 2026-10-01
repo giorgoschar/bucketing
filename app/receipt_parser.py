@@ -4,9 +4,7 @@ Supports Greek (ell) and English receipts.
 No external dependencies.
 """
 import re
-from datetime import date, datetime
 from difflib import SequenceMatcher
-
 
 # ---------------------------------------------------------------------------
 # Greek month name mapping

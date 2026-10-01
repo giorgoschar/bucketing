@@ -1,14 +1,13 @@
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
+from sqlalchemy import engine_from_config, pool
 
+# Import all models so Alembic can detect schema changes
+import app.models  # noqa: F401
 from alembic import context
 
 # Pull DATABASE_URL from the app's settings (reads .env automatically)
 from app.config import settings
-# Import all models so Alembic can detect schema changes
-import app.models  # noqa: F401
 from app.database import Base
 
 # this is the Alembic Config object, which provides

@@ -20,7 +20,7 @@ Setting ``ENABLE_SCHEDULER=false`` on all but one worker avoids the redundant
 work, but correctness does not depend on it.
 """
 import logging
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -58,7 +58,7 @@ def _tz():
     except (ZoneInfoNotFoundError, ValueError, KeyError):
         logger.warning("Unknown APP_TIMEZONE %r — falling back to UTC",
                        settings.app_timezone)
-        return timezone.utc
+        return UTC
 
 
 def today_local() -> date:
@@ -73,7 +73,7 @@ def today_local() -> date:
 
 def _utcnow() -> datetime:
     """UTC wall clock, for stored timestamps (paid_at, created_at)."""
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def _members_by_household(db, household_ids: set[str]) -> dict[str, list[str]]:
@@ -135,12 +135,18 @@ def _auto_pay_due_bills(db, today: date) -> int:
     Variable-amount bills with no pre-set occurrence amount are skipped — the
     user must enter the amount. Returns the number of occurrences paid.
     """
-    from app.models import (
-        BillOccurrence, NotificationType, OccurrenceStatus, RecurringBill,
-        Transaction, TransactionSplit, TransactionType,
-    )
     from sqlalchemy import or_
     from sqlalchemy.orm import joinedload
+
+    from app.models import (
+        BillOccurrence,
+        NotificationType,
+        OccurrenceStatus,
+        RecurringBill,
+        Transaction,
+        TransactionSplit,
+        TransactionType,
+    )
 
     occs = (
         db.query(BillOccurrence)
@@ -260,8 +266,9 @@ def _auto_pay_due_bills(db, today: date) -> int:
 
 def _notify_due_soon(db, today: date) -> None:
     """Remind members about bills due in 3 days."""
-    from app.models import BillOccurrence, NotificationType, OccurrenceStatus, RecurringBill
     from sqlalchemy.orm import joinedload
+
+    from app.models import BillOccurrence, NotificationType, OccurrenceStatus, RecurringBill
 
     due_date = today + timedelta(days=3)
     occs = (
@@ -295,8 +302,9 @@ def _notify_due_soon(db, today: date) -> None:
 
 def _notify_overdue(db, today: date) -> None:
     """Remind members about overdue bills at fixed milestones, not every day."""
-    from app.models import BillOccurrence, NotificationType, OccurrenceStatus, RecurringBill
     from sqlalchemy.orm import joinedload
+
+    from app.models import BillOccurrence, NotificationType, OccurrenceStatus, RecurringBill
 
     milestone_dates = {today - timedelta(days=d): d for d in OVERDUE_REMINDER_DAYS}
     occs = (
@@ -368,7 +376,10 @@ def _notify_bill_drift(db, today: date) -> None:
     required before anything is reported.
     """
     from app.models import (
-        BillOccurrence, NotificationType, OccurrenceStatus, RecurringBill,
+        BillOccurrence,
+        NotificationType,
+        OccurrenceStatus,
+        RecurringBill,
     )
 
     lookback_start = today - timedelta(days=DRIFT_LOOKBACK_DAYS)

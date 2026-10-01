@@ -1,0 +1,33 @@
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["node_modules", "static"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "DTZ"]
+ignore = [
+    "E501",
+    # Removed in Task 2.1 when app/clock.py replaces date.today()/utcnow().
+    "DTZ",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# pytest fixtures are module functions re-bound as test parameters.
+"tests/**" = ["F811"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI declares dependencies and parameters as call defaults.
+extend-immutable-calls = [
+    "fastapi.Depends", "fastapi.Form", "fastapi.File", "fastapi.Query",
+    "fastapi.Path", "fastapi.Body", "fastapi.Header", "fastapi.Cookie",
+    "fastapi.Security",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+filterwarnings = [
+    # The app's own deprecations are tracked separately; keep test output readable.
+    "ignore::DeprecationWarning",
+    "ignore::sqlalchemy.exc.LegacyAPIWarning",
+]

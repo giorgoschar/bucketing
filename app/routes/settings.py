@@ -10,29 +10,36 @@ from datetime import datetime, timedelta
 import bcrypt as _bcrypt
 import pyotp
 import qrcode
-from fastapi import APIRouter, Depends, Form, Request, HTTPException
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
 
-from app.database import get_db
 from app.auth import (
-    require_auth, require_pending_session, require_csrf,
-    hash_password, verify_password,
-    set_session, clear_session, get_current_session,
+    clear_session,
+    get_current_session,
+    hash_password,
+    require_auth,
+    require_csrf,
     security_logger,
-)
-from app.config import settings
-from app.models import (
-    Household, HouseholdMember, User, Invitation, Category, MemberRole
+    set_session,
+    verify_password,
 )
 from app.category_rules import learn_rule, list_rules
-from app.models import CategoryRule
+from app.config import settings
+from app.database import get_db
+from app.models import (
+    Category,
+    CategoryRule,
+    Household,
+    HouseholdMember,
+    Invitation,
+    MemberRole,
+    User,
+)
+from app.ratelimit import limiter
 from app.seed import seed_categories
 from app.services import base_ctx
 from app.templates import templates
-
-from app.ratelimit import limiter
 
 router = APIRouter(prefix="/settings", dependencies=[Depends(require_csrf)])
 
@@ -59,7 +66,6 @@ def settings_page(
 ):
     user, hh_id = auth
     ctx = base_ctx(db, user, hh_id)
-    household = ctx["household"]
 
     members = (
         db.query(HouseholdMember)
@@ -689,7 +695,6 @@ def leave_household(
     remaining = db.query(HouseholdMember).filter_by(user_id=user.id).first()
 
     if remaining:
-        remaining_hh = db.get(Household, remaining.household_id)
         response = RedirectResponse("/settings", status_code=302)
         set_session(response, user.id, remaining.household_id, user.session_version)
         return response

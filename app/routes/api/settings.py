@@ -1,7 +1,6 @@
 """
 API settings routes — profile, household, members, categories.
 """
-import secrets
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -9,13 +8,17 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api_auth import require_api_auth
-from app.auth import verify_password, hash_password, security_logger
+from app.auth import hash_password, security_logger, verify_password
+from app.config import settings
 from app.database import get_db
 from app.models import (
-    User, Household, HouseholdMember, Invitation, Category, MemberRole,
+    Category,
+    Household,
+    HouseholdMember,
+    Invitation,
+    MemberRole,
+    User,
 )
-from app.config import settings
-from app.seed import seed_categories
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 

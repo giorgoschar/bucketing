@@ -3,12 +3,12 @@ Generate BillOccurrence rows for a RecurringBill.
 Called when a bill is created or updated.
 """
 from datetime import date
+
 from dateutil.relativedelta import relativedelta
-
-from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
-from app.models import BillOccurrence, RecurringBill, OccurrenceStatus
+from app.models import BillOccurrence, OccurrenceStatus, RecurringBill
 
 # Guard rails for open-ended bills.
 MAX_INTERVAL_MONTHS = 120   # 10 years between occurrences

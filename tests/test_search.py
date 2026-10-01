@@ -10,7 +10,11 @@ from datetime import date
 import pytest
 
 from app.models import (
-    Bucket, Category, Transaction, TransactionSplit, TransactionType,
+    Bucket,
+    Category,
+    Transaction,
+    TransactionSplit,
+    TransactionType,
 )
 
 

@@ -6,15 +6,17 @@ These cover the duplicate auto-pay bug: `entrypoint.sh` runs
 the daily job and the startup catch-up job can run concurrently and repeatedly.
 """
 import threading
-from datetime import timedelta
-
-from app.scheduler import today_local
+from datetime import UTC, timedelta
 
 import pytest
 
 from app.models import (
-    BillOccurrence, Notification, OccurrenceStatus, Transaction,
+    BillOccurrence,
+    Notification,
+    OccurrenceStatus,
+    Transaction,
 )
+from app.scheduler import today_local
 
 
 @pytest.fixture()
@@ -210,7 +212,7 @@ def test_today_local_follows_configured_timezone(monkeypatch):
     Using the UTC date meant that between local midnight and the UTC offset a
     bill due today was not yet considered due.
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
     from zoneinfo import ZoneInfo
 
     import app.config as config
@@ -228,13 +230,13 @@ def test_today_local_follows_configured_timezone(monkeypatch):
 
 
 def test_unknown_timezone_falls_back_to_utc(monkeypatch):
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     import app.config as config
     import app.scheduler as scheduler
 
     monkeypatch.setattr(config.settings, "app_timezone", "Not/AZone")
-    assert scheduler.today_local() == datetime.now(timezone.utc).date()
+    assert scheduler.today_local() == datetime.now(UTC).date()
 
 
 def test_bill_due_today_local_is_paid(db, make_household, make_bill, run_job, monkeypatch):

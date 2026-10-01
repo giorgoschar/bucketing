@@ -8,15 +8,29 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api_auth import require_api_auth
+from app.bills_service import (
+    delete_future_occurrences,
+    generate_occurrences,
+    normalise_interval_months,
+)
 from app.database import get_db
 from app.models import (
-    RecurringBill, RecurringBillSplit, BillOccurrence, OccurrenceStatus,
-    BillFrequency, Transaction, TransactionSplit, TransactionType,
+    BillFrequency,
+    BillOccurrence,
+    OccurrenceStatus,
+    RecurringBill,
+    RecurringBillSplit,
+    Transaction,
+    TransactionSplit,
+    TransactionType,
 )
-from app.bills_service import generate_occurrences, delete_future_occurrences, normalise_interval_months
-from app.services import get_upcoming_bills, get_overdue_bills
+from app.services import get_overdue_bills, get_upcoming_bills
 from app.validators import (
-    parse_amount, require_bucket, require_category, require_member, validate_split_users,
+    parse_amount,
+    require_bucket,
+    require_category,
+    require_member,
+    validate_split_users,
 )
 
 router = APIRouter(prefix="/bills", tags=["bills"])
@@ -43,14 +57,14 @@ def _parse_bill_date(value: str | None, field: str, *, required: bool = False):
     try:
         return date.fromisoformat(value)
     except ValueError:
-        raise HTTPException(status_code=400, detail=f"{field} must be an ISO date (YYYY-MM-DD)")
+        raise HTTPException(status_code=400, detail=f"{field} must be an ISO date (YYYY-MM-DD)") from None
 
 
 def _parse_frequency(value: str) -> BillFrequency:
     try:
         return BillFrequency(value)
     except ValueError:
-        raise HTTPException(status_code=400, detail=f"Unknown frequency '{value}'")
+        raise HTTPException(status_code=400, detail=f"Unknown frequency '{value}'") from None
 
 
 # ---------------------------------------------------------------------------

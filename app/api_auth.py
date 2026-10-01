@@ -17,16 +17,16 @@ Access token claims:
 """
 import hashlib
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
+import jwt
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import JWTError, jwt
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.models import User, RefreshToken
+from app.models import RefreshToken, User
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -38,7 +38,7 @@ _ALGORITHM = settings.jwt_algorithm
 # ---------------------------------------------------------------------------
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def create_access_token(user_id: str, household_id: str, session_version: int) -> str:
@@ -96,12 +96,12 @@ def _decode_token(token: str) -> dict:
     """Decode and return JWT claims; raises HTTPException on any failure."""
     try:
         return jwt.decode(token, settings.effective_jwt_secret, algorithms=[_ALGORITHM])
-    except JWTError:
+    except jwt.PyJWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from None
 
 
 # ---------------------------------------------------------------------------
@@ -204,7 +204,7 @@ def rotate_refresh_token(raw_token: str, db: Session) -> tuple[str, str]:
     expires_at = record.expires_at
     # Make expires_at timezone-aware if it isn't (SQLite stores naive datetimes)
     if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
+        expires_at = expires_at.replace(tzinfo=UTC)
 
     if now > expires_at:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token expired")

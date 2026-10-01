@@ -2,7 +2,6 @@
 import json
 
 import pyotp
-import pytest
 
 from app.models import User
 from tests.conftest import PASSWORD

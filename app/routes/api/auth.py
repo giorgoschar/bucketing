@@ -8,26 +8,23 @@ Flow:
   4. POST /api/v1/auth/logout        → 204
   5. GET  /api/v1/auth/me            → {user}
 """
-from fastapi import APIRouter, Depends, HTTPException, status, Body
-from fastapi.responses import JSONResponse
+import pyotp
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-import pyotp
-
-from app.auth import verify_password_constant_time, security_logger
 from app.api_auth import (
-    create_pending_token,
     create_access_token,
+    create_pending_token,
     create_refresh_token,
-    rotate_refresh_token,
-    revoke_refresh_token,
     require_api_auth,
-    require_api_pending,
+    revoke_refresh_token,
+    rotate_refresh_token,
 )
+from app.auth import security_logger, verify_password_constant_time
 from app.database import get_db
-from app.models import User, HouseholdMember
+from app.models import HouseholdMember, User
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

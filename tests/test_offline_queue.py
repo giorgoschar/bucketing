@@ -5,9 +5,7 @@ Queued expenses are replayed when connectivity returns. A replay can happen
 after the original response was lost, so the server must recognise the repeat
 rather than creating a second transaction.
 """
-from datetime import date
 
-import pytest
 
 from app.models import Transaction
 
@@ -51,6 +49,7 @@ def test_client_id_is_scoped_per_household(app, client, db, authed, make_househo
     """Two households can independently generate the same client id."""
     import pyotp
     from fastapi.testclient import TestClient
+
     from tests.conftest import PASSWORD
 
     other = make_household(name="Other", username="offlineother")

@@ -1,7 +1,6 @@
 """
 Notification and web push routes.
 """
-import json
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -11,7 +10,6 @@ from sqlalchemy.orm import Session
 from app.auth import require_auth, require_csrf
 from app.database import get_db
 from app.models import Notification, PushSubscription
-from app.notification_service import get_unread_count
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +125,7 @@ async def push_subscribe(
         p256dh   = body["keys"]["p256dh"]
         auth_key = body["keys"]["auth"]
     except (KeyError, ValueError):
-        raise HTTPException(status_code=422, detail="Invalid subscription payload")
+        raise HTTPException(status_code=422, detail="Invalid subscription payload") from None
 
     if not isinstance(endpoint, str) or not endpoint.startswith("https://") or len(endpoint) > 2000:
         raise HTTPException(status_code=422, detail="Invalid subscription endpoint")
@@ -172,7 +170,7 @@ async def push_unsubscribe(
         body = await request.json()
         endpoint = body["endpoint"]
     except (KeyError, ValueError):
-        raise HTTPException(status_code=422, detail="Invalid payload")
+        raise HTTPException(status_code=422, detail="Invalid payload") from None
 
     db.query(PushSubscription).filter(
         PushSubscription.endpoint == endpoint,
@@ -189,9 +187,9 @@ async def push_test(
     auth=Depends(require_auth),
 ):
     """Send a test push notification to the current device only."""
-    from app.models import Household, HouseholdMember, NotificationType
-    from app.notification_service import create_notification, send_push_for_notification
     from app.config import settings as app_settings
+    from app.models import NotificationType
+    from app.notification_service import create_notification, send_push_for_notification
 
     user, hh_id = auth
 

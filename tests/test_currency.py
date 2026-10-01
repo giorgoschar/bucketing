@@ -93,9 +93,10 @@ def test_income_converts(db, authed):
 
 def test_settlement_converts(db, authed, make_household):
     """A foreign-currency expense must not distort who owes whom."""
-    from app.models import Bucket, HouseholdMember, MemberRole, User
-    from app.auth import hash_password
     import pyotp
+
+    from app.auth import hash_password
+    from app.models import Bucket, HouseholdMember, MemberRole, User
 
     partner = User(username="partner", display_name="Partner",
                    email="p@example.com", password_hash=hash_password("x"),

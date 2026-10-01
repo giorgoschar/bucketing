@@ -11,8 +11,14 @@ import pytest
 
 from app.auth import hash_password
 from app.models import (
-    Bucket, Category, HouseholdMember, MemberRole, Transaction,
-    TransactionSplit, TransactionType, User,
+    Bucket,
+    Category,
+    HouseholdMember,
+    MemberRole,
+    Transaction,
+    TransactionSplit,
+    TransactionType,
+    User,
 )
 from app.services import get_person_summary
 from tests.conftest import PASSWORD

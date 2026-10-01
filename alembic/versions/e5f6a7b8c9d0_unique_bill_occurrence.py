@@ -8,8 +8,8 @@ This migration deduplicates any existing duplicate (bill_id, due_date) rows
 (keeping the row that is already paid, or the alphabetically-first id otherwise)
 then adds a unique constraint to prevent future duplicates.
 """
+
 from alembic import op
-import sqlalchemy as sa
 
 revision = 'e5f6a7b8c9d0'
 down_revision = 'd4e5f6a7b8c9'

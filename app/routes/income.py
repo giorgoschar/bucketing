@@ -3,19 +3,21 @@ Income entry routes — separate from the expense wizard.
 """
 from datetime import date
 
-from fastapi import APIRouter, Depends, Form, Request, HTTPException
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
-from app.database import get_db
 from app.auth import require_auth, require_csrf
-from app.models import (
-    Transaction, TransactionType,
-    Bucket, BucketStatus, Category, User, HouseholdMember, Household,
-)
-from app.templates import templates
 from app.config import settings
+from app.database import get_db
+from app.models import (
+    Bucket,
+    BucketStatus,
+    Transaction,
+    TransactionType,
+)
 from app.services import full_ctx as _full_ctx
+from app.templates import templates
 from app.validators import parse_amount, require_category, require_member
 
 router = APIRouter(prefix="/income", dependencies=[Depends(require_csrf)])
@@ -92,7 +94,7 @@ def create_income(
     try:
         txn_date = date.fromisoformat(transaction_date.strip())
     except (ValueError, AttributeError):
-        raise HTTPException(status_code=400, detail="Date must be a valid date (YYYY-MM-DD).")
+        raise HTTPException(status_code=400, detail="Date must be a valid date (YYYY-MM-DD).") from None
 
     txn = Transaction(
         bucket_id=bucket_id,

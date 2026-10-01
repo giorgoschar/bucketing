@@ -5,7 +5,17 @@ The existing HTML routes are completely untouched.
 """
 from fastapi import APIRouter
 
-from app.routes.api import auth, dashboard, transactions, buckets, bills, income, insights, notifications, settings
+from app.routes.api import (
+    auth,
+    bills,
+    buckets,
+    dashboard,
+    income,
+    insights,
+    notifications,
+    settings,
+    transactions,
+)
 
 router = APIRouter(prefix="/api/v1")
 

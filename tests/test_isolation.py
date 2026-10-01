@@ -7,7 +7,7 @@ household.
 """
 from datetime import date
 
-from app.models import Bucket, RecurringBill, Transaction, TransactionSplit
+from app.models import RecurringBill, Transaction, TransactionSplit
 
 
 def _make_txn(client, headers, bucket_id, amount="10"):
@@ -122,10 +122,11 @@ def test_insights_only_reports_own_household(client, db, authed, make_household)
 
 def test_non_owner_cannot_rename_household(client, db, make_household, login):
     """The HTML route used to let any member change household settings."""
-    from app.models import Household, HouseholdMember, MemberRole, User
-    from app.auth import hash_password
-    from tests.conftest import PASSWORD
     import pyotp
+
+    from app.auth import hash_password
+    from app.models import Household, HouseholdMember, MemberRole, User
+    from tests.conftest import PASSWORD
 
     owner = make_household(name="Shared", username="owner")
     secret = pyotp.random_base32()

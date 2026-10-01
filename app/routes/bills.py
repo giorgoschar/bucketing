@@ -3,24 +3,37 @@ Bills routes: recurring bills + occurrences.
 """
 from datetime import date, datetime
 
-from fastapi import APIRouter, Depends, Form, Query, Request, HTTPException
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
-from app.database import get_db
 from app.auth import require_auth, require_csrf
-from app.models import (
-    RecurringBill, RecurringBillSplit, BillOccurrence, OccurrenceStatus,
-    BillFrequency, Transaction, TransactionSplit, TransactionType,
-    Bucket, BucketStatus, Category, User, HouseholdMember, Household,
-)
-from app.bills_service import generate_occurrences, delete_future_occurrences, normalise_interval_months
-from app.services import get_upcoming_bills, get_overdue_bills, full_ctx
-from app.validators import (
-    parse_amount, require_bucket, require_category, require_member, validate_split_users,
+from app.bills_service import (
+    delete_future_occurrences,
+    generate_occurrences,
+    normalise_interval_months,
 )
 from app.config import settings
+from app.database import get_db
+from app.models import (
+    BillFrequency,
+    BillOccurrence,
+    OccurrenceStatus,
+    RecurringBill,
+    RecurringBillSplit,
+    Transaction,
+    TransactionSplit,
+    TransactionType,
+)
+from app.services import full_ctx, get_overdue_bills, get_upcoming_bills
 from app.templates import templates
+from app.validators import (
+    parse_amount,
+    require_bucket,
+    require_category,
+    require_member,
+    validate_split_users,
+)
 
 router = APIRouter(prefix="/bills", dependencies=[Depends(require_csrf)])
 
@@ -45,7 +58,7 @@ def _parse_iso_date(value: str, field: str, *, required: bool = True):
     try:
         return date.fromisoformat(value)
     except ValueError:
-        raise HTTPException(status_code=400, detail=f"{field} must be a valid date (YYYY-MM-DD).")
+        raise HTTPException(status_code=400, detail=f"{field} must be a valid date (YYYY-MM-DD).") from None
 
 
 async def _collect_splits(request: Request, hh_id: str, db: Session) -> tuple[list[tuple[str, float]], float]:

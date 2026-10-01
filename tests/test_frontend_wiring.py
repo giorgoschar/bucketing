@@ -133,8 +133,9 @@ def test_no_duplicate_form_field_names_in_a_form():
 
 def test_dates_render_day_first():
     """Greek/EU convention is dd/mm/yyyy, not a month-abbreviation format."""
-    from app.templates import dmy, dmy_short
     from datetime import date
+
+    from app.templates import dmy, dmy_short
 
     assert dmy(date(2026, 8, 15)) == "15/08/2026"
     assert dmy_short(date(2026, 8, 15)) == "15/08"
@@ -220,7 +221,7 @@ def test_inline_scripts_are_syntactically_balanced():
 
     for tpl in ("templates/base.html", "templates/transactions/new.html"):
         html = Path(tpl).read_text()
-        for i, m in enumerate(re.finditer(r"<script>(.*?)</script>", html, re.S)):
+        for m in re.finditer(r"<script>(.*?)</script>", html, re.S):
             body = m.group(1)
             line = html[:m.start()].count("\n") + 1
             assert body.count("{") == body.count("}"), (

@@ -157,7 +157,7 @@ def send_push_for_notification(db: Session, notification: Notification | None, t
         return 0  # VAPID keys not configured — skip silently
 
     try:
-        from pywebpush import webpush, WebPushException
+        from pywebpush import WebPushException, webpush
     except ImportError:
         logger.warning("pywebpush not installed — skipping push delivery")
         return 0

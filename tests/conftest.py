@@ -4,10 +4,12 @@ Shared pytest fixtures.
 Each test gets a fresh SQLite database created from the ORM metadata, with the
 app's get_db dependency pointed at it. Tests never touch the developer's real
 expenses.db.
+
+Set TEST_DATABASE_URL (a disposable Postgres database) to run the same tests on
+Postgres instead: its public schema is dropped and recreated for every test.
 """
 import os
 import sys
-from datetime import date, timedelta
 from pathlib import Path
 
 # Configure the app before importing it: settings are read at import time.
@@ -22,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pyotp  # noqa: E402
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
-from sqlalchemy import create_engine, event  # noqa: E402
+from sqlalchemy import create_engine, event, text  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 
@@ -41,9 +43,32 @@ def reset_rate_limiter():
     limiter.reset()
 
 
+TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
+
+
+def reset_pg_schema(url):
+    """Empty a Postgres test database, including enum types."""
+    eng = create_engine(url)
+    with eng.begin() as conn:
+        conn.execute(text("DROP SCHEMA public CASCADE"))
+        conn.execute(text("CREATE SCHEMA public"))
+    eng.dispose()
+
+
 @pytest.fixture()
 def engine(tmp_path):
-    """A throwaway SQLite database per test, with FK enforcement on."""
+    """A throwaway database per test: SQLite with FK enforcement, or Postgres."""
+    import app.models  # noqa: F401  (register the tables)
+    from app.database import Base
+
+    if TEST_DATABASE_URL:
+        reset_pg_schema(TEST_DATABASE_URL)
+        eng = create_engine(TEST_DATABASE_URL)
+        Base.metadata.create_all(bind=eng)
+        yield eng
+        eng.dispose()
+        return
+
     url = f"sqlite:///{tmp_path/'test.db'}"
     eng = create_engine(url, connect_args={"check_same_thread": False})
 
@@ -53,8 +78,6 @@ def engine(tmp_path):
         cur.execute("PRAGMA foreign_keys=ON")
         cur.close()
 
-    from app.database import Base
-    import app.models  # noqa: F401  (register the tables)
     Base.metadata.create_all(bind=eng)
     yield eng
     eng.dispose()

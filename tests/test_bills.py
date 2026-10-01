@@ -1,13 +1,15 @@
 """Recurring bills: occurrence generation, paying, skipping."""
-from datetime import date, timedelta
+from datetime import date
 
 import pytest
 
 from app.bills_service import generate_occurrences, normalise_interval_months
 from app.models import (
-    BillOccurrence, OccurrenceStatus, RecurringBill, Transaction,
+    BillOccurrence,
+    OccurrenceStatus,
+    RecurringBill,
+    Transaction,
 )
-
 
 # ---------------------------------------------------------------------------
 # Occurrence generation

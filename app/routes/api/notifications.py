@@ -1,7 +1,7 @@
 """
 API notifications routes — in-app notifications (already JSON in the web app, migrated here).
 """
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api_auth import require_api_auth

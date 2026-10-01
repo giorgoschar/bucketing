@@ -1,25 +1,30 @@
 """
 API transactions routes — full CRUD + receipt scan.
 """
-import os
 import uuid
 from datetime import date
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
 
 from app.api_auth import require_api_auth
 from app.database import get_db
 from app.models import (
-    Transaction, TransactionSplit, TransactionType,
-    Bucket, BucketStatus, Category, HouseholdMember,
+    Bucket,
+    Category,
+    Transaction,
+    TransactionSplit,
+    TransactionType,
 )
-from app.receipt_parser import parse_receipt_text, match_category
-from app.config import settings
+from app.receipt_parser import match_category, parse_receipt_text
 from app.validators import (
-    parse_amount, parse_year_month, require_category, require_member, validate_split_users,
+    parse_amount,
+    parse_year_month,
+    require_category,
+    require_member,
+    validate_split_users,
 )
 
 UPLOADS_DIR = "uploads"
@@ -104,14 +109,14 @@ def _parse_body_date(value: str) -> date:
     try:
         return date.fromisoformat(value)
     except ValueError:
-        raise HTTPException(status_code=400, detail="transaction_date must be an ISO date (YYYY-MM-DD)")
+        raise HTTPException(status_code=400, detail="transaction_date must be an ISO date (YYYY-MM-DD)") from None
 
 
 def _parse_body_type(value: str) -> TransactionType:
     try:
         return TransactionType(value)
     except ValueError:
-        raise HTTPException(status_code=400, detail=f"Unknown transaction type '{value}'")
+        raise HTTPException(status_code=400, detail=f"Unknown transaction type '{value}'") from None
 
 
 # ---------------------------------------------------------------------------
@@ -141,7 +146,7 @@ def list_transactions(
         try:
             q = q.filter(Transaction.type == TransactionType(type))
         except ValueError:
-            raise HTTPException(status_code=400, detail=f"Unknown transaction type '{type}'")
+            raise HTTPException(status_code=400, detail=f"Unknown transaction type '{type}'") from None
     parse_year_month(year, month)
     if year and month:
         start = date(year, month, 1)

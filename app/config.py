@@ -1,6 +1,6 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
+
 from pydantic import model_validator
-from typing import List
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     cors_allowed_origins: str = ""
 
     # Supported currencies — single source of truth used across all routes
-    currencies: List[str] = [
+    currencies: list[str] = [
         "EUR", "USD", "GBP", "CHF", "JPY", "AUD", "CAD", "SEK", "NOK", "DKK"
     ]
 

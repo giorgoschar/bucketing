@@ -5,20 +5,18 @@ Session cookie payload:
   Full session:    {"user_id": "...", "hh_id": "...", "sv": <int>, "state": "authenticated"}
   Pending session: {"user_id": "...", "hh_id": "...", "state": "2fa_pending"|"2fa_enroll"}
 """
-import bcrypt as _bcrypt
 import hashlib
 import logging
 import secrets
-from datetime import datetime
-from typing import Optional
 
-from fastapi import Request, HTTPException, Depends
-from itsdangerous import URLSafeSerializer, BadSignature
+import bcrypt as _bcrypt
+from fastapi import Depends, HTTPException, Request
+from itsdangerous import BadSignature, URLSafeSerializer
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.models import User, HouseholdMember
+from app.models import HouseholdMember, User
 
 _serializer = URLSafeSerializer(settings.app_secret_key, salt="session")
 _csrf_serializer = URLSafeSerializer(settings.app_secret_key, salt="csrf")
@@ -120,21 +118,21 @@ def clear_session(response):
     response.delete_cookie(CSRF_COOKIE_NAME)
 
 
-def decode_cookie(cookie: str) -> Optional[dict]:
+def decode_cookie(cookie: str) -> dict | None:
     try:
         return _serializer.loads(cookie)
     except BadSignature:
         return None
 
 
-def get_current_session(request: Request) -> Optional[dict]:
+def get_current_session(request: Request) -> dict | None:
     cookie = request.cookies.get(COOKIE_NAME)
     if not cookie:
         return None
     return decode_cookie(cookie)
 
 
-def get_pending_session(request: Request) -> Optional[dict]:
+def get_pending_session(request: Request) -> dict | None:
     cookie = request.cookies.get(PENDING_COOKIE_NAME)
     if not cookie:
         return None

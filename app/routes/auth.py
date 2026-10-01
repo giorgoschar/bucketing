@@ -2,27 +2,31 @@
 Auth routes: login, logout, first-run setup wizard, invite join, 2FA verify, register.
 """
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import pyotp
-from fastapi import APIRouter, Depends, Form, Request, HTTPException
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy.orm import Session
 from sqlalchemy import or_
+from sqlalchemy.orm import Session
 
-from app.database import get_db
-from app.models import User, Household, HouseholdMember, Invitation, MemberRole
 from app.auth import (
-    hash_password, verify_password, verify_password_constant_time,
-    set_session, set_pending_session, clear_session,
-    get_current_session, get_pending_session,
-    security_logger, require_csrf,
+    clear_session,
+    get_current_session,
+    get_pending_session,
+    hash_password,
+    require_csrf,
+    security_logger,
+    set_pending_session,
+    set_session,
+    verify_password_constant_time,
 )
 from app.config import settings
+from app.database import get_db
+from app.models import Household, HouseholdMember, Invitation, MemberRole, User
+from app.ratelimit import limiter
 from app.seed import seed_categories
 from app.templates import templates
-
-from app.ratelimit import limiter
 
 router = APIRouter(dependencies=[Depends(require_csrf)])
 

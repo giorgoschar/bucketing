@@ -172,11 +172,19 @@ def test_bad_date_is_400_not_500(client, api):
 def test_settle_endpoint_records_and_clears(client, db, api):
     """POST /settle used to only return instructions and record nothing."""
     from datetime import date
+
     import pyotp
+
     from app.auth import hash_password
     from app.models import (
-        Bucket, HouseholdMember, MemberRole, Settlement, Transaction,
-        TransactionSplit, TransactionType, User,
+        Bucket,
+        HouseholdMember,
+        MemberRole,
+        Settlement,
+        Transaction,
+        TransactionSplit,
+        TransactionType,
+        User,
     )
 
     headers, hh = api
@@ -222,11 +230,19 @@ def test_settle_requires_enabled_bucket(client, api):
 def test_household_settlement_api(client, db, api):
     """Household-wide settle nets buckets together and records the payment."""
     from datetime import date
+
     import pyotp
+
     from app.auth import hash_password
     from app.models import (
-        Bucket, HouseholdMember, MemberRole, Settlement, Transaction,
-        TransactionSplit, TransactionType, User,
+        Bucket,
+        HouseholdMember,
+        MemberRole,
+        Settlement,
+        Transaction,
+        TransactionSplit,
+        TransactionType,
+        User,
     )
 
     headers, hh = api

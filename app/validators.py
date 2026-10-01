@@ -12,7 +12,7 @@ from decimal import Decimal, InvalidOperation
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.models import Bucket, Category, HouseholdMember, User
+from app.models import Bucket, Category, HouseholdMember
 
 # Money limits — Numeric(12, 4) tops out below 100 million.
 MAX_AMOUNT = Decimal("99999999")
@@ -38,7 +38,7 @@ def parse_amount(
     try:
         value = Decimal(str(raw).strip().replace(",", "."))
     except (InvalidOperation, ValueError):
-        raise HTTPException(status_code=400, detail=f"{field} must be a number.")
+        raise HTTPException(status_code=400, detail=f"{field} must be a number.") from None
 
     if not value.is_finite():
         raise HTTPException(status_code=400, detail=f"{field} must be a number.")

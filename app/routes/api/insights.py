@@ -7,17 +7,17 @@ from sqlalchemy.orm import Session
 from app.api_auth import require_api_auth
 from app.database import get_db
 from app.services import (
-    resolve_insight_period,
-    get_insights_summary,
-    get_insights_income,
-    get_insights_bills_due,
-    get_insights_category_breakdown,
-    get_insights_bucket_breakdown,
-    get_insights_category_trend,
-    get_insights_budget_status,
-    get_insights_kpis,
-    get_monthly_trend,
     get_forecast,
+    get_insights_bills_due,
+    get_insights_bucket_breakdown,
+    get_insights_budget_status,
+    get_insights_category_breakdown,
+    get_insights_category_trend,
+    get_insights_income,
+    get_insights_kpis,
+    get_insights_summary,
+    get_monthly_trend,
+    resolve_insight_period,
 )
 
 router = APIRouter(prefix="/insights", tags=["insights"])

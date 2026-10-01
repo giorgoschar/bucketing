@@ -9,7 +9,11 @@ from datetime import date, timedelta
 import pytest
 
 from app.models import (
-    Bucket, BucketType, Transaction, TransactionSplit, TransactionType,
+    Bucket,
+    BucketType,
+    Transaction,
+    TransactionSplit,
+    TransactionType,
 )
 from app.services import get_savings_summary, get_trip_summary
 

@@ -6,7 +6,6 @@ import pytest
 from app.models import Transaction, TransactionSplit
 from app.routes.transactions import _csv_safe
 
-
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------

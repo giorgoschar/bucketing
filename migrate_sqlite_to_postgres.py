@@ -17,7 +17,8 @@ skipped (INSERT OR IGNORE semantics via on_conflict_do_nothing).
 import argparse
 import sys
 
-from sqlalchemy import create_engine, inspect, text, Boolean
+from sqlalchemy import Boolean, create_engine, inspect, text
+
 # ---------------------------------------------------------------------------
 # FK-safe insertion order (parents before children)
 # ---------------------------------------------------------------------------

@@ -1,12 +1,22 @@
+import enum
 import uuid
-from datetime import datetime, date
+from datetime import date, datetime
 
 from sqlalchemy import (
-    Column, String, Integer, Numeric, Boolean, DateTime, Date,
-    ForeignKey, Text, Enum as SAEnum, UniqueConstraint, Index
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
 )
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import relationship
-import enum
 
 from app.database import Base
 

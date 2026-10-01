@@ -1,33 +1,30 @@
+import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse, JSONResponse, HTMLResponse, FileResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from pathlib import Path
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from app.config import settings
-from app.database import engine, Base
-from app.auth import CSRFError, COOKIE_NAME, CSRF_COOKIE_NAME, PENDING_COOKIE_NAME
-
 # Import models so Alembic / create_all picks them up
 import app.models  # noqa: F401
-
-from app.routes import auth, dashboard, buckets, transactions, income, bills, settings as settings_router
-from app.routes import notifications as notifications_router
+from app.auth import COOKIE_NAME, CSRF_COOKIE_NAME, PENDING_COOKIE_NAME, CSRFError
+from app.config import settings
+from app.database import Base, engine
+from app.ratelimit import limiter  # single shared instance
+from app.routes import auth, bills, buckets, dashboard, income, transactions
 from app.routes import insights as insights_router
+from app.routes import notifications as notifications_router
+from app.routes import settings as settings_router
 from app.routes import settlement as settlement_router
 from app.routes.api import router as api_router
 from app.scheduler import start_scheduler, stop_scheduler
 
-import logging
-
 logger = logging.getLogger(__name__)
 
-# Rate limiter — single shared instance (see app/ratelimit.py)
-from app.ratelimit import limiter
 
 
 @asynccontextmanager

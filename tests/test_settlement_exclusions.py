@@ -9,16 +9,20 @@ someone else".
 """
 from datetime import date
 
-import pytest
-
 from app.models import (
-    Bucket, Transaction, TransactionSplit, TransactionType,
+    Bucket,
+    Transaction,
+    TransactionSplit,
+    TransactionType,
 )
 from app.services import (
-    compute_bucket_net, get_bucket_settlement, get_household_settlement,
-    get_member_balances, get_settlement_exclusions,
+    compute_bucket_net,
+    get_bucket_settlement,
+    get_household_settlement,
+    get_member_balances,
+    get_settlement_exclusions,
 )
-from tests.test_settlement_balance import pair, _expense  # noqa: F401
+from tests.test_settlement_balance import _expense, pair  # noqa: F401
 
 
 def _shared(db, ctx, amount, payer, *, excluded=False, when=None):

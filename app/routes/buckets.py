@@ -1,17 +1,29 @@
 """
 Buckets CRUD routes.
 """
-from fastapi import APIRouter, Depends, Form, Request, HTTPException, Query
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
-from app.database import get_db
 from app.auth import require_auth, require_csrf
-from app.models import Bucket, BucketType, BucketStatus, Household, HouseholdMember, Transaction, TransactionType
+from app.database import get_db
+from app.models import (
+    Bucket,
+    BucketStatus,
+    BucketType,
+    Household,
+    Transaction,
+    TransactionType,
+)
 from app.services import (
-    get_bucket_balance, get_bucket_month_summary, get_bucket_settlement,
-    get_bucket_settlement_history, record_bucket_settlement, base_ctx,
-    get_trip_summary, get_savings_summary,
+    base_ctx,
+    get_bucket_balance,
+    get_bucket_month_summary,
+    get_bucket_settlement,
+    get_bucket_settlement_history,
+    get_savings_summary,
+    get_trip_summary,
+    record_bucket_settlement,
 )
 from app.templates import templates
 from app.validators import parse_amount, parse_year_month, require_member
@@ -36,7 +48,7 @@ def _optional_date(value: str, field: str):
     try:
         return _date.fromisoformat(value)
     except ValueError:
-        raise HTTPException(status_code=400, detail=f"{field} must be a valid date (YYYY-MM-DD).")
+        raise HTTPException(status_code=400, detail=f"{field} must be a valid date (YYYY-MM-DD).") from None
 
 
 @router.get("", response_class=HTMLResponse)

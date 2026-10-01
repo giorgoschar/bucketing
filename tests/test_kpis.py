@@ -194,6 +194,7 @@ def test_charts_are_server_rendered_svg(client, db, spread):
 
 def test_api_exposes_kpis(client, db, spread, make_household):
     import pyotp
+
     from tests.conftest import PASSWORD
 
     r = client.post("/api/v1/auth/login",

@@ -7,9 +7,9 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api_auth import require_api_auth
-from app.database import get_db
-from app.services import get_month_summary, get_upcoming_bills, get_overdue_bills, get_income_total
 from app.config import settings
+from app.database import get_db
+from app.services import get_income_total, get_month_summary, get_overdue_bills, get_upcoming_bills
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 

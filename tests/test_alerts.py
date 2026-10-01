@@ -1,14 +1,19 @@
 """Bill drift and budget threshold alerts."""
 from datetime import timedelta
 
-from app.scheduler import today_local
-
 import pytest
 
 from app.models import (
-    BillOccurrence, Bucket, Notification, NotificationType, OccurrenceStatus,
-    RecurringBill, Transaction, TransactionType,
+    BillOccurrence,
+    Bucket,
+    Notification,
+    NotificationType,
+    OccurrenceStatus,
+    RecurringBill,
+    Transaction,
+    TransactionType,
 )
+from app.scheduler import today_local
 
 
 @pytest.fixture()

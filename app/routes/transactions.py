@@ -12,26 +12,40 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import APIRouter, Depends, Form, Query, Request, HTTPException, UploadFile, File
-from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse, StreamingResponse
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    StreamingResponse,
+)
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
-from app.database import get_db
 from app.auth import require_auth, require_csrf
-from app.models import (
-    Transaction, TransactionSplit, TransactionType,
-    Bucket, BucketStatus, Category, User, HouseholdMember, Household,
-)
-from app.templates import templates
-from app.receipt_parser import parse_receipt_text, match_category, _extract_category_hint
 from app.category_rules import learn_rule, resolve_category
 from app.config import settings
-from app.services import full_ctx as _full_ctx
+from app.database import get_db
+from app.models import (
+    Bucket,
+    Category,
+    Transaction,
+    TransactionSplit,
+    TransactionType,
+    User,
+)
+from app.receipt_parser import _extract_category_hint, parse_receipt_text
 from app.services import find_duplicate_candidates, find_household_duplicates
+from app.services import full_ctx as _full_ctx
+from app.templates import templates
 from app.validators import (
-    parse_amount, parse_year_month, require_bucket, require_category,
-    require_member, validate_split_users,
+    parse_amount,
+    parse_year_month,
+    require_bucket,
+    require_category,
+    require_member,
+    validate_split_users,
 )
 
 router = APIRouter(prefix="/transactions", dependencies=[Depends(require_csrf)])
@@ -54,14 +68,14 @@ def _parse_txn_date(value: str) -> date:
     try:
         return date.fromisoformat(value.strip())
     except (ValueError, AttributeError):
-        raise HTTPException(status_code=400, detail="Date must be a valid date (YYYY-MM-DD).")
+        raise HTTPException(status_code=400, detail="Date must be a valid date (YYYY-MM-DD).") from None
 
 
 def _parse_txn_type(value: str) -> TransactionType:
     try:
         return TransactionType(value)
     except ValueError:
-        raise HTTPException(status_code=400, detail=f"Unknown transaction type '{value}'.")
+        raise HTTPException(status_code=400, detail=f"Unknown transaction type '{value}'.") from None
 
 
 def _validate_currency(value: str) -> str:
@@ -74,7 +88,7 @@ def _parse_rate(value) -> float:
     try:
         rate = float(value)
     except (TypeError, ValueError):
-        raise HTTPException(status_code=400, detail="Exchange rate must be a number.")
+        raise HTTPException(status_code=400, detail="Exchange rate must be a number.") from None
     if not (0 < rate <= 1_000_000):
         raise HTTPException(status_code=400, detail="Exchange rate is out of range.")
     return rate
@@ -258,7 +272,7 @@ async def scan_qr(
     try:
         parsed_url = urlparse(url)
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid URL")
+        raise HTTPException(status_code=400, detail="Invalid URL") from None
 
     if (
         parsed_url.scheme != "https"
@@ -274,9 +288,9 @@ async def scan_qr(
         ) as client:
             resp = await client.get(url, headers={"Accept-Language": "el"})
     except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="AADE portal timed out")
+        raise HTTPException(status_code=504, detail="AADE portal timed out") from None
     except httpx.RequestError:
-        raise HTTPException(status_code=502, detail="Could not reach AADE portal")
+        raise HTTPException(status_code=502, detail="Could not reach AADE portal") from None
 
     if resp.status_code != 200:
         raise HTTPException(status_code=502, detail=f"AADE returned {resp.status_code}")
