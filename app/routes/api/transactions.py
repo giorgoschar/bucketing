@@ -7,7 +7,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session, joinedload
 
 from app.api_auth import require_api_auth
@@ -22,7 +22,7 @@ from app.models import (
 )
 from app.money import quantize
 from app.receipt_parser import match_category, parse_receipt_text
-from app.schemas import TransactionCreate
+from app.schemas import TransactionCreate, _clean_merchant, parse_payment_method
 from app.services import DeletedTransactionReplay, DuplicateTransaction
 from app.services import create_transaction as create_transaction_service
 from app.services import delete_transaction as delete_transaction_soft
@@ -64,7 +64,19 @@ class TransactionIn(BaseModel):
     transaction_date: str   = ""   # ISO date; defaults to today
     exclude_from_forecast: bool = False
     exclude_from_settlement: bool = False
+    payment_method: str = "card"
+    merchant:     str | None = None
     splits:       list[SplitIn] = []
+
+    @field_validator("payment_method", mode="before")
+    @classmethod
+    def _payment_method(cls, v):
+        return parse_payment_method(v)
+
+    @field_validator("merchant")
+    @classmethod
+    def _merchant(cls, v):
+        return _clean_merchant(v)
 
 
 def _txn_dict(t: Transaction) -> dict:
@@ -81,6 +93,8 @@ def _txn_dict(t: Transaction) -> dict:
         "notes":          t.notes,
         "transaction_date": t.transaction_date.isoformat() if t.transaction_date else None,
         "receipt_path":   t.receipt_path,
+        "payment_method": t.payment_method,
+        "merchant":       t.merchant,
         "exclude_from_forecast": t.exclude_from_forecast,
         "exclude_from_settlement": t.exclude_from_settlement,
         "created_at":     t.created_at.isoformat() if t.created_at else None,
@@ -248,6 +262,8 @@ def update_transaction(
     txn.paid_by      = body.paid_by or txn.paid_by
     txn.category_id  = body.category_id or None
     txn.notes        = body.notes
+    txn.payment_method = body.payment_method
+    txn.merchant     = body.merchant
     txn.exclude_from_forecast = body.exclude_from_forecast
     txn.exclude_from_settlement = body.exclude_from_settlement
     if body.transaction_date:

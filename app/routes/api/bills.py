@@ -5,7 +5,7 @@ from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 
 from app.api_auth import require_api_auth
@@ -26,6 +26,7 @@ from app.models import (
     RecurringBillSplit,
 )
 from app.money import quantize
+from app.schemas import parse_payment_method
 from app.services import get_overdue_bills, get_upcoming_bills
 from app.validators import (
     parse_amount,
@@ -99,7 +100,13 @@ class BillIn(BaseModel):
 class PayOccurrenceIn(BaseModel):
     amount:   Decimal | None = None
     paid_by:  str | None   = None
+    payment_method: str = "card"
     splits:   list[BillSplitIn] = []
+
+    @field_validator("payment_method", mode="before")
+    @classmethod
+    def _payment_method(cls, v):
+        return parse_payment_method(v)
 
 
 def _bill_dict(b: RecurringBill) -> dict:
@@ -339,6 +346,7 @@ def pay_occurrence(
             amount=pay_amount,
             paid_by=payer,
             paid_on=utcnow_naive(),
+            payment_method=body.payment_method,
             split_overrides=effective_overrides(bill, {s.user_id: Decimal(str(s.amount)) for s in body.splits}),
         )
     except ValueError as exc:

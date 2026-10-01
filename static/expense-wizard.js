@@ -85,6 +85,8 @@ function expenseWizard() {
       category_id: '',
       paid_by: '',
       notes: '',
+      payment_method: 'card',
+      merchant: '',
       is_shared: false,
     },
 

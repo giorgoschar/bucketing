@@ -3,6 +3,7 @@ from pathlib import Path
 from fastapi.templating import Jinja2Templates
 
 from app.auth import form_csrf_token
+from app.models import PaymentMethod
 from app.money import quantize
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -42,6 +43,7 @@ def initials(name: str) -> str:
 
 
 templates.env.globals["form_csrf_token"] = form_csrf_token
+templates.env.globals["payment_methods"] = list(PaymentMethod)
 templates.env.filters["currency"] = format_currency
 templates.env.filters["dmy"] = dmy
 templates.env.filters["dmy_short"] = dmy_short

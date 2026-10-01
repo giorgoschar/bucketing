@@ -94,6 +94,22 @@
         {% endfor %}
       </div>
 
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Paid with</label>
+          <select name="payment_method" class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:border-primary-500 outline-none text-sm">
+            {% for pm in payment_methods %}
+            <option value="{{ pm.value }}" {% if txn.payment_method == pm.value %}selected{% endif %}>{{ pm.value | replace('_', ' ') | title }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Merchant</label>
+          <input type="text" name="merchant" value="{{ txn.merchant or '' }}" maxlength="200" placeholder="Optional"
+                 class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:bg-white focus:border-primary-500 outline-none text-sm" />
+        </div>
+      </div>
+
       <div>
         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Notes</label>
         <input type="text" name="notes" value="{{ txn.notes or '' }}" placeholder="Optional note"

@@ -26,6 +26,7 @@ from app.models import (
     RecurringBill,
     RecurringBillSplit,
 )
+from app.schemas import parse_payment_method
 from app.services import full_ctx, get_overdue_bills, get_upcoming_bills
 from app.templates import templates
 from app.validators import (
@@ -181,6 +182,7 @@ async def mark_paid(
     request: Request,
     amount: str = Form(""),
     paid_by: str = Form(""),
+    payment_method: str = Form("card"),
     db: Session = Depends(get_db),
     auth=Depends(require_auth),
 ):
@@ -209,6 +211,10 @@ async def mark_paid(
         raise HTTPException(status_code=400, detail="Amount required for variable bills")
 
     payer = require_member(db, paid_by, hh_id) or bill.paid_by_default or user.id
+    try:
+        pm = parse_payment_method(payment_method)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
 
     # Form overrides replace the bill's default (scaled) splits.
     overrides, _ = await _collect_splits(request, hh_id, db)
@@ -218,6 +224,7 @@ async def mark_paid(
             amount=pay_amount,
             paid_by=payer,
             paid_on=utcnow_naive(),
+            payment_method=pm,
             split_overrides=effective_overrides(bill, {uid: Decimal(str(a)) for uid, a in overrides}),
         )
     except ValueError as exc:

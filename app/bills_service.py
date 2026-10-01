@@ -178,6 +178,7 @@ def pay_occurrence(
     paid_on: datetime,
     split_overrides: dict[str, Decimal] | None = None,
     note_prefix: str = "Bill",
+    payment_method: str = "card",
 ) -> Transaction | None:
     """Mark ``occ`` paid and create its expense transaction, in one DB transaction.
 
@@ -205,6 +206,7 @@ def pay_occurrence(
         paid_by=paid_by,
         category_id=bill.category_id,
         notes=f"{note_prefix}: {bill.name}",
+        payment_method=payment_method,
         transaction_date=occ.due_date,
     )
     db.add(txn)

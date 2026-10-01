@@ -166,6 +166,8 @@ def create_transaction(
         notes=data.notes,
         transaction_date=data.transaction_date,
         receipt_path=receipt_path,
+        payment_method=data.payment_method,
+        merchant=data.merchant,
         client_id=data.client_id,
         exclude_from_forecast=data.exclude_from_forecast,
         exclude_from_settlement=data.exclude_from_settlement,

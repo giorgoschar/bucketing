@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from app import validators
 from app.clock import local_today
-from app.models import TransactionType
+from app.models import PaymentMethod, TransactionType
 
 
 def _checked(fn, *args, **kwargs):
@@ -25,6 +25,25 @@ def _checked(fn, *args, **kwargs):
         return fn(*args, **kwargs)
     except HTTPException as exc:
         raise ValueError(exc.detail) from None
+
+
+def parse_payment_method(v: Any) -> str:
+    """Normalise to a PaymentMethod value; blank means the default (card)."""
+    if v is None or (isinstance(v, str) and not v.strip()):
+        return PaymentMethod.card.value
+    try:
+        return PaymentMethod(str(v).strip()).value
+    except ValueError:
+        raise ValueError(
+            f"Unknown payment method '{v}'. Allowed: {', '.join(m.value for m in PaymentMethod)}."
+        ) from None
+
+
+def _clean_merchant(v: str | None) -> str | None:
+    v = (v or "").strip()
+    if len(v) > 200:
+        raise ValueError("Merchant must be at most 200 characters.")
+    return v or None
 
 
 class SplitIn(BaseModel):
@@ -40,7 +59,7 @@ class SplitIn(BaseModel):
 class TransactionCreate(BaseModel):
     """Everything needed to create one transaction.
 
-    Phase 4 adds ``merchant`` / ``payment_method``: just declare them below.
+    ``payment_method`` is validated against ``PaymentMethod`` (default card).
     """
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -57,11 +76,23 @@ class TransactionCreate(BaseModel):
     exclude_from_settlement: bool = False
     splits: list[SplitIn] = []
     client_id: str | None = None
+    payment_method: str = PaymentMethod.card.value
+    merchant: str | None = None
 
     @field_validator("amount", mode="before")
     @classmethod
     def _amount(cls, v: Any) -> Decimal:
         return _checked(validators.parse_amount, v, field="Amount")
+
+    @field_validator("payment_method", mode="before")
+    @classmethod
+    def _payment_method(cls, v: Any) -> str:
+        return parse_payment_method(v)
+
+    @field_validator("merchant")
+    @classmethod
+    def _merchant(cls, v: str | None) -> str | None:
+        return _clean_merchant(v)
 
     @field_validator("currency")
     @classmethod

@@ -26,7 +26,7 @@ from app.models import (
     TransactionSplit,
     TransactionType,
 )
-from app.schemas import TransactionCreate
+from app.schemas import TransactionCreate, _clean_merchant, parse_payment_method
 from app.services import (
     DeletedTransactionReplay,
     DuplicateTransaction,
@@ -171,6 +171,7 @@ async def create_transaction(
     notes: str = Form(""),
     is_shared: str = Form("off"),
     merchant: str = Form(""),
+    payment_method: str = Form("card"),
     remember_rule: str = Form(""),
     client_id: str = Form(""),
     receipt: UploadFile = File(None),
@@ -196,6 +197,8 @@ async def create_transaction(
             transaction_date=transaction_date,
             splits=splits,
             client_id=client_id,
+            payment_method=payment_method,
+            merchant=merchant,
         )
     except ValidationError as exc:
         # Keep the form's user-facing error rendering (HTTPException handler).
@@ -308,6 +311,8 @@ async def edit_transaction(
     notes: str = Form(""),
     exclude_from_forecast: str = Form(""),
     exclude_from_settlement: str = Form(""),
+    payment_method: str = Form("card"),
+    merchant: str = Form(""),
     db: Session = Depends(get_db),
     auth=Depends(require_auth),
 ):
@@ -330,6 +335,11 @@ async def edit_transaction(
     txn.paid_by = require_member(db, paid_by, hh_id)
     txn.category_id = require_category(db, category_id, hh_id)
     txn.notes = notes.strip() or None
+    try:
+        txn.payment_method = parse_payment_method(payment_method)
+        txn.merchant = _clean_merchant(merchant)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
     txn.exclude_from_forecast = (exclude_from_forecast == "on")
     txn.exclude_from_settlement = (exclude_from_settlement == "on")
 
@@ -399,6 +409,8 @@ def duplicate_transaction(
         paid_by=src.paid_by,
         category_id=src.category_id,
         notes=src.notes,
+        payment_method=src.payment_method,
+        merchant=src.merchant,
         transaction_date=local_today(),
         exclude_from_forecast=src.exclude_from_forecast,
         exclude_from_settlement=src.exclude_from_settlement,
