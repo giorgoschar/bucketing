@@ -69,6 +69,7 @@ from app.services.personal_tokens import (  # noqa: F401
     issue_personal_token,
     list_personal_tokens,
     revoke_personal_token,
+    revoke_user_tokens,
     token_dict,
 )
 from app.services.settlement import (  # noqa: F401

@@ -30,7 +30,8 @@ def list_tokens(auth=Depends(require_api_auth), db: Session = Depends(get_db)):
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-def create_token(body: TokenIn, auth=Depends(require_api_auth), db: Session = Depends(get_db)):
+def create_token(body: TokenIn, response: Response, auth=Depends(require_api_auth),
+                 db: Session = Depends(get_db)):
     user, hh_id = auth
     record, raw = issue_personal_token(
         db, user_id=user.id, household_id=hh_id,
@@ -39,6 +40,7 @@ def create_token(body: TokenIn, auth=Depends(require_api_auth), db: Session = De
     db.commit()
     db.refresh(record)
     # Shown once: only the hash is stored, so it cannot be retrieved later.
+    response.headers["Cache-Control"] = "no-store"
     return {**token_dict(record), "token": raw}
 
 

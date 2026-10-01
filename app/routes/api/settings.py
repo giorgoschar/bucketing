@@ -21,6 +21,7 @@ from app.models import (
     User,
 )
 from app.ratelimit import limiter
+from app.services import revoke_user_tokens
 from app.validators import parse_color
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -102,6 +103,7 @@ def change_password(
         raise HTTPException(status_code=400, detail="Password must be at least 12 characters")
     user.password_hash   = hash_password(body.new_password)
     invalidate_user_sessions(db, user)  # all cookies, access and refresh tokens
+    revoke_user_tokens(db, user.id)     # and personal Shortcut tokens
     db.commit()
     security_logger.info("API password changed for '%s'", user.username)
 

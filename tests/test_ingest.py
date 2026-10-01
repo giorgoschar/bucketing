@@ -322,7 +322,26 @@ def test_client_id_normalisation_unit():
     assert len(a) == 32
 
 
+def test_merchant_case_and_spacing_dedupe(client, db, ingest):
+    at = "2026-10-01T12:34:00Z"
+    first = _post(client, ingest, merchant="Sklavenitis", occurred_at=at)
+    assert first.status_code == 201
+    for variant in ("SKLAVENITIS", "  sklavenitis ", "Sklavenitis"):
+        r = _post(client, ingest, merchant=variant, occurred_at=at)
+        assert r.json().get("duplicate") is True, variant
+    assert _rows(db) == 1
+    assert db.get(Transaction, first.json()["id"]).merchant == "Sklavenitis"
+
+
 # ---------------------------------------------------------------- setup guide
+
+
+def test_guide_explains_minute_boundary_and_revocation(client, authed):
+    text = client.get("/settings/automations").text
+    assert "same minute" in text
+    assert "crosses a minute boundary" in text
+    assert "Changing your password or resetting 2FA revokes your Shortcut tokens" in text
+
 
 
 def test_automations_page_has_shortcut_guide(client, authed):

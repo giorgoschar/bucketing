@@ -103,6 +103,20 @@ def revoke_personal_token(db: Session, *, token_id: str, user_id: str, household
     record.revoked_at = utcnow_naive()
 
 
+def revoke_user_tokens(db: Session, user_id: str, household_id: str | None = None) -> int:
+    """Revoke a user's live tokens (all households, or just one). Rows are kept.
+
+    Called on account-recovery steps (password change, 2FA disable/reset) and
+    when a member leaves or is removed, so a re-added member's old Shortcut
+    stays dead. NOT called on plain logout. Caller commits.
+    """
+    q = db.query(PersonalApiToken).filter(PersonalApiToken.user_id == user_id,
+                                          PersonalApiToken.revoked_at.is_(None))
+    if household_id is not None:
+        q = q.filter(PersonalApiToken.household_id == household_id)
+    return q.update({PersonalApiToken.revoked_at: utcnow_naive()}, synchronize_session=False)
+
+
 def token_dict(record: PersonalApiToken) -> dict:
     """Public view of a token: never the hash, never the plaintext."""
     return {

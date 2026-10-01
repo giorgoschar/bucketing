@@ -135,9 +135,13 @@
           weak connection. If a purchase is missing, add it by hand.
         </p>
         <p>
-          <strong>Duplicates are handled for you:</strong> a repeated request for the same merchant,
-          amount and minute is recognised server-side and never creates a second expense.
+          <strong>Duplicates are merged for you:</strong> repeated requests for the same merchant
+          and amount within the same minute are recognised server-side and create only one expense.
+          A retry that crosses a minute boundary can create a second expense — just delete it.
           Expenses you deleted are not brought back by a retry.
+        </p>
+        <p>
+          Changing your password or resetting 2FA revokes your Shortcut tokens; create a new one afterwards.
         </p>
       </div>
 

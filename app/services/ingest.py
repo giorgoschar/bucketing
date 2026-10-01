@@ -59,13 +59,16 @@ def ingest_client_id(token_id: str, merchant: str, amount: Decimal,
                      occurred_at: datetime | None) -> str:
     """Deterministic idempotency key for one Apple Pay purchase.
 
-    Normalised so that equivalent replays collide: the amount is quantized to
+    Normalised so that equivalent replays collide: the merchant is
+    whitespace-collapsed and casefolded (the stored merchant keeps its
+    casing), the amount is quantized to
     2dp ("12,50", "12.5" and 12.5 all become "12.50") and the moment is
     converted to UTC and floored to the minute (second-level jitter between
     retries is ignored). ``occurred_at`` absent → the current minute.
     """
     moment = (occurred_at or utcnow()).astimezone(UTC).replace(second=0, microsecond=0)
-    key = f"{token_id}|{merchant}|{quantize(amount)}|{moment.strftime('%Y-%m-%dT%H:%MZ')}"
+    merchant_key = " ".join(merchant.split()).casefold()
+    key = f"{token_id}|{merchant_key}|{quantize(amount)}|{moment.strftime('%Y-%m-%dT%H:%MZ')}"
     return hashlib.sha256(key.encode()).hexdigest()[:32]
 
 

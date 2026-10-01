@@ -247,3 +247,147 @@ def test_html_revoke(client, db, authed):
 def test_html_page_requires_login(client):
     r = client.get("/settings/automations")
     assert r.status_code in (302, 303, 401)
+
+
+# ---------------------------------------------------------------- revocation on
+# account-recovery steps (review fix). Rows are kept, only revoked_at is set.
+
+
+def _ingest_status(client, raw, merchant="Shop"):
+    return client.post("/api/v1/ingest/apple-pay", json={"merchant": merchant, "amount": "1"},
+                       headers={"Authorization": f"Bearer {raw}"}).status_code
+
+
+def _day2day(db, bucket_id):
+    from app.models import Bucket, BucketType
+
+    db.get(Bucket, bucket_id).type = BucketType.day2day
+    db.commit()
+
+
+def _issue(db, user_id, household_id, name="iPhone"):
+    from app.services import issue_personal_token
+
+    record, raw = issue_personal_token(db, user_id=user_id, household_id=household_id, name=name)
+    db.commit()
+    return record, raw
+
+
+def _next_totp(secret):
+    import time
+
+    import pyotp
+
+    return pyotp.TOTP(secret).at(time.time() + 30)
+
+
+def test_html_password_change_revokes_tokens(client, db, authed):
+    from tests.conftest import PASSWORD
+
+    _day2day(db, authed.bucket_id)
+    record, raw = _issue(db, authed.user_id, authed.household_id)
+    assert _ingest_status(client, raw) == 201
+    r = client.post("/settings/profile/password", headers=authed.headers, data={
+        "current_password": PASSWORD, "new_password": "another-long-password"})
+    assert r.status_code == 302
+    assert _ingest_status(client, raw, "Other") == 401
+    db.expire_all()
+    assert db.get(PersonalApiToken, record.id).revoked_at is not None
+
+
+def test_api_password_change_revokes_tokens(client, api, db):  # noqa: F811
+    from tests.conftest import PASSWORD
+
+    headers, hh = api
+    _, raw = _issue(db, hh.user_id, hh.household_id)
+    r = client.post("/api/v1/settings/profile/password", headers=headers, json={
+        "current_password": PASSWORD, "new_password": "another-long-password"})
+    assert r.status_code == 204, r.text
+    assert _ingest_status(client, raw) == 401
+
+
+def test_totp_disable_revokes_tokens(client, db, authed):
+    from tests.conftest import PASSWORD
+
+    _, raw = _issue(db, authed.user_id, authed.household_id)
+    r = client.post("/settings/2fa/disable", headers=authed.headers, data={
+        "current_password": PASSWORD, "code": _next_totp(authed.secret)})
+    assert r.status_code == 302, r.text
+    assert _ingest_status(client, raw) == 401
+
+
+def test_owner_2fa_reset_revokes_member_tokens_only(client, db, authed):
+    _day2day(db, authed.bucket_id)
+    bob = _add_member(db, authed.household_id, "bob")
+    db.commit()
+    _, bob_raw = _issue(db, bob.id, authed.household_id, "Bob")
+    _, owner_raw = _issue(db, authed.user_id, authed.household_id, "Owner")
+    r = client.post(f"/settings/2fa/reset/{bob.id}", headers=authed.headers,
+                    data={"owner_code": _next_totp(authed.secret)})
+    assert r.status_code == 302, r.text
+    assert _ingest_status(client, bob_raw) == 401
+    assert _ingest_status(client, owner_raw) == 201
+
+
+def test_removed_then_readded_member_token_stays_revoked(client, db, authed):
+    from app.models import MemberRole
+
+    _day2day(db, authed.bucket_id)
+    bob = _add_member(db, authed.household_id, "bob")
+    db.commit()
+    record, raw = _issue(db, bob.id, authed.household_id, "Bob")
+    assert _ingest_status(client, raw) == 201
+    r = client.post(f"/settings/remove-member/{bob.id}", headers=authed.headers)
+    assert r.status_code == 302
+    db.add(HouseholdMember(household_id=authed.household_id, user_id=bob.id,
+                           role=MemberRole.member))
+    db.commit()
+    assert _ingest_status(client, raw, "Again") == 401
+    db.expire_all()
+    assert db.get(PersonalApiToken, record.id).revoked_at is not None
+
+
+def test_api_member_removal_revokes_tokens(client, api, db):  # noqa: F811
+    headers, hh = api
+    bob = _add_member(db, hh.household_id, "bob")
+    db.commit()
+    record, _ = _issue(db, bob.id, hh.household_id, "Bob")
+    r = client.delete(f"/api/v1/settings/household/members/{bob.id}", headers=headers)
+    assert r.status_code == 204, r.text
+    db.expire_all()
+    assert db.get(PersonalApiToken, record.id).revoked_at is not None
+
+
+def test_leaving_household_revokes_tokens(client, db, authed):
+    record, _ = _issue(db, authed.user_id, authed.household_id)
+    r = client.post("/settings/leave-household", headers=authed.headers,
+                    data={"confirm_name": "Test Household"})
+    assert r.status_code == 302, r.text
+    db.expire_all()
+    assert db.get(PersonalApiToken, record.id).revoked_at is not None
+
+
+def test_plain_logout_keeps_tokens(client, db, authed):
+    _day2day(db, authed.bucket_id)
+    _, raw = _issue(db, authed.user_id, authed.household_id)
+    assert client.post("/logout", headers=authed.headers).status_code == 302
+    assert _ingest_status(client, raw) == 201
+
+
+def test_api_create_response_is_not_cacheable(client, api):  # noqa: F811
+    headers, _ = api
+    r = _create_api(client, headers)
+    assert r.status_code == 201
+    assert r.headers.get("cache-control") == "no-store"
+
+
+def test_failed_ingest_auth_is_ip_rate_limited(client, db, authed):
+    _day2day(db, authed.bucket_id)
+    _, raw = _issue(db, authed.user_id, authed.household_id)
+    bad = "pat_" + "B" * 32
+    for i in range(20):
+        assert _ingest_status(client, bad) == 401, i
+    assert _ingest_status(client, bad) == 429
+    assert _ingest_status(client, "not-a-pat") == 429
+    # Failures never lock out a valid token.
+    assert _ingest_status(client, raw) == 201
