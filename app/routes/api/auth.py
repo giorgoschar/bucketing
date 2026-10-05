@@ -31,6 +31,7 @@ from app.auth import (
     verify_totp,
 )
 from app.database import get_db
+from app.login_alerts import alert_failed_second_factor, alert_sign_in
 from app.models import HouseholdMember, User
 from app.ratelimit import limiter
 
@@ -139,12 +140,14 @@ def totp_verify(request: Request, body: TotpVerifyRequest, db: Session = Depends
     if not verify_totp(db, user, body.code):
         register_failed_login(db, user)
         security_logger.warning("API TOTP verify failed for user_id=%s", user.id)
+        alert_failed_second_factor(db, request, user, claims["hh"])
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP code")
     clear_failed_logins(db, user)
 
     hh_id = claims["hh"]
     access_token = create_access_token(user.id, hh_id, user.session_version)
     refresh_token = create_refresh_token(user.id, hh_id, db, user.session_version)
+    alert_sign_in(db, request, user, hh_id, method="the mobile app")
 
     return {
         "access_token":  access_token,
