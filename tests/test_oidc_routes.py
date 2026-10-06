@@ -391,6 +391,32 @@ def test_unlink_signs_out_passkey_sessions_but_not_the_unlinker(
     assert client.get("/api/v1/auth/me").status_code == 200
 
 
+def test_unlink_keeps_shortcut_ingest_tokens(client, db, make_household, login, app):
+    from starlette.testclient import TestClient
+
+    from app.models import PersonalApiToken
+    from tests.test_personal_tokens import _day2day, _ingest_status, _issue
+
+    hh = make_household()
+    _day2day(db, hh.bucket_id)
+    record, raw = _issue(db, hh.user_id, hh.household_id)
+    headers = login(hh.username, hh.secret)
+    user = db.get(User, hh.user_id)
+    user.oidc_subject = "s1"
+    db.commit()
+    other = TestClient(app, follow_redirects=False)
+    for name, value in client.cookies.items():
+        other.cookies.set(name, value)
+    assert other.get("/api/v1/auth/me").status_code == 200
+
+    r = client.post("/app/auth/unlink", headers=headers, follow_redirects=False)
+    assert r.headers["location"] == "/settings?passkey=unlinked"
+    assert other.get("/api/v1/auth/me").status_code == 401
+    db.expire_all()
+    assert db.get(PersonalApiToken, record.id).revoked_at is None
+    assert _ingest_status(client, raw) == 201
+
+
 def test_unlink_without_csrf_is_rejected(client, db, make_household, login):
     hh = make_household()
     login(hh.username, hh.secret)
