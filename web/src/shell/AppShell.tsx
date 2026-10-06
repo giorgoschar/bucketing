@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router'
+import { startReplayTriggers } from '../offline/queue'
 import { authErrorMessage, LINKED_MESSAGE, readAuthResult } from '../session/authMessages'
 import { useSession } from '../session/SessionProvider'
 import { SignIn } from '../session/SignIn'
@@ -24,6 +25,12 @@ export function AppShell() {
     const rest = params.toString()
     navigate({ search: rest ? `?${rest}` : '' }, { replace: true })
   }, [hasParams, location.search, navigate])
+
+  // Replay queued offline writes on open, `online` and returning to the tab (iOS has no Background Sync).
+  useEffect(() => {
+    if (status !== 'signedIn') return
+    return startReplayTriggers()
+  }, [status])
 
   if (status === 'loading') return <div className="boot" aria-busy="true" />
   if (status === 'signedOut') return <SignIn result={result} />

@@ -4,10 +4,18 @@ import { createMemoryRouter, RouterProvider } from 'react-router'
 import type { Session } from '../session/SessionProvider'
 import { AppShell } from './AppShell'
 
+const stop = vi.fn()
+const start = vi.fn(() => stop)
+vi.mock('../offline/queue', () => ({ startReplayTriggers: () => start() }))
+
 const session: Session = { status: 'signedIn', signOut: async () => {}, logoutFailed: false, retryLogout: async () => {} }
 vi.mock('../session/SessionProvider', () => ({ useSession: () => session }))
 
-afterEach(() => cleanup())
+afterEach(() => {
+  cleanup()
+  start.mockClear()
+  stop.mockClear()
+})
 
 function at(url: string, status: Session['status']) {
   session.status = status
@@ -53,4 +61,14 @@ it('signed out after a failed server logout: error and a Retry button', () => {
   act(() => screen.getByRole('button', { name: 'Retry' }).click())
   expect(retry).toHaveBeenCalled()
   session.logoutFailed = false
+})
+
+it('starts the offline replay triggers only while signed in, and stops them on unmount', () => {
+  at('/', 'signedOut')
+  expect(start).not.toHaveBeenCalled()
+  cleanup()
+  at('/', 'signedIn')
+  expect(start).toHaveBeenCalledTimes(1)
+  cleanup()
+  expect(stop).toHaveBeenCalledTimes(1)
 })
