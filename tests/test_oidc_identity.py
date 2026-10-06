@@ -50,3 +50,41 @@ def test_email_already_linked_to_another_subject_is_refused(db):
 def test_missing_sub_is_refused(db):
     with pytest.raises(IdentityError):
         resolve_oidc_user(db, {"email": "g@x.t", "email_verified": True})
+
+
+@pytest.mark.parametrize(
+    "email_verified_value",
+    ["true", 1, None],  # String "true", int 1, and None (missing key) must all fail
+    ids=["string-true", "int-1", "missing-key"],
+)
+def test_strict_email_verified_only_true_boolean(db, email_verified_value):
+    """Only boolean True is accepted for email_verified; truthy values are rejected."""
+    u = _user(db, "g", "g@x.t")
+    claims = {"sub": "s", "email": "g@x.t"}
+    if email_verified_value is not None:
+        claims["email_verified"] = email_verified_value
+
+    with pytest.raises(IdentityError) as e:
+        resolve_oidc_user(db, claims)
+    assert e.value.code == "no_account"
+
+    # Verify user was not linked
+    db.refresh(u)
+    assert u.oidc_subject is None
+
+
+def test_ambiguous_email_is_refused_and_links_neither(db):
+    """Email column unique constraint is case-sensitive; ambiguous matches raise error."""
+    # Insert two users with case-different emails (unique constraint is case-sensitive)
+    u1 = _user(db, "user1", "G@x.t")
+    u2 = _user(db, "user2", "g@x.t")
+
+    with pytest.raises(IdentityError) as e:
+        resolve_oidc_user(db, {"sub": "s", "email": "g@x.t", "email_verified": True})
+    assert e.value.code == "ambiguous"
+
+    # Verify neither user was linked
+    db.refresh(u1)
+    db.refresh(u2)
+    assert u1.oidc_subject is None
+    assert u2.oidc_subject is None
