@@ -5,7 +5,7 @@ The existing HTML routes are completely untouched.
 """
 from fastapi import APIRouter
 
-from app.routes.api import (
+from app.api import (
     auth,
     bills,
     buckets,
