@@ -49,3 +49,8 @@ htmlcov/
 
 # Node (Tailwind build tooling only — the built CSS IS committed)
 node_modules/
+
+# Local tool state
+.playwright-mcp/
+.superpowers/
+.ruff_cache/

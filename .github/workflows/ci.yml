@@ -17,13 +17,14 @@ jobs:
           cache-dependency-path: requirements*.txt
       - run: pip install -r requirements-dev.txt
       - run: ruff check app tests alembic scripts
+      - run: ruff format --check app tests alembic scripts
       - run: python -m pytest -o addopts="--strict-markers" -q --cov=app --cov-report=term --cov-fail-under=80
 
   test-postgres:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_USER: expenses
           POSTGRES_PASSWORD: expenses
@@ -43,8 +44,5 @@ jobs:
           cache: pip
           cache-dependency-path: requirements*.txt
       - run: pip install -r requirements-dev.txt
-      - run: >-
-          python -m pytest -o addopts="--strict-markers" -q
-          tests/test_db_backend.py tests/test_migrations.py
-          tests/test_settlement*.py tests/test_household_settlement.py
-          tests/test_scheduler.py
+      # Production runs Postgres 18: run the whole suite against it, not a subset.
+      - run: python -m pytest -o addopts="--strict-markers" -q

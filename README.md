@@ -214,34 +214,29 @@ credited to nobody, which made both members appear to owe an outsider.
 
 ```
 app/
-  main.py           # FastAPI app, mounts, router includes
-  config.py         # Settings via pydantic-settings
-  database.py       # SQLAlchemy engine + session
+  main.py           # FastAPI app: middleware, security headers, router includes
   models.py         # All ORM models
-  auth.py           # Password hashing, session cookie, auth deps
-  seed.py           # Default categories seeder
-  services.py       # Business logic: balances, summaries
-  bills_service.py  # Bill occurrence generation
-  templates.py      # Jinja2Templates + custom filters
-  routes/
-    auth.py         # Login, setup, invite join, household switch
-    dashboard.py    # Main dashboard
-    buckets.py      # Bucket CRUD
-    transactions.py # Transaction CRUD + expense wizard
-    bills.py        # Recurring bills + mark paid/skip
-    settings.py     # Profile, household, invite, categories
-templates/
-  base.html         # Main layout (sidebar + mobile nav)
-  auth/             # Login, setup, join invite
-  dashboard.html
-  buckets/          # list + detail
-  transactions/     # new wizard + edit
-  bills/            # list
-  settings/         # index
-  partials/         # HTMX swap fragments
-static/
-  manifest.json     # PWA manifest
-  sw.js             # Service worker
-  icons/            # icon-192.png, icon-512.png
+  schemas.py        # Pydantic request/response models for the JSON API
+  auth.py           # Password hashing, web session cookie, CSRF
+  api_auth.py       # JWT access/refresh tokens, pat_ ingest tokens
+  scheduler.py      # Background jobs (bill occurrences, reminders, price refresh)
+  core/             # Infrastructure used by every layer
+    config.py       #   Settings (pydantic-settings, reads .env)
+    database.py     #   SQLAlchemy engine + session
+    crypto.py       #   Field encryption (TOTP secrets)
+    clock.py        #   Household timezone, today/now helpers
+    ratelimit.py    #   slowapi limiter
+    money.py        #   Decimal primitives, half-up rounding
+  services/         # Business logic; routes stay thin and call these
+  integrations/     # Third-party API clients (PosoKanei prices)
+  api/              # JSON API under /api/v1 (used by the new app and the Shortcut)
+  routes/           # Server-rendered Jinja/HTMX pages (legacy UI, removed at cutover)
+  templates.py      # Jinja2Templates + custom filters (legacy UI)
+alembic/            # Database migrations
+templates/, static/ # Legacy UI templates and assets
+web/                # New React PWA (Vite), served at /app — see web/README.md
+docs/               # Deploy guide, PosoKanei notes, redesign mocks
+scripts/            # Ops scripts (backup, household purge)
+tests/              # pytest suite (SQLite by default, Postgres via TEST_DATABASE_URL)
 uploads/            # Receipt images (gitignored)
 ```
