@@ -8,9 +8,11 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from starlette.middleware.sessions import SessionMiddleware
 
 # Import models so Alembic / create_all picks them up
 import app.models  # noqa: F401
+from app import web_app
 from app.api import router as api_router
 from app.auth import COOKIE_NAME, CSRF_COOKIE_NAME, PENDING_COOKIE_NAME, CSRFError
 from app.core.config import settings
@@ -61,6 +63,18 @@ app = FastAPI(
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Authlib keeps the OIDC state, nonce and PKCE verifier here between /app/auth/login
+# and the callback. Lax, because the callback is a cross-site top-level redirect.
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.app_secret_key,
+    session_cookie="oidc_tx",
+    max_age=600,
+    path="/app/auth",
+    same_site="lax",
+    https_only=not settings.debug,
+)
 
 # ---------------------------------------------------------------------------
 # CORS — required for mobile apps and browser-based SPA clients.
@@ -172,6 +186,7 @@ if settings.debug:
 # ---------------------------------------------------------------------------
 # Routers
 # ---------------------------------------------------------------------------
+app.include_router(web_app.router)
 app.include_router(auth.router)
 app.include_router(dashboard.router)
 app.include_router(buckets.router)
