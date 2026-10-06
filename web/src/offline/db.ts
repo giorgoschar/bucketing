@@ -1,5 +1,6 @@
 import Dexie, { type Table } from 'dexie'
 
+// NOTE: cache keys and queue `error` are stored in plaintext; never put sensitive values in them.
 export interface Sealed { iv: Uint8Array<ArrayBuffer>; data: ArrayBuffer }
 export interface KeyRow { id: 'device'; key: CryptoKey }
 export interface CacheRow extends Sealed { key: string; updatedAt: number }
@@ -33,8 +34,14 @@ export async function wipe(): Promise<void> {
 }
 
 export async function cachePut(key: string, value: unknown): Promise<void> {
-  const { seal } = await import('./crypto')
-  await db.cache.put({ key, ...(await seal(value)), updatedAt: Date.now() })
+  const { seal, keyGeneration } = await import('./crypto')
+  const gen = keyGeneration()
+  const sealed = await seal(value)
+  await db.transaction('rw', db.cache, async () => {
+    // A wipe since we started means this ciphertext's key is gone; do not resurrect data.
+    if (gen !== keyGeneration()) throw new Error('Store was wiped while writing')
+    await db.cache.put({ key, ...sealed, updatedAt: Date.now() })
+  })
 }
 
 export async function cacheGet<T>(key: string): Promise<T | undefined> {

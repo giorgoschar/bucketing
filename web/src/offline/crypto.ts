@@ -1,21 +1,46 @@
 import { db, type Sealed } from './db'
 
 let cached: Promise<CryptoKey> | null = null
+let generation = 0
 
-export function forgetKey(): void { cached = null }
+/** Bumped by every forgetKey()/wipe(); work started under an older generation must not persist anything. */
+export function keyGeneration(): number { return generation }
+
+export function forgetKey(): void {
+  generation++
+  cached = null
+}
+
+const stale = () => new Error('Device key was wiped while it was being created')
 
 export function getKey(): Promise<CryptoKey> {
-  cached ??= (async () => {
+  if (cached) return cached
+  const gen = generation
+  const p = (async () => {
     const row = await db.keys.get('device')
+    if (gen !== generation) throw stale()
     if (row) return row.key
-    const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, [
+    // Generate outside the transaction: WebCrypto awaits would auto-close an IndexedDB transaction.
+    const fresh = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, [
       'encrypt',
       'decrypt',
     ])
-    await db.keys.put({ id: 'device', key })
+    // Get-or-create atomically so concurrent tabs converge on a single stored key.
+    const key = await db.transaction('rw', db.keys, async () => {
+      const existing = await db.keys.get('device')
+      if (existing) return existing.key
+      if (gen !== generation) throw stale()
+      await db.keys.add({ id: 'device', key: fresh })
+      return fresh
+    })
+    if (gen !== generation) throw stale()
     return key
   })()
-  return cached
+  cached = p
+  p.catch(() => {
+    if (cached === p) cached = null
+  })
+  return p
 }
 
 export async function seal(value: unknown): Promise<Sealed> {
