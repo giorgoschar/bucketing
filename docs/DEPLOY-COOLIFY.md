@@ -21,6 +21,7 @@ abort the pre-migrate backup and therefore the deploy).
 - `VAPID_PRIVATE_KEY`, `VAPID_PUBLIC_KEY`, `VAPID_CLAIMS_EMAIL` for web push.
 - `POSOKANEI_ENABLED=false` while the PosoKanei API returns 403.
 - `RATE_LIMIT_STORAGE_URI`: optional (e.g. a Coolify Redis).
+- New app (`/app`, passkeys via Pocket ID): `NEW_APP_ENABLED=true`, `OIDC_ISSUER=https://id.gch.gr`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`. See section 8 and `docs/POCKET-ID.md`.
 
 **Persistent storage** (Coolify app → Storage):
 
@@ -104,6 +105,9 @@ deploy (and before any redeploy that introduces a new required variable).
 | `CORS_ALLOWED_ORIGINS` | optional | Space-separated origins for API clients, e.g. `capacitor://localhost`. Empty = none. |
 | `BACKUP_KEEP_DAYS` | optional | Days of backups to keep (default 30). |
 | `BACKUP_BEFORE_MIGRATE` | optional | `true` (default) dumps the DB to `/backups/pre-migrate-*.sql.gz` before `alembic upgrade`. |
+
+The new app's variables (`NEW_APP_ENABLED`, `OIDC_*`) are listed in section 8. The compose
+stack doesn't pass them; production (the Dockerfile app) sets them in Coolify.
 
 ## 2. Persistent storage
 
@@ -200,3 +204,34 @@ The container runs `uvicorn --workers 2`. On PostgreSQL, each process tries
 `pg_try_advisory_lock(727272)` at startup; only the winner runs the scheduler
 (the lock is held on a dedicated connection and released if the process dies).
 `ENABLE_SCHEDULER=true` can stay set everywhere.
+
+## 8. New app (`/app`) and Pocket ID
+
+The new React app is served at `/app` behind a feature flag and signs in with passkeys
+through a self-hosted Pocket ID (OIDC). Production: app `https://expenses.gch.gr`, Pocket ID
+`https://id.gch.gr` (its own Coolify resource), OIDC client `Tameio` with callback
+`https://expenses.gch.gr/app/auth/callback`. Full setup, account linking, recovery and
+troubleshooting: [`docs/POCKET-ID.md`](POCKET-ID.md).
+
+Set on the expenses app (Coolify → Environment Variables), then redeploy:
+
+| Variable | Required | Value / notes |
+|---|---|---|
+| `NEW_APP_ENABLED` | for `/app` | Default `false`: `/app/*` is a 404 and nothing else changes. `true` serves the new app and the passkey routes; the app then refuses to start unless all three `OIDC_*` values are set. |
+| `OIDC_ISSUER` | with the flag | `https://id.gch.gr`, exactly Pocket ID's discovery `issuer`. Its origin is also added to the old UI's CSP `form-action` (the Link passkey form redirects there). |
+| `OIDC_CLIENT_ID` | with the flag | The `Tameio` client's ID from Pocket ID. |
+| `OIDC_CLIENT_SECRET` | with the flag | The `Tameio` client's secret. Keep it only in Coolify. |
+
+`APP_BASE_URL` must be `https://expenses.gch.gr`: the callback URL is built from it and must
+match the one registered in Pocket ID.
+
+Pocket ID itself (its own resource) needs `APP_URL=https://id.gch.gr`,
+`ENCRYPTION_KEY` (v2 requires it, at least 16 bytes; keep it, losing it loses the signing
+keys), `TRUST_PROXY=true`, and persistent storage on `/app/data`. Passkeys need a trusted
+HTTPS certificate: a plain-http `sslip.io` URL does not work.
+
+Linking is never by email: each person links once from the old UI (password + 2FA) →
+Settings → **Link passkey**. Keep Pocket ID's self sign-up off.
+
+For local development, `docker compose --profile pocketid up -d pocketid` starts a Pocket
+ID on `http://localhost:1411` (see `docs/POCKET-ID.md` → Local development).
