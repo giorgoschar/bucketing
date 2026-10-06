@@ -61,6 +61,15 @@ class LogoutRequest(BaseModel):
     refresh_token: str
 
 
+class MeOut(BaseModel):
+    id: str
+    username: str
+    display_name: str
+    email: str | None
+    avatar_color: str | None
+    household_id: str
+
+
 def _user_dict(user: User) -> dict:
     return {
         "id": user.id,
@@ -181,7 +190,7 @@ def logout(body: LogoutRequest, db: Session = Depends(get_db)):
     revoke_refresh_token(body.refresh_token, db)
 
 
-@router.get("/me")
+@router.get("/me", response_model=MeOut)
 def me(auth=Depends(require_api_auth), db: Session = Depends(get_db)):
     """Return the authenticated user's profile."""
     user, hh_id = auth

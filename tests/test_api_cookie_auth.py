@@ -133,3 +133,11 @@ def test_create_household_keeps_oidc_session_type(client, db):
     r = client.post("/settings/household/new", data={"name": "Second", "_csrf_token": csrf})
     assert r.status_code == 302
     assert client.get("/dashboard").status_code == 200
+
+
+def test_me_response_shape(client, db):
+    u, h = _member(db)
+    _login(client, u, h, "pwd")
+    body = client.get("/api/v1/auth/me").json()
+    assert set(body) == {"id", "username", "display_name", "email", "avatar_color", "household_id"}
+    assert body["id"] == u.id and body["household_id"] == h.id
