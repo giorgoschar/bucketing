@@ -47,7 +47,7 @@ def test_cookie_post_with_csrf_header_passes_csrf(client, db):
     u, h = _member(db)
     csrf = _login(client, u, h, "pwd")
     r = client.post("/api/v1/notifications/read-all", headers={"X-CSRF-Token": csrf})
-    assert r.status_code != 403
+    assert r.status_code == 200
 
 
 def test_password_session_without_totp_is_403(client, db):
@@ -96,3 +96,40 @@ def test_household_switch_preserves_amr(client, db):
     r = client.post("/household/switch", data={"household_id": h2.id, "_csrf_token": csrf})
     assert r.status_code == 302
     assert client.get("/api/v1/auth/me").json()["household_id"] == h2.id
+
+
+def test_non_ascii_csrf_header_is_403_not_500(client, db):
+    u, h = _member(db)
+    _login(client, u, h, "pwd")
+    r = client.post(
+        "/api/v1/notifications/read-all", headers={"X-CSRF-Token": "é".encode("latin-1")}
+    )
+    assert r.status_code == 403
+
+
+def test_change_password_keeps_oidc_session_type(client, db):
+    from app.auth import hash_password
+
+    u, h = _member(db, totp=False)
+    u.password_hash = hash_password("old-password-123")
+    db.commit()
+    csrf = _login(client, u, h, "oidc")
+    r = client.post(
+        "/settings/profile/password",
+        data={
+            "current_password": "old-password-123",
+            "new_password": "new-password-1234",
+            "_csrf_token": csrf,
+        },
+    )
+    assert r.status_code == 302
+    client.cookies.set(CSRF_COOKIE_NAME, r.cookies.get(CSRF_COOKIE_NAME) or csrf)
+    assert client.get("/dashboard").status_code == 200
+
+
+def test_create_household_keeps_oidc_session_type(client, db):
+    u, h = _member(db, totp=False)
+    csrf = _login(client, u, h, "oidc")
+    r = client.post("/settings/household/new", data={"name": "Second", "_csrf_token": csrf})
+    assert r.status_code == 302
+    assert client.get("/dashboard").status_code == 200

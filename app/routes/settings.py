@@ -167,7 +167,13 @@ def create_household(
     seed_categories(db, household.id)
 
     response = RedirectResponse("/dashboard", status_code=302)
-    set_session(response, user.id, household.id, user.session_version)
+    set_session(
+        response,
+        user.id,
+        household.id,
+        user.session_version,
+        amr=(get_current_session(request) or {}).get("amr", "pwd"),
+    )
     return response
 
 
@@ -282,7 +288,13 @@ def change_password(
     # to /login immediately after a successful password change. Other devices
     # still get logged out, which is the point.
     response = RedirectResponse("/settings?pw_changed=1", status_code=302)
-    set_session(response, user.id, hh_id, user.session_version)
+    set_session(
+        response,
+        user.id,
+        hh_id,
+        user.session_version,
+        amr=(get_current_session(request) or {}).get("amr", "pwd"),
+    )
     return response
 
 
@@ -855,7 +867,13 @@ def leave_household(
 
     if remaining:
         response = RedirectResponse("/settings", status_code=302)
-        set_session(response, user.id, remaining.household_id, user.session_version)
+        set_session(
+            response,
+            user.id,
+            remaining.household_id,
+            user.session_version,
+            amr=(get_current_session(request) or {}).get("amr", "pwd"),
+        )
         return response
 
     # No households left — redirect to setup (the route is /setup, not /auth/setup)

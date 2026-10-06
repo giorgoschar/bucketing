@@ -298,7 +298,9 @@ def csrf_matches(request: Request, user_id: str) -> bool:
     header = request.headers.get("X-CSRF-Token", "")
     cookie = request.cookies.get(CSRF_COOKIE_NAME, "")
     return (
-        bool(header) and hmac.compare_digest(header, cookie) and verify_csrf_token(header, user_id)
+        bool(header)
+        and hmac.compare_digest(header.encode("utf-8"), cookie.encode("utf-8"))
+        and verify_csrf_token(header, user_id)
     )
 
 
