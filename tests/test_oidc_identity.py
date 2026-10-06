@@ -78,3 +78,22 @@ def test_link_empty_sub_is_refused(db, sub):
     with pytest.raises(IdentityError) as e:
         link_oidc_subject(db, u, sub)
     assert e.value.code == "not_linked"
+
+
+def test_link_integrity_error_becomes_subject_conflict_and_rolls_back(db, monkeypatch):
+    from sqlalchemy.exc import IntegrityError
+
+    u = _user(db, "g", "g@x.t")
+    rolled = []
+    monkeypatch.setattr(
+        db, "commit", lambda: (_ for _ in ()).throw(IntegrityError("stmt", {}, Exception("dup")))
+    )
+    real_rollback = db.rollback
+    monkeypatch.setattr(db, "rollback", lambda: (rolled.append(1), real_rollback())[1])
+    with pytest.raises(IdentityError) as e:
+        link_oidc_subject(db, u, "sub-race")
+    assert e.value.code == "subject_conflict"
+    assert rolled
+    monkeypatch.undo()
+    db.refresh(u)
+    assert u.oidc_subject is None

@@ -5,6 +5,7 @@ attached to an account solely from inside an already signed-in password+2FA
 session (see link_oidc_subject and GET /app/auth/link).
 """
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import User
@@ -37,4 +38,8 @@ def link_oidc_subject(db: Session, user: User, sub: str | None) -> None:
             raise IdentityError("subject_conflict")
         return
     user.oidc_subject = sub
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise IdentityError("subject_conflict") from None

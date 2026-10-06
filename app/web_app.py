@@ -1,15 +1,28 @@
 """The new app at /app: passkey sign-in via Pocket ID, and (Task 5) the SPA itself."""
 
 import logging
+import time
 
 import httpx
 from authlib.integrations.base_client.errors import OAuthError
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
 from joserfc.errors import JoseError
 from sqlalchemy.orm import Session
 
-from app.auth import COOKIE_NAME, clear_session, csrf_matches, decode_cookie, set_session
+from app.auth import (
+    COOKIE_NAME,
+    clear_failed_logins,
+    clear_session,
+    csrf_matches,
+    decode_cookie,
+    is_locked,
+    register_failed_login,
+    require_csrf,
+    set_session,
+    verify_password_constant_time,
+    verify_totp,
+)
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.oidc import oidc_client
@@ -54,25 +67,68 @@ def _password_session_user(request: Request, db: Session) -> User | None:
     return user
 
 
-@router.get("/link", dependencies=[Depends(_enabled)])
-@limiter.limit("20/minute")
-async def link(request: Request, db: Session = Depends(get_db)):
+LINK_MAX_AGE_SECONDS = 600
+
+
+def _clear_link_state(request: Request) -> None:
+    request.session.pop("link_user_id", None)
+    request.session.pop("link_started_at", None)
+
+
+@router.post("/link", dependencies=[Depends(_enabled), Depends(require_csrf)])
+@limiter.limit("5/minute")
+async def link(
+    request: Request,
+    password: str = Form(""),
+    totp_code: str = Form(""),
+    db: Session = Depends(get_db),
+):
     user = _password_session_user(request, db)
     if not user:
         return _fail("link_requires_login")
+    _clear_link_state(request)
+    if is_locked(user):
+        return RedirectResponse("/settings?passkey_error=1", status_code=302)
+    # Fresh credentials every time; never say which factor was wrong.
+    password_ok = verify_password_constant_time(password, user.password_hash)
+    totp_ok = bool(user.totp_secret) and verify_totp(db, user, totp_code.strip())
+    if not (password_ok and totp_ok):
+        register_failed_login(db, user)
+        security_logger.warning("OIDC link refused: bad credentials")
+        return RedirectResponse("/settings?passkey_error=1", status_code=302)
+    clear_failed_logins(db, user)
     request.session["link_user_id"] = user.id
-    return await oidc_client().authorize_redirect(request, _callback_url(request))
+    request.session["link_started_at"] = int(time.time())
+    # prompt=login makes Pocket ID run a fresh passkey ceremony.
+    return await oidc_client().authorize_redirect(request, _callback_url(request), prompt="login")
+
+
+@router.post("/unlink", dependencies=[Depends(_enabled), Depends(require_csrf)])
+@limiter.limit("20/minute")
+async def unlink(request: Request, db: Session = Depends(get_db)):
+    user = _password_session_user(request, db)
+    if not user:
+        return _fail("link_requires_login")
+    user.oidc_subject = None
+    db.commit()
+    security_logger.info("OIDC passkey unlinked")
+    return RedirectResponse("/settings?passkey=unlinked", status_code=302)
 
 
 @router.get("/login", dependencies=[Depends(_enabled)])
 @limiter.limit("20/minute")
 async def login(request: Request):
+    _clear_link_state(request)
     return await oidc_client().authorize_redirect(request, _callback_url(request))
 
 
 @router.get("/callback", dependencies=[Depends(_enabled)])
 @limiter.limit("20/minute")
 async def callback(request: Request, db: Session = Depends(get_db)):
+    # Always consume link state first, so an abandoned or failed link flow can
+    # never turn a later sign-in in this browser into a link.
+    link_user_id = request.session.pop("link_user_id", None)
+    link_started_at = request.session.pop("link_started_at", None)
     if request.query_params.get("error"):
         return _fail("denied")
     try:
@@ -88,10 +144,13 @@ async def callback(request: Request, db: Session = Depends(get_db)):
         return _fail("provider")
     claims = token.get("userinfo") or {}
 
-    link_user_id = request.session.pop("link_user_id", None)
     if link_user_id:
         user = _password_session_user(request, db)
-        if not user or user.id != link_user_id:
+        fresh = (
+            isinstance(link_started_at, int)
+            and 0 <= time.time() - link_started_at <= LINK_MAX_AGE_SECONDS
+        )
+        if not user or user.id != link_user_id or not fresh:
             return _fail("link_requires_login")
         try:
             link_oidc_subject(db, user, claims.get("sub"))

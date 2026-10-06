@@ -145,15 +145,37 @@ def _redirecting_client(userinfo=None):
     return c
 
 
+def _link_form(hh, step=1, password=None, code=None):
+    """Form for POST /app/auth/link. login() already spent the current TOTP step, so use a later one."""
+    import time
+
+    import pyotp
+
+    from tests.conftest import PASSWORD
+
+    return {
+        "password": PASSWORD if password is None else password,
+        "totp_code": code or pyotp.TOTP(hh.secret).at(time.time() + 30 * step),
+    }
+
+
+def _start_link(client, hh, headers, fake, **form):
+    with patch("app.web_app.oidc_client", return_value=fake):
+        return client.post(
+            "/app/auth/link", data=_link_form(hh, **form), headers=headers, follow_redirects=False
+        )
+
+
 def test_link_flow_links_subject_and_keeps_session(client, db, make_household, login):
     hh = make_household()
-    login(hh.username, hh.secret)
+    headers = login(hh.username, hh.secret)
     fake = _redirecting_client({"sub": "new-sub", "email": "whatever@x.t"})
+    r = _start_link(client, hh, headers, fake)
+    assert r.status_code in (302, 307)
+    assert r.headers["location"].startswith("https://id.example.test/")
+    assert fake.authorize_redirect.call_args.kwargs["prompt"] == "login"
+    assert "oidc_tx" in client.cookies
     with patch("app.web_app.oidc_client", return_value=fake):
-        r = client.get("/app/auth/link", follow_redirects=False)
-        assert r.status_code in (302, 307)
-        assert r.headers["location"].startswith("https://id.example.test/")
-        assert "oidc_tx" in client.cookies
         r = client.get("/app/auth/callback?code=c&state=s", follow_redirects=False)
     assert r.headers["location"] == "/app/?linked=1"
     user = db.get(User, hh.user_id)
@@ -162,16 +184,55 @@ def test_link_flow_links_subject_and_keeps_session(client, db, make_household, l
     assert client.get("/api/v1/auth/me").json()["id"] == hh.user_id
 
 
+def test_link_is_post_only(client, make_household, login):
+    hh = make_household()
+    login(hh.username, hh.secret)
+    assert client.get("/app/auth/link", follow_redirects=False).status_code == 405
+
+
+def test_link_post_without_csrf_is_rejected(client, make_household, login):
+    hh = make_household()
+    login(hh.username, hh.secret)
+    fake = _redirecting_client()
+    r = _start_link(client, hh, {}, fake)
+    assert r.status_code == 403
+    fake.authorize_redirect.assert_not_called()
+
+
+def test_link_wrong_password_is_refused_and_counted(client, db, make_household, login):
+    hh = make_household()
+    headers = login(hh.username, hh.secret)
+    fake = _redirecting_client()
+    r = _start_link(client, hh, headers, fake, password="nope")
+    assert r.headers["location"] == "/settings?passkey_error=1"
+    fake.authorize_redirect.assert_not_called()
+    user = db.get(User, hh.user_id)
+    db.refresh(user)
+    assert user.failed_logins == 1
+
+
+def test_link_wrong_totp_is_refused_and_counted(client, db, make_household, login):
+    hh = make_household()
+    headers = login(hh.username, hh.secret)
+    fake = _redirecting_client()
+    r = _start_link(client, hh, headers, fake, code="000000")
+    assert r.headers["location"] == "/settings?passkey_error=1"
+    fake.authorize_redirect.assert_not_called()
+    user = db.get(User, hh.user_id)
+    db.refresh(user)
+    assert user.failed_logins == 1
+
+
 def test_link_conflict_reports_subject_conflict(client, db, make_household, login):
     db.add(
         User(username="o", email="o@x.t", display_name="O", password_hash="x", oidc_subject="taken")
     )
     db.commit()
     hh = make_household()
-    login(hh.username, hh.secret)
+    headers = login(hh.username, hh.secret)
     fake = _redirecting_client({"sub": "taken"})
+    _start_link(client, hh, headers, fake)
     with patch("app.web_app.oidc_client", return_value=fake):
-        client.get("/app/auth/link", follow_redirects=False)
         r = client.get("/app/auth/callback?code=c&state=s", follow_redirects=False)
     assert r.headers["location"] == "/app/?auth_error=subject_conflict"
 
@@ -179,8 +240,9 @@ def test_link_conflict_reports_subject_conflict(client, db, make_household, logi
 def test_link_without_session_requires_login(client):
     fake = _redirecting_client()
     with patch("app.web_app.oidc_client", return_value=fake):
-        r = client.get("/app/auth/link", follow_redirects=False)
-    assert r.headers["location"] == "/app/?auth_error=link_requires_login"
+        r = client.post("/app/auth/link", follow_redirects=False)
+    # No session: require_csrf demands a pre-session token, so the request never reaches the handler.
+    assert r.status_code in (403, 302)
     fake.authorize_redirect.assert_not_called()
 
 
@@ -190,21 +252,26 @@ def test_link_with_oidc_session_requires_login(client, db):
     with patch("app.web_app.oidc_client", return_value=fake):
         client.get("/app/auth/callback?code=c&state=s", follow_redirects=False)
     fake = _redirecting_client()
+    headers = {"X-CSRF-Token": client.cookies.get("csrf_token")}
     with patch("app.web_app.oidc_client", return_value=fake):
-        r = client.get("/app/auth/link", follow_redirects=False)
+        r = client.post(
+            "/app/auth/link",
+            data={"password": "x", "totp_code": "000000"},
+            headers=headers,
+            follow_redirects=False,
+        )
     assert r.headers["location"] == "/app/?auth_error=link_requires_login"
     fake.authorize_redirect.assert_not_called()
 
 
 def test_link_for_user_without_totp_requires_login(client, db, make_household, login):
     hh = make_household()
-    login(hh.username, hh.secret)
+    headers = login(hh.username, hh.secret)
     user = db.get(User, hh.user_id)
     user.totp_enabled = False
     db.commit()
     fake = _redirecting_client()
-    with patch("app.web_app.oidc_client", return_value=fake):
-        r = client.get("/app/auth/link", follow_redirects=False)
+    r = _start_link(client, hh, headers, fake)
     assert r.headers["location"] == "/app/?auth_error=link_requires_login"
     fake.authorize_redirect.assert_not_called()
 
@@ -213,14 +280,109 @@ def test_link_callback_after_logout_requires_login(client, db, make_household, l
     hh = make_household()
     headers = login(hh.username, hh.secret)
     fake = _redirecting_client({"sub": "new-sub"})
+    _start_link(client, hh, headers, fake)
     with patch("app.web_app.oidc_client", return_value=fake):
-        client.get("/app/auth/link", follow_redirects=False)
         client.post("/app/auth/logout", headers=headers)
         r = client.get("/app/auth/callback?code=c&state=s", follow_redirects=False)
     assert r.headers["location"] == "/app/?auth_error=link_requires_login"
     user = db.get(User, hh.user_id)
     db.refresh(user)
     assert user.oidc_subject is None
+
+
+def test_link_callback_after_ten_minutes_requires_login(
+    client, db, make_household, login, monkeypatch
+):
+    import time as _time
+    import types
+
+    hh = make_household()
+    headers = login(hh.username, hh.secret)
+    fake = _redirecting_client({"sub": "new-sub"})
+    _start_link(client, hh, headers, fake)
+    real = _time.time()
+    # Only web_app's clock moves; the oidc_tx cookie's own 600s signature age stays untouched.
+    monkeypatch.setattr("app.web_app.time", types.SimpleNamespace(time=lambda: real + 601))
+    with patch("app.web_app.oidc_client", return_value=fake):
+        r = client.get("/app/auth/callback?code=c&state=s", follow_redirects=False)
+    assert r.headers["location"] == "/app/?auth_error=link_requires_login"
+    user = db.get(User, hh.user_id)
+    db.refresh(user)
+    assert user.oidc_subject is None
+
+
+@pytest.mark.parametrize("failure", ["error_param", "jose"])
+def test_abandoned_link_does_not_turn_later_sign_in_into_a_link(
+    client, db, make_household, login, failure
+):
+    from joserfc.errors import InvalidClaimError
+
+    hh = make_household()
+    headers = login(hh.username, hh.secret)
+    fake = _redirecting_client()
+    _start_link(client, hh, headers, fake)
+    if failure == "error_param":
+        r = client.get("/app/auth/callback?error=access_denied", follow_redirects=False)
+        assert r.headers["location"] == "/app/?auth_error=denied"
+    else:
+        bad = _fake_client(exc=InvalidClaimError("iss"))
+        with patch("app.web_app.oidc_client", return_value=bad):
+            r = client.get("/app/auth/callback?code=c&state=s", follow_redirects=False)
+        assert r.headers["location"] == "/app/?auth_error=token"
+    # Same browser: a fresh /login then a callback with an unknown sub must not link.
+    fresh = _redirecting_client({"sub": "attacker-sub"})
+    with patch("app.web_app.oidc_client", return_value=fresh):
+        client.get("/app/auth/login", follow_redirects=False)
+        r = client.get("/app/auth/callback?code=c&state=s", follow_redirects=False)
+    assert r.headers["location"] == "/app/?auth_error=not_linked"
+    user = db.get(User, hh.user_id)
+    db.refresh(user)
+    assert user.oidc_subject is None
+
+
+def test_login_clears_pending_link_state(client, db, make_household, login):
+    hh = make_household()
+    headers = login(hh.username, hh.secret)
+    fake = _redirecting_client({"sub": "attacker-sub"})
+    _start_link(client, hh, headers, fake)
+    with patch("app.web_app.oidc_client", return_value=fake):
+        client.get("/app/auth/login", follow_redirects=False)
+        r = client.get("/app/auth/callback?code=c&state=s", follow_redirects=False)
+    assert r.headers["location"] == "/app/?auth_error=not_linked"
+
+
+def test_unlink_clears_subject(client, db, make_household, login):
+    hh = make_household()
+    headers = login(hh.username, hh.secret)
+    user = db.get(User, hh.user_id)
+    user.oidc_subject = "s1"
+    db.commit()
+    r = client.post("/app/auth/unlink", headers=headers, follow_redirects=False)
+    assert r.headers["location"] == "/settings?passkey=unlinked"
+    db.refresh(user)
+    assert user.oidc_subject is None
+
+
+def test_unlink_without_csrf_is_rejected(client, db, make_household, login):
+    hh = make_household()
+    login(hh.username, hh.secret)
+    user = db.get(User, hh.user_id)
+    user.oidc_subject = "s1"
+    db.commit()
+    r = client.post("/app/auth/unlink", follow_redirects=False)
+    assert r.status_code == 403
+    db.refresh(user)
+    assert user.oidc_subject == "s1"
+
+
+def test_unlink_with_oidc_session_requires_login(client, db):
+    _member(db)
+    fake = _fake_client({"sub": "s1"})
+    with patch("app.web_app.oidc_client", return_value=fake):
+        client.get("/app/auth/callback?code=c&state=s", follow_redirects=False)
+    headers = {"X-CSRF-Token": client.cookies.get("csrf_token")}
+    r = client.post("/app/auth/unlink", headers=headers, follow_redirects=False)
+    assert r.headers["location"] == "/app/?auth_error=link_requires_login"
 
 
 def test_settings_page_shows_link_then_linked(client, db, make_household, login):
