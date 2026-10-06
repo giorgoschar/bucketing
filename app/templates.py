@@ -9,7 +9,24 @@ from app.models import PaymentMethod
 from app.money import quantize, to_decimal
 from app.schemas import OWN_SHARE_CHOICE
 
-templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
+
+class _Templates(Jinja2Templates):
+    """Starlette 1.x only accepts TemplateResponse(request, name, context).
+
+    The routes use the older TemplateResponse(name, {"request": request, ...})
+    form throughout; this accepts both so the upgrade does not have to touch
+    every call site.
+    """
+
+    def TemplateResponse(self, *args, **kwargs):  # noqa: N802 — Starlette's name
+        if args and isinstance(args[0], str):
+            name, *rest = args
+            context = rest[0] if rest else kwargs.pop("context", {})
+            return super().TemplateResponse(context["request"], name, context, *rest[1:], **kwargs)
+        return super().TemplateResponse(*args, **kwargs)
+
+
+templates = _Templates(directory=str(Path(__file__).parent.parent / "templates"))
 
 
 STATIC_DIR = Path(__file__).parent.parent / "static"
