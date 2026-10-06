@@ -11,9 +11,10 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
-      // A separate registerSW.js (not inline) keeps the strict CSP intact.
-      injectRegister: 'script',
+      // Updates are applied by src/pwa/update.ts at a safe moment (app backgrounded), not mid-use.
+      registerType: 'prompt',
+      injectRegister: false,
+      includeManifestIcons: false,
       scope: '/app/',
       base: '/app/',
       manifest: {
@@ -37,6 +38,8 @@ export default defineConfig({
         navigateFallbackDenylist: [/^\/app\/auth\//, /^\/api\//],
         globPatterns: ['**/*.{js,css,html,woff2,svg,png}'],
         // API data is cached by our encrypted Dexie store, never by the service worker.
+        // Latin + Greek (merchant names) only; skip the other unicode-range subsets.
+        globIgnores: ['**/*-cyrillic*.woff2', '**/*-vietnamese*.woff2'],
         runtimeCaching: [],
       },
     }),
