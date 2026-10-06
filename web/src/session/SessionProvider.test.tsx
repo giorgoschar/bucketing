@@ -1,7 +1,9 @@
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { SessionProvider, useSession } from './SessionProvider'
-import { cachePut, cacheGet, wipe } from '../offline/db'
+import { cachePut, cacheGet, db, wipe } from '../offline/db'
+import { setIdentity } from '../offline/identity'
+import { enqueue, replay } from '../offline/queue'
 import { keyGeneration } from '../offline/crypto'
 import { queryClient } from '../queryClient'
 
@@ -48,11 +50,49 @@ it('signed in when /me returns 200', async () => {
   await waitFor(() => expect(screen.getByText('signedIn:g')).toBeInTheDocument())
 })
 
-it('401 signs out and wipes local data', async () => {
+it('401 shows sign-in but keeps the encrypted store and its queue', async () => {
   await cachePut('x', 1)
+  await cachePut('me', ME)
+  setIdentity({ user_id: ME.id, household_id: ME.household_id })
+  await enqueue({ method: 'POST', path: '/x', body: { a: 1 } })
   vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 401 }))
   render(<SessionProvider><Probe /></SessionProvider>)
   await waitFor(() => expect(screen.getByText('signedOut')).toBeInTheDocument())
+  expect(await cacheGet('x')).toBe(1)
+  expect(await db.queue.count()).toBe(1)
+})
+
+it('the same user signing back in after a 401 finds the queue and replays it', async () => {
+  await cachePut('me', ME)
+  setIdentity({ user_id: ME.id, household_id: ME.household_id })
+  await enqueue({ method: 'POST', path: '/x', body: { a: 1 } })
+  backend(ok())
+  render(<SessionProvider><Probe /></SessionProvider>)
+  await waitFor(() => expect(screen.getByText('signedIn:g')).toBeInTheDocument())
+  expect(await db.queue.count()).toBe(1)
+  expect(await replay()).toMatchObject({ sent: 1 })
+  expect(await db.queue.count()).toBe(0)
+})
+
+it('an account switch wipes the queue and cache before signing in as the new user', async () => {
+  await cachePut('me', { ...ME, id: '2', username: 'old' })
+  await cachePut('x', 1)
+  setIdentity({ user_id: '2', household_id: 'h' })
+  await enqueue({ method: 'POST', path: '/x', body: { a: 1 } })
+  backend(ok())
+  render(<SessionProvider><Probe /></SessionProvider>)
+  await waitFor(() => expect(screen.getByText('signedIn:g')).toBeInTheDocument())
+  expect(await db.queue.count()).toBe(0)
+  expect(await cacheGet('x')).toBeUndefined()
+  await waitFor(async () => expect(await cacheGet<typeof ME>('me')).toMatchObject({ id: '1' }))
+})
+
+it('a household change also counts as an account switch', async () => {
+  await cachePut('me', { ...ME, household_id: 'other' })
+  await cachePut('x', 1)
+  backend(ok())
+  render(<SessionProvider><Probe /></SessionProvider>)
+  await waitFor(() => expect(screen.getByText('signedIn:g')).toBeInTheDocument())
   expect(await cacheGet('x')).toBeUndefined()
 })
 
@@ -132,7 +172,7 @@ it('outside a provider, useSession reports loading', () => {
   expect(screen.getByText('loading')).toBeInTheDocument()
 })
 
-it('a 401 on /me tells other tabs and clears the query cache', async () => {
+it('a 401 on /me clears the query cache but does not broadcast a sign-out', async () => {
   const clear = vi.spyOn(queryClient, 'clear')
   const other = new BroadcastChannel('tameio-session')
   const heard = vi.fn()
@@ -140,7 +180,8 @@ it('a 401 on /me tells other tabs and clears the query cache', async () => {
   vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 401 }))
   render(<SessionProvider><Probe /></SessionProvider>)
   await waitFor(() => expect(screen.getByText('signedOut')).toBeInTheDocument())
-  await waitFor(() => expect(heard).toHaveBeenCalledWith('signedOut'))
+  await new Promise((r) => setTimeout(r, 50))
+  expect(heard).not.toHaveBeenCalled()
   expect(clear).toHaveBeenCalled()
   other.close()
 })

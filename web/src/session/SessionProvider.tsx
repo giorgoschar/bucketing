@@ -3,6 +3,7 @@ import { api, onUnauthorized, readCsrf } from '../api/client'
 import type { paths } from '../api/schema'
 import { cacheGet, cachePut, wipe } from '../offline/db'
 import { forgetKey } from '../offline/crypto'
+import { setIdentity } from '../offline/identity'
 import { queryClient } from '../queryClient'
 
 export type Me = paths['/api/v1/auth/me']['get']['responses']['200']['content']['application/json']
@@ -55,6 +56,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const epoch = useRef(0)
   const channel = useRef<BroadcastChannel | null>(null)
 
+  // The queue stamps each write with who made it; only a signed-in tab has an identity.
+  useEffect(() => {
+    setIdentity(me ? { user_id: me.id, household_id: me.household_id } : null)
+  }, [me])
+
+  // Sign-out and session expiry both land here. This only drops in-memory state: an expired session
+  // keeps the encrypted store so queued writes survive until the same account signs in again.
   const markSignedOut = useCallback(() => {
     epoch.current++
     queryClient.clear()
@@ -90,7 +98,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }, [markSignedOut])
 
-  useEffect(() => onUnauthorized(() => void signedOut()), [signedOut])
+  useEffect(() => onUnauthorized(markSignedOut), [markSignedOut])
 
   useEffect(() => {
     let live = true
@@ -114,11 +122,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       if (!res) return fromCache() // offline or timed out
       const { data, response } = res
       if (response.ok && data) {
+        // A different account than the one whose data is on this device: nothing of theirs may carry over.
+        const cached = await cacheGet<Me>('me').catch(() => undefined)
+        if (!current()) return
+        if (cached && (cached.id !== data.id || cached.household_id !== data.household_id)) {
+          await wipe().catch(() => {}) // the key is forgotten either way; leftovers are unreadable
+          if (!current()) return
+        }
         setMe(data)
         setStatus('signedIn')
         await cachePut('me', data).catch(() => {}) // a racing wipe wins; nothing to persist
       } else if (response.status === 401) {
-        await signedOut() // usually already handled by onUnauthorized, which bumps the epoch first
+        markSignedOut() // expired session: show sign-in but keep the encrypted queue
       } else if (transient(response.status)) {
         await fromCache() // server unavailable: behave as offline rather than signing the user out
       } else {
@@ -128,7 +143,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return () => {
       live = false
     }
-  }, [signedOut])
+  }, [markSignedOut])
 
   // Clearing the device wins even when the server can't be reached; the failure is surfaced for a retry.
   const signOut = useCallback(async () => {
