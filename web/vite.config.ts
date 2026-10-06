@@ -11,6 +11,11 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': { target: 'http://127.0.0.1:8000', changeOrigin: false },
+      // The old UI (sign in there, then reload /app) and the passkey sign-in/logout endpoints.
+      '/app/auth': { target: 'http://127.0.0.1:8000', changeOrigin: false },
+      '/login': { target: 'http://127.0.0.1:8000', changeOrigin: false },
+      '/static': { target: 'http://127.0.0.1:8000', changeOrigin: false },
+      '/dashboard': { target: 'http://127.0.0.1:8000', changeOrigin: false },
     },
   },
 })
