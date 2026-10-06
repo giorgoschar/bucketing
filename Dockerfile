@@ -1,3 +1,10 @@
+FROM node:22-slim AS web
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ ./
+RUN npm run build
+
 FROM python:3.12-slim
 
 WORKDIR /app
@@ -26,6 +33,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy source
 COPY . .
+COPY --from=web /web/dist ./web/dist
 
 # Create runtime directories and drop root. /app/uploads and /backups are owned
 # by the app user so fresh named volumes mounted there inherit that ownership.

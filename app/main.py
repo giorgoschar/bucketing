@@ -151,17 +151,20 @@ async def security_headers(request: Request, call_next):
     # 'unsafe-eval' stays because Alpine compiles its expressions with
     # new Function(); it also covers WebAssembly compilation for tesseract's
     # core, so 'wasm-unsafe-eval' is not needed.
-    response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
-        "style-src 'self' 'unsafe-inline'; "
-        "worker-src blob: 'self'; "
-        "img-src 'self' data: blob:; "
-        "connect-src 'self' blob:; "
-        "object-src 'none'; "
-        "base-uri 'self'; "
-        "form-action 'self'"
-    )
+    if request.url.path == "/app" or request.url.path.startswith("/app/"):
+        response.headers["Content-Security-Policy"] = web_app.APP_CSP
+    else:
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "worker-src blob: 'self'; "
+            "img-src 'self' data: blob:; "
+            "connect-src 'self' blob:; "
+            "object-src 'none'; "
+            "base-uri 'self'; "
+            "form-action 'self'"
+        )
     if not settings.debug:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
@@ -187,6 +190,7 @@ if settings.debug:
 # Routers
 # ---------------------------------------------------------------------------
 app.include_router(web_app.router)
+app.include_router(web_app.spa)
 app.include_router(auth.router)
 app.include_router(dashboard.router)
 app.include_router(buckets.router)

@@ -2,11 +2,12 @@
 
 import logging
 import time
+from pathlib import Path
 
 import httpx
 from authlib.integrations.base_client.errors import OAuthError
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from joserfc.errors import JoseError
 from sqlalchemy.orm import Session
 
@@ -197,3 +198,57 @@ async def logout(request: Request):
     response = Response(status_code=204)
     clear_session(response)
     return response
+
+
+DIST_DIR = Path(__file__).resolve().parent.parent / "web" / "dist"
+
+APP_CSP = (
+    "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; "
+    "img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self'; "
+    "manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; "
+    "frame-ancestors 'none'"
+)
+
+spa = APIRouter(include_in_schema=False)
+
+
+def _spa_enabled() -> None:
+    if not settings.new_app_enabled:
+        raise HTTPException(status_code=404)
+
+
+def _file(rel: str) -> Path | None:
+    root = DIST_DIR.resolve()
+    target = (root / rel).resolve()
+    if root not in target.parents and target != root:
+        return None
+    return target if target.is_file() else None
+
+
+@spa.get("/app", dependencies=[Depends(_spa_enabled)])
+def app_root():
+    return RedirectResponse("/app/", status_code=308)
+
+
+@spa.get("/app/{path:path}", dependencies=[Depends(_spa_enabled)])
+def app_files(path: str):
+    if path.startswith("auth/"):
+        # The real auth routes are registered first and win on a matching method;
+        # a GET reaching here for a POST-only route keeps its 405, anything else is a 404.
+        known = {route.path for route in router.routes}
+        raise HTTPException(status_code=405 if f"/app/{path}" in known else 404)
+    found = _file(path) if path else None
+    if found:
+        immutable = path.startswith("assets/")
+        return FileResponse(
+            found,
+            headers={
+                "Cache-Control": "public, max-age=31536000, immutable" if immutable else "no-cache"
+            },
+        )
+    if path.startswith("assets/") or "." in path.rsplit("/", 1)[-1]:
+        raise HTTPException(status_code=404)
+    index = _file("index.html")
+    if not index:
+        raise HTTPException(status_code=404)
+    return FileResponse(index, headers={"Cache-Control": "no-cache"})
