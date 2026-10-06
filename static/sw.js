@@ -1,4 +1,4 @@
-const CACHE_NAME = 'expenses-v12';
+const CACHE_NAME = 'expenses-v24';
 
 const STATIC_ASSETS = [
   '/static/manifest.json',
@@ -134,11 +134,14 @@ self.addEventListener('fetch', event => {
   }
 
   // --- HTML navigation: network-first, cache on success, branded offline fallback ---
+  // A page sent with Cache-Control: no-store (the cash page's private stash, a
+  // freshly issued token) is never kept for whoever opens the app offline next.
   if (request.method === 'GET' && request.headers.get('Accept')?.includes('text/html')) {
     event.respondWith(
       fetch(request)
         .then(response => {
-          if (response.ok) {
+          const noStore = /no-store/i.test(response.headers.get('Cache-Control') || '');
+          if (response.ok && !noStore) {
             const clone = response.clone();
             caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
           }

@@ -11,12 +11,13 @@ from sqlalchemy.orm import Session
 from app.auth import require_auth, require_csrf
 from app.bills_service import (
     BILL_HAS_HISTORY_MSG,
+    backfill_bill_payer,
     bill_has_payment_history,
     delete_future_occurrences,
     effective_overrides,
     generate_occurrences,
     normalise_interval_months,
-    resolve_bill_payer,
+    resolve_bill_payment,
     settle_occurrence,
 )
 from app.clock import local_today, utcnow_naive
@@ -26,10 +27,11 @@ from app.models import (
     BillFrequency,
     BillOccurrence,
     OccurrenceStatus,
+    PayerMode,
     RecurringBill,
     RecurringBillSplit,
 )
-from app.schemas import parse_payment_method
+from app.schemas import parse_payment_method, payer_choice
 from app.services import full_ctx, get_overdue_bills, get_upcoming_bills
 from app.templates import templates
 from app.validators import (
@@ -85,20 +87,45 @@ async def _collect_splits(request: Request, hh_id: str, db: Session) -> tuple[li
     return splits, total
 
 
+def _bill_payer(db: Session, hh_id: str, value: str, splits) -> tuple[str | None, str]:
+    """Resolve the bill form's "Default payer" value to (paid_by_default, payer_mode).
+
+    "Each paid their own share" records every payment as each member paying
+    their split, so the bill needs those splits.
+    """
+    payer, mode = payer_choice(value)
+    if mode == PayerMode.own_share.value and not splits:
+        raise HTTPException(
+            status_code=400,
+            detail="Each paid their own share needs each member's share filled in.",
+        )
+    return require_member(db, payer, hh_id), mode
+
+
 
 @router.get("", response_class=HTMLResponse)
 def bills_page(
     request: Request,
     page: int = Query(1, ge=1),
+    backfilled: int | None = Query(None, ge=0),
+    resplit: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     auth=Depends(require_auth),
 ):
     user, hh_id = auth
-    return _render_bills(request, db, user, hh_id, page=page)
+    notice = None
+    if backfilled is not None:
+        # Only a count is reflected, never free text.
+        notice = (f"Updated {backfilled} past payment{'s' if backfilled != 1 else ''} "
+                  "that had no payer.")
+        if resplit:
+            notice += (f" {resplit} of them had splits that did not add up to its amount; "
+                       "they now use the bill's split.")
+    return _render_bills(request, db, user, hh_id, page=page, notice=notice)
 
 
 def _render_bills(request, db, user, hh_id, *, page: int = 1, error: str | None = None,
-                  status_code: int = 200):
+                  notice: str | None = None, status_code: int = 200):
     ctx = full_ctx(db, user, hh_id)
 
     overdue = get_overdue_bills(db, hh_id)
@@ -121,6 +148,7 @@ def _render_bills(request, db, user, hh_id, *, page: int = 1, error: str | None 
         "bills_page": page,
         "bills_total_pages": bills_total_pages,
         "error": error,
+        "notice": notice,
     })
     return templates.TemplateResponse("bills/list.html", ctx, status_code=status_code)
 
@@ -154,6 +182,7 @@ async def create_bill(
             status_code=400,
             detail=f"Split amounts ({split_total:.2f}) must sum to the bill amount ({float(bill_amount):.2f}).",
         )
+    payer_default, payer_mode = _bill_payer(db, hh_id, paid_by_default, splits)
 
     bill = RecurringBill(
         household_id=hh_id,
@@ -168,7 +197,8 @@ async def create_bill(
         end_date=_parse_iso_date(end_date, "End date", required=False),
         contract_end_date=_parse_iso_date(contract_end_date, "Contract end date", required=False),
         total_occurrences=int(total_occurrences) if total_occurrences.strip().isdigit() else None,
-        paid_by_default=require_member(db, paid_by_default, hh_id),
+        paid_by_default=payer_default,
+        payer_mode=payer_mode,
         notes=notes.strip() or None,
         is_auto_pay=_checkbox(is_auto_pay),
     )
@@ -219,7 +249,14 @@ async def mark_paid(
     if not pay_amount:
         raise HTTPException(status_code=400, detail="Amount required for variable bills")
 
-    payer = require_member(db, paid_by, hh_id) or resolve_bill_payer(db, bill, user.id)
+    # Blank = the bill's default (its payer mode, then its default payer).
+    chosen, chosen_mode = payer_choice(paid_by)
+    payer, payer_mode = resolve_bill_payment(
+        db, bill,
+        paid_by=require_member(db, chosen, hh_id),
+        payer_mode=chosen_mode if chosen_mode == PayerMode.own_share.value else None,
+        fallback_user_id=user.id,
+    )
     try:
         pm = parse_payment_method(payment_method)
     except ValueError as exc:
@@ -232,6 +269,7 @@ async def mark_paid(
             db, occ,
             amount=pay_amount,
             paid_by=payer,
+            payer_mode=payer_mode,
             paid_on=utcnow_naive(),
             payment_method=pm,
             split_overrides=effective_overrides(bill, {uid: Decimal(str(a)) for uid, a in overrides}),
@@ -350,6 +388,7 @@ async def edit_bill(
     paid_by_default: str = Form(""),
     notes: str = Form(""),
     is_auto_pay: str = Form(""),
+    apply_to_past: str = Form(""),
     db: Session = Depends(get_db),
     auth=Depends(require_auth),
 ):
@@ -365,6 +404,7 @@ async def edit_bill(
             status_code=400,
             detail=f"Split amounts ({split_total:.2f}) must sum to the bill amount ({float(bill_amount):.2f}).",
         )
+    payer_default, payer_mode = _bill_payer(db, hh_id, paid_by_default, splits)
 
     bill.name = name.strip()
     bill.amount = bill_amount
@@ -377,20 +417,34 @@ async def edit_bill(
     bill.end_date = _parse_iso_date(end_date, "End date", required=False)
     bill.contract_end_date = _parse_iso_date(contract_end_date, "Contract end date", required=False)
     bill.total_occurrences = int(total_occurrences) if total_occurrences.strip().isdigit() else None
-    bill.paid_by_default = require_member(db, paid_by_default, hh_id)
+    bill.paid_by_default = payer_default
+    bill.payer_mode = payer_mode
     bill.notes = notes.strip() or None
     bill.is_auto_pay = _checkbox(is_auto_pay)
 
     # Replace splits
     db.query(RecurringBillSplit).filter_by(bill_id=bill.id).delete(synchronize_session=False)
+    db.expire(bill, ["splits"])
     for uid, split_amount in splits:
         db.add(RecurringBillSplit(bill_id=bill.id, user_id=uid, amount=split_amount))
 
     # Regenerate future occurrences
     delete_future_occurrences(db, bill.id)
     generate_occurrences(db, bill)
+
+    # Optionally repair past payments saved without a payer, using the payer
+    # (or own-share splits) just set.
+    backfilled = None
+    if _checkbox(apply_to_past):
+        db.flush()
+        backfilled = backfill_bill_payer(db, bill)
     db.commit()
 
+    if backfilled is not None:
+        query = f"backfilled={backfilled.updated}"
+        if backfilled.resplit:
+            query += f"&resplit={backfilled.resplit}"
+        return RedirectResponse(f"/bills?{query}", status_code=302)
     return RedirectResponse("/bills", status_code=302)
 
 

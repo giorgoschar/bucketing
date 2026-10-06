@@ -5,11 +5,13 @@ import csv
 import io
 import logging
 from datetime import date
+from urllib.parse import parse_qsl, urlencode
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import (
     HTMLResponse,
     JSONResponse,
+    RedirectResponse,
     StreamingResponse,
 )
 from sqlalchemy import or_
@@ -18,23 +20,28 @@ from sqlalchemy.orm import Session, joinedload
 from app.auth import require_auth, require_csrf
 from app.database import get_db
 from app.models import (
+    BillOccurrence,
     Bucket,
     Category,
+    PayerMode,
     Transaction,
     TransactionSplit,
     TransactionType,
     User,
 )
 from app.routes.transactions import _get_context, _maybe_number
+from app.schemas import absorb_own_share_cent, own_share_problem, payer_choice
 from app.services import (
     find_duplicate_candidates,
     find_household_duplicates,
 )
+from app.services.cash import linked_taker
 from app.templates import templates
 from app.validators import (
     parse_amount,
     parse_year_month,
     require_bucket,
+    require_member,
 )
 
 logger = logging.getLogger(__name__)
@@ -47,6 +54,10 @@ router = APIRouter(prefix="/transactions", dependencies=[Depends(require_csrf)])
 # ---------------------------------------------------------------------------
 
 SEARCH_PAGE_SIZE = 25
+
+# Why bulk "Set payer" skipped a row (the notice after it).
+BULK_SKIP_NO_SPLIT = "no split defined"
+BULK_SKIP_TAKE = "cash was taken for it, so it stays paid by whoever took it"
 
 @router.get("/search", response_class=HTMLResponse)
 def search_transactions(
@@ -62,11 +73,22 @@ def search_transactions(
     paid_by: str = Query(""),
     missing_payer: str = Query(""),
     page: int = Query(1, ge=1),
+    updated: int | None = Query(None, ge=0),
+    skipped: int = Query(0, ge=0),
+    skipped_take: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     auth=Depends(require_auth),
 ):
     user, hh_id = auth
     ctx = _get_context(db, user, hh_id)
+
+    # Result of a bulk "Set payer" (counts only; no free text is reflected).
+    bulk_notice = None
+    if updated is not None:
+        bulk_notice = f"{updated} updated"
+        for count, why in ((skipped, BULK_SKIP_NO_SPLIT), (skipped_take, BULK_SKIP_TAKE)):
+            if count:
+                bulk_notice += f", {count} skipped: {why}"
 
     # Settle-up links here to show exactly which expenses it had to skip.
     want_missing_payer = missing_payer in ("1", "on", "true")
@@ -145,8 +167,9 @@ def search_transactions(
         if bucket_id:
             query = query.filter(Transaction.bucket_id == bucket_id)
         if want_missing_payer:
+            # Own-share expenses have no payer by design and are fully paid.
             query = query.filter(
-                Transaction.paid_by.is_(None),
+                Transaction.missing_payer(),
                 Transaction.type == TransactionType.expense,
             )
 
@@ -180,6 +203,15 @@ def search_transactions(
         "max_amount": max_amount,
         "selected_paid_by": paid_by,
         "missing_payer": want_missing_payer,
+        "bulk_notice": bulk_notice,
+        # Query string that reproduces this search (pagination links, and the
+        # bulk form's way back here).
+        "search_query": _search_query({
+            "q": q, "category_id": category_id, "type": type, "from_date": from_date,
+            "to_date": to_date, "bucket_id": bucket_id, "min_amount": min_amount,
+            "max_amount": max_amount, "paid_by": paid_by,
+            "missing_payer": "1" if want_missing_payer else "",
+        }),
         "page": page,
         "total_pages": total_pages,
         "total": total,
@@ -187,6 +219,103 @@ def search_transactions(
     })
 
     return templates.TemplateResponse("transactions/list.html", ctx)
+
+
+# Filters a search URL may carry. The bulk form posts its search back so the
+# user lands on the same view; anything else is dropped, so the redirect can
+# never be pointed elsewhere or carry injected parameters.
+SEARCH_QUERY_KEYS = (
+    "q", "category_id", "type", "from_date", "to_date", "bucket_id",
+    "min_amount", "max_amount", "paid_by", "missing_payer", "page",
+)
+BULK_MAX_IDS = 200
+
+
+def _search_query(params) -> str:
+    """URL-encode the non-blank known search filters, in a stable order."""
+    params = dict(params)
+    return urlencode([(k, params[k]) for k in SEARCH_QUERY_KEYS if params.get(k)])
+
+
+@router.post("/bulk-payer")
+def bulk_set_payer(
+    ids: list[str] = Form(default=[]),
+    payer: str = Form(""),
+    return_query: str = Form(""),
+    db: Session = Depends(get_db),
+    auth=Depends(require_auth),
+):
+    """Set the payer of several expenses at once (the search page's action bar).
+
+    ``payer`` is a member id or "Each paid their own share". Every id must be an
+    active expense of this household, else nothing changes (404). Own share
+    needs splits that already add up to the amount; rows without them are
+    skipped and counted rather than guessed at. Redirects back to the search
+    with ``updated`` and the skipped counts per reason: ``skipped`` (no
+    split) and ``skipped_take`` (an expense cash was taken for stays paid by
+    whoever took it, see app.services.cash), the latter only when not zero.
+    """
+    user, hh_id = auth
+    wanted = list(dict.fromkeys(i for i in ids if i))
+    if not wanted:
+        raise HTTPException(status_code=400, detail="Select at least one expense.")
+    if len(wanted) > BULK_MAX_IDS:
+        raise HTTPException(status_code=400, detail=f"Select at most {BULK_MAX_IDS} expenses.")
+    paid_by, payer_mode = payer_choice(payer)
+    own_share = payer_mode == PayerMode.own_share.value
+    if not own_share and not require_member(db, paid_by, hh_id):
+        raise HTTPException(status_code=400, detail="Choose who paid.")
+
+    txns = (
+        db.query(Transaction)
+        .options(joinedload(Transaction.splits))
+        .filter(
+            Transaction.id.in_(wanted),
+            Transaction.household_id == hh_id,
+            Transaction.active(),
+            Transaction.type == TransactionType.expense,
+        )
+        .all()
+    )
+    if len(txns) != len(wanted):
+        raise HTTPException(status_code=404, detail="Some selected expenses were not found.")
+
+    updated = skipped = skipped_take = 0
+    single_ids = []
+    for t in txns:
+        # An expense cash was taken for stays paid by whoever took it.
+        taker = linked_taker(db, t.id)
+        if taker is not None and (own_share or taker != paid_by):
+            skipped_take += 1
+            continue
+        if own_share:
+            # Own share needs its splits.
+            if own_share_problem(t.amount, (s.amount for s in t.splits)):
+                skipped += 1
+                continue
+            absorb_own_share_cent(t.amount, t.splits)
+            t.paid_by = None
+        else:
+            t.paid_by = paid_by
+            single_ids.append(t.id)
+        t.payer_mode = payer_mode
+        updated += 1
+    if single_ids:
+        # Keep a bill payment's occurrence in step with its expense.
+        db.query(BillOccurrence).filter(
+            BillOccurrence.transaction_id.in_(single_ids),
+            BillOccurrence.paid_by.is_(None),
+        ).update({BillOccurrence.paid_by: paid_by}, synchronize_session=False)
+    db.commit()
+
+    back = _search_query(parse_qsl(return_query))
+    counts = {"updated": updated, "skipped": skipped}
+    if skipped_take:
+        counts["skipped_take"] = skipped_take
+    counts = urlencode(counts)
+    return RedirectResponse(
+        f"/transactions/search?{back + '&' if back else ''}{counts}", status_code=303,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -254,7 +383,10 @@ def export_transactions(
             txn.type.value,
             float(txn.amount),
             txn.currency,
-            _csv_safe(txn.paid_by_user.display_name if txn.paid_by_user else ""),
+            _csv_safe(
+                "Each paid own share" if txn.payer_mode == PayerMode.own_share.value
+                else txn.paid_by_user.display_name if txn.paid_by_user else ""
+            ),
             _csv_safe(txn.notes or ""),
         ]
         for txn in query.order_by(Transaction.transaction_date.desc()).all()

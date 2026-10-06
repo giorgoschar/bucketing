@@ -60,10 +60,16 @@ def insights(
         "period_label":    period["period_label"],
         "start_date":      start.isoformat() if start else None,
         "end_date":        end.isoformat()   if end   else None,
+        # Includes cash spending; logged_total is the expenses alone.
         "total_spent":     summary["total_spent"],
+        "logged_total":    summary["logged_total"],
+        "cash_not_logged": summary["cash_not_logged"],
+        "cash_outs":       summary["cash_outs"],
         "income_total":    data["income_total"],
         "bills_due_total": data["bills_due"],
         "net":             data["net"],
+        # In / Out (logged + not-yet-logged cash) / Net for the period.
+        "in_out":          data["in_out"],
         "paid_by":         summary.get("paid_by", {}),
         "kpis":            data["kpis"],
         "categories":      data["categories"],
@@ -86,4 +92,6 @@ def insights(
         "forecast":        data["forecast"],
         "by_method":       data["by_method"],
         "cash_share":      data["cash_share"],
+        # Litres, spend and price per litre of fuel expenses; null without any.
+        "fuel":            data["fuel"],
     }

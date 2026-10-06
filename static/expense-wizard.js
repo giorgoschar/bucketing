@@ -26,13 +26,22 @@ function expenseWizard() {
       // expense with no payer at all, which settle-up cannot use: the shares
       // were charged to members but the money was credited to nobody, so both
       // members appeared to owe a third party who does not exist.
-      this.form.paid_by = cfg.currentUserId || '';
+      this.fuelCategoryId = cfg.fuelCategoryId || '';
+      this.currentUserId = cfg.currentUserId || '';
+      this.form.paid_by = this.currentUserId;
+      // Paid the way this user paid last time (the server looks it up).
+      this.form.payment_method = cfg.paymentMethod || 'card';
       // Optional prefill from a link (e.g. stock "Mark bought"); the server
       // already validated amount and category.
       const pre = cfg.prefill || {};
       for (const key of ['amount', 'category_id', 'notes', 'merchant']) {
         if (pre[key]) this.form[key] = String(pre[key]);
       }
+      // Another category clears the fuel price, so going back to Fuel starts
+      // empty instead of resubmitting a stale price.
+      this.$watch('form.category_id', () => {
+        if (!this.isFuel()) this.form.fuel_price_per_litre = '';
+      });
       this._wireOfflineSubmit();
     },
 
@@ -76,6 +85,9 @@ function expenseWizard() {
     },
 
     buckets: {},
+    fuelCategoryId: '',  // the built-in Fuel category: unlocks the price per litre
+    currentUserId: '',
+    ownShareChoice: '',
     step: 1,
     receiptName: '',
     duplicates: [],      // advisory only — never blocks submission
@@ -92,8 +104,11 @@ function expenseWizard() {
       paid_by: '',
       notes: '',
       payment_method: 'card',
+      took_cash: false,        // "I took this from my stash": logs the take too (cash only)
+      take_from: 'stash',      // where that cash came from: 'stash' or 'bank'
       merchant: '',
       is_shared: false,
+      fuel_price_per_litre: '',  // only sent while the Fuel category is picked
     },
 
     stepLabel() {
@@ -135,8 +150,54 @@ function expenseWizard() {
       if (this.step > 1) this.step--;
     },
 
+    isFuel() {
+      return !!this.fuelCategoryId && this.form.category_id === this.fuelCategoryId;
+    },
+
+    /* Mirrors the server rule: a price, when given, is above zero. */
+    fuelPriceInvalid() {
+      if (!this.isFuel() || String(this.form.fuel_price_per_litre).trim() === '') return false;
+      const price = parseFloat(String(this.form.fuel_price_per_litre).replace(',', '.'));
+      return !(price > 0);
+    },
+
+    /* A preview only: the server works the litres out again (amount / price,
+       both in the expense currency) and never trusts a client value. */
+    fuelLitres() {
+      if (!this.isFuel() || this.fuelPriceInvalid()) return '';
+      const price = parseFloat(String(this.form.fuel_price_per_litre).replace(',', '.'));
+      const amount = parseFloat(this.form.amount);
+      if (!(price > 0) || !(amount > 0)) return '';
+      return (amount / price).toFixed(2);
+    },
+
     bucketName(id) {
       return this.buckets[id] || '—';
+    },
+
+    /* "Each paid their own share": the payer value is a sentinel the server
+       maps to payer_mode=own_share. The splits are what each person paid, so
+       the split section has to be open. */
+    chooseOwnShare(value) {
+      this.ownShareChoice = value;
+      this.form.paid_by = value;
+      this.form.is_shared = true;
+    },
+
+    isOwnShare() {
+      return !!this.ownShareChoice && this.form.paid_by === this.ownShareChoice;
+    },
+
+    toggleShared() {
+      this.form.is_shared = !this.form.is_shared;
+      // Own share without the split makes no sense: fall back to "I paid".
+      if (!this.form.is_shared && this.isOwnShare()) this.form.paid_by = this.currentUserId;
+    },
+
+    /* Mirrors the server rule: own-share shares must add up to the total. */
+    ownShareInvalid() {
+      if (!this.isOwnShare()) return false;
+      return Math.abs(this.splitTotal - parseFloat(this.form.amount || 0)) > 0.01;
     },
 
     updateSplitTotal() {

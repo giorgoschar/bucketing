@@ -35,7 +35,7 @@
       </button>
     </div>
     <div class="flex-1 overflow-y-auto px-5 py-4 space-y-1">
-      {% set widget_labels = [('kpi','KPI summary'),('forecast','Forecast'),('trend','6-month trend'),('categories','Category breakdown'),('budget','Budget progress'),('who_paid','Who paid'),('by_method','Payment method'),('bucket_breakdown','Per-bucket spending'),('cat_trend','Category trend')] %}
+      {% set widget_labels = [('kpi','KPI summary'),('forecast','Forecast'),('trend','6-month trend'),('categories','Category breakdown'),('budget','Budget progress'),('who_paid','Who paid'),('by_method','Payment method'),('bucket_breakdown','Per-bucket spending'),('cat_trend','Category trend'),('fuel','Fuel')] %}
       {% for key, label in widget_labels %}
       <div class="flex items-center justify-between py-2.5">
         <span class="text-sm text-gray-700 dark:text-gray-300">{{ label }}</span>
@@ -55,24 +55,30 @@
   <div x-show="show('kpi')" x-cloak
        class="grid grid-cols-2 lg:grid-cols-5 gap-3">
 
+    {# In / Out / Net: income (with or without a bucket) against expenses
+       plus the cash taken but not logged yet. Same figures as the
+       dashboard's In / Out card. #}
     <div class="bg-white dark:bg-gray-900 rounded-2xl p-4 border border-gray-100 dark:border-gray-800">
-      <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Expenses</p>
-      <p class="text-xl font-bold">{{ summary.total_spent | currency(household.default_currency) }}</p>
-      <p class="text-[11px] text-gray-400 mt-1">{{ period_label }}</p>
+      <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1">In</p>
+      <p class="text-xl font-bold text-emerald-600 dark:text-emerald-400">{{ in_out['in'] | currency(household.default_currency) }}</p>
+      <p class="text-[11px] text-gray-400 mt-1">income · {{ period_label }}</p>
     </div>
 
     <div class="bg-white dark:bg-gray-900 rounded-2xl p-4 border border-gray-100 dark:border-gray-800">
-      <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Income</p>
-      <p class="text-xl font-bold text-emerald-600 dark:text-emerald-400">{{ income_total | currency(household.default_currency) }}</p>
-      <p class="text-[11px] text-gray-400 mt-1">{{ period_label }}</p>
+      <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Out</p>
+      <p class="text-xl font-bold">{{ in_out.out | currency(household.default_currency) }}</p>
+      <p class="text-[11px] text-gray-400 mt-1">expenses · {{ period_label }}</p>
+      {% if in_out.cash_not_logged %}
+      <p class="text-[11px] text-gray-400" title="Cash taken into a wallet but not logged yet nor still there">incl. Cash (not yet logged) {{ in_out.cash_not_logged | currency(household.default_currency) }}</p>
+      {% endif %}
     </div>
 
     <div class="bg-white dark:bg-gray-900 rounded-2xl p-4 border border-gray-100 dark:border-gray-800">
       <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Net</p>
-      <p class="text-xl font-bold {% if net >= 0 %}text-emerald-600 dark:text-emerald-400{% else %}text-red-500{% endif %}">
-        {% if net >= 0 %}+{% endif %}{{ net | currency(household.default_currency) }}
+      <p class="text-xl font-bold {% if in_out.net >= 0 %}text-emerald-600 dark:text-emerald-400{% else %}text-red-500{% endif %}">
+        {% if in_out.net >= 0 %}+{% endif %}{{ in_out.net | currency(household.default_currency) }}
       </p>
-      <p class="text-[11px] text-gray-400 mt-1">income − expenses</p>
+      <p class="text-[11px] text-gray-400 mt-1">in − out</p>
     </div>
 
     <div class="bg-white dark:bg-gray-900 rounded-2xl p-4 border border-gray-100 dark:border-gray-800">
@@ -342,7 +348,12 @@
   {% if summary.paid_by %}
   <div x-show="show('who_paid')" x-cloak
        class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
-    <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Who paid</p>
+    <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 {{ 'mb-1' if paid_by else 'mb-4' }}">Who paid</p>
+    {% if paid_by %}
+    {# With a Person filter the totals above are that person's share; this card
+       still shows the full amounts of the expenses they took part in. #}
+    <p class="text-xs text-gray-400 mb-4">On the expenses this person shares: {{ summary.gross_total | currency(household.default_currency) }} in total.</p>
+    {% endif %}
     <div class="space-y-3">
       {% for uid, data in summary.paid_by.items() %}
       <div class="flex items-center gap-3">
@@ -350,18 +361,23 @@
              style="background-color: {{ data.color }}">{{ data.name | initials }}</div>
         <div class="flex-1 min-w-0">
           <div class="flex items-center justify-between gap-2">
+            {% if uid == 'unassigned' %}
+            <a href="/transactions/search?missing_payer=1" class="text-sm font-medium truncate underline decoration-dotted hover:text-primary-600"
+               title="Set the payer for these expenses">{{ data.name }}</a>
+            {% else %}
             <span class="text-sm font-medium truncate">{{ data.name }}</span>
+            {% endif %}
             <span class="text-sm font-semibold whitespace-nowrap">{{ data.paid | currency(household.default_currency) }}
               <span class="text-xs font-normal text-gray-400">paid</span>
               <span class="text-xs font-normal text-gray-400">/ {{ data.share | currency(household.default_currency) }} share</span></span>
           </div>
-          {% if summary.total_spent > 0 %}
+          {% if summary.gross_total > 0 %}
           <div class="relative mt-1 h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden"
                role="img" aria-label="{{ data.name }} paid {{ data.paid | currency(household.default_currency) }}, share {{ data.share | currency(household.default_currency) }}">
             <div class="h-full rounded-full"
-                 style="width: {{ (data.paid / summary.total_spent * 100) | round(1) }}%; background-color: {{ data.color }}"></div>
+                 style="width: {{ (data.paid / summary.gross_total * 100) | round(1) }}%; background-color: {{ data.color }}"></div>
             <div class="absolute top-0 h-full w-0.5 bg-gray-900 dark:bg-white opacity-70"
-                 style="left: calc({{ [(data.share / summary.total_spent * 100), 100] | min | round(1) }}% - 1px)"></div>
+                 style="left: calc({{ [(data.share / summary.gross_total * 100), 100] | min | round(1) }}% - 1px)"></div>
           </div>
           {% endif %}
         </div>
@@ -391,6 +407,69 @@
       </div>
       {% endfor %}
     </div>
+  </div>
+  {% endif %}
+
+  {# ===== Fuel: litres and price per litre (only with fuel data) ===== #}
+  {% if fuel %}
+  <div x-show="show('fuel')" x-cloak
+       class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
+    <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 {{ 'mb-1' if paid_by else 'mb-4' }}">⛽ Fuel</p>
+    {% if paid_by %}
+    <p class="text-xs text-gray-400 mb-4">This person's share of each fill-up.</p>
+    {% endif %}
+    {# One section per car (a bucket per car), no cross-car total: cars may
+       take different fuel, and fuel spend overall is in the category widgets. #}
+    <div class="space-y-5 divide-y divide-gray-100 dark:divide-gray-800">
+      {% for car in fuel.cars %}
+      <div class="{{ 'pt-5' if not loop.first }}">
+        <p class="text-sm font-semibold mb-3 truncate">{{ car.icon }} {{ car.name }}</p>
+        <div class="grid grid-cols-3 gap-3 mb-3">
+          <div>
+            <p class="text-xs text-gray-400">Litres</p>
+            <p class="text-lg font-bold">{{ car.litres | litres }}</p>
+          </div>
+          <div>
+            <p class="text-xs text-gray-400">Spent</p>
+            <p class="text-lg font-bold">{{ car.spend | currency(household.default_currency) }}</p>
+          </div>
+          <div>
+            <p class="text-xs text-gray-400">Average price</p>
+            <p class="text-lg font-bold">{{ car.avg_price_per_litre | per_litre(household.default_currency) }}</p>
+          </div>
+        </div>
+        {# Price paid at each refuel over the selected period. #}
+        <p class="text-xs text-gray-400 mb-1">Price per refuel</p>
+        <div class="mb-4">{{ charts.price_line(car.refuels, household.default_currency, name=car.name) }}</div>
+        {# Per month: litres as bars, with that month's average price per litre.
+           Folded away: over a year or all time it runs long. #}
+        {% set car_max = car.months | map(attribute='litres') | max %}
+        <details>
+        <summary class="text-xs text-gray-400 cursor-pointer select-none">Monthly litres ({{ car.months | length }})</summary>
+        <div class="space-y-2 mt-2">
+          {% for m in car.months %}
+          <div>
+            <div class="flex items-center justify-between gap-2 text-xs">
+              <span class="text-gray-500 dark:text-gray-400">{{ m.label }}</span>
+              <span class="whitespace-nowrap"><span class="font-semibold">{{ m.litres | litres }}</span>
+                <span class="text-gray-400">· {{ m.avg_price_per_litre | per_litre(household.default_currency) }}</span></span>
+            </div>
+            <div class="mt-1 h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden"
+                 role="img" aria-label="{{ car.name }}, {{ m.label }}: {{ m.litres | litres }} at {{ m.avg_price_per_litre | per_litre(household.default_currency) }}">
+              <div class="h-full rounded-full bg-primary-500" style="width: {{ (m.litres / car_max * 100) | round(1) if car_max else 0 }}%"></div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        </details>
+      </div>
+      {% endfor %}
+    </div>
+    {% if fuel.unpriced_count %}
+    <p class="text-xs text-gray-400 mt-3">
+      {{ fuel.unpriced_count }} fuel expense{{ '' if fuel.unpriced_count == 1 else 's' }} without a price per litre {{ 'is' if fuel.unpriced_count == 1 else 'are' }} not included.
+    </p>
+    {% endif %}
   </div>
   {% endif %}
 

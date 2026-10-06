@@ -1,16 +1,21 @@
 """
-API cash ledger routes: movements (list/add/delete) and the monthly summary.
+API cash routes: your movements (list/add/delete), your stash and the
+monthly wallet summary.
 
 Movements are in the household currency (no FX source for cash): a different
-``currency`` is rejected. Members manage only their own movements; the owner
-may log or delete for anyone in the household.
+``currency`` is rejected. Everyone logs and deletes only their own movements.
+A stash is its owner's alone: its balance and history are only ever returned
+to them (with other members' takes from it); others may take from it without
+seeing either, and a take bigger than it holds is refused without saying how
+much is there. Household owners get no special access. See app.services.cash
+for the model.
 """
 from datetime import date
 from decimal import Decimal
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ValidationError, ValidationInfo, field_validator
 from sqlalchemy.orm import Session
 
 from app.api_auth import require_api_auth
@@ -20,32 +25,45 @@ from app.models import CashMovement, Household
 from app.money import quantize
 from app.schemas import _checked
 from app.services import (
-    add_movement,
-    can_manage_for,
-    cash_comparison,
-    delete_movement,
+    delete_own_movement,
     list_movements,
-    member_balances,
     parse_month,
+    record_movement,
+    stash_balance,
+    wallet_summary,
+    withdraw_and_spend,
 )
-from app.validators import household_member_ids, parse_amount, require_category, require_member
+from app.services.cash import FROM_BANK, FROM_STASH, TAKE
+from app.validators import (
+    parse_amount,
+    require_bucket,
+    require_category,
+    require_member,
+)
 
 router = APIRouter(prefix="/cash", tags=["cash"])
 
 
 class MovementIn(BaseModel):
-    kind: Literal["in", "out"]
+    kind: Literal["stash_in", "take", "put_back", "still_have"]
     amount: Decimal
     movement_date: date | None = None  # blank means today
     currency: str | None = None        # must equal the household currency if given
-    category_id: str | None = None
     note: str | None = None
-    user_id: str | None = None         # defaults to the caller; owner may set others
+    # A take only: whose stash it comes out of (any member's, yours
+    # included); null takes it from the bank (an ATM).
+    stash_owner_id: str | None = None
+    # A take only, from your own stash or the bank: also log the cash expense
+    # in this bucket, with category_id and note as its category/notes.
+    spend_bucket_id: str | None = None
+    category_id: str | None = None
 
     @field_validator("amount", mode="before")
     @classmethod
-    def _amount(cls, v: Any) -> Decimal:
-        return _checked(parse_amount, v, field="Amount")
+    def _amount(cls, v: Any, info: ValidationInfo) -> Decimal:
+        # An empty wallet is a valid "still have".
+        return _checked(parse_amount, v, field="Amount",
+                        allow_zero=info.data.get("kind") == "still_have")
 
     @field_validator("note")
     @classmethod
@@ -61,12 +79,16 @@ def _dict(m: CashMovement) -> dict:
         "id": m.id,
         "user_id": m.user_id,
         "kind": m.kind,
+        "stash_owner_id": m.stash_owner_id,
         "amount": quantize(m.amount),
         "currency": m.currency,
         "category_id": m.category_id,
         "note": m.note,
         "movement_date": m.movement_date.isoformat() if m.movement_date else None,
+        "transaction_id": m.transaction_id,
         "created_at": m.created_at.isoformat() if m.created_at else None,
+        # Only ever set on another member's take from the viewer's stash.
+        "deleted": m.deleted_at is not None,
     }
 
 
@@ -78,6 +100,8 @@ def get_movements(
     auth=Depends(require_api_auth),
     db: Session = Depends(get_db),
 ):
+    """Your movements and other members' takes from your stash (``member_id``
+    narrows them to one member's), plus your stash balance."""
     user, hh_id = auth
     start = end = None
     if month:
@@ -86,10 +110,11 @@ def get_movements(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from None
     require_member(db, member_id, hh_id)
-    items = list_movements(db, hh_id, member_id=member_id, start=start, end=end, limit=limit)
+    items = list_movements(db, hh_id, user.id, member_id=member_id, start=start, end=end,
+                           limit=limit)
     return {
         "items": [_dict(m) for m in items],
-        "balances": {uid: quantize(v) for uid, v in member_balances(db, hh_id).items()},
+        "stash": stash_balance(db, hh_id, user.id),
     }
 
 
@@ -107,15 +132,32 @@ def create_movement(
             status_code=400,
             detail=f"Cash is tracked in the household currency ({currency}).",
         )
-    target = body.user_id or user.id
-    if target not in household_member_ids(db, hh_id):
-        raise HTTPException(status_code=400, detail="That person is not a member of this household.")
-    if not can_manage_for(db, user.id, hh_id, target):
-        raise HTTPException(status_code=403, detail="Only the owner can log cash for another member.")
-    category_id = require_category(db, body.category_id, hh_id)
-    mv = add_movement(
-        db, hh_id, target, body.kind, body.amount, currency,
-        body.movement_date or local_today(), category_id, body.note,
+    when = body.movement_date or local_today()
+    if body.spend_bucket_id:
+        if body.kind != TAKE or body.stash_owner_id not in (None, user.id):
+            raise HTTPException(
+                status_code=400,
+                detail="Spending it straight away is a take from your own stash or the bank.",
+            )
+        bucket = require_bucket(db, body.spend_bucket_id, hh_id)
+        try:
+            txn = withdraw_and_spend(
+                db, user=user, household_id=hh_id, bucket=bucket, amount=body.amount,
+                source=FROM_STASH if body.stash_owner_id else FROM_BANK, when=when,
+                category_id=require_category(db, body.category_id, hh_id), notes=body.note,
+                currency=currency,
+            )
+        except ValidationError as exc:
+            raise HTTPException(status_code=422, detail=exc.errors()[0]["msg"]) from None
+        mv = (
+            db.query(CashMovement)
+            .filter(CashMovement.transaction_id == txn.id, CashMovement.active())
+            .one()
+        )
+        return _dict(mv)
+    mv = record_movement(
+        db, household_id=hh_id, actor_id=user.id, kind=body.kind, amount=body.amount,
+        currency=currency, when=when, note=body.note, stash_owner_id=body.stash_owner_id,
     )
     return _dict(mv)
 
@@ -127,17 +169,7 @@ def remove_movement(
     db: Session = Depends(get_db),
 ):
     user, hh_id = auth
-    mv = (
-        db.query(CashMovement)
-        .filter(CashMovement.id == movement_id, CashMovement.household_id == hh_id,
-                CashMovement.active())
-        .first()
-    )
-    if not mv:
-        raise HTTPException(status_code=404, detail="Cash movement not found")
-    if not can_manage_for(db, user.id, hh_id, mv.user_id):
-        raise HTTPException(status_code=403, detail="You can only delete your own cash movements.")
-    delete_movement(db, mv)
+    delete_own_movement(db, hh_id, user.id, movement_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -148,16 +180,18 @@ def summary(
     auth=Depends(require_api_auth),
     db: Session = Depends(get_db),
 ):
+    """A member's wallet for the month (anyone's: it is household-visible)
+    and your own stash balance."""
     user, hh_id = auth
     try:
         start, end, norm = parse_month(month)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
     target = require_member(db, member_id, hh_id) or user.id
-    comparison = cash_comparison(db, hh_id, target, start, end)
+    wallet = wallet_summary(db, hh_id, target, start, end, viewer_id=user.id)
     return {
         "month": norm,
         "member_id": target,
-        "balances": {uid: quantize(v) for uid, v in member_balances(db, hh_id).items()},
-        "comparison": {k: quantize(v) for k, v in comparison.items()},
+        "stash": stash_balance(db, hh_id, user.id),
+        "wallet": {k: (quantize(v) if v is not None else None) for k, v in wallet.items()},
     }

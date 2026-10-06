@@ -47,7 +47,7 @@ from app.ratelimit import limiter
 from app.seed import seed_categories
 from app.services import base_ctx, revoke_user_tokens
 from app.templates import templates
-from app.validators import parse_color
+from app.validators import parse_color, require_unlocked
 
 router = APIRouter(prefix="/settings", dependencies=[Depends(require_csrf)])
 
@@ -324,6 +324,7 @@ def delete_category(
     cat = db.get(Category, cat_id)
     if not cat or cat.household_id != hh_id:
         raise HTTPException(status_code=404)
+    require_unlocked(cat)
     if cat.is_default:
         # The API already refuses this; the HTML route did not.
         raise HTTPException(status_code=400, detail="Cannot delete a default category.")

@@ -115,8 +115,8 @@
     </p>
   </div>
 
-  {# Cash: withdrawals vs cash-paid expenses for the same period #}
-  {% include "cash/_comparison.html" %}
+  {# Cash: what they took into their wallet vs the cash expenses logged #}
+  {% with w = wallet, w_title = "Cash: taken vs logged" %}{% include "cash/_wallet.html" %}{% endwith %}
   <a href="/cash" class="block bg-white dark:bg-gray-900 rounded-2xl p-4 border border-gray-100 dark:border-gray-800 text-sm font-semibold text-primary-600 dark:text-primary-400 hover:underline">
     Cash ledger →
   </a>

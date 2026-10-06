@@ -167,6 +167,9 @@ def _auto_pay_due_bills(db, today: date) -> int:
         pay_amount = occ.amount if occ.amount is not None else bill.amount
         if pay_amount is None:
             continue
+        # The bill's payer mode: own share (no payer, scaled splits) or a
+        # single payer resolved from the default / owner.
+        payer, payer_mode = bills_service.resolve_bill_payment(db, bill)
         pending.append({
             "occ_id":     occ.id,
             "due_date":   occ.due_date,
@@ -174,7 +177,8 @@ def _auto_pay_due_bills(db, today: date) -> int:
             "household_id":    bill.household_id,
             "bucket_id":       bill.bucket_id,
             "category_id":     bill.category_id,
-            "paid_by_default": bills_service.resolve_bill_payer(db, bill),
+            "paid_by_default": payer,
+            "payer_mode":      payer_mode,
             "currency":        bill.currency,
             "name":            bill.name,
         })
@@ -190,6 +194,7 @@ def _auto_pay_due_bills(db, today: date) -> int:
             db, occ,
             amount=item["amount"],
             paid_by=item["paid_by_default"],
+            payer_mode=item["payer_mode"],
             paid_on=_utcnow(),
             note_prefix="Auto-pay",
         ):

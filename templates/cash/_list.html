@@ -1,50 +1,146 @@
-{# HTMX-swappable block: balances, comparison and movements. #}
+{# HTMX-swappable block: your stash, the take form, every member's wallet
+   this month and your history. The stash and the history are the viewer's
+   own (the route never passes anyone else's). Each form also resets after
+   a successful add, so a second tap cannot log a duplicate. #}
+{% set cur = household.default_currency %}
+{% set field = "px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm" %}
 <div id="cash-list" class="space-y-4">
 
-  <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
-    <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-3">Cash on hand</p>
-    <div class="space-y-2.5">
-      {% for m, bal in balances %}
-      <div class="flex items-center gap-3">
-        <div class="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
-             style="background-color: {{ m.avatar_color }}">{{ m.display_name | initials }}</div>
-        <span class="text-sm flex-1 truncate">{{ m.display_name }}{% if m.id == user.id %} <span class="text-gray-400">(you)</span>{% endif %}</span>
-        <span class="text-sm font-semibold">{{ bal | currency(household.default_currency) }}</span>
-      </div>
+  {# Your stash: cash at home. Private: nobody else ever sees this card. #}
+  <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800 space-y-3">
+    <div class="flex items-baseline justify-between">
+      <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Your stash</p>
+      <span class="text-[11px] text-gray-400">only you see this</span>
+    </div>
+    <p class="text-2xl font-bold{% if stash < 0 %} text-red-600 dark:text-red-400{% endif %}" data-stash>{{ stash | currency(cur) }}</p>
+    {% if stash < 0 %}
+    <p class="text-xs text-red-600 dark:text-red-400">Flatmates took more than your stash held. Add what's really there to set it right.</p>
+    {% endif %}
+    <div class="grid grid-cols-2 gap-3">
+      {% for kind, label, hint in (("stash_in", "Add to stash", "Saved / received / ATM"), ("put_back", "Put back", "From your wallet")) %}
+      <form method="post" action="/cash/add" hx-post="/cash/add" hx-target="#cash-list" hx-swap="outerHTML"
+            hx-on::after-request="if (event.detail.successful) this.reset()"
+            class="space-y-2">
+        <input type="hidden" name="month" value="{{ month }}" />
+        <input type="hidden" name="kind" value="{{ kind }}" />
+        <input type="hidden" name="movement_date" value="{{ today }}" />
+        <input type="number" name="amount" step="0.01" min="0.01" required placeholder="0.00" aria-label="{{ label }} amount"
+               class="w-full {{ field }} text-right" />
+        <input type="text" name="note" maxlength="500" placeholder="{{ hint }}" aria-label="{{ label }} note"
+               class="w-full {{ field }}" />
+        <button type="submit" class="w-full py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 font-semibold rounded-xl text-sm">{{ label }}</button>
+      </form>
       {% endfor %}
     </div>
   </div>
 
-  <p class="text-xs text-gray-400 px-1">{{ target_name }} · {{ month }}</p>
-  {% include "cash/_comparison.html" %}
+  {# Take cash into your wallet: from your stash, a flatmate's, or the bank.
+     Taking from someone else's stash is not a debt and they keep it private;
+     the server refuses more than it holds without saying how much. #}
+  <form method="post" action="/cash/add" hx-post="/cash/add" hx-target="#cash-list" hx-swap="outerHTML"
+            hx-on::after-request="if (event.detail.successful) this.reset()"
+        x-data="{ spend: false }"
+        class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800 space-y-3">
+    <input type="hidden" name="month" value="{{ month }}" />
+    <input type="hidden" name="kind" value="take" />
+    <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Take to wallet</p>
+    <div class="grid grid-cols-2 gap-3">
+      <input type="number" name="amount" step="0.01" min="0.01" required placeholder="0.00" aria-label="Amount"
+             class="{{ field }} text-right" />
+      <select name="source" aria-label="Take from" class="{{ field }}">
+        <option value="{{ user.id }}">From: my stash</option>
+        {% for m in others %}<option value="{{ m.id }}">From: {{ m.display_name }}'s stash</option>{% endfor %}
+        <option value="bank">From: the bank (ATM)</option>
+      </select>
+      <input type="date" name="movement_date" value="{{ today }}" aria-label="Date" class="{{ field }}" />
+      <input type="text" name="note" maxlength="500" placeholder="Note (optional)" aria-label="Note" class="{{ field }}" />
+    </div>
+    {# Only with a bucket to log it in; the server refuses "spend" without one. #}
+    {% if buckets %}
+    <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+      <input type="checkbox" name="spend" x-model="spend" class="rounded border-gray-300 text-primary-500" />
+      Spent it straight away (logs the cash expense too)
+    </label>
+    {# Disabled until ticked, so nothing is spent without JS either. #}
+    <div x-show="spend" class="grid grid-cols-2 gap-3">
+      <select name="spend_bucket_id" aria-label="Spent on bucket" disabled :disabled="!spend" class="{{ field }}">
+        {% for b in buckets %}<option value="{{ b.id }}">Spent on: {{ b.name }}</option>{% endfor %}
+      </select>
+      <select name="category_id" aria-label="Category" disabled :disabled="!spend" class="{{ field }}">
+        <option value="">No category</option>
+        {% for c in categories %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+      </select>
+    </div>
+    {% endif %}
+    <button type="submit" class="w-full py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-semibold rounded-xl text-sm">Take</button>
+    <p class="text-[11px] text-gray-400">Cash in your wallet counts as spent. Log what you spend it on as cash expenses; the rest shows as "not yet logged". Cash is tracked in {{ cur }}.</p>
+  </form>
 
+  {# Every member's wallet this month: household-visible. #}
+  <p class="text-xs text-gray-400 px-1">This month · {{ month }}</p>
+  {% for m, w in wallets %}
+  {% with w_title = m.display_name ~ (" (you)" if m.id == user.id else "") %}{% include "cash/_wallet.html" %}{% endwith %}
+  {% if m.id == user.id %}
+  {# Still have: optional, the one thing that carries cash into next month. #}
+  <form method="post" action="/cash/add" hx-post="/cash/add" hx-target="#cash-list" hx-swap="outerHTML"
+            hx-on::after-request="if (event.detail.successful) this.reset()"
+        class="bg-primary-50 dark:bg-primary-900/20 rounded-2xl p-4 border border-primary-100 dark:border-primary-800 space-y-2">
+    <input type="hidden" name="month" value="{{ month }}" />
+    <input type="hidden" name="kind" value="still_have" />
+    <p class="text-sm font-semibold">Still have</p>
+    <p class="text-[11px] text-gray-500 dark:text-gray-400">Optional. What is in your wallet now; it carries into next month instead of counting as spent.</p>
+    <div class="grid grid-cols-3 gap-2">
+      <input type="number" name="amount" step="0.01" min="0" required placeholder="0.00" aria-label="Still have"
+             class="{{ field }} text-right" />
+      <input type="date" name="movement_date" value="{{ today }}" aria-label="Date" class="{{ field }}" />
+      <button type="submit" class="py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-semibold rounded-xl text-sm">Save</button>
+    </div>
+  </form>
+  {% endif %}
+  {% endfor %}
+
+  {# Your history: your own movements, and others' takes from your stash. #}
+  <p class="text-xs text-gray-400 px-1">Your cash · {{ month }}</p>
   <div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 divide-y divide-gray-100 dark:divide-gray-800">
     {% for mv in movements %}
+    {% set mine = mv.user_id == user.id %}
+    {% set to_stash = mv.kind in ('stash_in', 'put_back') or not mine %}
     <div class="flex items-center gap-3 px-4 py-3">
       <span class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0
-                   {% if mv.kind == 'in' %}bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400{% else %}bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400{% endif %}">
-        {{ '+' if mv.kind == 'in' else '−' }}
+                   {% if mv.kind == 'still_have' %}bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300{% elif to_stash %}bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400{% else %}bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400{% endif %}">
+        {{ '=' if mv.kind == 'still_have' else ('S' if to_stash else 'W') }}
       </span>
       <div class="flex-1 min-w-0">
-        <p class="text-sm font-medium truncate">{{ mv.note or ('Cash in' if mv.kind == 'in' else 'Cash out') }}</p>
+        <p class="text-sm font-medium truncate">
+          {%- if not mine and mv.deleted_at %}<span class="line-through">{{ names.get(mv.user_id, 'Someone') }} took {{ mv.amount | currency(cur) }} from your stash</span> (deleted)
+          {%- elif not mine %}{{ names.get(mv.user_id, 'Someone') }} took {{ mv.amount | currency(cur) }} from your stash
+          {%- elif mv.kind == 'stash_in' %}Added to your stash
+          {%- elif mv.kind == 'put_back' %}Put back into your stash
+          {%- elif mv.kind == 'still_have' %}Still have: {{ mv.amount | currency(cur) }}
+          {%- elif mv.kind == 'take' and mv.stash_owner_id == user.id %}Took from your stash
+          {%- elif mv.kind == 'take' and mv.stash_owner_id %}Took from {{ names.get(mv.stash_owner_id, 'a former member') }}'s stash
+          {%- elif mv.kind == 'take' %}Took from the bank
+          {%- else %}Cash out{% endif -%}
+        </p>
         <p class="text-xs text-gray-400 truncate">
-          {{ names.get(mv.user_id, '') }} · {{ mv.movement_date | dmy }}{% if mv.category_id and cash_cats.get(mv.category_id) %} · {{ cash_cats.get(mv.category_id) }}{% endif %}
+          {{ mv.movement_date | dmy }}{% if mv.note %} · {{ mv.note }}{% endif %}
+          {%- if mv.transaction_id and mine %} · <a href="/transactions/{{ mv.transaction_id }}/edit" class="underline decoration-dotted">for an expense</a>{% endif %}
         </p>
       </div>
-      <span class="text-sm font-semibold {% if mv.kind == 'in' %}text-emerald-600 dark:text-emerald-400{% else %}text-orange-500{% endif %}">
-        {{ '+' if mv.kind == 'in' else '−' }}{{ mv.amount | currency(household.default_currency) }}
-      </span>
-      {% if mv.id in deletable %}
+      {% if mv.kind != 'still_have' %}
+      <span class="text-sm font-semibold">{{ mv.amount | currency(cur) }}</span>
+      {% endif %}
+      {% if mine %}
       <form method="post" action="/cash/{{ mv.id }}/delete"
             hx-post="/cash/{{ mv.id }}/delete" hx-target="#cash-list" hx-swap="outerHTML"
-            hx-confirm="Delete this cash movement?">
+            hx-confirm="{% if mv.transaction_id %}Delete this take? The expense stays.{% else %}Delete this cash entry?{% endif %}">
         <input type="hidden" name="month" value="{{ month }}" />
-        <button type="submit" class="text-xs text-gray-400 hover:text-red-500 px-1" aria-label="Delete movement">✕</button>
+        <button type="submit" class="text-xs text-gray-400 hover:text-red-500 px-1" aria-label="Delete entry">✕</button>
       </form>
       {% endif %}
     </div>
     {% else %}
-    <p class="px-4 py-6 text-sm text-gray-400 text-center">No cash movements in {{ month }}.</p>
+    <p class="px-4 py-6 text-sm text-gray-400 text-center">No cash entries in {{ month }}.</p>
     {% endfor %}
   </div>
 </div>

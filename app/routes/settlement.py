@@ -15,7 +15,6 @@ from app.models import Bucket
 from app.services import (
     SettlementChanged,
     base_ctx,
-    cash_comparison,
     get_household_settlement,
     get_household_settlement_history,
     get_member_balances,
@@ -24,6 +23,7 @@ from app.services import (
     record_household_settlement,
     resolve_insight_period,
     settlement_fingerprint,
+    wallet_summary,
 )
 from app.templates import templates
 from app.validators import parse_amount, require_member
@@ -145,7 +145,10 @@ def person_page(
         "is_self":      target_id == user.id,
         "period_label": period["period_label"],
         "preset":       period["preset"],
-        "comparison":   cash_comparison(db, hh_id, target_id,
-                                        period["start"], period["end"]),
+        # Their wallet; a put back into the stash only when it is yours
+        # (app.services.cash).
+        "wallet":       wallet_summary(db, hh_id, target_id,
+                                       period["start"], period["end"],
+                                       viewer_id=user.id),
     })
     return templates.TemplateResponse("person.html", ctx)

@@ -235,7 +235,12 @@
                style="background-color: {{ data.color }}">{{ data.name | initials }}</div>
           <div class="flex-1 min-w-0">
             <div class="flex items-center justify-between">
+              {% if uid == 'unassigned' %}
+              <a href="/transactions/search?missing_payer=1&amp;bucket_id={{ bucket.id }}" class="text-sm font-medium underline decoration-dotted hover:text-primary-600"
+                 title="Set the payer for these expenses">{{ data.name }}</a>
+              {% else %}
               <span class="text-sm font-medium">{{ data.name }}</span>
+              {% endif %}
               <span class="text-sm font-semibold">{{ data.amount | currency(household.default_currency) }}</span>
             </div>
             {% if month_summary.total_spent > 0 %}

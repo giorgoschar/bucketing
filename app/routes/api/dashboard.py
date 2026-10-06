@@ -10,7 +10,13 @@ from app.clock import local_today
 from app.config import settings
 from app.database import get_db
 from app.money import quantize
-from app.services import get_income_total, get_month_summary, get_overdue_bills, get_upcoming_bills
+from app.services import (
+    get_income_total,
+    get_month_summary,
+    get_overdue_bills,
+    get_upcoming_bills,
+    in_out,
+)
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -23,15 +29,15 @@ def dashboard_summary(
     db: Session = Depends(get_db),
 ):
     """
-    Monthly expense summary: total spent, who paid, income total,
-    upcoming bills (next 60 days), and overdue bills.
+    Monthly expense summary: total spent, who paid, income total, In / Out /
+    Net, upcoming bills (next 60 days), and overdue bills.
     """
     user, hh_id = auth
     today = local_today()
     y = year  or today.year
     m = month or today.month
 
-    summary  = get_month_summary(db, hh_id, y, m)
+    summary  = get_month_summary(db, hh_id, y, m, include_cash=True)
     income   = get_income_total(db, hh_id, y, m)
     upcoming = get_upcoming_bills(db, hh_id, days=settings.upcoming_bills_days)
     overdue  = get_overdue_bills(db, hh_id)
@@ -50,8 +56,12 @@ def dashboard_summary(
     return {
         "year":          y,
         "month":         m,
+        # Includes cash not logged yet (see app.services.cash).
         "total_spent":   summary["total_spent"],
+        "cash_not_logged": summary["cash_not_logged"],
         "income_total":  income,
+        # In / Out / Net for the month, as on the dashboard and Insights.
+        "in_out":        in_out(income, summary),
         "paid_by":       summary["paid_by"],
         "period_start":  summary["period_start"].isoformat(),
         "period_end":    summary["period_end"].isoformat(),

@@ -190,16 +190,20 @@ function receiptScanner() {
           video,
           async (result) => {
             const url = result && (result.data || result);
-            if (!url || typeof url !== 'string' || !url.includes('aade.gr')) return;
+            if (!url || typeof url !== 'string') return;
+            // Any https link goes to the server, which reads AADE pages and
+            // follows a provider's receipt page to its AADE link.
+            if (!/^https:\/\//i.test(url.trim())) {
+              status.textContent = 'This QR code is not a receipt link.';
+              return;
+            }
             stop();
             this.scanning = true;
-            this.progressLabel = 'Reading from AADE portal…';
+            this.progressLabel = 'Reading the receipt from AADE…';
             this.progress = 50;
-            const ok = await this.fetchFromAade(url);
+            const err = await this.fetchFromAade(url.trim());
             this.scanning = false;
-            if (!ok) {
-              this.errorMsg = 'Could not load receipt from AADE. Try uploading a photo instead.';
-            }
+            if (err) this.errorMsg = err;
           },
           {
             preferredCamera: 'environment',
@@ -218,8 +222,8 @@ function receiptScanner() {
 
     // ─── AADE portal fetch ───────────────────────────────────────────
 
-    // Fetch receipt data from AADE portal via our backend proxy.
-    // Returns true on success, false if it should fall through to OCR.
+    // Fetch receipt data from the QR link via our backend proxy.
+    // Returns null on success, else the message to show.
     async fetchFromAade(url) {
       try {
         const data = await app.fetchJSON('/transactions/scan/qr', {
@@ -232,10 +236,12 @@ function receiptScanner() {
         if (data.merchant)     this.result.merchant    = data.merchant;
         if (data.category_id)  this.result.category_id = data.category_id;
         this.resultReady = true;
-        return true;
+        return null;
       } catch (e) {
-        console.warn('AADE fetch failed:', e);
-        return false;
+        console.warn('Receipt QR fetch failed:', e);
+        return (e && e.status === 400 && e.message)
+          ? e.message
+          : 'Could not load the receipt from AADE. Try uploading a photo instead.';
       }
     },
 

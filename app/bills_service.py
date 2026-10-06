@@ -4,6 +4,7 @@ Called when a bill is created or updated.
 """
 from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
+from typing import NamedTuple
 
 from dateutil.relativedelta import relativedelta
 from sqlalchemy.exc import IntegrityError
@@ -15,6 +16,7 @@ from app.models import (
     HouseholdMember,
     MemberRole,
     OccurrenceStatus,
+    PayerMode,
     RecurringBill,
     Transaction,
     TransactionSplit,
@@ -133,6 +135,41 @@ def resolve_bill_payer(db: Session, bill: RecurringBill, fallback_user_id: str |
     return owner[0] if owner else None
 
 
+def bill_payer_mode(bill: RecurringBill) -> str:
+    """The payer mode a payment of ``bill`` is recorded with by default.
+
+    Own share needs the bill's default splits to say who paid what; a bill set
+    to own share without any falls back to a single payer rather than saving a
+    payment that nobody is credited with.
+    """
+    if bill.payer_mode == PayerMode.own_share.value and any(
+        _dec(s.amount) > 0 for s in bill.splits
+    ):
+        return PayerMode.own_share.value
+    return PayerMode.single.value
+
+
+def resolve_bill_payment(
+    db: Session,
+    bill: RecurringBill,
+    *,
+    paid_by: str | None = None,
+    payer_mode: str | None = None,
+    fallback_user_id: str | None = None,
+) -> tuple[str | None, str]:
+    """``(paid_by, payer_mode)`` for paying an occurrence of ``bill``.
+
+    An explicit ``payer_mode`` wins; an explicit payer means a single payer;
+    otherwise the bill's own mode applies (see :func:`bill_payer_mode`). A
+    single-payer payment without a payer goes through :func:`resolve_bill_payer`.
+    Own share never has a payer.
+    """
+    mode = payer_mode or (PayerMode.single.value if paid_by else bill_payer_mode(bill))
+    if mode == PayerMode.own_share.value:
+        return None, mode
+    return paid_by or resolve_bill_payer(db, bill, fallback_user_id), mode
+
+
 BILL_HAS_HISTORY_MSG = (
     "This bill has payment history, so it can't be deleted — deleting it would "
     "erase those payments. Deactivate it instead (the pause toggle on the bill)."
@@ -227,13 +264,19 @@ def pay_occurrence(
     split_overrides: dict[str, Decimal] | None = None,
     note_prefix: str = "Bill",
     payment_method: str = "card",
+    payer_mode: str = PayerMode.single.value,
 ) -> Transaction | None:
     """Mark ``occ`` paid and create its expense transaction, in one DB transaction.
 
     Returns None when the atomic claim fails (already paid). Raises ValueError
-    if ``split_overrides`` do not sum to ``amount``. Does not commit: the claim,
-    the transaction and its splits succeed or fail together with the caller's
-    commit. Bills without a bucket have no transaction — use settle_occurrence.
+    if ``split_overrides`` do not sum to ``amount``, or for an own-share payment
+    with no splits to record. Does not commit: the claim, the transaction and
+    its splits succeed or fail together with the caller's commit. Bills without
+    a bucket have no transaction — use settle_occurrence.
+
+    ``payer_mode`` own_share records everyone as having paid their split (the
+    overrides, else the bill's scaled defaults); the transaction and the
+    occurrence then have no ``paid_by``.
     """
     bill = occ.bill
     amount = _q(amount)
@@ -241,6 +284,14 @@ def pay_occurrence(
     if overrides and sum(overrides.values()) != amount:
         raise ValueError(
             f"Split amounts ({sum(overrides.values())}) must sum to the amount paid ({amount})."
+        )
+    own_share = payer_mode == PayerMode.own_share.value
+    if own_share:
+        paid_by = None
+    splits = overrides or _scaled_splits(bill, amount, paid_by)
+    if own_share and not splits:
+        raise ValueError(
+            "Each paid their own share needs the bill's shares (or shares entered when paying)."
         )
     if not claim_occurrence(db, occ, paid_by=paid_by, paid_on=paid_on):
         return None
@@ -252,6 +303,7 @@ def pay_occurrence(
         currency=bill.currency,
         type=TransactionType.expense,
         paid_by=paid_by,
+        payer_mode=PayerMode.own_share.value if own_share else PayerMode.single.value,
         category_id=bill.category_id,
         notes=f"{note_prefix}: {bill.name}",
         payment_method=payment_method,
@@ -264,7 +316,7 @@ def pay_occurrence(
     )
     occ.transaction_id = txn.id
 
-    for uid, share in (overrides or _scaled_splits(bill, amount, paid_by)).items():
+    for uid, share in splits.items():
         db.add(TransactionSplit(transaction_id=txn.id, user_id=uid, amount=share))
     return txn
 
@@ -276,7 +328,8 @@ def settle_occurrence(db: Session, occ: BillOccurrence, **kwargs) -> bool:
     """
     if occ.bill.bucket_id:
         return pay_occurrence(db, occ, **kwargs) is not None
-    return claim_occurrence(db, occ, paid_by=kwargs["paid_by"], paid_on=kwargs["paid_on"])
+    paid_by = None if kwargs.get("payer_mode") == PayerMode.own_share.value else kwargs["paid_by"]
+    return claim_occurrence(db, occ, paid_by=paid_by, paid_on=kwargs["paid_on"])
 
 
 def effective_overrides(bill: RecurringBill, submitted) -> dict[str, Decimal] | None:
@@ -291,3 +344,85 @@ def effective_overrides(bill: RecurringBill, submitted) -> dict[str, Decimal] | 
         return None
     defaults = {s.user_id: _q(s.amount) for s in bill.splits}
     return None if shares == defaults else shares
+
+
+# ---------------------------------------------------------------------------
+# Repairing past payments
+# ---------------------------------------------------------------------------
+
+class PayerBackfill(NamedTuple):
+    """What :func:`backfill_bill_payer` changed."""
+    updated: int   # transactions given a payer (or made own share)
+    resplit: int   # of those, own-share rows whose own splits were replaced
+
+
+def backfill_bill_payer(db: Session, bill: RecurringBill) -> PayerBackfill:
+    """Give this bill's past payments with no payer the bill's current payer.
+
+    Payments made before bills recorded a payer were saved with ``paid_by``
+    NULL, so insights showed them as "Unassigned" and settle-up skipped them.
+    Only active expense transactions linked to one of *this* bill's
+    occurrences, single mode and without a payer, are touched:
+
+    * single bill — the payer becomes ``paid_by_default`` (if still a member),
+      on the transaction and its occurrence. No default payer: nothing to do.
+    * own-share bill — the transaction becomes own share. Splits that already
+      add up to its amount are kept (a cent of rounding goes to the largest,
+      see :func:`app.schemas.absorb_own_share_cent`); otherwise the bill's
+      default splits, scaled to that amount, replace them. Own share needs
+      splits that cover the whole amount, so splits that do not (the old
+      "you owe me 300" pattern) cannot be kept as they are; those rows are
+      counted in ``resplit`` so the caller can say so. A bill without splits:
+      nothing to do.
+
+    Does not commit.
+    """
+    own_share = bill.payer_mode == PayerMode.own_share.value
+    payer = None
+    if own_share:
+        if bill_payer_mode(bill) != PayerMode.own_share.value:
+            return PayerBackfill(0, 0)
+    else:
+        member_ids = {
+            uid for (uid,) in db.query(HouseholdMember.user_id)
+            .filter(HouseholdMember.household_id == bill.household_id).all()
+        }
+        payer = bill.paid_by_default if bill.paid_by_default in member_ids else None
+        if not payer:
+            return PayerBackfill(0, 0)
+
+    rows = (
+        db.query(Transaction, BillOccurrence)
+        .join(BillOccurrence, BillOccurrence.transaction_id == Transaction.id)
+        .filter(
+            BillOccurrence.bill_id == bill.id,
+            Transaction.household_id == bill.household_id,
+            Transaction.active(),
+            Transaction.type == TransactionType.expense,
+            Transaction.missing_payer(),
+        )
+        .all()
+    )
+    from app.schemas import absorb_own_share_cent
+
+    resplit = 0
+    for txn, occ in rows:
+        if not own_share:
+            txn.paid_by = payer
+            if occ.paid_by is None:
+                occ.paid_by = payer
+            continue
+        amount = _q(txn.amount)
+        existing = sum((_dec(s.amount) for s in txn.splits), Decimal(0))
+        if txn.splits and abs(existing - amount) <= _CENT:
+            absorb_own_share_cent(amount, txn.splits)
+        else:
+            resplit += bool(txn.splits)
+            db.query(TransactionSplit).filter_by(transaction_id=txn.id).delete(
+                synchronize_session=False
+            )
+            db.expire(txn, ["splits"])
+            for uid, share in _scaled_splits(bill, amount, None).items():
+                db.add(TransactionSplit(transaction_id=txn.id, user_id=uid, amount=share))
+        txn.payer_mode = PayerMode.own_share.value
+    return PayerBackfill(len(rows), resplit)

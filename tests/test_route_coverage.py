@@ -362,11 +362,12 @@ def test_scan_qr_parses_receipt(client, authed):
     assert body["merchant"] == "Test Taverna" and body["currency"] == "EUR"
 
 
+# Other https hosts are provider pages, fetched through the SSRF guard to find
+# the AADE link (tests/test_scan_qr_mydata.py).
 @pytest.mark.parametrize("url", [
     "http://www1.aade.gr/tameiakes/myweb/q1.php?x=1",
-    "https://evil.example.com/tameiakes/myweb/q1.php",
-    "https://www1.aade.gr/other/path",
-    "https://www1.aade.gr.evil.com/tameiakes/myweb/q1.php",
+    "https://10.0.0.1/tameiakes/myweb/q1.php",
+    "https://www1.aade.gr:8080/tameiakes/myweb/q1.php",
     "x" * 501,
 ])
 def test_scan_qr_blocks_disallowed_urls_without_fetching(client, authed, url):

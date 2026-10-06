@@ -1,9 +1,21 @@
 <!-- HTMX partial — included in list.html and returned for HTMX refreshes -->
 {% if transactions %}
+{# Bulk "Set payer": row checkboxes (expenses only) belong to the action-bar
+   form through the form= attribute, so no form wraps the table. #}
+{% set has_expenses = transactions | selectattr('type.value', 'equalto', 'expense') | list | length > 0 %}
+<div x-data="{ count: 0,
+               sync() { this.count = this.$root.querySelectorAll('input[name=ids]:checked').length },
+               toggleAll(on) { this.$root.querySelectorAll('input[name=ids]').forEach(b => { b.checked = on }); this.sync() } }">
 <div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
   <table class="w-full text-sm">
     <thead>
       <tr class="border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/60">
+        {% if has_expenses %}
+        <th class="w-10 pl-4 py-3">
+          <input type="checkbox" aria-label="Select all expenses on this page"
+                 @change="toggleAll($el.checked)" class="rounded w-4 h-4" />
+        </th>
+        {% endif %}
         <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide w-28">Date</th>
         <th class="hidden sm:table-cell text-left px-3 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide w-10">Cat</th>
         <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Description</th>
@@ -15,6 +27,14 @@
     <tbody class="divide-y divide-gray-50 dark:divide-gray-800">
       {% for txn in transactions %}
       <tr class="group hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+        {% if has_expenses %}
+        <td class="pl-4 py-3">
+          {% if txn.type.value == 'expense' %}
+          <input type="checkbox" name="ids" value="{{ txn.id }}" form="bulk-payer-form"
+                 aria-label="Select this expense" @change="sync()" class="rounded w-4 h-4" />
+          {% endif %}
+        </td>
+        {% endif %}
         <td class="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">
           {{ txn.transaction_date | dmy }}
         </td>
@@ -29,11 +49,18 @@
             {{ txn.notes or (txn.category.name if txn.category else 'Expense') }}
           </p>
           <div class="flex items-center gap-1.5 mt-0.5 flex-wrap">
-            {% if txn.paid_by_user %}
+            {% if txn.payer_mode == 'own_share' %}
+            <span class="text-xs text-gray-500 dark:text-gray-400">Each paid own share</span>
+            {% elif txn.paid_by_user %}
             <span class="text-xs" style="color: {{ txn.paid_by_user.avatar_color }}">{{ txn.paid_by_user.display_name }}</span>
+            {% elif txn.type.value == 'expense' %}
+            <span class="text-xs text-amber-600 dark:text-amber-400">No payer</span>
             {% endif %}
             {% if txn.splits %}
             <span class="text-xs text-gray-400">· Shared</span>
+            {% endif %}
+            {% if txn.fuel_litres is not none %}
+            <span class="text-xs text-gray-500 dark:text-gray-400">· ⛽ {{ txn.fuel_litres | litres }} · {{ txn.fuel_price_per_litre | per_litre(txn.currency) }}</span>
             {% endif %}
             {% if txn.type.value == 'income' %}
             <span class="text-xs bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded-md font-medium">Income</span>
@@ -75,10 +102,34 @@
   </table>
 </div>
 
+{% if has_expenses %}
+<!-- Sticky action bar: shown once at least one expense is ticked -->
+<form id="bulk-payer-form" method="POST" action="/transactions/bulk-payer"
+      x-show="count > 0" x-cloak
+      class="sticky bottom-20 lg:bottom-4 z-30 mt-3 flex flex-wrap items-center gap-2 px-4 py-3 rounded-2xl border border-primary-200 dark:border-primary-900/40 bg-white dark:bg-gray-900 shadow-lg">
+  <input type="hidden" name="return_query" value="{{ search_query }}{{ '&' if search_query }}page={{ page }}" />
+  <span class="text-sm font-medium text-gray-700 dark:text-gray-300" x-text="count + ' selected'"></span>
+  <label for="bulk-payer" class="text-sm text-gray-500 dark:text-gray-400 ml-auto">Set payer →</label>
+  <select id="bulk-payer" name="payer" required
+          class="px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm focus:border-primary-500 outline-none">
+    <option value="">Choose…</option>
+    {% for m in members %}
+    <option value="{{ m.id }}">{{ m.display_name }}</option>
+    {% endfor %}
+    <option value="{{ OWN_SHARE_CHOICE }}">Each paid their own share</option>
+  </select>
+  <button type="submit"
+          class="px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white font-semibold rounded-xl text-sm transition-colors">
+    Apply
+  </button>
+</form>
+{% endif %}
+</div>
+
 {% if total_pages > 1 %}
 <div class="flex items-center justify-between mt-4">
   {% if page > 1 %}
-  <a href="?q={{ q | urlencode }}&category_id={{ category_id }}&type={{ selected_type }}&from_date={{ from_date }}&to_date={{ to_date }}&bucket_id={{ selected_bucket_id }}&page={{ page - 1 }}"
+  <a href="?{{ search_query }}{{ '&' if search_query }}page={{ page - 1 }}"
      class="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl hover:bg-gray-50 transition-colors">
     ← Previous
   </a>
@@ -87,7 +138,7 @@
   <span class="text-sm text-gray-400">Page {{ page }} of {{ total_pages }}</span>
 
   {% if page < total_pages %}
-  <a href="?q={{ q | urlencode }}&category_id={{ category_id }}&type={{ selected_type }}&from_date={{ from_date }}&to_date={{ to_date }}&bucket_id={{ selected_bucket_id }}&page={{ page + 1 }}"
+  <a href="?{{ search_query }}{{ '&' if search_query }}page={{ page + 1 }}"
      class="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl hover:bg-gray-50 transition-colors">
     Next →
   </a>
@@ -95,7 +146,7 @@
 </div>
 {% endif %}
 
-{% elif q or category_id or selected_type or from_date or to_date or selected_bucket_id %}
+{% elif q or category_id or selected_type or from_date or to_date or selected_bucket_id or missing_payer or selected_paid_by or min_amount or max_amount %}
 <div class="text-center py-16 text-gray-400">
   <div class="text-4xl mb-3">🔍</div>
   <p class="font-medium text-gray-600 dark:text-gray-300">No transactions match your search</p>

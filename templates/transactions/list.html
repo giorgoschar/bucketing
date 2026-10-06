@@ -33,6 +33,14 @@
         </button>
       </div>
 
+      {# Expenses nobody is credited with paying (insights' "Unassigned"). #}
+      <label class="inline-flex items-center gap-2 mb-3 text-sm text-gray-600 dark:text-gray-300 cursor-pointer select-none">
+        <input type="checkbox" name="missing_payer" value="1" {% if missing_payer %}checked{% endif %}
+               x-data @change="$el.form.requestSubmit()" class="rounded w-4 h-4" />
+        No payer
+        <span class="text-xs text-gray-400">(expenses shown as "Unassigned")</span>
+      </label>
+
       <details class="group">
         <summary class="text-xs text-gray-400 cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-300">
           Filters <span class="group-open:hidden">▸</span><span class="hidden group-open:inline">▾</span>
@@ -98,6 +106,10 @@
       </details>
     </form>
   </div>
+
+  {% if bulk_notice %}
+  <div role="status" class="px-4 py-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 text-sm">{{ bulk_notice }}</div>
+  {% endif %}
 
   <!-- Result count + export -->
   {% if total is not none %}

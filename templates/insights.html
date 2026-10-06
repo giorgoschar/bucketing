@@ -139,13 +139,17 @@
       {% if member_users | length > 1 %}
       <div class="relative" @click.outside="openPaidBy = false">
         <button type="button" @click="openPaidBy = !openPaidBy"
+                title="Person: shows this person's share of each expense"
                 class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-colors text-xs font-medium"
                 :class="paidBy ? 'border-primary-400 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:border-primary-400'">
-          <span x-text="paidByLabel()">Paid by</span>
+          <span x-text="paidByLabel()">Person</span>
           <svg class="w-3 h-3 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
         </button>
         <div x-show="openPaidBy" x-cloak
              class="absolute top-full left-0 mt-1 w-48 bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg z-30 overflow-hidden">
+          {# The query param is still called paid_by (old links), but it selects
+             every expense the person takes part in and counts their share. #}
+          <p class="px-3 pt-2.5 pb-1 text-[11px] text-gray-400">Shows this person's share of each expense.</p>
           <button type="button" @click="paidBy = ''; openPaidBy = false; _go()"
                   class="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
             Everyone

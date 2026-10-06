@@ -13,6 +13,9 @@
 {% block content %}
 <div class="max-w-3xl mx-auto space-y-6">
 
+  {% if notice %}
+  <div role="status" class="px-4 py-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 text-sm">{{ notice }}</div>
+  {% endif %}
   {% if error %}
   <div role="alert" class="px-4 py-3 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 text-sm">{{ error }}</div>
   {% endif %}
@@ -346,12 +349,16 @@
 
       <div>
         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Default payer <span class="text-gray-400 font-normal">(optional)</span></label>
-        <select name="paid_by_default" class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:border-primary-500 outline-none text-sm">
+        <select name="paid_by_default" data-own-share="{{ OWN_SHARE_CHOICE }}"
+                @change="if ($el.value === $el.dataset.ownShare) isShared = true"
+                class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:border-primary-500 outline-none text-sm">
           <option value="">No default</option>
           {% for m in members %}
           <option value="{{ m.id }}">{{ m.display_name }}</option>
           {% endfor %}
+          <option value="{{ OWN_SHARE_CHOICE }}">Each paid their own share</option>
         </select>
+        <p class="text-xs text-gray-400 mt-1">"Each paid their own share": every payment records each member paying their share above directly (e.g. rent per the lease).</p>
       </div>
 
       <!-- Contract end date -->
@@ -413,6 +420,7 @@
           {% for m in members %}
           <option value="{{ m.id }}">{{ m.display_name }}</option>
           {% endfor %}
+          <option value="{{ OWN_SHARE_CHOICE }}">Each paid their own share</option>
         </select>
       </div>
       <div>

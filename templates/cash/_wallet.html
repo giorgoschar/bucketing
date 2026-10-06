@@ -1,0 +1,38 @@
+{# One member's wallet for a period (app.services.cash.wallet_summary).
+   Needs: w (the summary), w_title, household. "put_back" is stash activity,
+   so it is only in the summary when the viewer is that member. #}
+<div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
+  <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-3">{{ w_title }}</p>
+  <dl class="space-y-2 text-sm">
+    {% if w.carried %}
+    <div class="flex justify-between"><dt class="text-gray-500">Carried in (still had)</dt>
+      <dd class="font-semibold">{{ w.carried | currency(household.default_currency) }}</dd></div>
+    {% endif %}
+    <div class="flex justify-between"><dt class="text-gray-500">Taken to wallet</dt>
+      <dd class="font-semibold">{{ w.taken | currency(household.default_currency) }}</dd></div>
+    {% if w.put_back %}
+    <div class="flex justify-between"><dt class="text-gray-500">Put back in stash</dt>
+      <dd class="font-semibold">−{{ w.put_back | currency(household.default_currency) }}</dd></div>
+    {% endif %}
+    {% if w.still_have is not none %}
+    <div class="flex justify-between"><dt class="text-gray-500">Still have (month end)</dt>
+      <dd class="font-semibold">{{ w.still_have | currency(household.default_currency) }}</dd></div>
+    {% endif %}
+    {% if w.carried or w.put_back or w.still_have is not none %}
+    <div class="flex justify-between"><dt class="text-gray-500">Spent</dt>
+      <dd class="font-semibold">{{ w.spent | currency(household.default_currency) }}</dd></div>
+    {% endif %}
+    <div class="flex justify-between"><dt class="text-gray-500">Logged cash expenses</dt>
+      <dd class="font-semibold">{{ w.logged | currency(household.default_currency) }}</dd></div>
+    {% if w.outs %}
+    <div class="flex justify-between"><dt class="text-gray-500">Cash out (older entries)</dt>
+      <dd class="font-semibold">{{ w.outs | currency(household.default_currency) }}</dd></div>
+    {% endif %}
+    <div class="flex justify-between border-t border-gray-100 dark:border-gray-800 pt-2">
+      <dt class="font-semibold">Not yet logged</dt>
+      <dd class="font-bold {% if w.not_yet_logged > 0.005 %}text-orange-500{% else %}text-emerald-600 dark:text-emerald-400{% endif %}">
+        {{ w.not_yet_logged | currency(household.default_currency) }}
+      </dd>
+    </div>
+  </dl>
+</div>

@@ -44,7 +44,7 @@
           <p class="text-xs text-gray-400 mt-0.5">
             {{ t.transaction_date | dmy }}
             {% if t.bucket %}· {{ t.bucket.icon }} {{ t.bucket.name }}{% endif %}
-            {% if t.paid_by_user %}· {{ t.paid_by_user.display_name }}{% endif %}
+            {% if t.payer_mode == 'own_share' %}· Each paid own share{% elif t.paid_by_user %}· {{ t.paid_by_user.display_name }}{% endif %}
           </p>
         </div>
         <a href="/transactions/{{ t.id }}/edit"

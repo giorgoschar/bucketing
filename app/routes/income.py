@@ -1,10 +1,9 @@
 """
 Income entry routes — separate from the expense wizard.
 """
-from datetime import date
-
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.auth import require_auth, require_csrf
@@ -14,12 +13,13 @@ from app.database import get_db
 from app.models import (
     Bucket,
     BucketStatus,
-    Transaction,
     TransactionType,
 )
+from app.schemas import TransactionCreate
+from app.services import after_save_url, create_transaction
 from app.services import full_ctx as _full_ctx
 from app.templates import templates
-from app.validators import parse_amount, require_category, require_member
+from app.validators import require_income_bucket
 
 router = APIRouter(prefix="/income", dependencies=[Depends(require_csrf)])
 
@@ -74,42 +74,39 @@ def new_income(
 @router.post("", response_class=HTMLResponse)
 def create_income(
     request: Request,
-    bucket_id: str = Form(...),
+    bucket_id: str = Form(""),
     transaction_date: str = Form(...),
-    amount: float = Form(...),
+    amount: str = Form(...),
     currency: str = Form("EUR"),
+    exchange_rate: str = Form("1"),
     category_id: str = Form(""),
     received_by: str = Form(""),
     notes: str = Form(""),
     db: Session = Depends(get_db),
     auth=Depends(require_auth),
 ):
+    """Save an income entry. The bucket is optional: bucket-less income always
+    counts as income, a bucket must have "Track income" on."""
     user, hh_id = auth
 
-    bucket = db.get(Bucket, bucket_id)
-    if not bucket or bucket.household_id != hh_id:
-        raise HTTPException(status_code=400, detail="Invalid bucket")
-
-    if currency not in settings.currencies:
-        raise HTTPException(status_code=400, detail=f"Unsupported currency '{currency}'.")
+    bucket = require_income_bucket(db, bucket_id, hh_id, not_found_status=400)
+    # Same field validation as an expense (currency, rate > 0, amount, date),
+    # and the same service (category and recipient must be in the household).
     try:
-        txn_date = date.fromisoformat(transaction_date.strip())
-    except (ValueError, AttributeError):
-        raise HTTPException(status_code=400, detail="Date must be a valid date (YYYY-MM-DD).") from None
+        data = TransactionCreate(
+            bucket_id=bucket.id if bucket else None,
+            amount=amount,
+            currency=currency,
+            exchange_rate=exchange_rate,
+            type=TransactionType.income,
+            paid_by=received_by,
+            category_id=category_id,
+            notes=notes,
+            transaction_date=transaction_date,
+        )
+    except ValidationError as exc:
+        msg = exc.errors()[0]["msg"].removeprefix("Value error, ")
+        raise HTTPException(status_code=400, detail=msg) from None
 
-    txn = Transaction(
-        bucket_id=bucket_id,
-        household_id=hh_id,
-        amount=parse_amount(amount, field="Amount"),
-        currency=currency,
-        exchange_rate=1.0,
-        type=TransactionType.income,
-        paid_by=require_member(db, received_by, hh_id),
-        category_id=require_category(db, category_id, hh_id),
-        notes=notes.strip() or None,
-        transaction_date=txn_date,
-    )
-    db.add(txn)
-    db.commit()
-
-    return RedirectResponse(f"/buckets/{bucket_id}", status_code=302)
+    txn = create_transaction(db, household_id=hh_id, bucket=bucket, user=user, data=data)
+    return RedirectResponse(after_save_url(txn.bucket_id), status_code=302)

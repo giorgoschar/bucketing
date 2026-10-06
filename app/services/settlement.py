@@ -11,13 +11,15 @@ from sqlalchemy.orm import Session, joinedload
 from app.models import (
     Bucket,
     HouseholdMember,
+    PayerMode,
     Settlement,
     Transaction,
+    TransactionSplit,
     TransactionType,
     User,
 )
 from app.money import ZERO, quantize, to_decimal
-from app.services.money import base_amount_expr, shares_for, to_base
+from app.services.money import base_amount_expr, paid_for, shares_for
 
 
 class SettlementChanged(Exception):
@@ -33,6 +35,69 @@ def settlement_fingerprint(rows: list[dict]) -> str:
     """
     parts = sorted(f"{r['from_id']}|{r['to_id']}|{quantize(to_decimal(r['amount']))}" for r in rows)
     return hashlib.sha256("\n".join(parts).encode()).hexdigest()[:24]
+
+
+def _takes_part():
+    """Filter: expenses that can create a debt in settle-up (see compute_bucket_net)."""
+    return (
+        Transaction.active(),
+        Transaction.type == TransactionType.expense,
+        Transaction.exclude_from_settlement.is_(False),
+        or_(Transaction.paid_by.isnot(None), Transaction.payer_mode == PayerMode.own_share.value),
+    )
+
+
+def bucket_participants(db: Session, bucket_ids) -> dict[str, set[str]]:
+    """Who takes part in settle-up in each bucket: every payer and split member
+    of an expense that can create a debt, and both sides of every payment
+    recorded against the bucket. An unsplit expense there is shared equally
+    between them (see :func:`compute_bucket_net`)."""
+    bucket_ids = list(bucket_ids)
+    out: dict[str, set[str]] = defaultdict(set)
+    if not bucket_ids:
+        return out
+    payers = (
+        db.query(Transaction.bucket_id, Transaction.paid_by)
+        .filter(Transaction.bucket_id.in_(bucket_ids), Transaction.paid_by.isnot(None),
+                *_takes_part())
+        .distinct()
+    )
+    split_users = (
+        db.query(Transaction.bucket_id, TransactionSplit.user_id)
+        .join(TransactionSplit, TransactionSplit.transaction_id == Transaction.id)
+        .filter(Transaction.bucket_id.in_(bucket_ids), *_takes_part())
+        .distinct()
+    )
+    for bid, uid in [*payers.all(), *split_users.all()]:
+        out[bid].add(uid)
+    for bid, from_id, to_id in (
+        db.query(Settlement.bucket_id, Settlement.from_user_id, Settlement.to_user_id)
+        .filter(Settlement.bucket_id.in_(bucket_ids))
+        .all()
+    ):
+        out[bid].update((from_id, to_id))
+    return out
+
+
+def settlement_members(db: Session, household_id: str) -> dict[str, set[str]]:
+    """``{bucket_id: members}`` for the household's settlement-enabled buckets
+    where settle-up has someone to settle with (two or more participants).
+
+    The members an unsplit expense in that bucket is shared between, which
+    insights, /me and the trip summary use too (``member_ids`` of
+    :func:`app.services.money.shares_for`, via
+    :func:`app.services.money.shared_between`), so every view charges such an
+    expense the way settle-up does.
+    """
+    buckets = [
+        bid for (bid,) in db.query(Bucket.id).filter(
+            Bucket.household_id == household_id, Bucket.enable_settlement.is_(True),
+        )
+    ]
+    return {
+        bid: members for bid, members in bucket_participants(db, buckets).items()
+        if len(members) >= 2
+    }
 
 
 def compute_bucket_net(db: Session, bucket_id: str) -> dict[str, Decimal]:
@@ -65,16 +130,16 @@ def compute_bucket_net(db: Session, bucket_id: str) -> dict[str, Decimal]:
     # crediting nobody invented a phantom creditor outside the household, so
     # both members showed as owing money to no one. Skipping it leaves the
     # spending in every other report and only keeps it out of settle-up.
-    txns = [t for t in txns if t.paid_by and not t.exclude_from_settlement]
+    # Own-share expenses have no single payer but are fully paid, so they stay
+    # (and net to zero: everyone paid exactly their share).
+    txns = [
+        t for t in txns
+        if not t.exclude_from_settlement
+        and (t.paid_by or t.payer_mode == PayerMode.own_share.value)
+    ]
 
-    # Collect all involved user ids
-    user_ids: set[str] = set()
-    for t in txns:
-        user_ids.add(t.paid_by)
-        for s in t.splits:
-            user_ids.add(s.user_id)
-    for st in recorded:
-        user_ids.update((st.from_user_id, st.to_user_id))
+    # Everyone involved: payers, split members and settlement parties.
+    user_ids = bucket_participants(db, [bucket_id]).get(bucket_id, set())
 
     if len(user_ids) < 2:
         return {}
@@ -85,7 +150,8 @@ def compute_bucket_net(db: Session, bucket_id: str) -> dict[str, Decimal]:
     owes: dict[str, Decimal] = defaultdict(Decimal)
 
     for t in txns:
-        actually_paid[t.paid_by] += to_base(t.amount, t.exchange_rate)
+        for uid, paid in paid_for(t, user_ids).items():
+            actually_paid[uid] += paid
         # shares_for() always accounts for the full amount, including any part
         # not covered by explicit splits, so the nets below sum to zero.
         for uid, share in shares_for(t, user_ids).items():
@@ -178,7 +244,7 @@ def get_settlement_exclusions(db: Session, household_id: str) -> dict:
             Transaction.type == TransactionType.expense,
             Bucket.enable_settlement.is_(True),
             or_(
-                Transaction.paid_by.is_(None),
+                Transaction.missing_payer(),
                 Transaction.exclude_from_settlement.is_(True),
             ),
         )

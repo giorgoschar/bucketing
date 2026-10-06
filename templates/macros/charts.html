@@ -87,6 +87,91 @@
 
 
 {# ---------------------------------------------------------------------------
+   Price paid per refuel, for one car.
+   points: [{date, price_per_litre, litres, spend}], oldest first.
+
+   x is the refuel date on a time scale (refuels are irregular, so evenly
+   spaced points would distort the trend); y is the price over its own
+   min-max range plus padding, since prices move by cents and a zero baseline
+   would flatten the line. The min and max prices label the y axis.
+--------------------------------------------------------------------------- #}
+{% macro price_line(points, currency='EUR', height=150, name='') %}
+  {# Drawn at about phone width so the 10px labels stay 10px on screen. #}
+  {% set W = 360 %}
+  {% set H = height %}
+  {% set PAD_L = 52 %}
+  {% set PAD_R = 8 %}
+  {% set PAD_T = 10 %}
+  {% set PAD_B = 18 %}
+  {% set n = points | length %}
+  {% set prices = points | map(attribute='price_per_litre') | map('float') | list %}
+  {% set lo = prices | min %}
+  {% set hi = prices | max %}
+  {% set pad = ((hi - lo) * 0.15) if hi > lo else (hi * 0.02 + 0.01) %}
+  {% set y0 = lo - pad %}
+  {% set y1 = hi + pad %}
+  {% set d0 = points[0].date.toordinal() %}
+  {% set dspan = points[-1].date.toordinal() - d0 %}
+  {% set plot_w = W - PAD_L - PAD_R %}
+  {% set plot_h = H - PAD_T - PAD_B %}
+
+  {% set coords = [] %}
+  {% for p in points %}
+    {% set x = PAD_L + (plot_w * (p.date.toordinal() - d0) / dspan if dspan else plot_w / 2) %}
+    {% set y = PAD_T + plot_h * (1 - ((p.price_per_litre | float) - y0) / (y1 - y0)) %}
+    {% set _ = coords.append((x, y)) %}
+  {% endfor %}
+
+  <svg viewBox="0 0 {{ W }} {{ H }}" class="w-full h-auto" role="img"
+       aria-label="Price per litre per refuel{{ ', ' ~ name if name }}">
+    {# Guides at the highest and lowest price paid, labelled on the left. #}
+    {% for price in ([hi, lo] if hi > lo else [hi]) %}
+    {% set gy = PAD_T + plot_h * (1 - (price - y0) / (y1 - y0)) %}
+    <line x1="{{ PAD_L }}" y1="{{ gy }}" x2="{{ W - PAD_R }}" y2="{{ gy }}"
+          class="stroke-gray-200 dark:stroke-gray-800" stroke-width="1" stroke-dasharray="3 3" />
+    <text x="{{ PAD_L - 6 }}" y="{{ gy + 3 }}" text-anchor="end"
+          class="fill-gray-400" style="font-size: 10px">{{ price | per_litre(currency) }}</text>
+    {% endfor %}
+
+    {% if n > 1 %}
+    <polyline fill="none" class="stroke-primary-500" stroke-width="2"
+              stroke-linejoin="round" stroke-linecap="round"
+              points="{% for c in coords %}{{ c[0] }},{{ c[1] }} {% endfor %}" />
+    {% endif %}
+
+    {% for p in points %}
+    {% set c = coords[loop.index0] %}
+    {% set tip = (p.date | dmy) ~ ' · ' ~ (p.price_per_litre | per_litre(currency)) ~ ' · '
+                 ~ (p.litres | litres) ~ ' · ' ~ (p.spend | currency(currency)) %}
+    {# Hit band from halfway to the previous refuel to halfway to the next,
+       at least 16 wide, so each refuel is tappable even when close together. #}
+    {% set left = (coords[loop.index0 - 1][0] + c[0]) / 2 if not loop.first else PAD_L %}
+    {% set right = (c[0] + coords[loop.index0 + 1][0]) / 2 if not loop.last else W - PAD_R %}
+    {% set bw = [right - left, 16] | max %}
+    <g>
+      <circle cx="{{ c[0] }}" cy="{{ c[1] }}" r="4" stroke-width="2"
+              class="fill-primary-500 stroke-white dark:stroke-gray-900" />
+      <rect x="{{ c[0] - bw / 2 if right - left < 16 else left }}" y="0" width="{{ bw }}" height="{{ H }}"
+            fill="transparent" tabindex="0" role="img"
+            aria-label="{{ tip }}" data-tip="{{ tip }}" />
+    </g>
+    {% endfor %}
+
+    {# First and last refuel dates; one date when they're the same day. #}
+    {% if dspan %}
+    <text x="{{ PAD_L }}" y="{{ H - 4 }}" text-anchor="start"
+          class="fill-gray-400" style="font-size: 10px">{{ points[0].date | dmy }}</text>
+    <text x="{{ W - PAD_R }}" y="{{ H - 4 }}" text-anchor="end"
+          class="fill-gray-400" style="font-size: 10px">{{ points[-1].date | dmy }}</text>
+    {% else %}
+    <text x="{{ PAD_L + plot_w / 2 }}" y="{{ H - 4 }}" text-anchor="middle"
+          class="fill-gray-400" style="font-size: 10px">{{ points[0].date | dmy }}</text>
+    {% endif %}
+  </svg>
+{% endmacro %}
+
+
+{# ---------------------------------------------------------------------------
    Donut, for a share-of-total breakdown.
    rows: [{name, amount, pct, color, icon}]
 --------------------------------------------------------------------------- #}

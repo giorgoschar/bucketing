@@ -368,7 +368,12 @@
              style="background-color: {{ cat.color }}11">
           <span>{{ cat.icon }}</span>
           <span class="text-xs font-medium flex-1 truncate">{{ cat.name }}</span>
-          {% if not cat.is_default %}
+          {% if cat.is_locked %}
+          {# Built in: the app relies on it (Fuel unlocks the litres fields). #}
+          <span class="text-[11px] text-gray-400 flex-shrink-0" role="img"
+                title="Built-in category: can't be renamed or deleted"
+                aria-label="Built-in category: can't be renamed or deleted">🔒</span>
+          {% elif not cat.is_default %}
           <form method="POST" action="/settings/categories/{{ cat.id }}/delete">
             <button type="submit" class="text-gray-300 hover:text-red-400 transition-colors ml-1">
               <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" /></svg>

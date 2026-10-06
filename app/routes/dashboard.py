@@ -19,6 +19,7 @@ from app.services import (
     get_month_summary,
     get_overdue_bills,
     get_upcoming_bills,
+    in_out,
 )
 from app.templates import templates
 
@@ -47,7 +48,7 @@ def dashboard(
         .all()
     )
 
-    summary        = get_month_summary(db, hh_id, year, month)
+    summary        = get_month_summary(db, hh_id, year, month, include_cash=True)
     income_total   = get_income_total(db, hh_id, year, month)
     bills_due      = get_bills_due_month_total(db, hh_id, year, month)
     upcoming       = get_upcoming_bills(db, hh_id, days=30)
@@ -63,9 +64,6 @@ def dashboard(
         .limit(10)
         .all()
     )
-
-    # Only show income KPI card if there are income-tracked buckets with income this month
-    show_income = income_total > 0 or any(b.show_income for b in buckets)
 
     # Budget progress per bucket, clamped to 0..100 for the bar width.
     # Computed here rather than in the template: bucket.budget is a Decimal and
@@ -89,8 +87,9 @@ def dashboard(
             "households":     households,
             "summary":        summary,
             "income_total":   income_total,
+            # Always shown: income needs no bucket, and Out alone is useful.
+            "in_out":         in_out(income_total, summary),
             "bills_due":      bills_due,
-            "show_income":    show_income,
             "upcoming_bills": upcoming,
             "overdue_bills":  overdue,
             "buckets":        buckets,

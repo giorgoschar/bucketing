@@ -14,8 +14,9 @@ from app.models import (
     TransactionType,
 )
 from app.money import TENTH, ZERO, quantize
-from app.services.money import shares_for, to_base
-from app.services.settlement import get_member_balances
+from app.services.cash import NOT_LOGGED_CASH, NOT_LOGGED_CASH_LABEL, cash_scope, cash_spending
+from app.services.money import paid_for, share_of, shared_between, to_base
+from app.services.settlement import get_member_balances, settlement_members
 
 
 def get_person_summary(
@@ -29,8 +30,15 @@ def get_person_summary(
 
     "My share" is what this person is actually responsible for: their split
     amount where the expense is shared, the full amount where they paid an
-    unsplit expense. That differs from "what I paid out", and the gap between
-    the two is what settlement resolves.
+    unsplit expense, except in a settlement bucket, where settle-up shares an
+    unsplit expense equally and so does this. That differs from "what I paid
+    out", and the gap between the two is what settlement resolves.
+
+    Cash spending that is not a logged expense counts too, exactly as in the
+    insights Person filter: the cash they took that is not logged yet, and
+    their labelled cash outs (see app.services.cash). It is money they handed over for their own
+    spending, so it adds to both "paid out" and "my share" and leaves the
+    balance alone; it has no bucket and no single "largest" expense.
     """
     q = (
         db.query(Transaction)
@@ -46,6 +54,7 @@ def get_person_summary(
     if end:
         q = q.filter(Transaction.transaction_date <= end)
     txns = q.all()
+    split_members = settlement_members(db, household_id)
 
     paid_out = ZERO      # money this person actually fronted
     my_share = ZERO      # what they are responsible for
@@ -59,15 +68,15 @@ def get_person_summary(
     for t in txns:
         amount = to_base(t.amount, t.exchange_rate)
         household_total += amount
-        if t.paid_by == user_id:
-            paid_out += amount
+        # What this person handed over: the whole amount as the payer, or
+        # their own split when everyone paid their own share.
+        paid_out += paid_for(t, shared_between(t, split_members)).get(user_id, ZERO)
 
         # Splits win where they exist; an expense whose splits do not cover the
-        # full amount leaves the remainder with whoever paid. Note this is not
-        # identical to the settlement view, which additionally treats an unsplit
-        # expense in a settlement-enabled bucket as shared equally — that is the
-        # household convention there, and "net" below comes from that maths.
-        share = shares_for(t).get(user_id, ZERO)
+        # full amount leaves the remainder with whoever paid. An unsplit expense
+        # in a settlement-enabled bucket is shared equally, the settle-up
+        # convention, so "net" below and these shares come from the same maths.
+        share = share_of(t, user_id, split_members)
         if t.splits and any(s.user_id == user_id for s in t.splits):
             shared_count += 1
 
@@ -84,12 +93,24 @@ def get_person_summary(
                     "date":   t.transaction_date,
                 }
 
+    # Cash: theirs (the Person filter's scope), and everyone's for the
+    # household total.
+    cash = cash_spending(db, household_id, start, end, cash_scope(db, household_id, user_id))
+    household_total += cash_spending(
+        db, household_id, start, end, cash_scope(db, household_id, None)).total
+    paid_out += cash.total
+    my_share += cash.total
+    for cid, amount in cash.by_category(NOT_LOGGED_CASH).items():
+        by_category[cid] += amount
+    for key, amount in cash.by_month().items():
+        by_month[key] += amount
+
     buckets = {}
     if by_bucket:
         buckets = {
             b.id: b for b in db.query(Bucket).filter(Bucket.id.in_(by_bucket)).all()
         }
-    cat_ids = [c for c in by_category if c]
+    cat_ids = [c for c in by_category if c and c != NOT_LOGGED_CASH]
     categories = (
         {c.id: c for c in db.query(Category).filter(Category.id.in_(cat_ids)).all()}
         if cat_ids else {}
@@ -138,9 +159,11 @@ def get_person_summary(
         "by_category": sorted(
             (
                 {
-                    "name":   categories[cid].name if cid in categories else "Uncategorised",
-                    "icon":   categories[cid].icon if cid in categories else "📦",
-                    "color":  categories[cid].color if cid in categories else "#9ca3af",
+                    **(NOT_LOGGED_CASH_LABEL if cid == NOT_LOGGED_CASH else {
+                        "name":  categories[cid].name if cid in categories else "Uncategorised",
+                        "icon":  categories[cid].icon if cid in categories else "📦",
+                        "color": categories[cid].color if cid in categories else "#9ca3af",
+                    }),
                     "amount": quantize(amount),
                 }
                 for cid, amount in by_category.items()

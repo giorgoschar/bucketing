@@ -1,25 +1,28 @@
 """
 API income route — create income transactions.
 Income is a thin wrapper over the transactions API with type forced to 'income'.
+The bucket is optional; when given it must be active and track income.
 """
-from datetime import date
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, status
+from fastapi.exceptions import RequestValidationError
+from pydantic import BaseModel, ValidationError
 from sqlalchemy.orm import Session
 
 from app.api_auth import require_api_auth
-from app.clock import local_today
 from app.database import get_db
-from app.models import Bucket, Transaction, TransactionType
+from app.models import TransactionType
 from app.money import quantize
+from app.schemas import TransactionCreate
+from app.services import create_transaction
+from app.validators import require_income_bucket
 
 router = APIRouter(prefix="/income", tags=["income"])
 
 
 class IncomeIn(BaseModel):
-    bucket_id:        str
+    bucket_id:        str | None = None
     amount:           Decimal
     currency:         str        = "EUR"
     exchange_rate:    Decimal    = Decimal("1")
@@ -36,27 +39,25 @@ def create_income(
 ):
     user, hh_id = auth
 
-    bucket = db.query(Bucket).filter_by(id=body.bucket_id, household_id=hh_id).first()
-    if not bucket:
-        raise HTTPException(status_code=404, detail="Bucket not found")
+    bucket = require_income_bucket(db, body.bucket_id, hh_id)
+    # The expense field checks (supported currency, rate > 0, amount, date)
+    # and the shared service (category in this household) apply to income too.
+    try:
+        data = TransactionCreate(
+            bucket_id=bucket.id if bucket else None,
+            amount=body.amount,
+            currency=body.currency,
+            exchange_rate=body.exchange_rate,
+            type=TransactionType.income,
+            paid_by=user.id,
+            category_id=body.category_id,
+            notes=body.notes,
+            transaction_date=body.transaction_date,
+        )
+    except ValidationError as exc:
+        raise RequestValidationError(exc.errors(include_url=False, include_context=False)) from None
 
-    txn_date = date.fromisoformat(body.transaction_date) if body.transaction_date else local_today()
-
-    txn = Transaction(
-        bucket_id=body.bucket_id,
-        household_id=hh_id,
-        amount=body.amount,
-        currency=body.currency,
-        exchange_rate=body.exchange_rate,
-        type=TransactionType.income,
-        paid_by=user.id,
-        category_id=body.category_id,
-        notes=body.notes,
-        transaction_date=txn_date,
-    )
-    db.add(txn)
-    db.commit()
-    db.refresh(txn)
+    txn = create_transaction(db, household_id=hh_id, bucket=bucket, user=user, data=data)
 
     return {
         "id":               txn.id,
@@ -64,6 +65,7 @@ def create_income(
         "household_id":     txn.household_id,
         "amount":           quantize(txn.amount),
         "currency":         txn.currency,
+        "exchange_rate":    float(txn.exchange_rate or 1),
         "type":             txn.type.value,
         "paid_by":          txn.paid_by,
         "category_id":      txn.category_id,

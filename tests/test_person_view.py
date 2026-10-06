@@ -252,7 +252,9 @@ def test_biggest_single_share_is_the_share_not_the_total(db, pair):
     _solo(db, pair, 400, pair.user_id)
 
     largest = get_person_summary(db, pair.household_id, pair.user_id)["largest"]
-    assert largest["amount"] == 400.0
+    # The bucket settles up, so the unsplit 400 is shared 200 / 200 as
+    # settle-up shares it; that share still beats the 100 of the dinner.
+    assert largest["amount"] == 200.0
 
 
 def test_trend_is_one_point_per_month(db, pair):

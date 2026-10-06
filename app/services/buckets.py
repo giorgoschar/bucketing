@@ -17,7 +17,8 @@ from app.models import (
 )
 from app.money import ZERO, percent, quantize, to_decimal
 from app.services.insights import _month_range, get_insights_summary
-from app.services.money import base_amount_expr, shares_for, to_base
+from app.services.money import base_amount_expr, shared_between, shares_for, to_base
+from app.services.settlement import settlement_members
 
 
 def get_bucket_month_summary(db: Session, bucket_id: str, year: int, month: int) -> dict:
@@ -126,12 +127,14 @@ def get_trip_summary(db: Session, bucket: Bucket) -> dict:
             status = "active"
             days_remaining = (bucket.end_date - today).days + 1
 
-    # Per-person share, using splits when present and the payer otherwise.
+    # Per-person share, using splits when present and the payer otherwise
+    # (shared equally when the trip settles up, as settle-up does).
     # shares_for() accounts for the whole amount, so these add up to the trip
     # total even when splits only cover part of an expense.
+    split_members = settlement_members(db, bucket.household_id) if bucket.enable_settlement else {}
     per_person: dict[str, Decimal] = defaultdict(Decimal)
     for t in txns:
-        for uid, share in shares_for(t).items():
+        for uid, share in shares_for(t, shared_between(t, split_members)).items():
             per_person[uid] += share
 
     users = {}

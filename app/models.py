@@ -4,6 +4,7 @@ import uuid
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     Column,
     Date,
     DateTime,
@@ -14,6 +15,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    and_,
     text,
 )
 from sqlalchemy import Enum as SAEnum
@@ -45,6 +47,35 @@ class PaymentMethod(str, enum.Enum):
     apple_pay = "apple_pay"
     transfer = "transfer"
     other = "other"
+
+
+class PayerMode(str, enum.Enum):
+    """Who fronted an expense. Stored as a plain VARCHAR like PaymentMethod.
+
+    ``single``: one member (``paid_by``) paid the whole amount — or nobody is
+    recorded yet. ``own_share``: every member paid their own split directly
+    (rent paid 800 / 300 straight to the landlord), so ``paid_by`` is NULL and
+    the splits are both what each person owes and what each person paid.
+    """
+    single = "single"
+    own_share = "own_share"
+
+
+class CashKind(str, enum.Enum):
+    """What a cash movement is (see app.services.cash). Plain VARCHAR like
+    PaymentMethod.
+
+    ``stash_in``: cash added to the member's own stash. ``take``: cash into
+    their wallet, from a stash (``stash_owner_id``) or the bank (NULL).
+    ``put_back``: wallet back into their own stash. ``still_have``: what was
+    in their wallet on that date. ``out``: legacy, no longer offered: cash
+    that left the wallet without a logged expense.
+    """
+    stash_in = "stash_in"
+    take = "take"
+    put_back = "put_back"
+    still_have = "still_have"
+    out = "out"
 
 
 class BucketType(str, enum.Enum):
@@ -190,10 +221,16 @@ class Invitation(Base):
 # Categories
 # ---------------------------------------------------------------------------
 
+# ``Category.system_key`` of the built-in Fuel category (see app.seed).
+FUEL_SYSTEM_KEY = "fuel"
+
+
 class Category(Base):
     __tablename__ = "categories"
     __table_args__ = (
         Index("ix_categories_household_id", "household_id"),
+        # One of each built-in category per household.
+        UniqueConstraint("household_id", "system_key", name="uq_categories_household_system_key"),
     )
 
     id = Column(String, primary_key=True, default=gen_id)
@@ -202,6 +239,14 @@ class Category(Base):
     color = Column(String(7), default="#6366f1")  # hex
     icon = Column(String(10), default="📦")  # emoji
     is_default = Column(Boolean, default=False)
+    # Set on categories the app itself relies on (FUEL_SYSTEM_KEY unlocks the
+    # litres fields). Such a category is locked: no rename, recolour, new icon
+    # or delete, so the feature can always find it. NULL for everything else.
+    system_key = Column(String(32), nullable=True)
+
+    @property
+    def is_locked(self) -> bool:
+        return self.system_key is not None
 
     household = relationship("Household", back_populates="categories")
     transactions = relationship("Transaction", back_populates="category")
@@ -243,6 +288,11 @@ class Bucket(Base):
 # Transactions
 # ---------------------------------------------------------------------------
 
+# Expenses and transfers need a bucket; income may have none. The enum is
+# stored by name ('income'), on SQLite and in the Postgres enum alike.
+BUCKET_UNLESS_INCOME_SQL = "bucket_id IS NOT NULL OR type = 'income'"
+
+
 class Transaction(Base):
     __tablename__ = "transactions"
     __table_args__ = (
@@ -253,10 +303,14 @@ class Transaction(Base):
         Index("ix_transactions_category_id", "category_id"),
         # NULLs do not collide, so only offline submissions are constrained.
         UniqueConstraint("household_id", "client_id", name="uq_transaction_client_id"),
+        # Only income may go without a bucket (see TransactionCreate).
+        CheckConstraint(BUCKET_UNLESS_INCOME_SQL, name="ck_transactions_bucket_unless_income"),
     )
 
     id = Column(String, primary_key=True, default=gen_id)
-    bucket_id = Column(String, ForeignKey("buckets.id", ondelete="CASCADE"), nullable=False)
+    # NULL only for income: a household that does not track income in buckets
+    # logs it bucket-less (it then always counts as income, see insights).
+    bucket_id = Column(String, ForeignKey("buckets.id", ondelete="CASCADE"), nullable=True)
     household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False)
     amount = Column(Numeric(12, 4), nullable=False)
     currency = Column(String(3), default="EUR")
@@ -270,6 +324,13 @@ class Transaction(Base):
     payment_method = Column(String(16), default=PaymentMethod.card.value,
                             server_default=PaymentMethod.card.value, nullable=False)
     merchant = Column(String(200), nullable=True)
+    payer_mode = Column(String(16), default=PayerMode.single.value,
+                        server_default=PayerMode.single.value, nullable=False)
+    # Fuel expenses only (the household's FUEL_SYSTEM_KEY category): the price
+    # per litre, in the transaction currency, and the litres the server works
+    # out from it (amount / price). Both NULL for anything else.
+    fuel_price_per_litre = Column(Numeric(8, 4), nullable=True)
+    fuel_litres = Column(Numeric(10, 3), nullable=True)
     exclude_from_forecast = Column(Boolean, default=False, nullable=False)
     # Keep this expense out of the settle-up maths while still counting it as
     # household spending. For costs that are shared with people outside the
@@ -289,6 +350,14 @@ class Transaction(Base):
         """Filter expression selecting transactions that are not soft-deleted."""
         return cls.deleted_at.is_(None)
 
+    @classmethod
+    def missing_payer(cls):
+        """Filter expression for expenses nobody is credited with paying.
+
+        An own-share expense has no ``paid_by`` by design; it is fully paid.
+        """
+        return and_(cls.payer_mode == PayerMode.single.value, cls.paid_by.is_(None))
+
     bucket = relationship("Bucket", back_populates="transactions")
     paid_by_user = relationship("User", back_populates="paid_transactions")
     category = relationship("Category", back_populates="transactions")
@@ -297,23 +366,34 @@ class Transaction(Base):
 
 
 class CashMovement(Base):
-    """Cash wallet ledger entry (independent of expenses): ``in`` = cash taken
-    into the wallet (e.g. ATM withdrawal), ``out`` = cash given away / spent
-    untracked. Amounts are in the household currency. Soft-deleted."""
+    """Cash ledger entry: one member's stash or wallet (see app.services.cash
+    and CashKind).
+
+    ``user_id`` is whose stash or wallet it is (for a ``take``: the taker's
+    wallet). ``stash_owner_id`` is the stash a ``take`` came out of, NULL for
+    the bank. ``transaction_id`` links a ``take`` to the cash expense it was
+    taken for ("I took this from my stash"). Amounts are in the household
+    currency. Soft-deleted.
+    """
     __tablename__ = "cash_movements"
     __table_args__ = (
         Index("ix_cash_movements_hh_user_date", "household_id", "user_id", "movement_date"),
+        Index("ix_cash_movements_stash_owner_id", "stash_owner_id"),
+        Index("ix_cash_movements_transaction_id", "transaction_id"),
     )
 
     id = Column(String, primary_key=True, default=gen_id)
     household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False)
     user_id = Column(String, ForeignKey("users.id"), nullable=False)
-    kind = Column(String(8), nullable=False)  # "in" | "out"
+    kind = Column(String(16), nullable=False)  # a CashKind value
+    stash_owner_id = Column(String, ForeignKey("users.id"), nullable=True)
     amount = Column(Numeric(12, 4), nullable=False)
     currency = Column(String(3), nullable=False, default="EUR")
     category_id = Column(String, ForeignKey("categories.id"), nullable=True)
     note = Column(String(500), nullable=True)
     movement_date = Column(Date, default=local_today, nullable=False)
+    transaction_id = Column(String, ForeignKey("transactions.id", ondelete="SET NULL"),
+                            nullable=True)
     created_at = Column(DateTime, default=utcnow_naive)
     deleted_at = Column(DateTime, nullable=True)
 
@@ -364,6 +444,10 @@ class RecurringBill(Base):
     contract_end_date = Column(Date, nullable=True)  # telco/power contract expiry
     total_occurrences = Column(Integer, nullable=True)  # null = indefinite
     paid_by_default = Column(String, ForeignKey("users.id"), nullable=True)
+    # own_share: each payment is recorded as everyone paying their default
+    # split directly (see PayerMode); paid_by_default is then unused.
+    payer_mode = Column(String(16), default=PayerMode.single.value,
+                        server_default=PayerMode.single.value, nullable=False)
     notes = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True)
     is_auto_pay = Column(Boolean, default=False, nullable=False)

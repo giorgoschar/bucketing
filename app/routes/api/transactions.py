@@ -11,8 +11,8 @@ from sqlalchemy.orm import Session, joinedload
 from app.api_auth import require_api_auth
 from app.database import get_db
 from app.models import (
-    Bucket,
     Category,
+    PayerMode,
     Transaction,
     TransactionType,
 )
@@ -50,12 +50,15 @@ def _txn_dict(t: Transaction) -> dict:
         "exchange_rate":  float(t.exchange_rate or 1),
         "type":           t.type.value,
         "paid_by":        t.paid_by,
+        "payer_mode":     t.payer_mode,
         "category_id":    t.category_id,
         "notes":          t.notes,
         "transaction_date": t.transaction_date.isoformat() if t.transaction_date else None,
         "receipt_path":   t.receipt_path,
         "payment_method": t.payment_method,
         "merchant":       t.merchant,
+        "fuel_price_per_litre": t.fuel_price_per_litre,
+        "fuel_litres":    t.fuel_litres,
         "exclude_from_forecast": t.exclude_from_forecast,
         "exclude_from_settlement": t.exclude_from_settlement,
         "created_at":     t.created_at.isoformat() if t.created_at else None,
@@ -64,12 +67,6 @@ def _txn_dict(t: Transaction) -> dict:
             for s in (t.splits or [])
         ],
     }
-
-
-def _assert_bucket_in_household(bucket_id: str, hh_id: str, db: Session):
-    bucket = db.get(Bucket, bucket_id)
-    if not bucket or bucket.household_id != hh_id:
-        raise HTTPException(status_code=404, detail="Bucket not found")
 
 
 # ---------------------------------------------------------------------------
@@ -137,8 +134,10 @@ def create_transaction(
     db: Session = Depends(get_db),
 ):
     user, hh_id = auth
-    bucket = require_bucket(db, body.bucket_id, hh_id)
-    body.paid_by = body.paid_by or user.id
+    # Optional for income only; the schema and service enforce the rest.
+    bucket = require_bucket(db, body.bucket_id, hh_id, optional=True)
+    if body.payer_mode != PayerMode.own_share.value:
+        body.paid_by = body.paid_by or user.id
 
     try:
         txn = create_transaction_service(
@@ -177,14 +176,21 @@ def update_transaction(
     db: Session = Depends(get_db),
 ):
     """Replace a transaction. Validated exactly like create (422 on bad input);
-    a blank payer keeps the current one, a blank date keeps the current date."""
+    a blank payer keeps the current one (and, with no ``payer_mode`` given, its
+    mode), a blank date keeps the current date."""
     user, hh_id = auth
     txn = db.query(Transaction).filter(Transaction.active()).filter_by(id=txn_id, household_id=hh_id).first()
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
-    _assert_bucket_in_household(body.bucket_id, hh_id, db)
-    body.paid_by = body.paid_by or txn.paid_by
+    require_bucket(db, body.bucket_id, hh_id, optional=True)
+    if body.payer_mode is None:
+        # Naming a payer means a single payer; otherwise keep the stored mode.
+        body.payer_mode = PayerMode.single.value if body.paid_by else txn.payer_mode
+    if body.payer_mode == PayerMode.own_share.value:
+        body.paid_by = None
+    else:
+        body.paid_by = body.paid_by or txn.paid_by
     update_transaction_service(db, txn, household_id=hh_id, user=user, data=body)
     db.commit()
     db.refresh(txn)

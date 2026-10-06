@@ -84,7 +84,8 @@ def test_scan_form_cash_is_stored(client, db, authed):
 # ---------------------------------------------------------------------------
 
 def _add_form(page):
-    start = page.index('action="/cash/add"')
+    """The "Take to wallet" form."""
+    start = page.index('name="kind" value="take"')
     return page[page.rfind("<form", 0, start):page.index("</form>", start)]
 
 
@@ -94,21 +95,24 @@ def test_cash_add_form_resets_after_successful_htmx_add(client, authed):
     assert "event.detail.successful" in form and "reset()" in form
 
 
-def test_cash_member_select_owner_sees_other_members(client, db, authed):
+def test_cash_take_sources_list_every_members_stash(client, db, authed):
+    """Any member may take from another's stash (never seeing its balance),
+    so the source select lists them for owners and members alike."""
     other = _add_member(db, authed.household_id, "partner")
     db.commit()
     form = _add_form(client.get("/cash").text)
-    assert f'value="{other.id}"' in form
+    assert f'value="{other.id}"' in form and f'value="{authed.user_id}"' in form
+    assert 'value="bank"' in form
 
 
-def test_cash_member_select_hides_other_members_for_non_owner(client, db, make_household, login):
+def test_cash_take_sources_for_a_non_owner(client, db, make_household, login):
     owner = make_household()
     member = _add_member(db, owner.household_id, "partner")
     db.commit()
     login(member.username, member.totp_secret)
     form = _add_form(client.get("/cash").text)
     assert f'value="{member.id}"' in form
-    assert f'value="{owner.user_id}"' not in form
+    assert f'value="{owner.user_id}"' in form
 
 
 def test_global_htmx_response_error_handler_shows_detail_safely():

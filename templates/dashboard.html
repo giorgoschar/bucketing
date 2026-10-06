@@ -36,23 +36,37 @@
   {% endif %}
 
   {# ===== KPI cards ===== #}
-  <div class="grid grid-cols-2 {% if show_income %}lg:grid-cols-4{% else %}lg:grid-cols-3{% endif %} gap-4">
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
 
     {# Expenses #}
     <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
       <p class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">Expenses</p>
       <p class="text-2xl font-bold text-gray-900 dark:text-gray-100">{{ summary.total_spent | currency(household.default_currency) }}</p>
-      <p class="text-xs text-gray-400 mt-1">this month</p>
+      <p class="text-xs text-gray-400 mt-1">this month{% if summary.cash_not_logged %} · incl. <a href="/cash" class="underline decoration-dotted">{{ summary.cash_not_logged | currency(household.default_currency) }} cash not yet logged</a>{% endif %}</p>
     </div>
 
-    {# Income (only shown when tracked) #}
-    {% if show_income %}
-    <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
-      <p class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">Income</p>
-      <p class="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{{ income_total | currency(household.default_currency) }}</p>
-      <p class="text-xs text-gray-400 mt-1">this month</p>
+    {# In / Out / Net. Income counts with or without a bucket; Out is the
+       Expenses figure (logged + cash not yet logged). Same numbers as Insights. #}
+    <div data-in-out class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
+      <div class="flex items-center justify-between mb-2">
+        <p class="text-xs font-semibold uppercase tracking-wider text-gray-400">In / Out</p>
+        <a href="/income/new" class="text-xs text-primary-500 font-medium hover:underline">+ Income</a>
+      </div>
+      <div class="space-y-1 text-sm">
+        <div class="flex items-center justify-between">
+          <span class="text-gray-500 dark:text-gray-400">In</span>
+          <span class="font-semibold text-emerald-600 dark:text-emerald-400">{{ in_out['in'] | currency(household.default_currency) }}</span>
+        </div>
+        <div class="flex items-center justify-between">
+          <span class="text-gray-500 dark:text-gray-400">Out</span>
+          <span class="font-semibold">{{ in_out.out | currency(household.default_currency) }}</span>
+        </div>
+        <div class="flex items-center justify-between border-t border-gray-100 dark:border-gray-800 pt-1">
+          <span class="text-gray-500 dark:text-gray-400">Net</span>
+          <span class="font-bold {% if in_out.net >= 0 %}text-emerald-600 dark:text-emerald-400{% else %}text-red-500{% endif %}">{% if in_out.net >= 0 %}+{% endif %}{{ in_out.net | currency(household.default_currency) }}</span>
+        </div>
+      </div>
     </div>
-    {% endif %}
 
     {# Bills due #}
     <div class="bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-100 dark:border-gray-800">
@@ -75,7 +89,12 @@
           <div class="w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0"
                style="background-color: {{ data.color }}">{{ data.name | initials }}</div>
           <div class="flex-1 min-w-0 flex items-center justify-between gap-2">
+            {% if uid == 'unassigned' %}
+            <a href="/transactions/search?missing_payer=1" class="text-xs text-gray-600 dark:text-gray-400 truncate underline decoration-dotted hover:text-primary-600"
+               title="Set the payer for these expenses">{{ data.name }}</a>
+            {% else %}
             <span class="text-xs text-gray-600 dark:text-gray-400 truncate">{{ data.name }}</span>
+            {% endif %}
             <span class="text-xs font-semibold flex-shrink-0">{{ data.amount | currency(household.default_currency) }}</span>
           </div>
         </div>
@@ -192,7 +211,9 @@
           <p class="text-sm font-semibold {% if txn.type.value == 'income' %}text-emerald-600 dark:text-emerald-400{% endif %}">
             {% if txn.type.value == 'income' %}+{% endif %}{{ txn.amount | currency(txn.currency) }}
           </p>
-          {% if txn.paid_by_user %}
+          {% if txn.payer_mode == 'own_share' %}
+          <p class="text-xs text-gray-400">Each paid own share</p>
+          {% elif txn.paid_by_user %}
           <p class="text-xs text-gray-400">{{ txn.paid_by_user.display_name }}</p>
           {% endif %}
         </div>

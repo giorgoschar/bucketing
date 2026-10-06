@@ -39,6 +39,8 @@
               </span>
               {{ occ.paid_by_user.display_name }}
             </span>
+            {% elif occ.transaction and occ.transaction.payer_mode == 'own_share' %}
+            Each paid own share
             {% else %}—{% endif %}
           </td>
           <td class="py-2.5 text-gray-400 text-xs">

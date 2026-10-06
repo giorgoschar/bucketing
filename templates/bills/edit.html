@@ -141,13 +141,26 @@
 
       <div>
         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Default payer <span class="text-gray-400 font-normal">(optional)</span></label>
-        <select name="paid_by_default" class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:border-primary-500 outline-none text-sm">
+        <select name="paid_by_default" data-own-share="{{ OWN_SHARE_CHOICE }}"
+                @change="if ($el.value === $el.dataset.ownShare) isShared = true"
+                class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:border-primary-500 outline-none text-sm">
           <option value="">No default</option>
           {% for m in members %}
-          <option value="{{ m.id }}" {% if bill.paid_by_default == m.id %}selected{% endif %}>{{ m.display_name }}</option>
+          <option value="{{ m.id }}" {% if bill.payer_mode != 'own_share' and bill.paid_by_default == m.id %}selected{% endif %}>{{ m.display_name }}</option>
           {% endfor %}
+          <option value="{{ OWN_SHARE_CHOICE }}" {% if bill.payer_mode == 'own_share' %}selected{% endif %}>Each paid their own share</option>
         </select>
+        <p class="text-xs text-gray-400 mt-1">"Each paid their own share": every payment records each member paying their share above directly (e.g. rent per the lease).</p>
       </div>
+
+      <!-- Repair past payments saved without a payer -->
+      <label class="flex items-center justify-between gap-3 p-3.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 cursor-pointer">
+        <div>
+          <p class="text-sm font-medium text-gray-700 dark:text-gray-300">Also apply to past payments with no payer</p>
+          <p class="text-xs text-gray-400 mt-0.5">Past payments of this bill that show as "Unassigned" get the payer above (or each member's share)</p>
+        </div>
+        <input type="checkbox" name="apply_to_past" value="on" class="rounded w-4 h-4 flex-shrink-0" />
+      </label>
 
       <div>
         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Notes <span class="text-gray-400 font-normal">(optional)</span></label>

@@ -65,7 +65,8 @@ function insightsFilters() {
     _pending:  false,
 
     paidByLabel() {
-      return (this.paidBy && this.membersMap[this.paidBy]) ? this.membersMap[this.paidBy] : 'Paid by';
+      // "Person": the figures become this person's share (param still paid_by).
+      return (this.paidBy && this.membersMap[this.paidBy]) ? this.membersMap[this.paidBy] : 'Person';
     },
 
     presetLabel() {
@@ -195,7 +196,7 @@ function insightsFilters() {
 function widgetToggle() {
   const DEFAULTS = {
     kpi: true, forecast: true, trend: true, categories: true,
-    budget: true, who_paid: true, by_method: true, bucket_breakdown: true, cat_trend: true,
+    budget: true, who_paid: true, by_method: true, bucket_breakdown: true, cat_trend: true, fuel: true,
   };
   const stored = (() => {
     try { return JSON.parse(localStorage.getItem('insights_widgets') || '{}'); }

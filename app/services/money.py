@@ -2,14 +2,15 @@
 Services-level money helpers: base-currency conversion and split shares.
 """
 from collections import defaultdict
-from decimal import Decimal
+from decimal import ROUND_DOWN, Decimal
 
 from sqlalchemy import func
 
 from app.models import (
+    PayerMode,
     Transaction,
 )
-from app.money import ZERO, to_decimal
+from app.money import CENT, ZERO, to_decimal
 
 # ---------------------------------------------------------------------------
 # Currency normalisation
@@ -81,6 +82,74 @@ def shares_for(txn, member_ids: set[str] | None = None) -> dict[str, Decimal]:
     elif txn.paid_by:
         shares[txn.paid_by] += total
     return dict(shares)
+
+
+def shared_between(txn, split_members: dict | None) -> set[str] | None:
+    """The ``member_ids`` settle-up passes to :func:`shares_for` / :func:`paid_for`
+    for this expense, or None outside settle-up.
+
+    ``split_members`` is :func:`app.services.settlement.settlement_members`.
+    An expense takes part when its bucket settles up and it can create a debt
+    (it has a payer or is own share, and is not excluded); there, an unsplit
+    expense is shared equally, so every view that passes this agrees with
+    settle-up about whose share it is.
+    """
+    if not split_members or getattr(txn, "exclude_from_settlement", False):
+        return None
+    if not (txn.paid_by or getattr(txn, "payer_mode", None) == PayerMode.own_share.value):
+        return None
+    return split_members.get(txn.bucket_id)
+
+
+def share_of(txn, user_id: str, split_members: dict | None = None) -> Decimal:
+    """One person's share of an expense (see :func:`shares_for`), zero if none.
+
+    The single definition of "my share" used by the /me page and by the
+    insights Person filter, so the two always report the same figures. Pass
+    ``split_members`` (:func:`app.services.settlement.settlement_members`) to
+    share unsplit expenses in settlement buckets as settle-up does.
+    """
+    return shares_for(txn, shared_between(txn, split_members)).get(user_id, ZERO)
+
+
+def equal_split(total: Decimal, member_ids, payer: str | None = None) -> dict[str, Decimal]:
+    """Divide ``total`` equally across ``member_ids``, to the cent.
+
+    Each member gets ``total / n`` rounded down to the cent; the leftover cents
+    go to the payer when they are one of the members, otherwise to the first
+    member in id order, so the shares always add up to ``total`` exactly and
+    the same input always gives the same split.
+    """
+    members = sorted(set(member_ids))
+    if not members:
+        return {}
+    total = to_decimal(total)
+    per = (total / len(members)).quantize(CENT, rounding=ROUND_DOWN)
+    shares = {uid: per for uid in members}
+    taker = payer if payer in shares else members[0]
+    shares[taker] += total - per * len(members)
+    return shares
+
+
+def paid_for(txn, member_ids: set[str] | None = None) -> dict[str, Decimal]:
+    """Who actually handed over how much of this expense, in household currency.
+
+    The counterpart of :func:`shares_for` (who is *responsible* for what):
+
+    * **single** — the payer fronted the whole amount. With no payer recorded
+      nobody is credited, and the result is empty; callers report that money
+      as "Unassigned".
+    * **own_share** — every member paid their own split directly (rent paid
+      800 / 300 straight to the landlord), so what each person paid *is* their
+      share. ``member_ids`` is passed through so any unsplit remainder is
+      spread exactly as :func:`shares_for` spreads it, which is what keeps
+      settle-up at zero for these expenses.
+    """
+    if getattr(txn, "payer_mode", None) == PayerMode.own_share.value:
+        return shares_for(txn, member_ids)
+    if not txn.paid_by:
+        return {}
+    return {txn.paid_by: to_base(txn.amount, txn.exchange_rate)}
 
 
 def split_to_base(split, txn) -> Decimal:

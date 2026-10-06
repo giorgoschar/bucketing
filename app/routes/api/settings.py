@@ -29,7 +29,7 @@ from app.models import (
 )
 from app.ratelimit import limiter
 from app.services import revoke_user_tokens
-from app.validators import parse_color
+from app.validators import parse_color, require_unlocked
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -218,6 +218,13 @@ def remove_member(
 # Categories
 # ---------------------------------------------------------------------------
 
+def _category_dict(c: Category) -> dict:
+    # ``locked``: a built-in category (``system_key``) that cannot be
+    # renamed, recoloured, re-iconed or deleted.
+    return {"id": c.id, "name": c.name, "color": c.color, "icon": c.icon,
+            "is_default": c.is_default, "system_key": c.system_key, "locked": c.is_locked}
+
+
 @router.get("/categories")
 def list_categories(auth=Depends(require_api_auth), db: Session = Depends(get_db)):
     user, hh_id = auth
@@ -227,10 +234,7 @@ def list_categories(auth=Depends(require_api_auth), db: Session = Depends(get_db
         .order_by(Category.is_default.desc(), Category.name)
         .all()
     )
-    return [
-        {"id": c.id, "name": c.name, "color": c.color, "icon": c.icon, "is_default": c.is_default}
-        for c in cats
-    ]
+    return [_category_dict(c) for c in cats]
 
 
 @router.post("/categories", status_code=status.HTTP_201_CREATED)
@@ -244,7 +248,7 @@ def create_category(
     db.add(cat)
     db.commit()
     db.refresh(cat)
-    return {"id": cat.id, "name": cat.name, "color": cat.color, "icon": cat.icon, "is_default": cat.is_default}
+    return _category_dict(cat)
 
 
 @router.put("/categories/{category_id}")
@@ -258,11 +262,12 @@ def update_category(
     cat = db.query(Category).filter_by(id=category_id, household_id=hh_id).first()
     if not cat:
         raise HTTPException(status_code=404, detail="Category not found")
+    require_unlocked(cat)
     cat.name  = body.name.strip()
     cat.color = parse_color(body.color)
     cat.icon  = body.icon
     db.commit()
-    return {"id": cat.id, "name": cat.name, "color": cat.color, "icon": cat.icon, "is_default": cat.is_default}
+    return _category_dict(cat)
 
 
 @router.delete("/categories/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -275,6 +280,7 @@ def delete_category(
     cat = db.query(Category).filter_by(id=category_id, household_id=hh_id).first()
     if not cat:
         raise HTTPException(status_code=404, detail="Category not found")
+    require_unlocked(cat)
     if cat.is_default:
         raise HTTPException(status_code=400, detail="Cannot delete a default category")
 

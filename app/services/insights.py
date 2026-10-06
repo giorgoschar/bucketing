@@ -1,12 +1,34 @@
 """
 Insights: flexible date ranges, breakdowns, trends and KPIs.
+
+Cash that was taken into a wallet but not logged yet counts as spending too
+(see app.services.cash): it shows as a "Cash (not yet logged)"
+pseudo-category, and labelled legacy cash ``out`` movements count under their
+category. Which widgets include it:
+
+* totals, KPIs, the category breakdown, the 6-month and category trends: yes;
+* the forecast: yes, always the whole household's (it ignores filters);
+* the payment-method breakdown: yes, as cash;
+* the bucket breakdown and budget status: no, that cash has no bucket
+  (and a bucket filter leaves it out of every widget);
+* who paid: no, it describes logged expenses only;
+* the Fuel card: no, it is about litres (:func:`get_insights_fuel`).
+
+Household views include every member's wallet, a Person filter that person's
+(:func:`app.services.cash.cash_scope`); it is household-visible, unlike the
+stash it may have come from.
+
+Income needs no bucket: bucket-less income always counts, bucketed income
+only while its bucket tracks income. In / Out / Net (:func:`in_out`) sets it
+against Out = logged expenses + the not-yet-logged cash above.
 """
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
 
-from sqlalchemy import func
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.clock import local_today
@@ -16,16 +38,83 @@ from app.models import (
     BucketType,
     Category,
     HouseholdMember,
+    OccurrenceStatus,
     PaymentMethod,
     RecurringBill,
     Transaction,
+    TransactionSplit,
     TransactionType,
     User,
 )
 from app.money import TENTH, ZERO, percent, quantize, to_decimal
-from app.services.money import base_amount_expr, shares_for, to_base
+from app.services.cash import (
+    NOT_LOGGED_CASH,
+    NOT_LOGGED_CASH_LABEL,
+    CashSpend,
+    cash_scope,
+    cash_spending,
+)
+from app.services.fuel import LITRE, fuel_category_id
+from app.services.money import (
+    base_amount_expr,
+    paid_for,
+    share_of,
+    shared_between,
+    shares_for,
+    to_base,
+)
+from app.services.settlement import settlement_members
 
 UNASSIGNED_PAYER = "unassigned"
+
+# Fuel prices are quoted to the tenth of a cent (1.789 €/L).
+PRICE_PER_LITRE = Decimal("0.001")
+
+# ``cash_for(start, end) -> CashSpend``: the cash spending to fold into a
+# widget for its own window (see make_cash_lookup). None leaves cash out.
+CashLookup = Callable[[date | None, date | None], CashSpend]
+
+
+def make_cash_lookup(
+    db: Session,
+    household_id: str,
+    *,
+    person: str | None = None,
+    bucket_type: str = "",
+    bucket_ids: list | None = None,
+    category_ids: list | None = None,
+) -> CashLookup | None:
+    """A memoised ``cash_for(start, end)`` for one filter set, or None when
+    cash cannot apply (a bucket filter: not-yet-logged cash has no bucket).
+
+    A category filter keeps the labelled outs in those categories and drops
+    not-yet-logged cash, which has no category.
+    """
+    if bucket_type or bucket_ids:
+        return None
+    scope = cash_scope(db, household_id, person)
+    cache: dict = {}
+
+    def cash_for(start: date | None, end: date | None) -> CashSpend:
+        if (start, end) not in cache:
+            cache[(start, end)] = cash_spending(
+                db, household_id, start, end, scope,
+                include_not_logged=not category_ids, category_ids=category_ids,
+            )
+        return cache[(start, end)]
+
+    return cash_for
+
+
+def _category_label(cid, cats: dict) -> dict:
+    if cid == NOT_LOGGED_CASH:
+        return NOT_LOGGED_CASH_LABEL
+    cat = cats.get(cid) if cid else None
+    return {
+        "name":  cat.name  if cat else "Uncategorised",
+        "icon":  cat.icon  if cat else "📦",
+        "color": cat.color if cat else "#9ca3af",
+    }
 
 # ---------------------------------------------------------------------------
 # New analytics functions
@@ -54,22 +143,29 @@ def _month_range(year: int, month: int):
 
 
 def get_income_total(db: Session, household_id: str, year: int, month: int) -> Decimal:
-    """Sum of income transactions for the month, limited to show_income buckets."""
+    """Income for the month: bucket-less income, plus income in show_income
+    buckets (see :func:`get_insights_income`)."""
     start, end = _month_range(year, month)
-    total = (
-        db.query(func.coalesce(func.sum(base_amount_expr()), 0))
-        .join(Bucket, Bucket.id == Transaction.bucket_id)
-        .filter(
-            Transaction.active(),
-            Transaction.household_id == household_id,
-            Transaction.type == TransactionType.income,
-            Transaction.transaction_date >= start,
-            Transaction.transaction_date <= end,
-            Bucket.show_income.is_(True),
-        )
-        .scalar()
-    )
-    return quantize(total)
+    return get_insights_income(db, household_id, start, end)
+
+
+def in_out(income: Decimal, summary: dict) -> dict:
+    """Money in vs money out for one period, rough by design.
+
+    ``summary`` is a :func:`get_insights_summary` result built with the cash
+    lookup, so Out is logged expenses (labelled cash outs included) plus the
+    cash not logged yet. Insights and the dashboard both show this, so they
+    agree.
+    """
+    out = summary["total_spent"]
+    not_logged = summary["cash_not_logged"]
+    return {
+        "in":              quantize(income),
+        "out":             quantize(out),
+        "logged":          quantize(out - not_logged),
+        "cash_not_logged": quantize(not_logged),
+        "net":             quantize(income - out),
+    }
 
 
 def get_bills_due_month_total(db: Session, household_id: str, year: int, month: int) -> Decimal:
@@ -85,6 +181,8 @@ def get_bills_due_month_total(db: Session, household_id: str, year: int, month: 
             RecurringBill.household_id == household_id,
             BillOccurrence.due_date >= start,
             BillOccurrence.due_date <= end,
+            # A skipped occurrence will not be paid, so it is not due.
+            BillOccurrence.status != OccurrenceStatus.skipped,
         )
         .all()
     )
@@ -106,11 +204,14 @@ def get_monthly_trend(
     category_ids: list | None = None,
     paid_by: str | None = None,
     include_one_offs: bool = True,
+    cash_for: CashLookup | None = None,
+    split_members: dict | None = None,
 ) -> list[dict]:
     """Expense totals for the last n_months calendar months (oldest → newest).
 
     Accepts the insight filters so the trend chart describes the same slice of
     data as the rest of the page; the dashboard calls it without filters.
+    ``cash_for`` adds not-yet-logged cash and labelled cash outs per month.
     """
     today = local_today()
     months = _recent_months(n_months, today)
@@ -126,7 +227,14 @@ def get_monthly_trend(
         category_ids=category_ids,
         paid_by=paid_by,
         include_one_offs=include_one_offs,
+        split_members=split_members,
     )
+    if cash_for:
+        totals = defaultdict(Decimal, totals)
+        for key, amount in cash_for(
+            _month_range(*months[0])[0], _month_range(*months[-1])[1],
+        ).by_month().items():
+            totals[key] += amount
 
     return [
         {
@@ -140,17 +248,22 @@ def get_monthly_trend(
     ]
 
 
-def get_forecast(db: Session, household_id: str) -> dict:
+def get_forecast(db: Session, household_id: str, cash_for: CashLookup | None = None) -> dict:
     """
     Project current month spend using a trend-based baseline:
     - baseline = average of last 3 complete months
     - projected = (spend_so_far / days_elapsed) * days_in_month
     - trend_delta = projected - baseline
     Returns empty dict if less than 3 months of history.
+
+    ``cash_for`` (a household-wide lookup, see :func:`make_cash_lookup`) adds
+    not-yet-logged cash and labelled cash outs to the baseline and to the spend so
+    far, so the forecast describes the same spending as the trend beside it.
     """
     today = local_today()
     # Projections ignore one-off purchases; the trend chart shows actual spend.
-    trend = get_monthly_trend(db, household_id, n_months=4, include_one_offs=False)
+    trend = get_monthly_trend(db, household_id, n_months=4, include_one_offs=False,
+                              cash_for=cash_for)
     past = [m for m in trend if not m["is_current"]]
     if len(past) < 3:
         return {}
@@ -177,6 +290,8 @@ def get_forecast(db: Session, household_id: str) -> dict:
         .scalar()
     )
     spend_so_far = to_decimal(spend_so_far)
+    if cash_for:
+        spend_so_far += cash_for(start, today).total
     daily_rate  = spend_so_far / days_elapsed if days_elapsed > 0 else 0
     projected   = quantize(daily_rate * days_in_month)
     delta       = quantize(projected - baseline)
@@ -300,11 +415,19 @@ def _build_expense_query(
     category_ids: list | None = None,
     paid_by: str | None = None,
     include_one_offs: bool = True,
+    split_members: dict | None = None,
 ):
     """Return a base Transaction query pre-filtered by all insight dimensions.
 
     One-off purchases (exclude_from_forecast) are actual spend, so they are
     included unless a projection asks for ``include_one_offs=False``.
+
+    ``paid_by`` is the Person filter (the parameter keeps its old name so
+    bookmarks and API clients still work): it selects every expense the person
+    takes part in, and callers then count only that person's share of each
+    (see :func:`_amount_for`). That includes an unsplit expense in a bucket
+    where they settle up, which settle-up shares equally (``split_members``,
+    :func:`_split_members`).
     """
     q = (
         db.query(Transaction)
@@ -329,9 +452,33 @@ def _build_expense_query(
     if category_ids:
         q = q.filter(Transaction.category_id.in_(category_ids))
     if paid_by:
-        # "Paid by" means the payer: who fronted the money, not who owes a share.
-        q = q.filter(Transaction.paid_by == paid_by)
+        # The payer, or anyone with a split; an own-share expense always has
+        # splits. Rows where their share works out to zero (they fronted an
+        # expense split entirely to others) drop out when amounts are summed.
+        takes_part = [
+            Transaction.paid_by == paid_by,
+            Transaction.splits.any(TransactionSplit.user_id == paid_by),
+        ]
+        members = _split_members(db, household_id, split_members)
+        their_buckets = [bid for bid, ids in members.items() if paid_by in ids]
+        if their_buckets:
+            # Unsplit, in a bucket where settle-up shares it with them (the
+            # conditions of app.services.money.shared_between).
+            takes_part.append(and_(
+                Transaction.bucket_id.in_(their_buckets),
+                ~Transaction.splits.any(),
+                Transaction.paid_by.isnot(None),
+                Transaction.exclude_from_settlement.is_(False),
+            ))
+        q = q.filter(or_(*takes_part))
     return q
+
+
+def _split_members(db: Session, household_id: str, given: dict | None) -> dict:
+    """``given`` when the caller already has it, else
+    :func:`app.services.settlement.settlement_members` (one lookup per widget;
+    :func:`build_insights` computes it once for all of them)."""
+    return given if given is not None else settlement_members(db, household_id)
 
 
 def _sum_expenses_by(
@@ -346,6 +493,7 @@ def _sum_expenses_by(
     category_ids: list | None = None,
     paid_by: str | None = None,
     include_one_offs: bool = True,
+    split_members: dict | None = None,
 ) -> dict:
     """Sum filtered expenses grouped by one dimension, in a single round trip.
 
@@ -355,8 +503,13 @@ def _sum_expenses_by(
     month, which is what made the filter bar feel sluggish: a single filter
     change cost ~38 queries. Everything now aggregates in one pass.
 
-    ``paid_by`` filters on the payer, so the database does the aggregation.
+    Without a Person filter the database does the aggregation. With one,
+    each row counts as that person's share, which depends on the splits, so
+    the filtered rows are summed in Python instead (the same arithmetic as
+    /me, via :func:`_amount_for`).
     """
+    if paid_by:
+        split_members = _split_members(db, household_id, split_members)
     q = _build_expense_query(
         db, household_id, start, end,
         bucket_type=bucket_type,
@@ -364,6 +517,7 @@ def _sum_expenses_by(
         category_ids=category_ids,
         paid_by=paid_by,
         include_one_offs=include_one_offs,
+        split_members=split_members,
     )
 
     def key_for(bucket_id, category_id, txn_date):
@@ -377,7 +531,17 @@ def _sum_expenses_by(
 
     totals: dict = defaultdict(Decimal)
 
-    # The payer filter is a plain column filter, so SQL does the grouping.
+    if paid_by:
+        for t in q.options(joinedload(Transaction.splits)).all():
+            share = _amount_for(t, paid_by, split_members)
+            if not share:
+                continue
+            if group_by == "method":
+                totals[t.payment_method] += share
+            else:
+                totals[key_for(t.bucket_id, t.category_id, t.transaction_date)] += share
+        return dict(totals)
+
     if group_by == "bucket":
         cols = [Transaction.bucket_id]
     elif group_by == "category":
@@ -407,6 +571,17 @@ def _effective_amount(t: Transaction) -> Decimal:
     return to_base(t.amount, t.exchange_rate)
 
 
+def _amount_for(t: Transaction, person: str | None, split_members: dict | None = None) -> Decimal:
+    """What a transaction counts for under the Person filter.
+
+    Everyone: the full amount. A person: their share (the /me definition,
+    :func:`app.services.money.share_of`, with settle-up's ``split_members``),
+    so the filtered insights add up to the same figures as that person's /me
+    page.
+    """
+    return share_of(t, person, split_members) if person else _effective_amount(t)
+
+
 def get_insights_summary(
     db: Session,
     household_id: str,
@@ -416,24 +591,51 @@ def get_insights_summary(
     bucket_ids: list | None = None,
     category_ids: list | None = None,
     paid_by: str | None = None,
+    cash_for: CashLookup | None = None,
+    split_members: dict | None = None,
 ) -> dict:
-    """Unified summary: total expenses + paid-by breakdown for any date range + filters."""
-    q = _build_expense_query(db, household_id, start, end, bucket_type, bucket_ids, category_ids, paid_by)
+    """Unified summary: total expenses + paid-by breakdown for any date range + filters.
+
+    ``total_spent`` includes cash spending from ``cash_for`` (not-yet-logged
+    cash plus labelled cash outs); ``logged_total`` is the expenses alone and
+    ``cash_not_logged`` / ``cash_outs`` the two cash parts. Who paid describes
+    the logged expenses only.
+
+    ``total_spent`` honours the Person filter (that person's share), while
+    ``gross_total`` is the full amount of the same expenses. The who-paid rows
+    always describe those full amounts — who handed over how much, and whose
+    share it was — so with a Person filter they read as "on the expenses this
+    person took part in", and the card scales its bars by ``gross_total``.
+    Shares follow settle-up: an unsplit expense in a settlement bucket is
+    shared equally (``split_members``).
+    """
+    split_members = _split_members(db, household_id, split_members)
+    q = _build_expense_query(db, household_id, start, end, bucket_type, bucket_ids, category_ids,
+                             paid_by, split_members=split_members)
     txns = q.options(joinedload(Transaction.splits)).all()
-    total_spent = sum(_effective_amount(t) for t in txns)
+    total_spent = sum((_amount_for(t, paid_by, split_members) for t in txns), ZERO)
+    gross_total = sum((_effective_amount(t) for t in txns), ZERO)
 
     paid_acc: dict[str, Decimal] = defaultdict(Decimal)
     share_acc: dict[str, Decimal] = defaultdict(Decimal)
     for t in txns:
-        # Full amount is credited to whoever fronted it; expenses with no payer
-        # go to an "Unassigned" row so the bars still sum to total_spent.
-        paid_acc[t.paid_by or UNASSIGNED_PAYER] += to_base(t.amount, t.exchange_rate)
-        shares = shares_for(t)
+        # Each amount is credited to whoever handed it over (the payer, or every
+        # member for an own-share expense); money nobody is credited with goes
+        # to an "Unassigned" row so the bars still sum to total_spent.
+        amount = to_base(t.amount, t.exchange_rate)
+        among = shared_between(t, split_members)
+        paid = paid_for(t, among)
+        for uid, value in paid.items():
+            paid_acc[uid] += value
+        uncredited = amount - sum(paid.values(), ZERO)
+        if abs(uncredited) > Decimal("0.005"):
+            paid_acc[UNASSIGNED_PAYER] += uncredited
+        shares = shares_for(t, among)
         assigned = sum(shares.values(), ZERO)
         for uid, share in shares.items():
             share_acc[uid] += share
         # With no payer there is nobody to absorb the unsplit remainder.
-        share_acc[UNASSIGNED_PAYER] += (to_base(t.amount, t.exchange_rate) - assigned) if not t.paid_by else ZERO
+        share_acc[UNASSIGNED_PAYER] += (amount - assigned) if not t.paid_by else ZERO
 
     members = (
         db.query(User)
@@ -467,8 +669,13 @@ def get_insights_summary(
             "amount": paid_q,  # alias of ``paid``, kept for one release
         }
 
+    cash = cash_for(start, end) if cash_for else CashSpend()
     return {
-        "total_spent": quantize(total_spent),
+        "total_spent": quantize(total_spent + cash.total),
+        "logged_total": quantize(total_spent),
+        "cash_not_logged": cash.not_logged_total,
+        "cash_outs":   cash.outs_total,
+        "gross_total": quantize(gross_total),
         "paid_by":     paid_by_detail,
         "period_start": start,
         "period_end":   end,
@@ -485,15 +692,21 @@ def get_insights_income(
     category_ids: list | None = None,
     paid_by: str | None = None,
 ) -> Decimal:
-    """Sum of income transactions in the date range, limited to show_income buckets."""
+    """Sum of income transactions in the date range.
+
+    Bucket-less income always counts; income in a bucket counts only while
+    that bucket has "Track income" (show_income) on. A bucket filter keeps
+    only income in those buckets. The Person filter is the recipient
+    (``paid_by``): income is not split.
+    """
     q = (
         db.query(func.coalesce(func.sum(base_amount_expr()), 0))
-        .join(Bucket, Bucket.id == Transaction.bucket_id)
+        .outerjoin(Bucket, Bucket.id == Transaction.bucket_id)
         .filter(
             Transaction.active(),
             Transaction.household_id == household_id,
             Transaction.type == TransactionType.income,
-            Bucket.show_income.is_(True),
+            or_(Transaction.bucket_id.is_(None), Bucket.show_income.is_(True)),
         )
     )
     if start:
@@ -531,7 +744,11 @@ def get_insights_bills_due(
         db.query(BillOccurrence)
         .join(RecurringBill, RecurringBill.id == BillOccurrence.bill_id)
         .options(joinedload(BillOccurrence.bill))
-        .filter(RecurringBill.household_id == household_id)
+        .filter(
+            RecurringBill.household_id == household_id,
+            # A skipped occurrence will not be paid, so it is not due.
+            BillOccurrence.status != OccurrenceStatus.skipped,
+        )
     )
     if start:
         q = q.filter(BillOccurrence.due_date >= start)
@@ -560,26 +777,37 @@ def get_insights_category_breakdown(
     category_ids: list | None = None,
     paid_by: str | None = None,
     limit: int = 8,
+    cash_for: CashLookup | None = None,
+    split_members: dict | None = None,
 ) -> list[dict]:
-    """Top spending categories filtered by all insight dimensions."""
-    q = _build_expense_query(db, household_id, start, end, bucket_type, bucket_ids, category_ids, paid_by)
+    """Top spending categories filtered by all insight dimensions.
+
+    Labelled cash outs join their category; not-yet-logged cash is its own
+    "Cash (not yet logged)" row.
+    """
+    if paid_by:
+        split_members = _split_members(db, household_id, split_members)
+    q = _build_expense_query(db, household_id, start, end, bucket_type, bucket_ids, category_ids,
+                             paid_by, split_members=split_members)
     txns = q.options(joinedload(Transaction.splits)).all() if paid_by else q.all()
 
     totals: dict[str | None, Decimal] = defaultdict(Decimal)
     for t in txns:
-        totals[t.category_id] += _effective_amount(t)
+        amount = _amount_for(t, paid_by, split_members)
+        if amount:
+            totals[t.category_id] += amount
+    if cash_for:
+        for cid, amount in cash_for(start, end).by_category(NOT_LOGGED_CASH).items():
+            totals[cid] += amount
 
     grand = sum(totals.values()) or 1
-    cat_ids = [cid for cid in totals if cid is not None]
+    cat_ids = [cid for cid in totals if cid is not None and cid != NOT_LOGGED_CASH]
     cats = {c.id: c for c in db.query(Category).filter(Category.id.in_(cat_ids)).all()}
 
     rows = []
     for cat_id, amount in sorted(totals.items(), key=lambda x: -x[1])[:limit]:
-        cat = cats.get(cat_id) if cat_id else None
         rows.append({
-            "name":   cat.name  if cat else "Uncategorised",
-            "icon":   cat.icon  if cat else "📦",
-            "color":  cat.color if cat else "#9ca3af",
+            **_category_label(cat_id, cats),
             "amount": quantize(amount),
             "pct":    quantize(amount / grand * 100, TENTH),
         })
@@ -604,11 +832,14 @@ def get_insights_by_method(
     bucket_ids: list | None = None,
     category_ids: list | None = None,
     paid_by: str | None = None,
+    cash_for: CashLookup | None = None,
+    split_members: dict | None = None,
 ) -> tuple[list[dict], Decimal]:
     """Actual spend per payment method plus cash's share of all spending (%).
 
     Rows are ``{method, label, amount, pct}``, biggest first, zero methods
-    omitted. A missing method counts as "other".
+    omitted. A missing method counts as "other"; not-yet-logged cash and labelled
+    cash outs count as cash.
     """
     raw = _sum_expenses_by(
         db, household_id, start, end,
@@ -617,10 +848,13 @@ def get_insights_by_method(
         bucket_ids=bucket_ids,
         category_ids=category_ids,
         paid_by=paid_by,
+        split_members=split_members,
     )
     totals: dict[str, Decimal] = defaultdict(Decimal)
     for method, amount in raw.items():
         totals[method or PaymentMethod.other.value] += amount
+    if cash_for:
+        totals[PaymentMethod.cash.value] += cash_for(start, end).total
     grand = sum(totals.values(), ZERO)
     rows = [
         {
@@ -645,6 +879,7 @@ def get_insights_bucket_breakdown(
     bucket_ids: list | None = None,
     category_ids: list | None = None,
     paid_by: str | None = None,
+    split_members: dict | None = None,
 ) -> list[dict]:
     """Spending per active bucket within the date range."""
     buckets = (
@@ -678,6 +913,7 @@ def get_insights_bucket_breakdown(
         bucket_ids=[b.id for b in visible],
         category_ids=category_ids,
         paid_by=paid_by,
+        split_members=split_members,
     )
 
     result = [
@@ -702,6 +938,8 @@ def get_insights_category_trend(
     category_ids: list | None = None,
     paid_by: str | None = None,
     top_n: int = 5,
+    cash_for: CashLookup | None = None,
+    split_members: dict | None = None,
 ) -> dict:
     """
     Per-category expense totals for each of the last n_months calendar months.
@@ -723,7 +961,14 @@ def get_insights_category_trend(
         bucket_ids=bucket_ids,
         category_ids=category_ids,
         paid_by=paid_by,
+        split_members=split_members,
     )
+    if cash_for:
+        grid = defaultdict(Decimal, grid)
+        for key, amount in cash_for(
+            _month_range(*month_list[0])[0], _month_range(*month_list[-1])[1],
+        ).by_category_month(NOT_LOGGED_CASH).items():
+            grid[key] += amount
 
     cat_totals: dict[str | None, Decimal] = defaultdict(Decimal)
     for (cid, _y, _m), amount in grid.items():
@@ -734,7 +979,8 @@ def get_insights_category_trend(
     top_cat_ids = [cid for cid, _ in top_cats]
 
     # Load category objects
-    cat_objs = {c.id: c for c in db.query(Category).filter(Category.id.in_([c for c in top_cat_ids if c])).all()}
+    cat_objs = {c.id: c for c in db.query(Category).filter(
+        Category.id.in_([c for c in top_cat_ids if c and c != NOT_LOGGED_CASH])).all()}
 
     labels = [date(y, m, 1).strftime("%b") for y, m in month_list]
     monthly_data: dict[str | None, list[Decimal]] = {
@@ -744,11 +990,8 @@ def get_insights_category_trend(
 
     series = []
     for cid in top_cat_ids:
-        cat = cat_objs.get(cid) if cid else None
         series.append({
-            "name":   cat.name  if cat else "Uncategorised",
-            "icon":   cat.icon  if cat else "📦",
-            "color":  cat.color if cat else "#9ca3af",
+            **_category_label(cid, cat_objs),
             "values": monthly_data[cid],
         })
 
@@ -771,8 +1014,16 @@ def get_insights_budget_status(
     end: date | None,
     bucket_type: str = "",
     bucket_ids: list | None = None,
+    category_ids: list | None = None,
+    paid_by: str | None = None,
+    split_members: dict | None = None,
 ) -> list[dict]:
-    """Spending vs budget for each bucket with a budget, over a date range."""
+    """Spending vs budget for each bucket with a budget, over a date range.
+
+    Spending honours the category and Person filters like every other figure
+    on the page (with a person, it is their share of the bucket's spending);
+    it used to always be the bucket's whole spend.
+    """
     bq = (
         db.query(Bucket)
         .filter(
@@ -789,24 +1040,17 @@ def get_insights_budget_status(
     if not buckets:
         return []
 
-    ids = [b.id for b in buckets]
-    q = (
-        db.query(Transaction.bucket_id, func.sum(base_amount_expr()))
-        .filter(
-            Transaction.active(),
-            Transaction.bucket_id.in_(ids),
-            Transaction.type == TransactionType.expense,
-            # One-off purchases (exclude_from_forecast) still count: the flag
-            # only keeps them out of projections, not out of actual spend, so
-            # this matches the dashboard's bucket spend.
-        )
+    # One-off purchases (exclude_from_forecast) still count: the flag only
+    # keeps them out of projections, not out of actual spend, so this matches
+    # the dashboard's bucket spend.
+    spend_map = _sum_expenses_by(
+        db, household_id, start, end,
+        group_by="bucket",
+        bucket_ids=[b.id for b in buckets],
+        category_ids=category_ids,
+        paid_by=paid_by,
+        split_members=split_members,
     )
-    if start:
-        q = q.filter(Transaction.transaction_date >= start)
-    if end:
-        q = q.filter(Transaction.transaction_date <= end)
-    rows = q.group_by(Transaction.bucket_id).all()
-    spend_map = {bid: to_decimal(total) for bid, total in rows}
 
     result = []
     for b in buckets:
@@ -826,6 +1070,140 @@ def get_insights_budget_status(
         })
     result.sort(key=lambda x: -x["pct_actual"])
     return result
+
+
+def get_insights_fuel(
+    db: Session,
+    household_id: str,
+    start: date | None,
+    end: date | None,
+    bucket_type: str = "",
+    bucket_ids: list | None = None,
+    category_ids: list | None = None,
+    paid_by: str | None = None,
+    split_members: dict | None = None,
+) -> dict | None:
+    """The Fuel card: litres, spend and price per litre, or None without data.
+
+    Only fuel expenses with litres recorded (a price was given) count towards
+    ``litres``, ``spend`` and the average, so the average is the weighted one:
+    spend in household currency / litres. Fuel expenses without a price are
+    reported as ``unpriced_count`` only. ``months`` lists each month with data,
+    oldest first, for the litres and price trends.
+
+    Honours the date, bucket and category filters like every other widget.
+    With a Person filter, each fill counts that person's share of it: litres
+    and spend both scale by their share of the amount (see
+    :func:`_amount_for`), which leaves the price per litre as it was.
+    """
+    fuel_id = fuel_category_id(db, household_id)
+    if fuel_id is None:
+        return None
+    if paid_by:
+        split_members = _split_members(db, household_id, split_members)
+    q = _build_expense_query(
+        db, household_id, start, end,
+        bucket_type=bucket_type, bucket_ids=bucket_ids,
+        category_ids=category_ids, paid_by=paid_by, split_members=split_members,
+    ).filter(Transaction.category_id == fuel_id)
+    txns = q.options(joinedload(Transaction.splits)).all() if paid_by else q.all()
+
+    litres: dict[tuple[int, int], Decimal] = defaultdict(Decimal)
+    spend: dict[tuple[int, int], Decimal] = defaultdict(Decimal)
+    # The same per bucket (one bucket per car), keyed (bucket_id, year, month).
+    car_litres: dict[tuple[str, int, int], Decimal] = defaultdict(Decimal)
+    car_spend: dict[tuple[str, int, int], Decimal] = defaultdict(Decimal)
+    car_fills: dict[str, int] = defaultdict(int)
+    # Every priced refuel per car, for the price-per-refuel chart.
+    car_refuels: dict[str, list] = defaultdict(list)
+    fills = unpriced = 0
+    for t in txns:
+        full = _effective_amount(t)
+        part = _amount_for(t, paid_by, split_members)
+        # Checked before the price, so an unpriced fill outside the person's
+        # share is not reported against them either.
+        if not part or not full:
+            continue
+        if t.fuel_litres is None:
+            unpriced += 1
+            continue
+        fraction = part / full
+        key = (t.transaction_date.year, t.transaction_date.month)
+        volume = to_decimal(t.fuel_litres) * fraction
+        litres[key] += volume
+        spend[key] += part
+        car_litres[(t.bucket_id, *key)] += volume
+        car_spend[(t.bucket_id, *key)] += part
+        car_fills[t.bucket_id] += 1
+        car_refuels[t.bucket_id].append((t.transaction_date, t.created_at, volume, part, t))
+        fills += 1
+
+    total_litres = sum(litres.values(), Decimal(0))
+    if total_litres <= 0:
+        return None
+
+    def per_litre(money: Decimal, volume: Decimal) -> Decimal | None:
+        return quantize(money / volume, PRICE_PER_LITRE) if volume > 0 else None
+
+    def months(lit: dict, spe: dict) -> list[dict]:
+        return [
+            {
+                "year":   y,
+                "month":  m,
+                "label":  date(y, m, 1).strftime("%b %Y"),
+                "litres": quantize(lit[(y, m)], LITRE),
+                "spend":  quantize(spe[(y, m)]),
+                "avg_price_per_litre": per_litre(spe[(y, m)], lit[(y, m)]),
+            }
+            for (y, m) in sorted(lit)
+        ]
+
+    # Per car: each bucket's own totals and monthly trend, most litres first.
+    buckets = {
+        b.id: b for b in db.query(Bucket).filter(Bucket.id.in_(list(car_fills))).all()
+    } if car_fills else {}
+    cars = []
+    for bid in car_fills:
+        lit = {(y, m): v for (b, y, m), v in car_litres.items() if b == bid}
+        spe = {(y, m): v for (b, y, m), v in car_spend.items() if b == bid}
+        c_litres, c_spend = sum(lit.values(), Decimal(0)), sum(spe.values(), ZERO)
+        bucket = buckets.get(bid)
+        cars.append({
+            "bucket_id":           bid,
+            "name":                bucket.name if bucket else "—",
+            "icon":                bucket.icon if bucket else "",
+            "litres":              quantize(c_litres, LITRE),
+            "spend":               quantize(c_spend),
+            "avg_price_per_litre": per_litre(c_spend, c_litres),
+            "fills":               car_fills[bid],
+            "months":              months(lit, spe),
+            # Oldest first. The price is the one paid, in household currency
+            # (a share changes the litres and spend, not the price).
+            "refuels": [
+                {
+                    "date":            day,
+                    "price_per_litre": quantize(
+                        to_decimal(t.fuel_price_per_litre) * to_decimal(t.exchange_rate or 1),
+                        PRICE_PER_LITRE),
+                    "litres":          quantize(volume, LITRE),
+                    "spend":           quantize(part),
+                }
+                for day, _, volume, part, t in sorted(
+                    car_refuels[bid], key=lambda r: (r[0], str(r[1] or "")))
+            ],
+        })
+    cars.sort(key=lambda c: (-c["litres"], c["name"]))
+
+    total_spend = sum(spend.values(), ZERO)
+    return {
+        "litres":              quantize(total_litres, LITRE),
+        "spend":               quantize(total_spend),
+        "avg_price_per_litre": per_litre(total_spend, total_litres),
+        "fills":               fills,
+        "unpriced_count":      unpriced,
+        "months":              months(litres, spend),
+        "cars":                cars,
+    }
 
 
 @dataclass(frozen=True)
@@ -867,8 +1245,21 @@ def build_insights(db: Session, household_id: str, filters: InsightFilters) -> d
         "category_ids": selected_category_ids or None,
         "paid_by":      filters.paid_by or None,
     }
+    # Not-yet-logged cash and labelled cash outs, for the widgets that count them
+    # (see the module docstring); computed once per window.
+    cash_for = make_cash_lookup(
+        db, household_id,
+        person=filters.paid_by or None,
+        bucket_type=bucket_type, bucket_ids=selected_bucket_ids or None,
+        category_ids=selected_category_ids or None,
+    )
+    # Settle-up's members per bucket, looked up once for every widget.
+    shares = {**common, "split_members": settlement_members(db, household_id)}
+    with_cash = {**shares, "cash_for": cash_for}
+    # The forecast is always household-wide, whatever the filters.
+    household_cash = cash_for if not any(common.values()) else make_cash_lookup(db, household_id)
 
-    summary          = get_insights_summary(db, household_id, start, end, **common)
+    summary          = get_insights_summary(db, household_id, start, end, **with_cash)
     income_total     = get_insights_income(db, household_id, start, end, **common)
     bills_due        = get_insights_bills_due(
         db, household_id, start, end,
@@ -876,18 +1267,17 @@ def build_insights(db: Session, household_id: str, filters: InsightFilters) -> d
         bucket_ids=selected_bucket_ids or None,
         category_ids=selected_category_ids or None,
     )
-    categories       = get_insights_category_breakdown(db, household_id, start, end, **common)
-    budget_status    = get_insights_budget_status(
-        db, household_id, start, end,
-        bucket_type=bucket_type,
-        bucket_ids=selected_bucket_ids or None,
+    categories       = get_insights_category_breakdown(db, household_id, start, end, **with_cash)
+    budget_status    = get_insights_budget_status(db, household_id, start, end, **shares)
+    bucket_breakdown = get_insights_bucket_breakdown(db, household_id, start, end, **shares)
+    category_trend   = get_insights_category_trend(db, household_id, n_months=6, **with_cash)
+    trend            = get_monthly_trend(db, household_id, n_months=6, **with_cash)
+    forecast         = (
+        get_forecast(db, household_id, household_cash) if period["is_current_month"] else {}
     )
-    bucket_breakdown = get_insights_bucket_breakdown(db, household_id, start, end, **common)
-    category_trend   = get_insights_category_trend(db, household_id, n_months=6, **common)
-    trend            = get_monthly_trend(db, household_id, n_months=6, **common)
-    forecast         = get_forecast(db, household_id) if period["is_current_month"] else {}
-    kpis             = get_insights_kpis(db, household_id, start, end, **common)
-    by_method, cash_share = get_insights_by_method(db, household_id, start, end, **common)
+    kpis             = get_insights_kpis(db, household_id, start, end, **with_cash)
+    by_method, cash_share = get_insights_by_method(db, household_id, start, end, **with_cash)
+    fuel             = get_insights_fuel(db, household_id, start, end, **shares)
 
     return {
         "period":                period,
@@ -899,6 +1289,7 @@ def build_insights(db: Session, household_id: str, filters: InsightFilters) -> d
         "income_total":          income_total,
         "bills_due":             bills_due,
         "net":                   quantize(income_total - summary["total_spent"]),
+        "in_out":                in_out(income_total, summary),
         "categories":            categories,
         "budget_status":         budget_status,
         "bucket_breakdown":      bucket_breakdown,
@@ -908,6 +1299,7 @@ def build_insights(db: Session, household_id: str, filters: InsightFilters) -> d
         "kpis":                  kpis,
         "by_method":             by_method,
         "cash_share":            cash_share,
+        "fuel":                  fuel,
     }
 
 
@@ -938,23 +1330,31 @@ def get_insights_kpis(
     bucket_ids: list | None = None,
     category_ids: list | None = None,
     paid_by: str | None = None,
+    cash_for: CashLookup | None = None,
+    split_members: dict | None = None,
 ) -> dict:
     """Headline numbers for the insights board, under the active filters.
+
+    Cash spending from ``cash_for`` adds to the totals, averages and
+    per-month figures (not to the count or the largest expense).
 
     Everything here answers "for the slice I am currently looking at", so the
     same filter set drives the KPIs, the charts and the totals — the previous
     version of this page mixed filtered and unfiltered figures.
     """
+    if paid_by:
+        split_members = _split_members(db, household_id, split_members)
     q = _build_expense_query(
         db, household_id, start, end,
         bucket_type=bucket_type, bucket_ids=bucket_ids,
-        category_ids=category_ids, paid_by=paid_by,
+        category_ids=category_ids, paid_by=paid_by, split_members=split_members,
     )
     txns = q.options(joinedload(Transaction.splits), joinedload(Transaction.category)).all()
 
-    amounts = [(t, _effective_amount(t)) for t in txns]
+    amounts = [(t, _amount_for(t, paid_by, split_members)) for t in txns]
     amounts = [(t, a) for t, a in amounts if a]
-    total = sum((a for _, a in amounts), ZERO)
+    cash = cash_for(start, end) if cash_for else CashSpend()
+    total = sum((a for _, a in amounts), cash.total)
     count = len(amounts)
 
     # Range bounds: fall back to the data when the period is open-ended.
@@ -970,6 +1370,8 @@ def get_insights_kpis(
     for t, a in amounts:
         if t.transaction_date:
             by_month[(t.transaction_date.year, t.transaction_date.month)] += a
+    for key, a in cash.by_month().items():
+        by_month[key] += a
 
     def _month_row(item):
         (y, m), value = item
@@ -1010,10 +1412,13 @@ def get_insights_kpis(
         prev_q = _build_expense_query(
             db, household_id, prev_start, prev_end,
             bucket_type=bucket_type, bucket_ids=bucket_ids,
-            category_ids=category_ids, paid_by=paid_by,
+            category_ids=category_ids, paid_by=paid_by, split_members=split_members,
         )
         prev_txns = prev_q.options(joinedload(Transaction.splits)).all()
-        previous_total = quantize(sum(_effective_amount(t) for t in prev_txns))
+        prev_cash = cash_for(prev_start, prev_end).total if cash_for else ZERO
+        previous_total = quantize(sum(
+            (_amount_for(t, paid_by, split_members) for t in prev_txns), prev_cash,
+        ))
         if previous_total > 0:
             change_pct = quantize((total - previous_total) / previous_total * 100, TENTH)
 

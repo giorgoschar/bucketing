@@ -245,16 +245,21 @@ def test_paid_sums_to_total_spent_including_unassigned(db, duo):
     assert s["paid_by"]["unassigned"]["paid"] == Decimal("20")
 
 
-def test_paid_by_filter_means_payer_everywhere(db, duo):
+def test_person_filter_means_share_everywhere(db, duo):
+    # The ``paid_by`` param is the Person filter: that person's share, whoever
+    # paid (see tests/test_shared_insights.py for the full matrix).
     a, b = duo.user_id, duo.partner_id
     _paid(db, duo, 100, [(a, 50), (b, 50)])          # A paid, B owes a share
+    _paid(db, duo, 20)                               # A alone
     s = get_insights_summary(db, duo.household_id, None, None, paid_by=b)
-    assert s["total_spent"] == Decimal("0")
+    assert s["total_spent"] == Decimal("50")
+    assert s["gross_total"] == Decimal("100")
     s = get_insights_summary(db, duo.household_id, None, None, paid_by=a)
-    assert s["total_spent"] == Decimal("100")
-    assert get_insights_category_breakdown(db, duo.household_id, None, None, paid_by=b) == []
+    assert s["total_spent"] == Decimal("70")
+    rows = get_insights_category_breakdown(db, duo.household_id, None, None, paid_by=b)
+    assert sum(r["amount"] for r in rows) == Decimal("50")
     rows = get_insights_category_breakdown(db, duo.household_id, None, None, paid_by=a)
-    assert sum(r["amount"] for r in rows) == Decimal("100")
+    assert sum(r["amount"] for r in rows) == Decimal("70")
 
 
 # ---------------------------------------------------------------------------

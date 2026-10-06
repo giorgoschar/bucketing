@@ -23,17 +23,22 @@ from app.database import get_db
 from app.models import (
     Bucket,
     Category,
+    PayerMode,
     Transaction,
+    TransactionSplit,
 )
-from app.schemas import TransactionCreate, TransactionUpdate
+from app.schemas import TransactionCreate, TransactionUpdate, payer_choice
 from app.services import (
     DeletedTransactionReplay,
     DuplicateTransaction,
+    after_save_url,
+    last_payment_method,
 )
 from app.services import create_transaction as create_transaction_service
 from app.services import delete_transaction as delete_transaction_soft
 from app.services import full_ctx as _full_ctx
 from app.services import update_transaction as update_transaction_service
+from app.services.cash import has_linked_take
 from app.templates import templates
 from app.validators import (
     parse_amount,
@@ -105,6 +110,19 @@ def _get_context(db: Session, user, hh_id: str) -> dict:
     return ctx
 
 
+def _edit_context(db: Session, user, hh_id: str, txn: Transaction) -> dict:
+    """The form context for editing ``txn``. Its bucket is listed even when
+    archived: with only active buckets no option was selected, so the browser
+    picked the first one and saving silently moved (or, for income, detached)
+    the row, or failed for an expense."""
+    ctx = _get_context(db, user, hh_id)
+    if txn.bucket is not None and txn.bucket not in ctx["buckets"]:
+        ctx["buckets"] = [*ctx["buckets"], txn.bucket]
+    # "I took this from my stash": the take follows the expense's edits.
+    ctx["linked_take"] = has_linked_take(db, txn.id)
+    return ctx
+
+
 # ---------------------------------------------------------------------------
 # Add expense wizard
 # ---------------------------------------------------------------------------
@@ -152,6 +170,8 @@ def new_transaction(
         "user": user,
         "selected_bucket_id": bucket_id or "",
         "prefill": prefill,
+        # Paid the way they paid last time: most expenses repeat the method.
+        "default_payment_method": last_payment_method(db, hh_id, user.id),
         "show_income": show_income,
         "step": 1,
     })
@@ -161,7 +181,7 @@ def new_transaction(
 @router.post("", response_class=HTMLResponse)
 async def create_transaction(
     request: Request,
-    bucket_id: str = Form(...),
+    bucket_id: str = Form(""),
     transaction_date: str = Form(...),
     amount: str = Form(...),
     currency: str = Form("EUR"),
@@ -173,6 +193,9 @@ async def create_transaction(
     is_shared: str = Form("off"),
     merchant: str = Form(""),
     payment_method: str = Form("card"),
+    took_cash: str = Form(""),
+    take_from: str = Form(""),
+    fuel_price_per_litre: str = Form(""),
     remember_rule: str = Form(""),
     client_id: str = Form(""),
     receipt: UploadFile = File(None),
@@ -181,10 +204,16 @@ async def create_transaction(
 ):
     user, hh_id = auth
 
-    bucket = require_bucket(db, bucket_id, hh_id)
+    # Only income may be bucket-less (the schema and service enforce it).
+    bucket = require_bucket(db, bucket_id, hh_id, optional=True)
     shared = is_shared == "on"
+    # "Each paid their own share" arrives as a value of the payer dropdown.
+    payer, payer_mode = payer_choice(paid_by)
+    own_share = payer_mode == PayerMode.own_share.value
 
-    splits = await _parse_split_fields(request) if shared else []
+    # Own share is meaningless without the shares, so read them even if the
+    # shared toggle was switched off.
+    splits = await _parse_split_fields(request) if shared or own_share else []
     try:
         data = TransactionCreate(
             bucket_id=bucket_id,
@@ -192,7 +221,8 @@ async def create_transaction(
             currency=currency,
             exchange_rate=exchange_rate,
             type=type,
-            paid_by=paid_by,
+            paid_by=payer,
+            payer_mode=payer_mode,
             category_id=category_id,
             notes=notes,
             transaction_date=transaction_date,
@@ -200,6 +230,12 @@ async def create_transaction(
             client_id=client_id,
             payment_method=payment_method,
             merchant=merchant,
+            # "I took this from my stash": only for cash (the hidden input
+            # still posts "on" if the box was ticked before switching to card).
+            took_cash=(took_cash == "on" and payment_method == "cash"),
+            take_from=take_from,
+            # Kept only for the fuel category; litres are computed server-side.
+            fuel_price_per_litre=fuel_price_per_litre,
         )
     except ValidationError as exc:
         # Keep the form's user-facing error rendering (HTTPException handler).
@@ -226,7 +262,7 @@ async def create_transaction(
                 "partials/transaction_added.html",
                 {"request": request, "transaction": txn, "bucket": bucket},
             )
-        return RedirectResponse(f"/buckets/{txn.bucket_id}", status_code=302)
+        return RedirectResponse(after_save_url(txn.bucket_id), status_code=302)
 
     # Teach the categorisation rule from a scan: correcting a merchant's
     # category once makes it stick for next time.
@@ -246,7 +282,7 @@ async def create_transaction(
             "partials/transaction_added.html",
             {"request": request, "transaction": txn, "bucket": bucket},
         )
-    return RedirectResponse(f"/buckets/{bucket_id}", status_code=302)
+    return RedirectResponse(after_save_url(txn.bucket_id), status_code=302)
 
 
 def _first_error(exc: ValidationError) -> str:
@@ -288,7 +324,7 @@ def edit_transaction_page(
     if not txn or txn.household_id != hh_id or txn.deleted_at is not None:
         raise HTTPException(status_code=404)
 
-    ctx = _get_context(db, user, hh_id)
+    ctx = _edit_context(db, user, hh_id, txn)
     ctx.update({
         "request": request,
         "user": user,
@@ -301,7 +337,7 @@ def edit_transaction_page(
 async def edit_transaction(
     txn_id: str,
     request: Request,
-    bucket_id: str = Form(...),
+    bucket_id: str = Form(""),
     transaction_date: str = Form(...),
     amount: str = Form(...),
     currency: str = Form("EUR"),
@@ -314,6 +350,8 @@ async def edit_transaction(
     exclude_from_settlement: str = Form(""),
     payment_method: str = Form("card"),
     merchant: str = Form(""),
+    is_shared: str = Form(""),
+    fuel_price_per_litre: str = Form(""),
     db: Session = Depends(get_db),
     auth=Depends(require_auth),
 ):
@@ -324,11 +362,18 @@ async def edit_transaction(
 
     # The target bucket was previously assigned straight from the form, so a
     # member could move a transaction into any household's bucket by guessing
-    # or leaking an id.
-    require_bucket(db, bucket_id, hh_id)
+    # or leaking an id. Blank is allowed for income only (checked below).
+    require_bucket(db, bucket_id, hh_id, optional=True)
 
     # Same field validation as create (TransactionCreate): currency, rate > 0,
-    # Decimal amounts, splits <= total, payment method.
+    # Decimal amounts, splits <= total, payment method, own-share splits.
+    payer, payer_mode = payer_choice(paid_by)
+    # The shared toggle: "on" splits blank shares equally, "off" means no split
+    # (its hidden inputs still post their old values, so they are not read),
+    # absent (a form from before the toggle was posted) keeps the old reading.
+    shared = {"on": True, "off": False}.get(is_shared)
+    own_share = payer_mode == PayerMode.own_share.value
+    splits = await _parse_split_fields(request) if shared is not False or own_share else []
     try:
         data = TransactionUpdate(
             bucket_id=bucket_id,
@@ -336,25 +381,30 @@ async def edit_transaction(
             currency=currency,
             exchange_rate=exchange_rate,
             type=type,
-            paid_by=paid_by,
+            paid_by=payer,
+            payer_mode=payer_mode,
             category_id=category_id,
             notes=notes,
             transaction_date=_parse_txn_date(transaction_date),
-            splits=await _parse_split_fields(request),
+            splits=splits,
             payment_method=payment_method,
             merchant=merchant,
+            # Always passed, so a blank field clears the price (an omitted one
+            # would keep it, see TransactionUpdate).
+            fuel_price_per_litre=fuel_price_per_litre,
             exclude_from_forecast=(exclude_from_forecast == "on"),
             exclude_from_settlement=(exclude_from_settlement == "on"),
         )
     except ValidationError as exc:
-        ctx = _get_context(db, user, hh_id)
+        ctx = _edit_context(db, user, hh_id, txn)
         ctx.update({"request": request, "user": user, "txn": txn, "error": _first_error(exc)})
         return templates.TemplateResponse("transactions/edit.html", ctx, status_code=400)
 
-    update_transaction_service(db, txn, household_id=hh_id, user=user, data=data)
+    update_transaction_service(db, txn, household_id=hh_id, user=user, data=data,
+                               is_shared=shared)
     db.commit()
 
-    return RedirectResponse(f"/buckets/{txn.bucket_id}", status_code=302)
+    return RedirectResponse(after_save_url(txn.bucket_id), status_code=302)
 
 
 @router.post("/{txn_id}/delete", response_class=HTMLResponse)
@@ -375,7 +425,7 @@ def delete_transaction(
 
     if request.headers.get("HX-Request"):
         return HTMLResponse("")  # HTMX removes the row
-    return RedirectResponse(f"/buckets/{bucket_id}", status_code=302)
+    return RedirectResponse(after_save_url(bucket_id), status_code=302)
 
 
 # ---------------------------------------------------------------------------
@@ -393,7 +443,6 @@ def duplicate_transaction(
     src = db.get(Transaction, txn_id)
     if not src or src.household_id != hh_id or src.deleted_at is not None:
         raise HTTPException(status_code=404)
-
     new_txn = Transaction(
         bucket_id=src.bucket_id,
         household_id=src.household_id,
@@ -402,22 +451,31 @@ def duplicate_transaction(
         exchange_rate=src.exchange_rate,
         type=src.type,
         paid_by=src.paid_by,
+        payer_mode=src.payer_mode,
         category_id=src.category_id,
         notes=src.notes,
         payment_method=src.payment_method,
         merchant=src.merchant,
+        fuel_price_per_litre=src.fuel_price_per_litre,
+        fuel_litres=src.fuel_litres,
         transaction_date=local_today(),
         exclude_from_forecast=src.exclude_from_forecast,
         exclude_from_settlement=src.exclude_from_settlement,
     )
     db.add(new_txn)
+    db.flush()
+    # An own-share expense is defined by its splits (who paid what), so the
+    # copy needs them too; a single-payer copy stays unsplit as before.
+    if src.payer_mode == PayerMode.own_share.value:
+        for s in src.splits:
+            db.add(TransactionSplit(transaction_id=new_txn.id, user_id=s.user_id, amount=s.amount))
     db.commit()
 
     if request.headers.get("HX-Request"):
-        bucket = db.get(Bucket, new_txn.bucket_id)
+        bucket = db.get(Bucket, new_txn.bucket_id) if new_txn.bucket_id else None
         return templates.TemplateResponse(
             "partials/transaction_added.html",
             {"request": request, "transaction": new_txn, "bucket": bucket},
         )
-    return RedirectResponse(f"/buckets/{src.bucket_id}", status_code=302)
+    return RedirectResponse(after_save_url(src.bucket_id), status_code=302)
 

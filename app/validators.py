@@ -13,7 +13,7 @@ from decimal import Decimal, InvalidOperation
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.models import Bucket, Category, HouseholdMember
+from app.models import Bucket, BucketStatus, Category, HouseholdMember
 
 # Money limits — Numeric(12, 4) tops out below 100 million.
 MAX_AMOUNT = Decimal("99999999")
@@ -99,6 +99,36 @@ def require_bucket(db: Session, bucket_id: str | None, hh_id: str, *, optional: 
     return bucket
 
 
+def require_income_bucket(
+    db: Session, bucket_id: str | None, hh_id: str, *, not_found_status: int = 404,
+) -> Bucket | None:
+    """The optional bucket for an income entry: None when none was chosen,
+    else an active bucket of this household with "Track income" on.
+
+    Unknown or foreign buckets answer ``not_found_status`` (the HTML form has
+    always said 400); a bucket that does not take income answers 400.
+    """
+    if not bucket_id:
+        return None
+    bucket = db.get(Bucket, bucket_id)
+    if not bucket or bucket.household_id != hh_id:
+        raise HTTPException(status_code=not_found_status, detail="Bucket not found.")
+    require_takes_income(bucket)
+    return bucket
+
+
+def require_takes_income(bucket: Bucket) -> None:
+    """HTTP 400 unless income may be put in ``bucket``: it is active and has
+    "Track income" on. Income anywhere else would be saved but never counted
+    in In / Net (see app.services.insights)."""
+    if not bucket.show_income or bucket.status != BucketStatus.active:
+        raise HTTPException(
+            status_code=400,
+            detail="This bucket does not track income. Leave the bucket empty or "
+                   "turn on \"Track income\" for it.",
+        )
+
+
 def require_category(db: Session, category_id: str | None, hh_id: str) -> str | None:
     """Return the category id, asserting it belongs to this household."""
     if not category_id:
@@ -107,6 +137,17 @@ def require_category(db: Session, category_id: str | None, hh_id: str) -> str | 
     if not category or category.household_id != hh_id:
         raise HTTPException(status_code=404, detail="Category not found.")
     return category_id
+
+
+CATEGORY_LOCKED = "This is a built-in category: it cannot be renamed, recoloured or deleted."
+
+
+def require_unlocked(category: Category) -> None:
+    """HTTP 403 for a built-in category (``system_key`` set, e.g. Fuel): the
+    app relies on it, so it cannot be renamed, recoloured, re-iconed, merged
+    or deleted. Expenses and category rules may still use it."""
+    if category.is_locked:
+        raise HTTPException(status_code=403, detail=CATEGORY_LOCKED)
 
 
 def household_member_ids(db: Session, hh_id: str) -> set[str]:

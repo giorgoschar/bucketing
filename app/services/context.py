@@ -5,6 +5,7 @@ Template context shared by every page.
 from sqlalchemy.orm import Session
 
 from app.models import (
+    FUEL_SYSTEM_KEY,
     Bucket,
     BucketStatus,
     Category,
@@ -33,5 +34,9 @@ def full_ctx(db: Session, user, hh_id: str) -> dict:
         .all()
     )
     ctx["categories"] = db.query(Category).filter_by(household_id=hh_id).all()
+    # Picking this category unlocks the price per litre in the expense forms.
+    ctx["fuel_category_id"] = next(
+        (c.id for c in ctx["categories"] if c.system_key == FUEL_SYSTEM_KEY), ""
+    )
     ctx["buckets"] = db.query(Bucket).filter_by(household_id=hh_id, status=BucketStatus.active).all()
     return ctx

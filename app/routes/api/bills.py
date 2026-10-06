@@ -11,12 +11,13 @@ from sqlalchemy.orm import Session
 from app.api_auth import require_api_auth
 from app.bills_service import (
     BILL_HAS_HISTORY_MSG,
+    backfill_bill_payer,
     bill_has_payment_history,
     delete_future_occurrences,
     effective_overrides,
     generate_occurrences,
     normalise_interval_months,
-    resolve_bill_payer,
+    resolve_bill_payment,
     settle_occurrence,
 )
 from app.clock import utcnow_naive
@@ -25,11 +26,12 @@ from app.models import (
     BillFrequency,
     BillOccurrence,
     OccurrenceStatus,
+    PayerMode,
     RecurringBill,
     RecurringBillSplit,
 )
 from app.money import quantize
-from app.schemas import parse_payment_method
+from app.schemas import parse_payer_mode, parse_payment_method
 from app.services import get_overdue_bills, get_upcoming_bills
 from app.validators import (
     parse_amount,
@@ -53,6 +55,14 @@ def _validate_bill_refs(body, hh_id: str, db: Session) -> None:
     require_member(db, body.paid_by_default, hh_id)
     if body.splits:
         validate_split_users([s.user_id for s in body.splits], hh_id, db)
+    if body.payer_mode == PayerMode.own_share.value:
+        if not body.splits:
+            raise HTTPException(
+                status_code=400,
+                detail="payer_mode own_share needs splits (each member's share).",
+            )
+        # Own share has no single payer.
+        body.paid_by_default = None
 
 
 def _parse_bill_date(value: str | None, field: str, *, required: bool = False):
@@ -98,11 +108,23 @@ class BillIn(BaseModel):
     notes:             str | None   = None
     is_auto_pay:       bool         = False
     splits:            list[BillSplitIn] = []
+    # "single" (paid_by_default pays) or "own_share" (each member pays their
+    # split directly; needs splits).
+    payer_mode:        str          = PayerMode.single.value
+    # Update only: also give past payments with no payer this bill's payer.
+    apply_to_past:     bool         = False
+
+    @field_validator("payer_mode", mode="before")
+    @classmethod
+    def _payer_mode(cls, v):
+        return parse_payer_mode(v)
 
 
 class PayOccurrenceIn(BaseModel):
     amount:   Decimal | None = None
     paid_by:  str | None   = None
+    # None: paid_by if given, else the bill's payer mode.
+    payer_mode: str | None = None
     payment_method: str = "card"
     splits:   list[BillSplitIn] = []
 
@@ -110,6 +132,11 @@ class PayOccurrenceIn(BaseModel):
     @classmethod
     def _payment_method(cls, v):
         return parse_payment_method(v)
+
+    @field_validator("payer_mode", mode="before")
+    @classmethod
+    def _payer_mode(cls, v):
+        return None if v is None or v == "" else parse_payer_mode(v)
 
 
 def _bill_dict(b: RecurringBill) -> dict:
@@ -128,6 +155,7 @@ def _bill_dict(b: RecurringBill) -> dict:
         "contract_end_date": b.contract_end_date.isoformat() if b.contract_end_date else None,
         "total_occurrences": b.total_occurrences,
         "paid_by_default":  b.paid_by_default,
+        "payer_mode":       b.payer_mode,
         "notes":            b.notes,
         "is_auto_pay":      b.is_auto_pay,
         "is_active":        b.is_active,
@@ -208,6 +236,7 @@ def create_bill(
         contract_end_date=_parse_bill_date(body.contract_end_date, "contract_end_date"),
         total_occurrences=body.total_occurrences,
         paid_by_default=body.paid_by_default,
+        payer_mode=body.payer_mode,
         notes=body.notes,
         is_auto_pay=body.is_auto_pay,
     )
@@ -284,6 +313,7 @@ def update_bill(
     bill.contract_end_date = _parse_bill_date(body.contract_end_date, "contract_end_date")
     bill.total_occurrences = body.total_occurrences
     bill.paid_by_default   = body.paid_by_default
+    bill.payer_mode        = body.payer_mode
     bill.notes             = body.notes
     bill.is_auto_pay       = body.is_auto_pay
 
@@ -295,9 +325,20 @@ def update_bill(
         db.add(RecurringBillSplit(bill_id=bill.id, user_id=s.user_id, amount=s.amount))
 
     generate_occurrences(db, bill)
+    backfilled = None
+    if body.apply_to_past:
+        db.flush()
+        db.expire(bill, ["splits"])
+        backfilled = backfill_bill_payer(db, bill)
     db.commit()
     db.refresh(bill)
-    return _bill_dict(bill)
+    out = _bill_dict(bill)
+    if backfilled is not None:
+        # resplit: own-share rows whose splits did not add up and were replaced
+        # by the bill's (see backfill_bill_payer).
+        out["backfilled"] = backfilled.updated
+        out["resplit"] = backfilled.resplit
+    return out
 
 
 @router.delete("/{bill_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -343,13 +384,19 @@ def pay_occurrence(
 
     if body.splits:
         validate_split_users([s.user_id for s in body.splits], hh_id, db)
-    payer = require_member(db, body.paid_by, hh_id) or resolve_bill_payer(db, bill, user.id)
+    payer, payer_mode = resolve_bill_payment(
+        db, bill,
+        paid_by=require_member(db, body.paid_by, hh_id),
+        payer_mode=body.payer_mode,
+        fallback_user_id=user.id,
+    )
 
     try:
         paid = settle_occurrence(
             db, occ,
             amount=pay_amount,
             paid_by=payer,
+            payer_mode=payer_mode,
             paid_on=utcnow_naive(),
             payment_method=body.payment_method,
             split_overrides=effective_overrides(bill, {s.user_id: Decimal(str(s.amount)) for s in body.splits}),

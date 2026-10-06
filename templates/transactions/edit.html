@@ -5,8 +5,45 @@
 {% block content %}
 <div class="max-w-lg mx-auto">
   <div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-6">
+    {% set own_share = txn.payer_mode == 'own_share' %}
+    {% set base_currency = household.default_currency if household else 'EUR' %}
+    {# An expense always gets a payer: an existing one with none recorded
+       defaults to the editor rather than staying "Unassigned". #}
+    {% set payer_value = OWN_SHARE_CHOICE if own_share else (txn.paid_by or (user.id if txn.type.value == 'expense' else '')) %}
+    {# Initial state via data-* (autoescaped), never interpolated into JS. #}
     <form method="POST" action="/transactions/{{ txn.id }}/edit" class="space-y-4"
-          x-data="{ isShared: {{ 'true' if txn.splits else 'false' }} }">
+          data-shared="{{ 'true' if txn.splits or own_share else 'false' }}"
+          data-txn-type="{{ txn.type.value }}" data-payer="{{ payer_value }}"
+          data-own-share="{{ OWN_SHARE_CHOICE }}"
+          data-currency="{{ txn.currency or base_currency }}" data-base="{{ base_currency }}"
+          data-amount="{{ txn.amount | plain_number }}" data-category="{{ txn.category_id or '' }}"
+          data-fuel-category="{{ fuel_category_id }}" data-fuel-price="{{ txn.fuel_price_per_litre | plain_number }}"
+          x-data="{ isShared: false, txnType: '', payer: '', ownShare: '', currency: '', base: '',
+                    amount: '', categoryId: '', fuelId: '', fuelPrice: '',
+                    init() {
+                      const d = this.$el.dataset;
+                      this.isShared = d.shared === 'true';
+                      this.txnType = d.txnType;
+                      this.payer = d.payer;
+                      this.ownShare = d.ownShare;
+                      this.currency = d.currency;
+                      this.base = d.base;
+                      this.amount = d.amount;
+                      this.categoryId = d.category;
+                      this.fuelId = d.fuelCategory;
+                      this.fuelPrice = d.fuelPrice;
+                      /* Leaving Fuel clears the price (it is not kept for a later switch back). */
+                      const clear = () => { if (!this.isFuel()) this.fuelPrice = ''; };
+                      this.$watch('categoryId', clear);
+                      this.$watch('txnType', clear);
+                    },
+                    isFuel() { return !!this.fuelId && this.categoryId === this.fuelId && this.txnType === 'expense'; },
+                    /* Preview only: the server recomputes amount / price. */
+                    litres() {
+                      const p = parseFloat(String(this.fuelPrice).replace(',', '.'));
+                      const a = parseFloat(this.amount);
+                      return p > 0 && a > 0 ? (a / p).toFixed(2) + ' L' : '—';
+                    } }">
 
       {% if error %}
       <div role="alert" class="px-3.5 py-2.5 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 text-sm">{{ error }}</div>
@@ -15,12 +52,12 @@
       <div class="grid grid-cols-2 gap-3">
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Amount</label>
-          <input type="number" name="amount" step="0.01" min="0" value="{{ txn.amount }}" required
+          <input type="number" name="amount" step="0.01" min="0" value="{{ txn.amount }}" required x-model="amount"
                  class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm" />
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Currency</label>
-          <select name="currency" class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:border-primary-500 outline-none text-sm">
+          <select name="currency" x-model="currency" class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:border-primary-500 outline-none text-sm">
             {% for c in currencies %}
             <option value="{{ c }}" {% if txn.currency == c %}selected{% endif %}>{{ c }}</option>
             {% endfor %}
@@ -28,11 +65,25 @@
         </div>
       </div>
 
+      {# The stored rate to the household currency. This form used to post no
+         rate at all, so saving reset it to 1. Disabled (not sent, so 1) while
+         the household currency is selected. #}
+      <div x-show="currency !== base" x-cloak>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+          1 <span x-text="currency"></span> = ? {{ base_currency }}
+        </label>
+        <input type="number" name="exchange_rate" value="{{ txn.exchange_rate or 1 }}" step="any" min="0.000001"
+               :disabled="currency === base"
+               class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm" />
+      </div>
+
       <div>
         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Bucket</label>
         <select name="bucket_id" class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:border-primary-500 outline-none text-sm">
+          {# Only income may go without a bucket (the server enforces it). #}
+          <option value="" {% if not txn.bucket_id %}selected{% endif %} :disabled="txnType !== 'income'">— No bucket (income only)</option>
           {% for b in buckets %}
-          <option value="{{ b.id }}" {% if txn.bucket_id == b.id %}selected{% endif %}>{{ b.icon }} {{ b.name }}</option>
+          <option value="{{ b.id }}" {% if txn.bucket_id == b.id %}selected{% endif %}>{{ b.icon }} {{ b.name }}{% if b.status.value == 'archived' %} (archived){% endif %}</option>
           {% endfor %}
         </select>
       </div>
@@ -45,7 +96,7 @@
 
       <div>
         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Type</label>
-        <select name="type" class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:border-primary-500 outline-none text-sm">
+        <select name="type" x-model="txnType" class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:border-primary-500 outline-none text-sm">
           {% for t in ['expense', 'income', 'transfer'] %}
           <option value="{{ t }}" {% if txn.type.value == t %}selected{% endif %}>{{ t | capitalize }}</option>
           {% endfor %}
@@ -54,7 +105,7 @@
 
       <div>
         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Category</label>
-        <select name="category_id" class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:border-primary-500 outline-none text-sm">
+        <select name="category_id" x-model="categoryId" class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:border-primary-500 outline-none text-sm">
           <option value="">No category</option>
           {% for cat in categories %}
           <option value="{{ cat.id }}" {% if txn.category_id == cat.id %}selected{% endif %}>{{ cat.icon }} {{ cat.name }}</option>
@@ -62,14 +113,41 @@
         </select>
       </div>
 
+      {# Fuel expenses: the price per litre; the server works out the litres.
+         Disabled (not sent, so cleared) for any other category. #}
+      <div x-show="isFuel()" x-cloak class="grid grid-cols-2 gap-3">
+        <div>
+          <label for="fuel-price" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+            Price per litre <span class="text-gray-400" x-text="'(' + currency + ')'"></span>
+          </label>
+          <input id="fuel-price" type="text" inputmode="decimal" name="fuel_price_per_litre"
+                 x-model="fuelPrice" :disabled="!isFuel()" placeholder="1.789"
+                 class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none text-sm" />
+        </div>
+        <div>
+          <p class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Litres</p>
+          <output for="fuel-price" aria-live="polite" x-text="litres()"
+                  class="block w-full px-3.5 py-2.5 rounded-xl border border-dashed border-gray-200 dark:border-gray-700 text-sm font-semibold"></output>
+        </div>
+      </div>
+
       <div>
         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Paid by</label>
-        <select name="paid_by" class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:border-primary-500 outline-none text-sm">
-          <option value="">Not specified</option>
+        <select name="paid_by" x-model="payer" @change="if (payer === ownShare) isShared = true"
+                class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:border-primary-500 outline-none text-sm">
+          {# "Not specified" only for income/transfers: an expense with no payer
+             shows as "Unassigned" and is skipped by settle-up. #}
+          <option value="" {% if payer_value == '' %}selected{% endif %}
+                  x-show="txnType !== 'expense'" :disabled="txnType === 'expense'">Not specified</option>
           {% for m in members %}
-          <option value="{{ m.id }}" {% if txn.paid_by == m.id %}selected{% endif %}>{{ m.display_name }}</option>
+          <option value="{{ m.id }}" {% if payer_value == m.id %}selected{% endif %}>{{ m.display_name }}</option>
           {% endfor %}
+          <option value="{{ OWN_SHARE_CHOICE }}" {% if own_share %}selected{% endif %}
+                  x-show="txnType === 'expense'" :disabled="txnType !== 'expense'">Each paid their own share</option>
         </select>
+        <p x-show="payer === ownShare" x-cloak class="text-xs text-gray-400 mt-1.5">
+          Each member's share below is what they paid directly (e.g. rent split by the lease). The shares must add up to the total.
+        </p>
       </div>
 
       <!-- Shared expense toggle -->
@@ -80,10 +158,14 @@
         </div>
         <input type="checkbox" x-model="isShared" class="rounded w-4 h-4" />
       </label>
+      {# Posted so the server knows the toggle: blank shares while shared mean an
+         equal split, and switching it off drops the split. #}
+      <input type="hidden" name="is_shared" :value="isShared ? 'on' : 'off'" />
 
       <!-- Per-member split amounts -->
       <div x-show="isShared" x-cloak class="space-y-3 p-3.5 rounded-xl border border-purple-200 dark:border-purple-900/40 bg-purple-50 dark:bg-purple-900/10">
         <p class="text-xs font-semibold text-purple-700 dark:text-purple-300 uppercase tracking-wider">Each member's share</p>
+        <p x-show="payer !== ownShare" class="text-xs text-gray-400">Leave blank for an equal split.</p>
         {% for m in members %}
         {% set existing_split = txn.splits | selectattr('user_id', 'equalto', m.id) | first | default(None) %}
         <div class="flex items-center gap-3">
@@ -99,13 +181,17 @@
       </div>
 
       <div class="grid grid-cols-2 gap-3">
-        <div>
+        <div data-method="{{ txn.payment_method }}"
+             x-data="{ method: '', init() { this.method = this.$el.dataset.method; } }">
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Paid with</label>
-          <select name="payment_method" class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:border-primary-500 outline-none text-sm">
+          <select name="payment_method" x-model="method" class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:border-primary-500 outline-none text-sm">
             {% for pm in payment_methods %}
             <option value="{{ pm.value }}" {% if txn.payment_method == pm.value %}selected{% endif %}>{{ pm.value | replace('_', ' ') | title }}</option>
             {% endfor %}
           </select>
+          {% if linked_take %}
+          <p x-show="method === 'cash'" class="mt-2 text-[11px] text-gray-500 dark:text-gray-400">Taken for this expense: the take follows its amount and date, and goes away if it is no longer paid in cash.</p>
+          {% endif %}
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Merchant</label>
@@ -141,7 +227,7 @@
       </label>
 
       <div class="flex gap-3 pt-2">
-        <a href="/buckets/{{ txn.bucket_id }}"
+        <a href="{{ ('/buckets/' ~ txn.bucket_id) if txn.bucket_id else '/transactions/search?type=income' }}"
            class="flex-1 py-2.5 text-center border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 font-semibold rounded-xl text-sm hover:bg-gray-50 transition-colors">
           Cancel
         </a>

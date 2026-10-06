@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     aade_host: str = "www1.aade.gr"
     aade_path_prefix: str = "/tameiakes/myweb/q1.php"
     aade_timeout_seconds: float = 8.0
+    # AADE's myDATA receipt page, linked from newer receipts' QR codes and
+    # from e-invoicing providers' receipt pages.
+    mydata_qr_host: str = "mydatapi.aade.gr"
+    mydata_qr_path: str = "/myDATA/TimologioQR/QRInfo"
+    # Cap on a provider receipt page fetched to find its AADE link.
+    receipt_page_max_bytes: int = 1_000_000
 
     # Session lifetime, enforced server-side by the signed timestamp in the
     # cookie (not only by the browser's cookie expiry).

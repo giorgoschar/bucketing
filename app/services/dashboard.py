@@ -11,18 +11,29 @@ from app.models import (
     OccurrenceStatus,
     RecurringBill,
 )
-from app.services.insights import _month_range, get_insights_summary
+from app.services.insights import _month_range, get_insights_summary, make_cash_lookup
 
 
-def get_month_summary(db: Session, household_id: str, year: int, month: int, bucket_type: str = "", bucket_ids: list | None = None) -> dict:
+def get_month_summary(
+    db: Session, household_id: str, year: int, month: int, bucket_type: str = "",
+    bucket_ids: list | None = None, *, include_cash: bool = False,
+) -> dict:
     """
     Month total and who-paid breakdown, built from ``get_insights_summary`` so
     the dashboard and Insights agree: ``paid`` (alias ``amount``) is what each
     payer fronted, ``share`` what they owe; no-payer expenses go to an
     "Unassigned" row and payers who left show as "Former member".
+
+    ``include_cash`` adds the household's not-yet-logged cash and
+    labelled cash outs to ``total_spent``, as the Insights household view does.
     """
     start, end = _month_range(year, month)
-    return get_insights_summary(db, household_id, start, end, bucket_type, bucket_ids)
+    cash_for = (
+        make_cash_lookup(db, household_id, bucket_type=bucket_type, bucket_ids=bucket_ids)
+        if include_cash else None
+    )
+    return get_insights_summary(db, household_id, start, end, bucket_type, bucket_ids,
+                                cash_for=cash_for)
 
 
 def get_all_time_summary(db: Session, household_id: str, bucket_type: str = "", bucket_ids: list | None = None) -> dict:
