@@ -142,6 +142,8 @@ class User(Base):
     username = Column(String(50), unique=True, nullable=False, index=True)
     email = Column(String(254), unique=True, nullable=True, index=True)
     email_verified = Column(Boolean, default=False, nullable=False)
+    # Pocket ID subject ("sub"); set the first time this user signs in with a passkey.
+    oidc_subject = Column(String(255), unique=True, nullable=True)
     display_name = Column(String(100), nullable=False)
     password_hash = Column(String, nullable=False)
     avatar_color = Column(String(7), default="#6366f1")  # hex color

@@ -76,6 +76,13 @@ class Settings(BaseSettings):
     # forged Host poison the link an owner shares.
     app_base_url: str | None = None
 
+    # New app (/app). Off until cutover; when off, /app/* is a 404.
+    new_app_enabled: bool = False
+    # Pocket ID (OIDC). All three are needed for passkey sign-in.
+    oidc_issuer: str | None = None
+    oidc_client_id: str | None = None
+    oidc_client_secret: str | None = None
+
     # PosoKanei (unofficial Greek supermarket price API, see docs/POSOKANEI.md).
     # Set POSOKANEI_ENABLED=false to stop all outbound price lookups; stock
     # pages keep working and show "prices unavailable".
@@ -124,12 +131,20 @@ class Settings(BaseSettings):
                     "APP_BASE_URL must be set in production (e.g. https://expenses.example.com); "
                     "invite links are built from it, never from the Host header."
                 )
+            if self.new_app_enabled and not self.oidc_enabled:
+                raise RuntimeError(
+                    "NEW_APP_ENABLED needs OIDC_ISSUER, OIDC_CLIENT_ID and OIDC_CLIENT_SECRET."
+                )
         return self
 
     @property
     def effective_jwt_secret(self) -> str:
         """JWT secret — uses JWT_SECRET_KEY if set, otherwise falls back to APP_SECRET_KEY."""
         return self.jwt_secret_key or self.app_secret_key
+
+    @property
+    def oidc_enabled(self) -> bool:
+        return bool(self.oidc_issuer and self.oidc_client_id and self.oidc_client_secret)
 
     @property
     def cors_origins_list(self) -> list[str]:
