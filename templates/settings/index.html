@@ -126,6 +126,17 @@
           Set up 2FA
         </a>
         {% endif %}
+
+        {% if passkey_link_available is defined and passkey_link_available %}
+        <div class="mt-4 pt-4 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between">
+          <p class="text-sm font-medium text-gray-700 dark:text-gray-300">Passkey (new app)</p>
+          {% if user.oidc_subject %}
+          <span class="text-xs px-2 py-1 rounded-lg bg-green-50 text-green-600 font-medium">Passkey linked</span>
+          {% elif user.totp_enabled %}
+          <a href="/app/auth/link" class="text-sm text-primary-600 hover:text-primary-700 font-medium transition-colors">Link passkey</a>
+          {% endif %}
+        </div>
+        {% endif %}
       </div>
     </div>
   </div>

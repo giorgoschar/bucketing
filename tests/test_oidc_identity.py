@@ -1,7 +1,7 @@
 import pytest
 
 from app.models import User
-from app.services.identity import IdentityError, resolve_oidc_user
+from app.services.identity import IdentityError, link_oidc_subject, resolve_oidc_user
 
 
 def _user(db, username, email, sub=None):
@@ -18,73 +18,63 @@ def test_known_subject_wins(db):
     assert resolve_oidc_user(db, {"sub": "sub-1", "email": "other@x.t"}).id == u.id
 
 
-def test_first_sign_in_links_by_verified_email(db):
-    u = _user(db, "g", "G@X.t")
-    got = resolve_oidc_user(db, {"sub": "sub-2", "email": "g@x.T", "email_verified": True})
-    assert got.id == u.id
-    db.refresh(u)
-    assert u.oidc_subject == "sub-2"
-
-
-def test_unverified_email_is_refused(db):
-    _user(db, "g", "g@x.t")
-    with pytest.raises(IdentityError) as e:
-        resolve_oidc_user(db, {"sub": "s", "email": "g@x.t", "email_verified": False})
-    assert e.value.code == "no_account"
-
-
-def test_unknown_email_is_refused_and_creates_nothing(db):
-    with pytest.raises(IdentityError) as e:
-        resolve_oidc_user(db, {"sub": "s", "email": "nobody@x.t", "email_verified": True})
-    assert e.value.code == "no_account"
-    assert db.query(User).count() == 0
-
-
-def test_email_already_linked_to_another_subject_is_refused(db):
-    _user(db, "g", "g@x.t", sub="sub-old")
-    with pytest.raises(IdentityError) as e:
-        resolve_oidc_user(db, {"sub": "sub-new", "email": "g@x.t", "email_verified": True})
-    assert e.value.code == "subject_conflict"
-
-
-def test_missing_sub_is_refused(db):
-    with pytest.raises(IdentityError):
-        resolve_oidc_user(db, {"email": "g@x.t", "email_verified": True})
-
-
-@pytest.mark.parametrize(
-    "email_verified_value",
-    ["true", 1, None],  # String "true", int 1, and None (missing key) must all fail
-    ids=["string-true", "int-1", "missing-key"],
-)
-def test_strict_email_verified_only_true_boolean(db, email_verified_value):
-    """Only boolean True is accepted for email_verified; truthy values are rejected."""
+def test_email_alone_never_links(db):
     u = _user(db, "g", "g@x.t")
-    claims = {"sub": "s", "email": "g@x.t"}
-    if email_verified_value is not None:
-        claims["email_verified"] = email_verified_value
-
     with pytest.raises(IdentityError) as e:
-        resolve_oidc_user(db, claims)
-    assert e.value.code == "no_account"
-
-    # Verify user was not linked
+        resolve_oidc_user(db, {"sub": "sub-2", "email": "g@x.t", "email_verified": True})
+    assert e.value.code == "not_linked"
     db.refresh(u)
     assert u.oidc_subject is None
 
 
-def test_ambiguous_email_is_refused_and_links_neither(db):
-    """Email column unique constraint is case-sensitive; ambiguous matches raise error."""
-    # Insert two users with case-different emails (unique constraint is case-sensitive)
-    u1 = _user(db, "user1", "G@x.t")
-    u2 = _user(db, "user2", "g@x.t")
-
+def test_unknown_subject_creates_nothing(db):
     with pytest.raises(IdentityError) as e:
-        resolve_oidc_user(db, {"sub": "s", "email": "g@x.t", "email_verified": True})
-    assert e.value.code == "ambiguous"
+        resolve_oidc_user(db, {"sub": "s", "email": "nobody@x.t", "email_verified": True})
+    assert e.value.code == "not_linked"
+    assert db.query(User).count() == 0
 
-    # Verify neither user was linked
-    db.refresh(u1)
-    db.refresh(u2)
-    assert u1.oidc_subject is None
-    assert u2.oidc_subject is None
+
+def test_missing_sub_is_refused(db):
+    with pytest.raises(IdentityError) as e:
+        resolve_oidc_user(db, {"email": "g@x.t", "email_verified": True})
+    assert e.value.code == "not_linked"
+
+
+def test_link_sets_subject(db):
+    u = _user(db, "g", "g@x.t")
+    link_oidc_subject(db, u, "sub-1")
+    db.refresh(u)
+    assert u.oidc_subject == "sub-1"
+
+
+def test_link_is_idempotent(db):
+    u = _user(db, "g", "g@x.t", sub="sub-1")
+    link_oidc_subject(db, u, "sub-1")
+    assert u.oidc_subject == "sub-1"
+
+
+def test_link_conflicts_with_other_user(db):
+    _user(db, "a", "a@x.t", sub="sub-1")
+    b = _user(db, "b", "b@x.t")
+    with pytest.raises(IdentityError) as e:
+        link_oidc_subject(db, b, "sub-1")
+    assert e.value.code == "subject_conflict"
+    db.refresh(b)
+    assert b.oidc_subject is None
+
+
+def test_link_conflicts_with_existing_different_subject(db):
+    u = _user(db, "g", "g@x.t", sub="sub-old")
+    with pytest.raises(IdentityError) as e:
+        link_oidc_subject(db, u, "sub-new")
+    assert e.value.code == "subject_conflict"
+    db.refresh(u)
+    assert u.oidc_subject == "sub-old"
+
+
+@pytest.mark.parametrize("sub", [None, ""])
+def test_link_empty_sub_is_refused(db, sub):
+    u = _user(db, "g", "g@x.t")
+    with pytest.raises(IdentityError) as e:
+        link_oidc_subject(db, u, sub)
+    assert e.value.code == "not_linked"

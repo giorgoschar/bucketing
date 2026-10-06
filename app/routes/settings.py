@@ -114,6 +114,7 @@ def settings_page(
             "avatar_colors": AVATAR_COLORS,
             "currencies": settings.currencies,
             "category_rules": list_rules(db, hh_id),
+            "passkey_link_available": bool(settings.new_app_enabled and settings.oidc_enabled),
         }
     )
     return templates.TemplateResponse("settings/index.html", ctx)

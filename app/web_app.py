@@ -2,9 +2,11 @@
 
 import logging
 
+import httpx
 from authlib.integrations.base_client.errors import OAuthError
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
+from joserfc.errors import JoseError
 from sqlalchemy.orm import Session
 
 from app.auth import COOKIE_NAME, clear_session, csrf_matches, decode_cookie, set_session
@@ -12,8 +14,8 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.oidc import oidc_client
 from app.core.ratelimit import limiter
-from app.models import HouseholdMember
-from app.services.identity import IdentityError, resolve_oidc_user
+from app.models import HouseholdMember, User
+from app.services.identity import IdentityError, link_oidc_subject, resolve_oidc_user
 
 security_logger = logging.getLogger("security")
 
@@ -34,6 +36,34 @@ def _callback_url(request: Request) -> str:
     return f"{base}/app/auth/callback"
 
 
+def _password_session_user(request: Request, db: Session) -> User | None:
+    """The user behind a currently valid full password+2FA session cookie, else None."""
+    raw = request.cookies.get(COOKIE_NAME)
+    session = decode_cookie(raw) if raw else None
+    if not session or session.get("state") != "authenticated" or session.get("amr") != "pwd":
+        return None
+    user = db.get(User, session.get("user_id"))
+    if not user or not user.totp_enabled or session.get("sv", -1) != user.session_version:
+        return None
+    if (
+        not db.query(HouseholdMember)
+        .filter_by(household_id=session.get("hh_id"), user_id=user.id)
+        .first()
+    ):
+        return None
+    return user
+
+
+@router.get("/link", dependencies=[Depends(_enabled)])
+@limiter.limit("20/minute")
+async def link(request: Request, db: Session = Depends(get_db)):
+    user = _password_session_user(request, db)
+    if not user:
+        return _fail("link_requires_login")
+    request.session["link_user_id"] = user.id
+    return await oidc_client().authorize_redirect(request, _callback_url(request))
+
+
 @router.get("/login", dependencies=[Depends(_enabled)])
 @limiter.limit("20/minute")
 async def login(request: Request):
@@ -50,7 +80,27 @@ async def callback(request: Request, db: Session = Depends(get_db)):
     except OAuthError as exc:
         security_logger.warning("OIDC callback rejected: %s", type(exc).__name__)
         return _fail("state")
+    except JoseError as exc:
+        security_logger.warning("OIDC ID token rejected: %s", type(exc).__name__)
+        return _fail("token")
+    except httpx.HTTPError as exc:
+        security_logger.warning("OIDC provider unreachable: %s", type(exc).__name__)
+        return _fail("provider")
     claims = token.get("userinfo") or {}
+
+    link_user_id = request.session.pop("link_user_id", None)
+    if link_user_id:
+        user = _password_session_user(request, db)
+        if not user or user.id != link_user_id:
+            return _fail("link_requires_login")
+        try:
+            link_oidc_subject(db, user, claims.get("sub"))
+        except IdentityError as exc:
+            security_logger.warning("OIDC link refused: %s", exc.code)
+            return _fail(exc.code)
+        security_logger.info("OIDC passkey linked")
+        return RedirectResponse("/app/?linked=1", status_code=302)
+
     try:
         user = resolve_oidc_user(db, claims)
     except IdentityError as exc:
@@ -63,6 +113,7 @@ async def callback(request: Request, db: Session = Depends(get_db)):
         .first()
     )
     if not member:
+        security_logger.warning("OIDC sign-in refused: no_household")
         return _fail("no_household")
     response = RedirectResponse("/app/", status_code=302)
     set_session(response, user.id, member.household_id, user.session_version, amr="oidc")

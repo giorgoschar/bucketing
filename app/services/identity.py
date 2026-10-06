@@ -1,6 +1,10 @@
-"""Map a verified Pocket ID identity to a local user. Never creates users."""
+"""Map a verified Pocket ID identity to a local user. Never creates users.
 
-from sqlalchemy import func
+Matching is by the OIDC `sub` only. Email is never used to link: a passkey is
+attached to an account solely from inside an already signed-in password+2FA
+session (see link_oidc_subject and GET /app/auth/link).
+"""
+
 from sqlalchemy.orm import Session
 
 from app.models import User
@@ -15,25 +19,22 @@ class IdentityError(Exception):
 def resolve_oidc_user(db: Session, claims: dict) -> User:
     sub = claims.get("sub")
     if not sub:
-        raise IdentityError("no_account")
-
+        raise IdentityError("not_linked")
     user = db.query(User).filter(User.oidc_subject == sub).one_or_none()
-    if user:
-        return user
+    if not user:
+        raise IdentityError("not_linked")
+    return user
 
-    email = (claims.get("email") or "").strip().lower()
-    if not email or claims.get("email_verified") is not True:
-        raise IdentityError("no_account")
 
-    matches = db.query(User).filter(func.lower(User.email) == email).all()
-    if not matches:
-        raise IdentityError("no_account")
-    if len(matches) > 1:
-        raise IdentityError("ambiguous")
-    user = matches[0]
-    if user.oidc_subject and user.oidc_subject != sub:
+def link_oidc_subject(db: Session, user: User, sub: str | None) -> None:
+    if not sub:
+        raise IdentityError("not_linked")
+    other = db.query(User).filter(User.oidc_subject == sub, User.id != user.id).first()
+    if other:
         raise IdentityError("subject_conflict")
-
+    if user.oidc_subject:
+        if user.oidc_subject != sub:
+            raise IdentityError("subject_conflict")
+        return
     user.oidc_subject = sub
     db.commit()
-    return user
