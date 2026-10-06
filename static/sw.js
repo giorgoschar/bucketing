@@ -1,4 +1,4 @@
-const CACHE_NAME = 'expenses-v24';
+const CACHE_NAME = 'expenses-v25';
 
 const STATIC_ASSETS = [
   '/static/manifest.json',
@@ -91,7 +91,9 @@ const OFFLINE_HTML = `<!DOCTYPE html>
 self.addEventListener('install', event => {
   self.skipWaiting();
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(STATIC_ASSETS))
+    // cache: 'reload' skips the HTTP cache, so a new SW never precaches stale files.
+    caches.open(CACHE_NAME).then(cache =>
+      cache.addAll(STATIC_ASSETS.map(url => new Request(url, { cache: 'reload' }))))
   );
 });
 
