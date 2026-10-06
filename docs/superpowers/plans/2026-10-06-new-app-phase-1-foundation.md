@@ -91,7 +91,7 @@
 
 1. **Password user with TOTP not enrolled hits `/api/v1` with a cookie.** Must get 403 "TOTP enrollment required", the same as Bearer. Only `amr: oidc` sessions skip it. Pinned in Task 3.
 2. **Callback opened twice, or with a stale or forged `state`.** Second use or a mismatch → redirect to `/app/?auth_error=state`. No session is set, and nothing raises a 500. Pinned in Task 4.
-3. **Pocket ID user whose email matches nobody, or matches but `email_verified` is false.** Refused with `auth_error=no_account`. No user is created or linked. Pinned in Task 2.
+3. **Pocket ID user whose `sub` isn't linked, even with a matching verified email.** Refused with `auth_error=not_linked`; nothing is created or linked. Pinned in Task 4's fix round (the Task 2 and Task 4 code blocks below show the original email-matching version, superseded on 2026-10-06).
 4. **Cookie-authenticated POST from another site** (no `X-CSRF-Token`, or one that doesn't match). 403 JSON, and the session survives because this isn't a navigation. Pinned in Task 3.
 5. **Queue replay while signed out, or after the session was revoked.** Replay stops at the first 401, keeps every item, and the app shows the sign-in screen. Nothing is dropped. Pinned in Task 10.
 
