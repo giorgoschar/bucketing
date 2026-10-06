@@ -32,11 +32,10 @@
 2. **No custom crypto or auth protocol code.**
    - OIDC (authorization code + PKCE + state + nonce, ID-token verification against JWKS) is Authlib's job.
    - Session signing stays itsdangerous, as today.
-3. **Account linking.**
-   - New column `users.oidc_subject`, unique and nullable.
-   - Sign-in matches on `sub` first.
-   - The first sign-in links to a local user only when the ID token has `email_verified: true` **and** the email exactly matches one local user, case-insensitively.
-   - Users are never created automatically. With no match, sign-in is refused and a message tells you to ask the household owner.
+3. **Account linking** (user decision 2026-10-06, replaces email matching).
+   - A passkey is linked **only from an existing password+2FA session**: legacy Settings → "Link passkey" → `/app/auth/link` → Pocket ID → callback stores `sub` on that user.
+   - Sign-in then matches on `users.oidc_subject` (`sub`) only. Email is never used to link, so IdP email settings can't hand an account to someone else.
+   - Users are never created automatically. An unknown `sub` is refused with `auth_error=not_linked`.
 4. **Second factor.**
    - A passkey sign-in counts as multi-factor. Sessions created by OIDC carry `"amr": "oidc"` and skip the TOTP-enrolment requirement.
    - Password sessions still require TOTP, exactly as today. Nothing is relaxed globally.
@@ -1515,12 +1514,14 @@ Run `npm test` and expect 3 passed.
 The error messages map to the backend `auth_error` codes from Task 4:
 ```tsx
 const MESSAGES: Record<string, string> = {
-  no_account: 'This passkey isn’t linked to anyone in a household yet. Ask the household owner to add your email.',
+  not_linked: 'This passkey isn’t linked yet. Sign in with your password at /login, then Settings → Link passkey.',
+  link_requires_login: 'To link a passkey, first sign in with your password and 2FA.',
   no_household: 'You’re signed in but not in a household yet. Ask for an invite.',
   denied: 'Sign-in was cancelled.',
   state: 'That sign-in link expired. Try again.',
-  ambiguous: 'More than one account uses this email. Ask the owner to fix it.',
-  subject_conflict: 'This account is already linked to a different passkey.',
+  token: 'Sign-in couldn’t be verified. Try again.',
+  provider: 'The sign-in service didn’t respond. Try again in a minute.',
+  subject_conflict: 'This passkey is already linked to a different account.',
 }
 
 export function SignIn() {
@@ -1531,6 +1532,7 @@ export function SignIn() {
       <h1 className="signin__title">Tameio</h1>
       <p className="signin__lede">Household money, private by default.</p>
       {code && <p role="alert" className="signin__error">{MESSAGES[code] ?? 'Sign-in failed. Try again.'}</p>}
+      {new URLSearchParams(location.search).has('linked') && <p role="status" className="signin__ok">Passkey linked. You can sign in with Face ID now.</p>}
       <a className="btn btn--primary btn--block" href="/app/auth/login">Sign in with Face ID</a>
     </main>
   )
@@ -1849,14 +1851,13 @@ Add to `docker-compose.yml`:
       APP_URL: http://localhost:1411
       TRUST_PROXY: "false"
       ENCRYPTION_KEY: local-dev-only-key-change-me-0123456789
-      EMAILS_VERIFIED: "true"
     volumes: ["pocketid_data:/app/data"]
 ```
-and `pocketid_data:` under `volumes:`. Pocket ID v2 requires `ENCRYPTION_KEY` (at least 16 bytes) and uses `APP_URL` for passkeys. `EMAILS_VERIFIED=true` makes admin-entered emails verified, so the `email_verified` claim allows linking. Then:
+and `pocketid_data:` under `volumes:`. Pocket ID v2 requires `ENCRYPTION_KEY` (at least 16 bytes) and uses `APP_URL` for passkeys. Then:
 1. Run `docker compose --profile pocketid up -d pocketid`.
 2. Open <http://localhost:1411/setup> and create the admin with a passkey.
 3. Add an OIDC client with callback `http://localhost:8000/app/auth/callback`.
-4. Create a user with the same email as your local app user.
+4. Create a user, then link it: sign in at `http://localhost:8000/login` with password + 2FA → Settings → Link passkey.
 
 - [ ] **Step 2: End-to-end on desktop**
 
@@ -1865,13 +1866,14 @@ Run `OIDC_ISSUER=http://localhost:1411 OIDC_CLIENT_ID=… OIDC_CLIENT_SECRET=…
 - [ ] **Step 3: Docs**
 
 `docs/POCKET-ID.md` covers:
-1. **Deploy Pocket ID in Coolify:** use the template, set the image to `ghcr.io/pocket-id/pocket-id:v2`, give it its own domain (e.g. `id.<domain>`) and persistent storage on `/app/data`. Env: `APP_URL=https://id.<domain>`, `ENCRYPTION_KEY=$(openssl rand -base64 32)` (keep it; losing it loses the signing keys), `TRUST_PROXY=true`, `EMAILS_VERIFIED=true`.
+1. **Deploy Pocket ID in Coolify:** use the template, set the image to `ghcr.io/pocket-id/pocket-id:v2`, give it its own domain (e.g. `id.<domain>`) and persistent storage on `/app/data`. Env: `APP_URL=https://id.<domain>`, `ENCRYPTION_KEY=$(openssl rand -base64 32)` (keep it; losing it loses the signing keys), `TRUST_PROXY=true`.
 2. **Create the admin** with a passkey. Turn off self sign-up.
 3. **Add an OIDC client "Tameio":**
    - callback `https://<app domain>/app/auth/callback`;
    - PKCE on;
    - copy the client id and secret.
-4. **Create both household users** with the **same emails** as in the app, so the first sign-in links them. `EMAILS_VERIFIED=true` makes the `email_verified` claim true for them.
+4. **Create both household users** in Pocket ID and register their passkeys. Keep **self sign-up off**.
+5. **Link once per person:** sign in to the old app with password + 2FA → Settings → **Link passkey** → Face ID. After that, passkey sign-in works.
 5. **In the expenses app** (Coolify → Environment Variables), set `OIDC_ISSUER=https://id.<domain>`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` and `NEW_APP_ENABLED=true`, then redeploy.
 6. **Recovery:** the Pocket ID admin issues a one-time login code (Users → … → Login code).
 
