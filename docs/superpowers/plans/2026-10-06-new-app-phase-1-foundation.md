@@ -1848,9 +1848,11 @@ Add to `docker-compose.yml`:
     environment:
       APP_URL: http://localhost:1411
       TRUST_PROXY: "false"
+      ENCRYPTION_KEY: local-dev-only-key-change-me-0123456789
+      EMAILS_VERIFIED: "true"
     volumes: ["pocketid_data:/app/data"]
 ```
-and `pocketid_data:` under `volumes:`. Before committing, check the image's required env vars in the Pocket ID v2 docs (context7 or <https://pocket-id.org/docs>). v2 may require an `ENCRYPTION_KEY`; add it if the docs say so. Then:
+and `pocketid_data:` under `volumes:`. Pocket ID v2 requires `ENCRYPTION_KEY` (at least 16 bytes) and uses `APP_URL` for passkeys. `EMAILS_VERIFIED=true` makes admin-entered emails verified, so the `email_verified` claim allows linking. Then:
 1. Run `docker compose --profile pocketid up -d pocketid`.
 2. Open <http://localhost:1411/setup> and create the admin with a passkey.
 3. Add an OIDC client with callback `http://localhost:8000/app/auth/callback`.
@@ -1863,13 +1865,13 @@ Run `OIDC_ISSUER=http://localhost:1411 OIDC_CLIENT_ID=… OIDC_CLIENT_SECRET=…
 - [ ] **Step 3: Docs**
 
 `docs/POCKET-ID.md` covers:
-1. **Deploy Pocket ID in Coolify:** use the template, set the image to `ghcr.io/pocket-id/pocket-id:v2`, give it its own domain (e.g. `id.<domain>`) and persistent storage on `/app/data`.
+1. **Deploy Pocket ID in Coolify:** use the template, set the image to `ghcr.io/pocket-id/pocket-id:v2`, give it its own domain (e.g. `id.<domain>`) and persistent storage on `/app/data`. Env: `APP_URL=https://id.<domain>`, `ENCRYPTION_KEY=$(openssl rand -base64 32)` (keep it; losing it loses the signing keys), `TRUST_PROXY=true`, `EMAILS_VERIFIED=true`.
 2. **Create the admin** with a passkey. Turn off self sign-up.
 3. **Add an OIDC client "Tameio":**
    - callback `https://<app domain>/app/auth/callback`;
    - PKCE on;
    - copy the client id and secret.
-4. **Create both household users** with the **same emails** as in the app, so the first sign-in links them. Enable "emails verified" for admin-created users so the `email_verified` claim is true.
+4. **Create both household users** with the **same emails** as in the app, so the first sign-in links them. `EMAILS_VERIFIED=true` makes the `email_verified` claim true for them.
 5. **In the expenses app** (Coolify → Environment Variables), set `OIDC_ISSUER=https://id.<domain>`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` and `NEW_APP_ENABLED=true`, then redeploy.
 6. **Recovery:** the Pocket ID admin issues a one-time login code (Users → … → Login code).
 
