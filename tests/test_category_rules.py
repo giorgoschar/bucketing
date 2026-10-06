@@ -6,14 +6,14 @@ matching, neither of which could learn from a correction.
 """
 import pytest
 
-from app.category_rules import (
+from app.models import Category, CategoryRule
+from app.services.category_rules import (
     apply_rules,
     learn_rule,
     list_rules,
     normalise_pattern,
     resolve_category,
 )
-from app.models import Category, CategoryRule
 
 
 @pytest.fixture()

@@ -11,7 +11,7 @@ from tests.test_api import api  # noqa: F401  (fixture)
 
 
 def _paid_bill(db, hh, make_bill):
-    from app.bills_service import settle_occurrence
+    from app.services.bills import settle_occurrence
     bill, occ = make_bill(hh.household_id, None, auto_pay=False)
     settle_occurrence(db, occ, amount=Decimal("45"), paid_by=hh.user_id, paid_on=utcnow_naive())
     db.commit()

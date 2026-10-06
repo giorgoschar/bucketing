@@ -101,7 +101,7 @@ def _money(amount, currency: str | None) -> str:
 
 def _notify_members(db, user_ids, *, household_id, type, title, body, link, dedupe_key):
     """Create + push one notification per member, skipping already-sent ones."""
-    from app.notification_service import create_notification, send_push_for_notification
+    from app.services.notifications import create_notification, send_push_for_notification
 
     for user_id in user_ids:
         notif = create_notification(
@@ -131,13 +131,13 @@ def _auto_pay_due_bills(db, today: date) -> int:
     from sqlalchemy import or_
     from sqlalchemy.orm import joinedload
 
-    from app import bills_service
     from app.models import (
         BillOccurrence,
         NotificationType,
         OccurrenceStatus,
         RecurringBill,
     )
+    from app.services import bills as bills_service
 
     occs = (
         db.query(BillOccurrence)
@@ -492,7 +492,7 @@ def _refresh_tracked_prices(db, today: date) -> int:
     """
     from sqlalchemy import func
 
-    from app import posokanei
+    from app.integrations import posokanei
     from app.models import PriceSnapshot, Product, StockItem
     from app.services.stock import record_snapshots
 

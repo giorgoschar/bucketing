@@ -9,17 +9,6 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.auth import require_auth, require_csrf
-from app.bills_service import (
-    BILL_HAS_HISTORY_MSG,
-    backfill_bill_payer,
-    bill_has_payment_history,
-    delete_future_occurrences,
-    effective_overrides,
-    generate_occurrences,
-    normalise_interval_months,
-    resolve_bill_payment,
-    settle_occurrence,
-)
 from app.clock import local_today, utcnow_naive
 from app.config import settings
 from app.database import get_db
@@ -33,6 +22,17 @@ from app.models import (
 )
 from app.schemas import parse_payment_method, payer_choice
 from app.services import full_ctx, get_overdue_bills, get_upcoming_bills
+from app.services.bills import (
+    BILL_HAS_HISTORY_MSG,
+    backfill_bill_payer,
+    bill_has_payment_history,
+    delete_future_occurrences,
+    effective_overrides,
+    generate_occurrences,
+    normalise_interval_months,
+    resolve_bill_payment,
+    settle_occurrence,
+)
 from app.templates import templates
 from app.validators import (
     parse_amount,

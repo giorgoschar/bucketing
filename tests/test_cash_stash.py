@@ -1072,9 +1072,9 @@ def test_others_never_see_a_negative_taken(client, db, duo):
 
 def test_wizard_default_ignores_bill_payments(client, db, duo):
     """A bill paid in the background (auto-pay) is not the user's choice."""
-    from app.bills_service import generate_occurrences, pay_occurrence
     from app.clock import utcnow_naive
     from app.models import BillOccurrence, RecurringBill
+    from app.services.bills import generate_occurrences, pay_occurrence
 
     _cash(db, duo, 5, date(2026, 1, 3), method="cash")
     bill = RecurringBill(household_id=duo.household_id, bucket_id=duo.bucket_id, name="Gym",

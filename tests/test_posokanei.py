@@ -8,8 +8,8 @@ from decimal import Decimal
 import httpx
 import pytest
 
-from app import posokanei
-from app.posokanei import PosokaneiClient, PosokaneiUnavailable
+from app.integrations import posokanei
+from app.integrations.posokanei import PosokaneiClient, PosokaneiUnavailable
 
 SEARCH_PAYLOAD = {
     "results": [
@@ -234,7 +234,7 @@ def test_default_client_uses_settings(monkeypatch):
 
 
 def test_get_404_is_not_found_not_an_outage():
-    from app.posokanei import PosokaneiNotFound
+    from app.integrations.posokanei import PosokaneiNotFound
 
     client, _ = make_client(lambda req: httpx.Response(404, json={"detail": "nope"}))
     with pytest.raises(PosokaneiNotFound):
@@ -245,7 +245,7 @@ def test_get_404_is_not_found_not_an_outage():
     httpx.Response(500), httpx.Response(503), httpx.Response(403, text="<html>"),
 ])
 def test_get_outages_are_not_not_found(response):
-    from app.posokanei import PosokaneiNotFound
+    from app.integrations.posokanei import PosokaneiNotFound
 
     client, _ = make_client(lambda req: response)
     with pytest.raises(PosokaneiUnavailable) as exc:
@@ -255,7 +255,7 @@ def test_get_outages_are_not_not_found(response):
 
 @pytest.mark.parametrize("pid", ["..", ".", "x?a=b#", "a/b", "", "x" * 65, "γάλα", "a b"])
 def test_get_rejects_unsafe_ids_without_a_request(pid):
-    from app.posokanei import PosokaneiNotFound, valid_product_id
+    from app.integrations.posokanei import PosokaneiNotFound, valid_product_id
 
     assert not valid_product_id(pid)
     client, rec = make_client(lambda req: httpx.Response(200, json=SEARCH_PAYLOAD["results"][0]))
@@ -265,7 +265,7 @@ def test_get_rejects_unsafe_ids_without_a_request(pid):
 
 
 def test_valid_ids_pass():
-    from app.posokanei import valid_product_id
+    from app.integrations.posokanei import valid_product_id
 
     for pid in ("p-123", "abc.def_1", "A" * 64, "123"):
         assert valid_product_id(pid)

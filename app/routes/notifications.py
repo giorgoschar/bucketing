@@ -209,7 +209,7 @@ async def push_test(
     """Send a test push notification to the current device only."""
     from app.config import settings as app_settings
     from app.models import NotificationType
-    from app.notification_service import create_notification, send_push_for_notification
+    from app.services.notifications import create_notification, send_push_for_notification
 
     user, hh_id = auth
 

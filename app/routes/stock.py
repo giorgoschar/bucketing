@@ -12,13 +12,13 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
-from app import posokanei
 from app.auth import require_auth, require_csrf
 from app.clock import local_today
 from app.config import settings
 from app.database import get_db
+from app.integrations import posokanei
+from app.integrations.posokanei import PosokaneiUnavailable
 from app.models import Category, StockReason
-from app.posokanei import PosokaneiUnavailable
 from app.services import base_ctx
 from app.services import stock as stock_svc
 from app.services.stock import StockError

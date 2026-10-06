@@ -215,7 +215,7 @@ def test_api_cannot_edit_or_delete_fuel_category(client, db, api):  # noqa: F811
 
 
 def test_category_rule_may_map_to_fuel(db, fuel_hh):
-    from app.category_rules import learn_rule
+    from app.services.category_rules import learn_rule
 
     rule = learn_rule(db, fuel_hh.household_id, "Shell Kifisias", fuel_hh.fuel_id)
     db.commit()

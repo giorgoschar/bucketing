@@ -7,10 +7,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app import posokanei
 from app.api_auth import require_api_auth
 from app.database import get_db
-from app.posokanei import PosokaneiUnavailable
+from app.integrations import posokanei
+from app.integrations.posokanei import PosokaneiUnavailable
 from app.services import stock as stock_svc
 from app.services.stock import StockError
 

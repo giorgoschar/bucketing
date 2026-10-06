@@ -262,7 +262,12 @@ def test_bill_due_today_local_is_paid(db, make_household, make_bill, run_job, mo
 def _stock_fixtures():
     from decimal import Decimal
 
-    from app.posokanei import PosokaneiUnavailable, PriceStats, ProductSummary, RetailerPrice
+    from app.integrations.posokanei import (
+        PosokaneiUnavailable,
+        PriceStats,
+        ProductSummary,
+        RetailerPrice,
+    )
 
     def summary(pid, price="1.50"):
         return ProductSummary(
@@ -288,7 +293,7 @@ def _stock_fixtures():
 
 @pytest.fixture()
 def fake_posokanei(monkeypatch):
-    from app import posokanei
+    from app.integrations import posokanei
 
     Fake = _stock_fixtures()
     client = Fake()
@@ -333,7 +338,7 @@ def test_price_refresh_snapshots_tracked_products_once_a_day(db, make_household,
 
 def test_price_refresh_down_logs_and_job_continues(db, make_household, make_bill, run_job,
                                                    monkeypatch, caplog):
-    from app import posokanei
+    from app.integrations import posokanei
     from app.models import PriceSnapshot
 
     Fake = _stock_fixtures()
@@ -426,9 +431,9 @@ def test_no_price_drop_for_a_normal_price(db, make_household, run_job, fake_poso
 
 def test_dead_product_ids_do_not_starve_the_refresh(db, make_household, run_job, monkeypatch):
     """404s are per-product misses: skipped, never counted as an outage."""
-    from app import posokanei
+    from app.integrations import posokanei
+    from app.integrations.posokanei import PosokaneiNotFound
     from app.models import PriceSnapshot
-    from app.posokanei import PosokaneiNotFound
 
     Fake = _stock_fixtures()
 
@@ -457,7 +462,7 @@ def test_refresh_order_is_oldest_snapshot_first(db, make_household, run_job, mon
     from datetime import timedelta
     from decimal import Decimal
 
-    from app import posokanei
+    from app.integrations import posokanei
     from app.models import PriceSnapshot
 
     Fake = _stock_fixtures()

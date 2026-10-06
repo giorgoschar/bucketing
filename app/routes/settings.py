@@ -30,7 +30,6 @@ from app.auth import (
     verify_password,
     verify_totp,
 )
-from app.category_rules import learn_rule, list_rules
 from app.clock import utcnow_naive
 from app.config import settings
 from app.database import get_db
@@ -46,6 +45,7 @@ from app.models import (
 from app.ratelimit import limiter
 from app.seed import seed_categories
 from app.services import base_ctx, revoke_user_tokens
+from app.services.category_rules import learn_rule, list_rules
 from app.templates import templates
 from app.validators import parse_color, require_unlocked
 

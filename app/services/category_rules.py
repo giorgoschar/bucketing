@@ -157,7 +157,7 @@ def resolve_category(
     raw_text: str | None = None,
 ) -> str | None:
     """Full resolution chain: household rules, then the built-in guess."""
-    from app.receipt_parser import match_category
+    from app.services.receipt_parser import match_category
 
     matched = apply_rules(db, household_id, merchant, raw_text)
     if matched:

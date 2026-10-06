@@ -14,7 +14,6 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from app.category_rules import resolve_category
 from app.clock import local_today, tz, utcnow
 from app.models import (
     Bucket,
@@ -29,6 +28,7 @@ from app.models import (
 )
 from app.money import quantize
 from app.schemas import TransactionCreate
+from app.services.category_rules import resolve_category
 from app.services.personal_tokens import active_household_bucket
 from app.services.transactions import DuplicateTransaction, create_transaction
 from app.validators import parse_amount
@@ -164,7 +164,7 @@ def notify_ingest_created(db: Session, txn: Transaction) -> None:
 
     Deduped by transaction id; failures never break the ingest response.
     """
-    from app.notification_service import create_notification, send_push_for_notification
+    from app.services.notifications import create_notification, send_push_for_notification
     from app.templates import format_currency
 
     category = db.get(Category, txn.category_id) if txn.category_id else None

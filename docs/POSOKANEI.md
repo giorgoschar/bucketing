@@ -10,7 +10,7 @@ compute its own price advice.
 > They may change, rate-limit or block third-party clients at any time.
 > The app treats every failure as "prices unavailable" and keeps working.
 
-## Endpoints used (`app/posokanei.py`)
+## Endpoints used (`app/integrations/posokanei.py`)
 
 | Function | Request | Notes |
 |---|---|---|

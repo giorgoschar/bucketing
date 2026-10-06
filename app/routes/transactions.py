@@ -16,7 +16,6 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from app.auth import require_auth, require_csrf
-from app.category_rules import learn_rule
 from app.clock import local_today
 from app.config import settings
 from app.database import get_db
@@ -39,6 +38,7 @@ from app.services import delete_transaction as delete_transaction_soft
 from app.services import full_ctx as _full_ctx
 from app.services import update_transaction as update_transaction_service
 from app.services.cash import has_linked_take
+from app.services.category_rules import learn_rule
 from app.templates import templates
 from app.validators import (
     parse_amount,

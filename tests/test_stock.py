@@ -3,15 +3,15 @@ from decimal import Decimal
 
 import pytest
 
-from app import posokanei
 from app.clock import local_today
-from app.models import PriceSnapshot, Product, StockItem, StockMovement
-from app.posokanei import (
+from app.integrations import posokanei
+from app.integrations.posokanei import (
     PosokaneiUnavailable,
     PriceStats,
     ProductSummary,
     RetailerPrice,
 )
+from app.models import PriceSnapshot, Product, StockItem, StockMovement
 from app.services import stock as stock_svc
 from tests.test_api import api  # noqa: F401  (fixture)
 

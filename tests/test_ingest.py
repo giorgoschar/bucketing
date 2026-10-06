@@ -4,7 +4,6 @@ from decimal import Decimal
 
 import pytest
 
-from app.category_rules import learn_rule
 from app.config import settings
 from app.models import (
     Bucket,
@@ -17,6 +16,7 @@ from app.models import (
     PaymentMethod,
     Transaction,
 )
+from app.services.category_rules import learn_rule
 from tests.test_api import api  # noqa: F401  (fixture)
 from tests.test_household_settlement import _add_member
 

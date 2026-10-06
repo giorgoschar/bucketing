@@ -9,17 +9,6 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 
 from app.api_auth import require_api_auth
-from app.bills_service import (
-    BILL_HAS_HISTORY_MSG,
-    backfill_bill_payer,
-    bill_has_payment_history,
-    delete_future_occurrences,
-    effective_overrides,
-    generate_occurrences,
-    normalise_interval_months,
-    resolve_bill_payment,
-    settle_occurrence,
-)
 from app.clock import utcnow_naive
 from app.database import get_db
 from app.models import (
@@ -33,6 +22,17 @@ from app.models import (
 from app.money import quantize
 from app.schemas import parse_payer_mode, parse_payment_method
 from app.services import get_overdue_bills, get_upcoming_bills
+from app.services.bills import (
+    BILL_HAS_HISTORY_MSG,
+    backfill_bill_payer,
+    bill_has_payment_history,
+    delete_future_occurrences,
+    effective_overrides,
+    generate_occurrences,
+    normalise_interval_months,
+    resolve_bill_payment,
+    settle_occurrence,
+)
 from app.validators import (
     parse_amount,
     require_bucket,

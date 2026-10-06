@@ -10,7 +10,6 @@ from decimal import Decimal
 
 import pytest
 
-from app.bills_service import backfill_bill_payer
 from app.clock import local_today
 from app.models import (
     BillOccurrence,
@@ -22,6 +21,7 @@ from app.models import (
     TransactionType,
 )
 from app.schemas import OWN_SHARE_CHOICE
+from app.services.bills import backfill_bill_payer
 from tests.test_api import api  # noqa: F401  (fixture)
 from tests.test_household_settlement import _add_member
 
