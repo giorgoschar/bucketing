@@ -33,8 +33,15 @@
   --hero-bg: radial-gradient(120% 90% at 0% 0%, #1A2550 0%, #12151D 60%);
   --hero-ink: #F3F5FA;
   --hero-pos: #3DD9A4;
+  --on-c3: #0B0E17;        /* ink on the amber --c3 (7.0:1 light, 11.0:1 dark) */
   color-scheme: dark;
 }
+/* ::backdrop doesn't inherit from :root in older engines, so the scrim is declared on both. */
+:root, ::backdrop { --scrim: rgba(0, 0, 0, .55); }
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]), :root:not([data-theme="dark"]) ::backdrop { --scrim: rgba(11, 14, 23, .38); }
+}
+:root[data-theme="light"], :root[data-theme="light"] ::backdrop { --scrim: rgba(11, 14, 23, .38); }
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
   --bg: #EEF1F7;
@@ -47,8 +54,8 @@
   --accent: #2F55E4;
   --accent-ink: #FFFFFF;
   --accent-soft: #DFE6FF;
-  --pos: #0E9466;
-  --neg: #D6334A;
+  --pos: #0A7550;       /* AA: 4.9:1 on --pos-soft */
+  --neg: #B4233A;       /* AA: 5.2:1 on --neg-soft */
   --warn: #B07A00;
   --pos-soft: #D9F3E9;
   --neg-soft: #FBE0E4;
@@ -73,8 +80,8 @@
   --accent: #2F55E4;
   --accent-ink: #FFFFFF;
   --accent-soft: #DFE6FF;
-  --pos: #0E9466;
-  --neg: #D6334A;
+  --pos: #0A7550;       /* AA: 4.9:1 on --pos-soft */
+  --neg: #B4233A;       /* AA: 5.2:1 on --neg-soft */
   --warn: #B07A00;
   --pos-soft: #D9F3E9;
   --neg-soft: #FBE0E4;

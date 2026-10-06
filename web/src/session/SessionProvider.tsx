@@ -3,15 +3,43 @@ import { api, onUnauthorized, readCsrf } from '../api/client'
 import type { paths } from '../api/schema'
 import { cacheGet, cachePut, wipe } from '../offline/db'
 import { forgetKey } from '../offline/crypto'
+import { queryClient } from '../queryClient'
 
 export type Me = paths['/api/v1/auth/me']['get']['responses']['200']['content']['application/json']
 type Status = 'loading' | 'signedOut' | 'signedIn'
-export interface Session { status: Status; me?: Me; signOut(): Promise<void> }
+export interface Session {
+  status: Status
+  me?: Me
+  /** The device was cleared but the server didn't confirm the logout; its session may still be alive. */
+  logoutFailed: boolean
+  signOut(): Promise<void>
+  /** POST the logout again (with a freshly read CSRF cookie); clears `logoutFailed` on success. */
+  retryLogout(): Promise<void>
+}
 
 const CHANNEL = 'tameio-session'
 const SIGNED_OUT = 'signedOut'
+const ME_TIMEOUT_MS = 5000
 
-const Ctx = createContext<Session>({ status: 'loading', signOut: async () => {} })
+/** 5xx, 408 and 429 mean "the server can't say right now": keep the cached profile, as when offline. */
+const transient = (status: number) => status >= 500 || status === 408 || status === 429
+
+/** True once the server has no session for us (200, or 401 because it was already gone). */
+async function serverLogout(): Promise<boolean> {
+  const res = await fetch('/app/auth/logout', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'X-CSRF-Token': readCsrf() },
+  }).catch(() => null)
+  return !!res && (res.ok || res.status === 401)
+}
+
+const Ctx = createContext<Session>({
+  status: 'loading',
+  logoutFailed: false,
+  signOut: async () => {},
+  retryLogout: async () => {},
+})
 // eslint-disable-next-line react/only-export-components
 export const useSession = () => useContext(Ctx)
 
@@ -22,12 +50,14 @@ function openChannel(): BroadcastChannel | null {
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<Status>('loading')
   const [me, setMe] = useState<Me>()
+  const [logoutFailed, setLogoutFailed] = useState(false)
   // Bumped on every sign-out; async work started under an older epoch must not sign anyone back in.
   const epoch = useRef(0)
   const channel = useRef<BroadcastChannel | null>(null)
 
   const markSignedOut = useCallback(() => {
     epoch.current++
+    queryClient.clear()
     setMe(undefined)
     setStatus('signedOut')
   }, [])
@@ -35,10 +65,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const signedOut = useCallback(async () => {
     epoch.current++
     channel.current?.postMessage(SIGNED_OUT)
+    forgetKey()
     try {
       await wipe()
     } catch {
-      // The key is already forgotten; a failed clear leaves only unreadable ciphertext.
+      // The key was forgotten above; a failed clear leaves only ciphertext this session can't open.
     }
     markSignedOut()
   }, [markSignedOut])
@@ -76,9 +107,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
 
     ;(async () => {
-      const res = await api.GET('/api/v1/auth/me').catch(() => null)
+      const res = await api
+        .GET('/api/v1/auth/me', { signal: AbortSignal.timeout(ME_TIMEOUT_MS) })
+        .catch(() => null)
       if (!current()) return
-      if (!res) return fromCache() // offline
+      if (!res) return fromCache() // offline or timed out
       const { data, response } = res
       if (response.ok && data) {
         setMe(data)
@@ -86,8 +119,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         await cachePut('me', data).catch(() => {}) // a racing wipe wins; nothing to persist
       } else if (response.status === 401) {
         await signedOut() // usually already handled by onUnauthorized, which bumps the epoch first
+      } else if (transient(response.status)) {
+        await fromCache() // server unavailable: behave as offline rather than signing the user out
       } else {
-        await fromCache() // server error: behave as offline rather than signing the user out
+        setStatus('signedOut')
       }
     })()
     return () => {
@@ -95,15 +130,20 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }, [signedOut])
 
+  // Clearing the device wins even when the server can't be reached; the failure is surfaced for a retry.
   const signOut = useCallback(async () => {
-    await fetch('/app/auth/logout', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'X-CSRF-Token': readCsrf() },
-    }).catch(() => {})
+    const ok = await serverLogout()
     await signedOut()
+    setLogoutFailed(!ok)
   }, [signedOut])
 
-  const value = useMemo(() => ({ status, me, signOut }), [status, me, signOut])
+  const retryLogout = useCallback(async () => {
+    if (await serverLogout()) setLogoutFailed(false)
+  }, [])
+
+  const value = useMemo(
+    () => ({ status, me, logoutFailed, signOut, retryLogout }),
+    [status, me, logoutFailed, signOut, retryLogout],
+  )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

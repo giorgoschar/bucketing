@@ -1,8 +1,5 @@
 /* Vault shell: sign-in, top bar, tab bar, account sheet. Tokens from styles/tokens.css only. */
 
-button { font: inherit; color: inherit; }
-svg { flex: none; }
-
 /* ---------------- Buttons ---------------- */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
@@ -45,12 +42,26 @@ svg { flex: none; }
 }
 .signin__lede { margin: 6px 0 0; color: var(--muted); }
 .signin__actions { display: flex; flex-direction: column; gap: 12px; }
-.signin__error, .signin__ok {
-  margin: 0; padding: 12px 14px; border-radius: var(--r-md); font-size: 14px; font-weight: 550;
-}
-.signin__error { background: var(--neg-soft); color: var(--neg); }
-.signin__ok { background: var(--pos-soft); color: var(--pos); }
 .signin__hint { margin: 4px 0 0; text-align: center; font-size: 12.5px; color: var(--muted); }
+
+/* ---------------- Notices (sign-in messages, shell banner) ---------------- */
+.notice {
+  margin: 0; display: flex; align-items: center; gap: 8px;
+  padding: 12px 14px; border-radius: var(--r-md); font-size: 14px; font-weight: 550;
+}
+.notice__text { flex: 1; min-width: 0; }
+.notice--error { background: var(--neg-soft); color: var(--neg); }
+.notice--ok { background: var(--pos-soft); color: var(--pos); }
+.notice__action {
+  flex: none; min-height: 44px; padding: 0 14px; margin: -8px -6px -8px 0;
+  border: 1px solid currentColor; border-radius: var(--r-sm); background: transparent;
+  font-weight: 650; cursor: pointer;
+}
+.notice__close {
+  flex: none; width: 44px; height: 44px; margin: -10px -10px -10px 0; padding: 0;
+  display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; cursor: pointer;
+}
+.notice__close svg { width: 18px; height: 18px; }
 
 /* ---------------- Shell ---------------- */
 .shell { min-height: 100dvh; background: var(--bg); }
@@ -86,9 +97,12 @@ svg { flex: none; }
   font-weight: 700; font-size: 13px; line-height: 1;
   background: var(--c3); color: var(--hero-ink);
 }
+.avatar--fallback { color: var(--on-c3); }
 .avatar--lg { width: 48px; height: 48px; font-size: 18px; }
 
 /* ---------------- Screens ---------------- */
+.shell__banner { margin: calc(env(safe-area-inset-top) + 8px) 16px 0; }
+
 .screen { padding: 8px 16px 0; }
 .screen__note { margin: 0; color: var(--muted); }
 
@@ -124,13 +138,15 @@ svg { flex: none; }
 .sheet {
   /* <dialog> reset: pin to the bottom edge, full width. */
   position: fixed; inset: auto 0 0 0; margin: 0 auto; width: 100%; max-width: 560px; max-height: 88dvh;
-  border: 0; border-radius: 26px 26px 0 0;
+  border: 0; border-radius: 26px 26px 0 0; padding: 0; overflow: auto;
   background: var(--surface); color: var(--ink); box-shadow: var(--shadow-sheet);
-  padding: 8px 16px calc(env(safe-area-inset-bottom) + 20px);
-  flex-direction: column; gap: 14px;
 }
-.sheet[open] { display: flex; }
-.sheet::backdrop { background: rgba(0, 0, 0, .38); }
+.sheet::backdrop { background: var(--scrim); }
+/* All padding lives here so a click on the <dialog> element itself can only be a backdrop click. */
+.sheet__body {
+  display: flex; flex-direction: column; gap: 14px;
+  padding: 8px 16px calc(env(safe-area-inset-bottom) + 20px);
+}
 .sheet__grab { width: 38px; height: 5px; border-radius: 3px; background: var(--line); margin: 0 auto 4px; }
 .sheet__who { display: flex; align-items: center; gap: 12px; padding: 4px 0 6px; }
 .sheet__name { font-weight: 650; font-size: 16px; }

@@ -1,19 +1,9 @@
 import { ScanFaceIcon, WalletIcon } from '../shell/icons'
+import { authErrorMessage, LINKED_MESSAGE, LOGOUT_FAILED_MESSAGE, type AuthResult } from './authMessages'
+import { useSession } from './SessionProvider'
 
-const MESSAGES: Record<string, string> = {
-  not_linked: 'This passkey isn’t linked yet. Sign in with your password at /login, then Settings → Link passkey.',
-  link_requires_login: 'To link a passkey, first sign in with your password and 2FA.',
-  no_household: 'You’re signed in but not in a household yet. Ask for an invite.',
-  denied: 'Sign-in was cancelled.',
-  state: 'That sign-in link expired. Try again.',
-  token: 'Sign-in couldn’t be verified. Try again.',
-  provider: 'The sign-in service didn’t respond. Try again in a minute.',
-  subject_conflict: 'This passkey is already linked to a different account.',
-}
-
-export function SignIn() {
-  const params = new URLSearchParams(location.search)
-  const code = params.get('auth_error')
+export function SignIn({ result }: { result: AuthResult }) {
+  const { logoutFailed, retryLogout } = useSession()
   return (
     <main className="signin">
       <div className="signin__brand">
@@ -24,10 +14,14 @@ export function SignIn() {
         </div>
       </div>
       <div className="signin__actions">
-        {code && <p role="alert" className="signin__error">{MESSAGES[code] ?? 'Sign-in failed. Try again.'}</p>}
-        {params.has('linked') && (
-          <p role="status" className="signin__ok">Passkey linked. You can sign in with Face ID now.</p>
+        {logoutFailed && (
+          <div role="alert" className="notice notice--error">
+            <span className="notice__text">{LOGOUT_FAILED_MESSAGE}</span>
+            <button type="button" className="notice__action" onClick={() => void retryLogout()}>Retry</button>
+          </div>
         )}
+        {result.error && <p role="alert" className="notice notice--error">{authErrorMessage(result.error)}</p>}
+        {result.linked && <p role="status" className="notice notice--ok">{LINKED_MESSAGE}</p>}
         {/* A top-level navigation: it stays inside the PWA scope until the hop to Pocket ID. */}
         <a className="btn btn--primary btn--lg btn--block" href="/app/auth/login">
           <ScanFaceIcon />
