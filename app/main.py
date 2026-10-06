@@ -1,6 +1,7 @@
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -154,6 +155,12 @@ async def security_headers(request: Request, call_next):
     if request.url.path == "/app" or request.url.path.startswith("/app/"):
         response.headers["Content-Security-Policy"] = web_app.APP_CSP
     else:
+        # The Link-passkey form on /settings posts to /app/auth/link, which redirects
+        # to Pocket ID; browsers check form-action on every redirect hop.
+        form_action = "'self'"
+        if settings.new_app_enabled and settings.oidc_enabled:
+            issuer = urlsplit(settings.oidc_issuer)
+            form_action += f" {issuer.scheme}://{issuer.netloc}"
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
             "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
@@ -163,7 +170,7 @@ async def security_headers(request: Request, call_next):
             "connect-src 'self' blob:; "
             "object-src 'none'; "
             "base-uri 'self'; "
-            "form-action 'self'"
+            f"form-action {form_action}"
         )
     if not settings.debug:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"

@@ -146,7 +146,7 @@
             <button type="submit" class="text-sm text-red-500 hover:text-red-700 font-medium transition-colors">Unlink passkey</button>
           </form>
           {% elif user.totp_enabled %}
-          <form method="POST" action="/app/auth/link" class="space-y-3">
+          <form method="POST" action="/app/auth/link" class="space-y-3" hx-boost="false">
             <input type="hidden" name="_csrf_token" value="{{ request.state.csrf_token }}" />
             <input type="password" name="password" placeholder="Current password" required autocomplete="current-password"
                    class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white focus:border-primary-400 outline-none text-sm" />

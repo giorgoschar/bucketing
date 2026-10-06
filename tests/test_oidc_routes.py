@@ -455,3 +455,22 @@ def test_settings_page_hides_link_when_flag_off(client, make_household, login, m
     login(hh.username, hh.secret)
     monkeypatch.setattr(settings, "new_app_enabled", False)
     assert "/app/auth/link" not in client.get("/settings").text
+
+
+def test_link_form_is_a_real_navigation_the_csp_lets_reach_pocket_id(
+    client, make_household, login, monkeypatch
+):
+    """The link POST redirects to Pocket ID. hx-boost would turn it into a fetch
+    (blocked by connect-src), and browsers check form-action on every redirect hop."""
+    import re
+
+    hh = make_household()
+    login(hh.username, hh.secret)
+    r = client.get("/settings")
+    form = re.search(r'<form[^>]*action="/app/auth/link"[^>]*>', r.text).group(0)
+    assert 'hx-boost="false"' in form
+    csp = r.headers["content-security-policy"]
+    assert "form-action 'self' https://id.example.test;" in csp + ";"
+    monkeypatch.setattr(settings, "new_app_enabled", False)
+    csp = client.get("/settings").headers["content-security-policy"]
+    assert csp.endswith("form-action 'self'")
