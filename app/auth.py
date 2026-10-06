@@ -188,14 +188,15 @@ def _cookie_kwargs(max_age: int) -> dict:
     }
 
 
-def set_session(response, user_id: str, household_id: str, session_version: int):
-    """Set a full authenticated session cookie."""
+def set_session(response, user_id: str, household_id: str, session_version: int, amr: str = "pwd"):
+    """Set a full authenticated session cookie. amr: "pwd" (password+TOTP) or "oidc" (passkey)."""
     value = _serializer.dumps(
         {
             "user_id": user_id,
             "hh_id": household_id,
             "sv": session_version,
             "state": "authenticated",
+            "amr": amr,
         }
     )
     response.set_cookie(COOKIE_NAME, value, **_cookie_kwargs(settings.session_max_age_seconds))
@@ -290,6 +291,15 @@ def verify_csrf_token(token: str, user_id: str) -> bool:
     except (BadSignature, AttributeError) as exc:
         security_logger.warning("CSRF token rejected (%s)", type(exc).__name__)
         return False
+
+
+def csrf_matches(request: Request, user_id: str) -> bool:
+    """Double-submit check for JSON API calls: header must equal the cookie and be valid."""
+    header = request.headers.get("X-CSRF-Token", "")
+    cookie = request.cookies.get(CSRF_COOKIE_NAME, "")
+    return (
+        bool(header) and hmac.compare_digest(header, cookie) and verify_csrf_token(header, user_id)
+    )
 
 
 # Pre-session (login) CSRF: forms served before any session exists carry a
@@ -403,7 +413,7 @@ def require_auth(request: Request, db: Session = Depends(get_db)):
         raise stale
 
     # TOTP enrollment enforcement — every authenticated user must enroll
-    if not user.totp_enabled:
+    if not user.totp_enabled and session.get("amr") != "oidc":
         raise HTTPException(status_code=302, headers={"Location": "/settings/2fa/enroll"})
 
     # Expose CSRF token to templates via request.state; the security-headers
@@ -430,7 +440,7 @@ def require_household_member(
     if session.get("sv", -1) != user.session_version:
         raise HTTPException(status_code=302, headers={"Location": "/login"})
 
-    if not user.totp_enabled:
+    if not user.totp_enabled and session.get("amr") != "oidc":
         raise HTTPException(status_code=302, headers={"Location": "/settings/2fa/enroll"})
 
     hh_id = session["hh_id"]

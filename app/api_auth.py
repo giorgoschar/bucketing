@@ -142,7 +142,37 @@ def _decode_token(token: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
+_UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+def _cookie_auth(request: Request, db: Session):
+    """Session-cookie auth for the new app at /app (same origin, no tokens in JS)."""
+    from app.auth import COOKIE_NAME, csrf_matches, decode_cookie
+
+    unauth = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Not authenticated",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    raw = request.cookies.get(COOKIE_NAME)
+    session = decode_cookie(raw) if raw else None
+    if not session or session.get("state") != "authenticated":
+        raise unauth
+    user = db.get(User, session.get("user_id"))
+    if not user or session.get("sv", -1) != user.session_version:
+        raise unauth
+    hh_id = session.get("hh_id")
+    if not _is_member(db, hh_id, user.id):
+        raise unauth
+    if request.method in _UNSAFE and not csrf_matches(request, user.id):
+        raise HTTPException(status_code=403, detail="CSRF token missing or invalid")
+    if not user.totp_enabled and session.get("amr") != "oidc":
+        raise HTTPException(status_code=403, detail="TOTP enrollment required")
+    return user, hh_id
+
+
 def require_api_auth(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
     db: Session = Depends(get_db),
 ):
@@ -157,11 +187,7 @@ def require_api_auth(
     Returns (user, household_id).
     """
     if not credentials:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        return _cookie_auth(request, db)
 
     if credentials.credentials.startswith(PAT_PREFIX):
         # Personal ingest tokens only ever authenticate the ingest endpoint.

@@ -373,7 +373,8 @@ def switch_household(
         raise HTTPException(status_code=403, detail="Not a member of that household")
 
     response = RedirectResponse("/dashboard", status_code=302)
-    set_session(response, user.id, household_id, user.session_version)
+    amr = (get_current_session(request) or {}).get("amr", "pwd")
+    set_session(response, user.id, household_id, user.session_version, amr=amr)
     return response
 
 
