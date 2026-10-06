@@ -7,7 +7,7 @@ import pyotp
 import pytest
 from fastapi.testclient import TestClient
 
-from app.clock import local_today, utcnow_naive
+from app.core.clock import local_today, utcnow_naive
 from app.models import Invitation, PushSubscription, Transaction, TransactionType, User
 from tests.conftest import PASSWORD
 from tests.test_household_settlement import _add_member
@@ -100,7 +100,7 @@ def test_member_cannot_create_api_invite(client, db, authed):
 
 
 def test_invite_link_uses_app_base_url_not_host_header(client, authed, monkeypatch):
-    from app.config import settings
+    from app.core.config import settings
 
     monkeypatch.setattr(settings, "app_base_url", "https://expenses.example.org/")
     r = client.post("/settings/invite",
@@ -111,7 +111,7 @@ def test_invite_link_uses_app_base_url_not_host_header(client, authed, monkeypat
 
 
 def test_production_requires_app_base_url():
-    from app.config import Settings
+    from app.core.config import Settings
 
     with pytest.raises(RuntimeError, match="APP_BASE_URL"):
         Settings(debug=False, app_secret_key="x" * 40, app_base_url=None, _env_file=None)

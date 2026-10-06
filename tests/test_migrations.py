@@ -73,7 +73,7 @@ def test_schema_matches_models(tmp_path):
     assert _alembic(["upgrade", "head"], db_url).returncode == 0
 
     import app.models  # noqa: F401
-    from app.database import Base
+    from app.core.database import Base
 
     insp = inspect(create_engine(db_url))
     problems = []

@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.auth import require_auth, require_csrf
-from app.database import get_db
+from app.core.database import get_db
 from app.models import Bucket
 from app.services import (
     SettlementChanged,

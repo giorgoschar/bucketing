@@ -1,7 +1,7 @@
 """Final-review bill fixes: B2 (deleting a bill keeps paid history) and B5 (no payer-less bill expenses)."""
 from decimal import Decimal
 
-from app.clock import utcnow_naive
+from app.core.clock import utcnow_naive
 from app.models import BillOccurrence, OccurrenceStatus, RecurringBill
 from tests.test_api import api  # noqa: F401  (fixture)
 
@@ -73,7 +73,7 @@ def test_api_delete_allows_bill_without_history(client, db, api, make_bill):  # 
 # ---------------------------------------------------------------------------
 
 def _run_autopay(monkeypatch, SessionLocal):
-    import app.database as database
+    import app.core.database as database
     import app.scheduler as scheduler
     monkeypatch.setattr(database, "SessionLocal", SessionLocal, raising=False)
     scheduler.auto_mark_paid_job()

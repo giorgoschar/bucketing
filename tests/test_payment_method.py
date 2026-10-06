@@ -1,5 +1,5 @@
 """payment_method + merchant on transactions (Phase 4, Task 4.1)."""
-from app.clock import utcnow_naive
+from app.core.clock import utcnow_naive
 from app.models import PaymentMethod, Transaction
 from app.services.bills import pay_occurrence
 from tests.test_api import api  # noqa: F401  (fixture)

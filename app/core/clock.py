@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 def tz() -> tzinfo:
     """The household calendar timezone, falling back to UTC if misconfigured."""
-    from app.config import settings
+    from app.core.config import settings
     try:
         return ZoneInfo(settings.app_timezone)
     except (ZoneInfoNotFoundError, ValueError, KeyError):

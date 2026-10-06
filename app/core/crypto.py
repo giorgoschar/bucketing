@@ -11,7 +11,7 @@ from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
-from app.config import settings
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 

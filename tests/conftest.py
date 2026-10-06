@@ -36,7 +36,7 @@ def reset_rate_limiter():
     this the login limit (10 per 15 minutes) is consumed by earlier tests and
     later ones fail with 429 rather than for any real reason.
     """
-    from app.ratelimit import limiter
+    from app.core.ratelimit import limiter
 
     limiter.reset()
     yield
@@ -59,7 +59,7 @@ def reset_pg_schema(url):
 def engine(tmp_path):
     """A throwaway database per test: SQLite with FK enforcement, or Postgres."""
     import app.models  # noqa: F401  (register the tables)
-    from app.database import Base
+    from app.core.database import Base
 
     if TEST_DATABASE_URL:
         reset_pg_schema(TEST_DATABASE_URL)
@@ -98,7 +98,7 @@ def db(SessionLocal):
 @pytest.fixture()
 def app(engine, SessionLocal, monkeypatch):
     """The FastAPI app wired to the test database."""
-    import app.database as database
+    import app.core.database as database
     from app.main import app as fastapi_app
 
     monkeypatch.setattr(database, "engine", engine, raising=False)

@@ -240,7 +240,7 @@ class PosokaneiClient:
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
     ):
-        from app.config import settings
+        from app.core.config import settings
 
         self.enabled = settings.posokanei_enabled if enabled is None else enabled
         self.base_url = (base_url or settings.posokanei_base_url or DEFAULT_BASE_URL).rstrip("/")

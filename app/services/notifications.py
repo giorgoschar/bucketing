@@ -144,7 +144,7 @@ def send_push_for_notification(db: Session, notification: Notification | None, t
     objects (e.g. just the current device for test notifications).
     Returns the number of subscriptions successfully notified.
     """
-    from app.config import settings
+    from app.core.config import settings
 
     # None means create_notification() deduplicated this one away — nothing to send.
     if notification is None:

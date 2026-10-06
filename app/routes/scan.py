@@ -19,8 +19,8 @@ from fastapi.responses import (
 from sqlalchemy.orm import Session
 
 from app.auth import require_auth, require_csrf
-from app.config import settings
-from app.database import get_db
+from app.core.config import settings
+from app.core.database import get_db
 from app.routes.transactions import _get_context
 from app.services.category_rules import resolve_category
 from app.services.receipt_parser import _extract_category_hint, parse_receipt_text

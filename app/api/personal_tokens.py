@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api_auth import require_api_auth
-from app.database import get_db
+from app.core.database import get_db
 from app.services import (
     issue_personal_token,
     list_personal_tokens,

@@ -22,7 +22,7 @@ from app.scheduler import today_local
 @pytest.fixture()
 def run_job(monkeypatch, SessionLocal):
     """Run the real scheduler job against the test database."""
-    import app.database as database
+    import app.core.database as database
     import app.scheduler as scheduler
 
     monkeypatch.setattr(database, "SessionLocal", SessionLocal, raising=False)
@@ -215,7 +215,7 @@ def test_today_local_follows_configured_timezone(monkeypatch):
     from datetime import datetime
     from zoneinfo import ZoneInfo
 
-    import app.config as config
+    import app.core.config as config
     import app.scheduler as scheduler
 
     monkeypatch.setattr(config.settings, "app_timezone", "Pacific/Kiritimati")  # UTC+14
@@ -232,7 +232,7 @@ def test_today_local_follows_configured_timezone(monkeypatch):
 def test_unknown_timezone_falls_back_to_utc(monkeypatch):
     from datetime import datetime
 
-    import app.config as config
+    import app.core.config as config
     import app.scheduler as scheduler
 
     monkeypatch.setattr(config.settings, "app_timezone", "Not/AZone")
@@ -241,7 +241,7 @@ def test_unknown_timezone_falls_back_to_utc(monkeypatch):
 
 def test_bill_due_today_local_is_paid(db, make_household, make_bill, run_job, monkeypatch):
     """Regression: a bill due on the local calendar date must be auto-paid."""
-    import app.config as config
+    import app.core.config as config
     from app.models import Transaction
 
     monkeypatch.setattr(config.settings, "app_timezone", "Europe/Athens")

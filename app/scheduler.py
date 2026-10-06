@@ -25,7 +25,7 @@ from datetime import date, datetime, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from app import clock
+from app.core import clock
 
 logger = logging.getLogger(__name__)
 scheduler = BackgroundScheduler()  # timezone applied in start_scheduler()
@@ -51,7 +51,7 @@ BUDGET_THRESHOLDS = (80, 100)
 
 
 def _tz():
-    """The household calendar timezone (see app.clock.tz)."""
+    """The household calendar timezone (see app.core.clock.tz)."""
     return clock.tz()
 
 
@@ -406,8 +406,8 @@ def _notify_bill_drift(db, today: date) -> None:
 
 def _notify_budget_thresholds(db, today: date) -> None:
     """Warn when a bucket's spend for the current month crosses its budget."""
+    from app.core.money import ZERO, to_decimal
     from app.models import Bucket, BucketStatus, NotificationType
-    from app.money import ZERO, to_decimal
     from app.services import get_bucket_spend_this_month
 
     buckets = (
@@ -543,8 +543,8 @@ def _notify_stock_and_prices(db, today: date) -> None:
     median. Both at most once per item per day."""
     from decimal import Decimal
 
+    from app.core.money import to_decimal
     from app.models import NotificationType, Product, StockItem, StockMovement
-    from app.money import to_decimal
     from app.services.stock import price_advice_bulk
 
     items = (db.query(StockItem)
@@ -653,7 +653,7 @@ def auto_mark_paid_job() -> None:
 
     Each stage is isolated so a failure in one does not discard the others.
     """
-    from app.database import SessionLocal
+    from app.core.database import SessionLocal
 
     db = SessionLocal()
     try:
@@ -692,7 +692,7 @@ def _acquire_scheduler_lock(engine=None) -> bool:
     lifetime (the lock is released automatically if the process dies)."""
     global _lock_conn
     if engine is None:
-        from app.database import engine as app_engine
+        from app.core.database import engine as app_engine
         engine = app_engine
     if engine.dialect.name != "postgresql":
         return True
@@ -731,7 +731,7 @@ def _release_scheduler_lock() -> None:
 
 def start_scheduler() -> None:
     """Start the background scheduler and run an immediate catch-up job."""
-    from app.config import settings
+    from app.core.config import settings
 
     if not settings.enable_scheduler:
         logger.info("Scheduler disabled via ENABLE_SCHEDULER — skipping start")

@@ -10,7 +10,7 @@ from fastapi import HTTPException, UploadFile
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.clock import utcnow_naive
+from app.core.clock import utcnow_naive
 from app.models import (
     CashMovement,
     Household,

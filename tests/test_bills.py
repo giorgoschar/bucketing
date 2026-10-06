@@ -236,7 +236,7 @@ def _split_map(db, txn):
 def test_variable_bill_splits_scale_to_paid_amount(db, authed, make_bill):
     from decimal import Decimal
 
-    from app.clock import utcnow_naive
+    from app.core.clock import utcnow_naive
     from app.services.bills import pay_occurrence
 
     bill, occ, users = _bill_with_splits(db, authed, make_bill, [50, 50], bill_amount=100)
@@ -250,7 +250,7 @@ def test_variable_bill_splits_scale_to_paid_amount(db, authed, make_bill):
 def test_uneven_split_remainder_goes_to_payer(db, authed, make_bill):
     from decimal import Decimal
 
-    from app.clock import utcnow_naive
+    from app.core.clock import utcnow_naive
     from app.services.bills import pay_occurrence
 
     # 1/3 each of 100 -> 33.33 / 33.33 / 33.33 = 99.99; the payer absorbs the cent.
@@ -267,7 +267,7 @@ def test_uneven_split_remainder_goes_to_payer(db, authed, make_bill):
 def test_split_overrides_must_sum_to_amount(db, authed, make_bill):
     from decimal import Decimal
 
-    from app.clock import utcnow_naive
+    from app.core.clock import utcnow_naive
     from app.services.bills import pay_occurrence
 
     bill, occ, users = _bill_with_splits(db, authed, make_bill, [50, 50], bill_amount=100)
@@ -283,7 +283,7 @@ def test_split_overrides_must_sum_to_amount(db, authed, make_bill):
 def test_second_pay_of_same_occurrence_is_a_noop(db, authed, make_bill):
     from decimal import Decimal
 
-    from app.clock import utcnow_naive
+    from app.core.clock import utcnow_naive
     from app.services.bills import pay_occurrence
 
     bill, occ = make_bill(authed.household_id, authed.bucket_id, amount=45,
@@ -300,7 +300,7 @@ def test_second_pay_of_same_occurrence_is_a_noop(db, authed, make_bill):
 
 def test_auto_pay_job_uses_scaled_service_path(db, authed, make_bill, monkeypatch, SessionLocal):
     """Scheduler auto-pay creates the transaction through pay_occurrence."""
-    import app.database as database
+    import app.core.database as database
     import app.scheduler as scheduler
     import app.services.bills as bs
 

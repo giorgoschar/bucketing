@@ -6,11 +6,11 @@ from decimal import ROUND_DOWN, Decimal
 
 from sqlalchemy import func
 
+from app.core.money import CENT, ZERO, to_decimal
 from app.models import (
     PayerMode,
     Transaction,
 )
-from app.money import CENT, ZERO, to_decimal
 
 # ---------------------------------------------------------------------------
 # Currency normalisation
@@ -30,7 +30,7 @@ def base_amount_expr():
 def to_base(amount, exchange_rate) -> Decimal:
     """Python equivalent of :func:`base_amount_expr` for loaded ORM objects.
 
-    Unrounded: callers sum first and :func:`app.money.quantize` the result.
+    Unrounded: callers sum first and :func:`app.core.money.quantize` the result.
     """
     if amount is None:
         return ZERO

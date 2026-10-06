@@ -3,8 +3,8 @@ from datetime import UTC, date, datetime
 
 import pytest
 
-import app.clock as clock
-import app.config as config
+import app.core.clock as clock
+import app.core.config as config
 
 
 def _freeze(monkeypatch, when: datetime):

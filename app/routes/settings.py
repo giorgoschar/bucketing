@@ -30,9 +30,10 @@ from app.auth import (
     verify_password,
     verify_totp,
 )
-from app.clock import utcnow_naive
-from app.config import settings
-from app.database import get_db
+from app.core.clock import utcnow_naive
+from app.core.config import settings
+from app.core.database import get_db
+from app.core.ratelimit import limiter
 from app.models import (
     Category,
     CategoryRule,
@@ -42,7 +43,6 @@ from app.models import (
     MemberRole,
     User,
 )
-from app.ratelimit import limiter
 from app.seed import seed_categories
 from app.services import base_ctx, revoke_user_tokens
 from app.services.category_rules import learn_rule, list_rules

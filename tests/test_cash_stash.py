@@ -730,7 +730,7 @@ def test_insights_widgets_that_include_not_logged(db, cash_mix):
 
 
 def test_insights_trend_includes_not_logged(db, authed):
-    from app.clock import local_today
+    from app.core.clock import local_today
 
     _move(db, authed, "take", 45, local_today())
     data = build_insights(db, authed.household_id, InsightFilters())
@@ -752,7 +752,7 @@ def test_insights_html_and_api_for_another_member(app, client, db, cash_mix):
 
 
 def test_me_and_dashboard_show_not_logged(client, db, authed):
-    from app.clock import local_today
+    from app.core.clock import local_today
 
     _move(db, authed, "stash_in", 777, local_today(), note="hidden-savings")
     _move(db, authed, "take", 45, local_today())
@@ -764,7 +764,7 @@ def test_me_and_dashboard_show_not_logged(client, db, authed):
 
 
 def test_forecast_includes_not_logged_cash(db, duo):
-    from app.clock import local_today
+    from app.core.clock import local_today
 
     today = local_today()
     for back in (1, 2, 3):
@@ -1072,7 +1072,7 @@ def test_others_never_see_a_negative_taken(client, db, duo):
 
 def test_wizard_default_ignores_bill_payments(client, db, duo):
     """A bill paid in the background (auto-pay) is not the user's choice."""
-    from app.clock import utcnow_naive
+    from app.core.clock import utcnow_naive
     from app.models import BillOccurrence, RecurringBill
     from app.services.bills import generate_occurrences, pay_occurrence
 

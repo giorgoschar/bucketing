@@ -6,7 +6,7 @@ from unittest.mock import patch
 import httpx
 import pytest
 
-from app.clock import local_today, utcnow_naive
+from app.core.clock import local_today, utcnow_naive
 from app.models import (
     Household,
     HouseholdMember,

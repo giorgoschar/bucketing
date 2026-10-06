@@ -13,9 +13,9 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.auth import require_auth, require_csrf
-from app.clock import local_today
-from app.config import settings
-from app.database import get_db
+from app.core.clock import local_today
+from app.core.config import settings
+from app.core.database import get_db
 from app.integrations import posokanei
 from app.integrations.posokanei import PosokaneiUnavailable
 from app.models import Category, StockReason

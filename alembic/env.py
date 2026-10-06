@@ -7,8 +7,8 @@ import app.models  # noqa: F401
 from alembic import context
 
 # Pull DATABASE_URL from the app's settings (reads .env automatically)
-from app.config import settings
-from app.database import Base
+from app.core.config import settings
+from app.core.database import Base
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

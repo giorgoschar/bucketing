@@ -2,7 +2,7 @@
 import pyotp
 import pytest
 
-from app.clock import local_today, utcnow_naive
+from app.core.clock import local_today, utcnow_naive
 from tests.conftest import PASSWORD
 
 
@@ -310,7 +310,7 @@ def test_api_refresh_is_rate_limited(client):
 
 
 def _reset_limits():
-    from app.ratelimit import limiter
+    from app.core.ratelimit import limiter
     limiter.reset()
 
 
@@ -452,7 +452,7 @@ def test_api_unknown_currency_is_422(client, api):
 
 def test_insights_money_fields_stay_json_numbers(client, db, api):
     """Services return Decimal now; the API must still emit JSON numbers (floats)."""
-    from app.clock import local_today
+    from app.core.clock import local_today
     from app.models import Bucket, Transaction, TransactionType
 
     headers, hh = api
@@ -475,7 +475,7 @@ def test_insights_money_fields_stay_json_numbers(client, db, api):
 
 
 def test_insights_paid_by_shape_has_paid_share_and_amount_alias(client, db, api):
-    from app.clock import local_today
+    from app.core.clock import local_today
     from app.models import Transaction, TransactionType
 
     headers, hh = api

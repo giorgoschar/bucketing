@@ -8,7 +8,7 @@ applied, so totals added raw amounts across currencies.
 
 import pytest
 
-from app.clock import local_today
+from app.core.clock import local_today
 from app.models import Transaction, TransactionSplit, TransactionType
 from app.services import (
     get_bucket_balance,

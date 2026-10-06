@@ -4,8 +4,8 @@ from pathlib import Path
 from fastapi.templating import Jinja2Templates
 
 from app.auth import form_csrf_token
+from app.core.money import quantize, to_decimal
 from app.models import PaymentMethod
-from app.money import quantize, to_decimal
 from app.schemas import OWN_SHARE_CHOICE
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))

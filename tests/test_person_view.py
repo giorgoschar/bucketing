@@ -10,7 +10,7 @@ import pyotp
 import pytest
 
 from app.auth import hash_password
-from app.clock import local_today
+from app.core.clock import local_today
 from app.models import (
     Bucket,
     Category,

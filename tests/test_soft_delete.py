@@ -10,7 +10,7 @@ from datetime import timedelta
 import pyotp
 import pytest
 
-from app.clock import local_today, utcnow_naive
+from app.core.clock import local_today, utcnow_naive
 from app.models import (
     Bucket,
     Household,

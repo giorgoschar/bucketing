@@ -6,7 +6,7 @@ from datetime import date
 from decimal import Decimal
 
 from app.api_auth import create_access_token
-from app.clock import local_today, utcnow_naive
+from app.core.clock import local_today, utcnow_naive
 from app.models import CashMovement, Transaction, TransactionType
 from app.services import (
     add_movement,

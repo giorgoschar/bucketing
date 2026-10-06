@@ -225,7 +225,7 @@ def test_requests_are_spaced():
 
 
 def test_default_client_uses_settings(monkeypatch):
-    from app.config import settings
+    from app.core.config import settings
 
     monkeypatch.setattr(settings, "posokanei_enabled", False)
     monkeypatch.setattr(posokanei, "_client", None)

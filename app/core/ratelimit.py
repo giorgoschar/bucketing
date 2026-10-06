@@ -17,7 +17,7 @@ import hashlib
 from slowapi import Limiter
 from starlette.requests import Request
 
-from app.config import settings
+from app.core.config import settings
 
 
 def client_key(request: Request) -> str:

@@ -18,7 +18,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.auth import require_auth, require_csrf
-from app.database import get_db
+from app.core.database import get_db
 from app.models import (
     BillOccurrence,
     Bucket,

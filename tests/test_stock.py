@@ -3,7 +3,7 @@ from decimal import Decimal
 
 import pytest
 
-from app.clock import local_today
+from app.core.clock import local_today
 from app.integrations import posokanei
 from app.integrations.posokanei import (
     PosokaneiUnavailable,
@@ -276,7 +276,7 @@ def test_refresh_degrades_when_posokanei_is_down(client, authed, db, down):
 
 
 def test_page_renders_with_posokanei_disabled(client, authed, monkeypatch):
-    from app.config import settings
+    from app.core.config import settings
 
     monkeypatch.setattr(settings, "posokanei_enabled", False)
     monkeypatch.setattr(posokanei, "_client", None)

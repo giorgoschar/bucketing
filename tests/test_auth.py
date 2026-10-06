@@ -217,7 +217,7 @@ def test_logout_clears_session(client, authed):
 
 
 def test_html_lockout_after_ten_wrong_passwords(client, make_household):
-    from app.ratelimit import limiter
+    from app.core.ratelimit import limiter
 
     hh = make_household()
     for _ in range(10):
@@ -231,7 +231,7 @@ def test_html_lockout_after_ten_wrong_passwords(client, make_household):
 
 
 def test_html_wrong_totp_codes_lock_the_account(client, db, make_household):
-    from app.ratelimit import limiter
+    from app.core.ratelimit import limiter
 
     hh = make_household()
     assert client.post("/login", data={**form_csrf(client, "/login"), **form_csrf(client, "/login"), "username": hh.username, "password": PASSWORD}).status_code == 302
@@ -260,7 +260,7 @@ def _shift_signer_clock(monkeypatch, seconds):
 
 
 def test_session_cookie_expires_after_max_age(client, authed, monkeypatch):
-    from app.config import settings
+    from app.core.config import settings
 
     assert client.get("/dashboard").status_code == 200
     _shift_signer_clock(monkeypatch, settings.session_max_age_seconds + 60)
@@ -275,7 +275,7 @@ def test_session_cookie_valid_within_max_age(client, authed, monkeypatch):
 
 def test_csrf_token_lives_as_long_as_the_session(client, authed, monkeypatch):
     """The CSRF cookie lasts 30 days; the signed token must not die after 4 hours."""
-    from app.config import settings
+    from app.core.config import settings
 
     _shift_signer_clock(monkeypatch, 60 * 60 * 5)
     r = client.post("/settings/profile/password", data={
@@ -355,7 +355,7 @@ def test_refresh_token_from_older_session_version_is_rejected(client, db, make_h
 # ---------------------------------------------------------------------------
 
 def test_crypto_round_trip_and_prefix():
-    from app.crypto import decrypt_str, encrypt_str
+    from app.core.crypto import decrypt_str, encrypt_str
 
     token = encrypt_str("JBSWY3DPEHPK3PXP")
     assert token.startswith("enc:")
@@ -369,7 +369,7 @@ def test_settings_require_app_secret_key(monkeypatch):
     import pytest
     from pydantic import ValidationError
 
-    from app.config import Settings
+    from app.core.config import Settings
 
     monkeypatch.delenv("APP_SECRET_KEY", raising=False)
     with pytest.raises(ValidationError):
@@ -377,7 +377,7 @@ def test_settings_require_app_secret_key(monkeypatch):
 
 
 def test_debug_defaults_to_false(monkeypatch):
-    from app.config import Settings
+    from app.core.config import Settings
 
     monkeypatch.delenv("DEBUG", raising=False)
     s = Settings(_env_file=None, app_secret_key="x" * 40, app_base_url="https://a.example")
@@ -514,8 +514,8 @@ def test_secret_encrypted_with_derived_key_survives_setting_field_key(db, make_h
     from cryptography.fernet import Fernet
 
     from app.auth import verify_totp
-    from app.config import settings
-    from app.crypto import decrypt_str
+    from app.core.config import settings
+    from app.core.crypto import decrypt_str
 
     hh = make_household()
     user = db.get(User, hh.user_id)

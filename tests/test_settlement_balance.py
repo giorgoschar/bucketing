@@ -10,7 +10,8 @@ import pyotp
 import pytest
 
 from app.auth import hash_password
-from app.clock import local_today
+from app.core.clock import local_today
+from app.core.money import quantize
 from app.models import (
     Bucket,
     HouseholdMember,
@@ -20,7 +21,6 @@ from app.models import (
     TransactionType,
     User,
 )
-from app.money import quantize
 from app.services import (
     compute_bucket_net,
     get_bucket_settlement,

@@ -9,7 +9,7 @@ from decimal import Decimal
 
 import pytest
 
-from app.clock import local_today
+from app.core.clock import local_today
 from app.models import Bucket, Category, Transaction, TransactionType
 from app.services import get_insights_kpis
 
@@ -259,7 +259,7 @@ def test_no_finished_month_means_no_quietest(db, authed):
 # ---------------------------------------------------------------------------
 
 def test_quantize_rounds_half_up():
-    from app.money import quantize
+    from app.core.money import quantize
     assert quantize(0.125) == Decimal("0.13")      # round(0.125, 2) == 0.12
     assert quantize(2.675) == Decimal("2.68")      # round(2.675, 2) == 2.67
     assert quantize(Decimal("-0.125")) == Decimal("-0.13")

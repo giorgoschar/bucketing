@@ -11,7 +11,7 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
-from app.clock import local_today
+from app.core.clock import local_today
 from app.models import (
     PayerMode,
     PaymentMethod,
@@ -435,7 +435,7 @@ def test_api_pay_own_share_bill(client, db, api, make_bill):  # noqa: F811
 
 
 def test_autopay_own_share_bill(db, duo, make_bill, monkeypatch, SessionLocal):
-    import app.database as database
+    import app.core.database as database
     import app.scheduler as scheduler
 
     _own_share_bill(db, make_bill, duo, auto_pay=True)
@@ -449,7 +449,7 @@ def test_autopay_own_share_bill(db, duo, make_bill, monkeypatch, SessionLocal):
 
 def test_autopay_own_share_bill_without_splits_falls_back_to_single(
         db, duo, make_bill, monkeypatch, SessionLocal):
-    import app.database as database
+    import app.core.database as database
     import app.scheduler as scheduler
 
     _own_share_bill(db, make_bill, duo, splits=False, auto_pay=True)

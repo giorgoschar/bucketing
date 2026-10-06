@@ -18,7 +18,7 @@ from app.scheduler import today_local
 
 @pytest.fixture()
 def run_job(monkeypatch, SessionLocal):
-    import app.database as database
+    import app.core.database as database
     import app.scheduler as scheduler
 
     monkeypatch.setattr(database, "SessionLocal", SessionLocal, raising=False)

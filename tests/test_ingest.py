@@ -4,7 +4,7 @@ from decimal import Decimal
 
 import pytest
 
-from app.config import settings
+from app.core.config import settings
 from app.models import (
     Bucket,
     BucketStatus,
@@ -296,7 +296,7 @@ def test_different_purchases_are_not_merged(client, db, ingest):
 
 
 def test_replay_of_deleted_expense_is_409_and_not_resurrected(client, db, ingest):
-    from app.clock import utcnow_naive
+    from app.core.clock import utcnow_naive
 
     at = "2026-10-01T12:34:00Z"
     tid = _post(client, ingest, occurred_at=at).json()["id"]

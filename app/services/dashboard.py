@@ -5,7 +5,7 @@ from datetime import timedelta
 
 from sqlalchemy.orm import Session, joinedload
 
-from app.clock import local_today
+from app.core.clock import local_today
 from app.models import (
     BillOccurrence,
     OccurrenceStatus,

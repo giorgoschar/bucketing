@@ -25,9 +25,9 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
-from app.clock import utcnow, utcnow_naive
-from app.config import settings
-from app.database import get_db
+from app.core.clock import utcnow, utcnow_naive
+from app.core.config import settings
+from app.core.database import get_db
 from app.models import HouseholdMember, PersonalApiToken, RefreshToken, User
 
 _bearer = HTTPBearer(auto_error=False)
@@ -221,7 +221,7 @@ def _ingest_failure(request: Request | None, detail: str = "Invalid ingest token
     if request is not None:
         from limits import parse
 
-        from app.ratelimit import client_key, limiter
+        from app.core.ratelimit import client_key, limiter
 
         if not limiter.limiter.hit(parse(INGEST_FAILURE_LIMIT), "ingest-fail", client_key(request)):
             return HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS,

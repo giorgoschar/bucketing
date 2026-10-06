@@ -1,7 +1,7 @@
 """B3: editing a transaction runs the same validation as creating one."""
 from decimal import Decimal
 
-from app.clock import local_today
+from app.core.clock import local_today
 from app.models import Transaction, TransactionSplit, TransactionType
 from tests.test_api import api  # noqa: F401  (fixture)
 from tests.test_household_settlement import _add_member

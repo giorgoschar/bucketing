@@ -8,7 +8,7 @@ from decimal import Decimal
 import pyotp
 import pytest
 
-from app.clock import local_today
+from app.core.clock import local_today
 from app.models import HouseholdMember
 from app.services import get_all_time_summary, get_bucket_month_summary, get_month_summary
 from tests.conftest import PASSWORD

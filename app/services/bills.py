@@ -10,7 +10,7 @@ from dateutil.relativedelta import relativedelta
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.clock import local_today
+from app.core.clock import local_today
 from app.models import (
     BillOccurrence,
     HouseholdMember,

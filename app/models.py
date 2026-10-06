@@ -21,8 +21,8 @@ from sqlalchemy import (
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import relationship
 
-from app.clock import local_today, utcnow_naive
-from app.database import Base
+from app.core.clock import local_today, utcnow_naive
+from app.core.database import Base
 
 
 def gen_id():
@@ -154,11 +154,11 @@ class User(Base):
     totp_backup_codes = Column(Text, nullable=True)  # JSON array of bcrypt-hashed codes
 
     def get_totp_secret(self) -> str | None:
-        from app.crypto import decrypt_str
+        from app.core.crypto import decrypt_str
         return decrypt_str(self.totp_secret) if self.totp_secret else None
 
     def set_totp_secret(self, secret: str | None) -> None:
-        from app.crypto import encrypt_str
+        from app.core.crypto import encrypt_str
         self.totp_secret = encrypt_str(secret) if secret else None
 
     memberships = relationship("HouseholdMember", back_populates="user")

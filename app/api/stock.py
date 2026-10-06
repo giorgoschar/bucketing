@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api_auth import require_api_auth
-from app.database import get_db
+from app.core.database import get_db
 from app.integrations import posokanei
 from app.integrations.posokanei import PosokaneiUnavailable
 from app.services import stock as stock_svc

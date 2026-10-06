@@ -6,10 +6,10 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api_auth import require_api_auth
-from app.clock import local_today
-from app.config import settings
-from app.database import get_db
-from app.money import quantize
+from app.core.clock import local_today
+from app.core.config import settings
+from app.core.database import get_db
+from app.core.money import quantize
 from app.services import (
     get_income_total,
     get_month_summary,

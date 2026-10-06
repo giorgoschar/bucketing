@@ -8,7 +8,7 @@ third person who does not exist. Reported as "shared expenses look like we owe
 someone else".
 """
 
-from app.clock import local_today
+from app.core.clock import local_today
 from app.models import (
     Bucket,
     Transaction,

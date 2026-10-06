@@ -4,7 +4,7 @@ from decimal import Decimal
 
 import pytest
 
-from app.clock import local_today
+from app.core.clock import local_today
 from app.models import Bucket, Category, HouseholdMember, Transaction, TransactionSplit
 from app.services import (
     get_insights_bucket_breakdown,
@@ -392,7 +392,7 @@ def test_dashboard_month_and_all_time_summary_count_one_offs(db, authed):
 # ---------------------------------------------------------------------------
 
 def _pay(db, ctx, amount, method, rate=None, payer="__me__", deleted=False):
-    from app.clock import utcnow_naive
+    from app.core.clock import utcnow_naive
     t = Transaction(
         bucket_id=ctx.bucket_id, household_id=ctx.household_id, amount=amount,
         currency="EUR", type="expense", transaction_date=local_today(),

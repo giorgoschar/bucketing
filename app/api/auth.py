@@ -30,9 +30,9 @@ from app.auth import (
     verify_password_constant_time,
     verify_totp,
 )
-from app.database import get_db
+from app.core.database import get_db
+from app.core.ratelimit import limiter
 from app.models import HouseholdMember, User
-from app.ratelimit import limiter
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

@@ -17,9 +17,9 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api_auth import require_ingest_token
-from app.database import get_db
+from app.core.database import get_db
+from app.core.ratelimit import ingest_token_key, limiter
 from app.models import Bucket, Category, PersonalApiToken, Transaction
-from app.ratelimit import ingest_token_key, limiter
 from app.services import DeletedTransactionReplay, ingest_apple_pay, notify_ingest_created
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])

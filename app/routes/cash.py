@@ -16,8 +16,8 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.auth import require_auth, require_csrf
-from app.clock import local_today
-from app.database import get_db
+from app.core.clock import local_today
+from app.core.database import get_db
 from app.models import Household
 from app.services import (
     delete_own_movement,

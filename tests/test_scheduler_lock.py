@@ -75,7 +75,7 @@ def test_postgres_lock_not_acquired_closes_connection():
 
 
 def test_start_scheduler_skips_when_lock_not_acquired(monkeypatch):
-    from app.config import settings
+    from app.core.config import settings
 
     monkeypatch.setattr(settings, "enable_scheduler", True)
     monkeypatch.setattr(sched, "_acquire_scheduler_lock", lambda engine=None: False)
@@ -86,7 +86,7 @@ def test_start_scheduler_skips_when_lock_not_acquired(monkeypatch):
 
 
 def test_start_scheduler_runs_when_lock_acquired(monkeypatch):
-    from app.config import settings
+    from app.core.config import settings
 
     monkeypatch.setattr(settings, "enable_scheduler", True)
     monkeypatch.setattr(sched, "_acquire_scheduler_lock", lambda engine=None: True)

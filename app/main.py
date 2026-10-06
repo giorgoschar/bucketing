@@ -13,9 +13,9 @@ from slowapi.errors import RateLimitExceeded
 import app.models  # noqa: F401
 from app.api import router as api_router
 from app.auth import COOKIE_NAME, CSRF_COOKIE_NAME, PENDING_COOKIE_NAME, CSRFError
-from app.config import settings
-from app.database import Base, engine
-from app.ratelimit import limiter  # single shared instance
+from app.core.config import settings
+from app.core.database import Base, engine
+from app.core.ratelimit import limiter  # single shared instance
 from app.routes import (
     auth,
     automations,

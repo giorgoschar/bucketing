@@ -21,10 +21,10 @@ from itsdangerous import BadSignature, URLSafeTimedSerializer
 from sqlalchemy import or_, update
 from sqlalchemy.orm import Session
 
-from app.clock import utcnow_naive
-from app.config import settings
-from app.crypto import needs_rotation
-from app.database import get_db
+from app.core.clock import utcnow_naive
+from app.core.config import settings
+from app.core.crypto import needs_rotation
+from app.core.database import get_db
 from app.models import HouseholdMember, RefreshToken, User
 
 # Timed serializers: the signed timestamp lets the server reject old cookies

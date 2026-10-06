@@ -19,7 +19,7 @@ import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import IntegrityError
 
-from app.clock import local_today
+from app.core.clock import local_today
 from app.models import (
     FUEL_SYSTEM_KEY,
     Bucket,

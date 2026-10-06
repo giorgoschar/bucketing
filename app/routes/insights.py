@@ -7,8 +7,8 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from app.auth import require_auth
-from app.clock import local_today
-from app.database import get_db
+from app.core.clock import local_today
+from app.core.database import get_db
 from app.models import Bucket, BucketStatus, Category, Household, HouseholdMember, User
 from app.services import InsightFilters, build_insights
 from app.templates import templates

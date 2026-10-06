@@ -192,7 +192,7 @@ def test_api_password_change_wrong_password_locks(client, db, make_household):
 # ---------------------------------------------------------------------------
 
 def _prod(**kw):
-    from app.config import Settings
+    from app.core.config import Settings
 
     base = {"debug": False, "app_secret_key": "a1" * 32,
             "app_base_url": "https://a.example", "_env_file": None}
@@ -218,7 +218,7 @@ def test_placeholder_app_secret_key_is_rejected_in_production():
 
 def test_ingest_url_uses_app_base_url(client, authed, monkeypatch):
     """Behind the proxy request.base_url is http://; the Shortcut needs https."""
-    from app.config import settings
+    from app.core.config import settings
 
     monkeypatch.setattr(settings, "app_base_url", "https://expenses.example.org/")
     text = client.get("/settings/automations").text

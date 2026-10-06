@@ -31,7 +31,7 @@ def parse_args(argv: list[str]) -> Namespace:
 
 
 def _household_tables():
-    from app.database import Base
+    from app.core.database import Base
 
     return [t for t in Base.metadata.sorted_tables if "household_id" in t.c and t.name != "households"]
 
@@ -84,7 +84,7 @@ def purge(db, household_id: str, execute: bool, uploads_dir: str = "uploads") ->
 
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
-    from app.database import SessionLocal
+    from app.core.database import SessionLocal
 
     db = SessionLocal()
     try:

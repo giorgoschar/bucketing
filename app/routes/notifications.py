@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.auth import require_auth, require_csrf
-from app.database import get_db
+from app.core.database import get_db
 from app.models import Notification, PushSubscription
 
 logger = logging.getLogger(__name__)
@@ -107,7 +107,7 @@ def mark_one_read(
 
 @router.get("/push/vapid-public-key", response_class=JSONResponse)
 def vapid_public_key():
-    from app.config import settings
+    from app.core.config import settings
     if not settings.vapid_public_key:
         raise HTTPException(status_code=404, detail="VAPID not configured")
     return {"public_key": settings.vapid_public_key}
@@ -207,7 +207,7 @@ async def push_test(
     auth=Depends(require_auth),
 ):
     """Send a test push notification to the current device only."""
-    from app.config import settings as app_settings
+    from app.core.config import settings as app_settings
     from app.models import NotificationType
     from app.services.notifications import create_notification, send_push_for_notification
 

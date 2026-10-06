@@ -11,7 +11,7 @@ import secrets
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.clock import utcnow_naive
+from app.core.clock import utcnow_naive
 from app.models import Bucket, BucketStatus, PersonalApiToken
 
 TOKEN_PREFIX = "pat_"

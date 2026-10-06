@@ -67,7 +67,7 @@ def parse_amount(
 
 def validate_currency(value: str) -> str:
     """Return the currency code if the app supports it, else raise HTTP 400."""
-    from app.config import settings
+    from app.core.config import settings
 
     if value not in settings.currencies:
         raise HTTPException(status_code=400, detail=f"Unsupported currency '{value}'.")

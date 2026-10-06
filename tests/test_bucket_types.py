@@ -8,7 +8,7 @@ from datetime import date, timedelta
 
 import pytest
 
-from app.clock import local_today
+from app.core.clock import local_today
 from app.models import (
     Bucket,
     BucketType,

@@ -11,8 +11,8 @@ from decimal import ROUND_HALF_UP, Decimal
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from app.core.money import to_decimal
 from app.models import FUEL_SYSTEM_KEY, Category, TransactionType
-from app.money import to_decimal
 
 LITRE = Decimal("0.001")
 # Upper bound of transactions.fuel_litres (NUMERIC(10,3)).
