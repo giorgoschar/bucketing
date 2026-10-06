@@ -25,18 +25,30 @@ from app.services import (
 def mixed(db, authed):
     """EUR 100 plus USD 100 at rate 0.5 => 150 in household currency."""
     today = local_today()
-    db.add(Transaction(
-        bucket_id=authed.bucket_id, household_id=authed.household_id,
-        amount=100, currency="EUR", exchange_rate=1,
-        type=TransactionType.expense, transaction_date=today,
-        paid_by=authed.user_id,
-    ))
-    db.add(Transaction(
-        bucket_id=authed.bucket_id, household_id=authed.household_id,
-        amount=100, currency="USD", exchange_rate=0.5,
-        type=TransactionType.expense, transaction_date=today,
-        paid_by=authed.user_id,
-    ))
+    db.add(
+        Transaction(
+            bucket_id=authed.bucket_id,
+            household_id=authed.household_id,
+            amount=100,
+            currency="EUR",
+            exchange_rate=1,
+            type=TransactionType.expense,
+            transaction_date=today,
+            paid_by=authed.user_id,
+        )
+    )
+    db.add(
+        Transaction(
+            bucket_id=authed.bucket_id,
+            household_id=authed.household_id,
+            amount=100,
+            currency="USD",
+            exchange_rate=0.5,
+            type=TransactionType.expense,
+            transaction_date=today,
+            paid_by=authed.user_id,
+        )
+    )
     db.commit()
     return authed
 
@@ -44,7 +56,7 @@ def mixed(db, authed):
 def test_to_base_applies_the_rate():
     assert to_base(100, 0.5) == 50.0
     assert to_base(100, 1) == 100.0
-    assert to_base(100, None) == 100.0   # missing rate is a no-op, not a crash
+    assert to_base(100, None) == 100.0  # missing rate is a no-op, not a crash
     assert to_base(None, 2) == 0.0
 
 
@@ -82,11 +94,17 @@ def test_category_breakdown_converts(db, mixed):
 def test_income_converts(db, authed):
     from app.services import get_insights_income
 
-    db.add(Transaction(
-        bucket_id=authed.bucket_id, household_id=authed.household_id,
-        amount=200, currency="USD", exchange_rate=0.5,
-        type=TransactionType.income, transaction_date=local_today(),
-    ))
+    db.add(
+        Transaction(
+            bucket_id=authed.bucket_id,
+            household_id=authed.household_id,
+            amount=200,
+            currency="USD",
+            exchange_rate=0.5,
+            type=TransactionType.income,
+            transaction_date=local_today(),
+        )
+    )
     db.commit()
     assert get_insights_income(db, authed.household_id, None, None) == 100.0
 
@@ -98,29 +116,43 @@ def test_settlement_converts(db, authed, make_household):
     from app.auth import hash_password
     from app.models import Bucket, HouseholdMember, MemberRole, User
 
-    partner = User(username="partner", display_name="Partner",
-                   email="p@example.com", password_hash=hash_password("x"),
-                   totp_secret=pyotp.random_base32(), totp_enabled=True)
+    partner = User(
+        username="partner",
+        display_name="Partner",
+        email="p@example.com",
+        password_hash=hash_password("x"),
+        totp_secret=pyotp.random_base32(),
+        totp_enabled=True,
+    )
     db.add(partner)
     db.flush()
-    db.add(HouseholdMember(household_id=authed.household_id, user_id=partner.id,
-                           role=MemberRole.member))
+    db.add(
+        HouseholdMember(
+            household_id=authed.household_id, user_id=partner.id, role=MemberRole.member
+        )
+    )
     bucket = db.get(Bucket, authed.bucket_id)
     bucket.enable_settlement = True
 
     # authed fronts USD 100 (= 50 base) split evenly: partner owes 25.
     txn = Transaction(
-        bucket_id=authed.bucket_id, household_id=authed.household_id,
-        amount=100, currency="USD", exchange_rate=0.5,
-        type=TransactionType.expense, transaction_date=local_today(),
+        bucket_id=authed.bucket_id,
+        household_id=authed.household_id,
+        amount=100,
+        currency="USD",
+        exchange_rate=0.5,
+        type=TransactionType.expense,
+        transaction_date=local_today(),
         paid_by=authed.user_id,
     )
     db.add(txn)
     db.flush()
-    db.add_all([
-        TransactionSplit(transaction_id=txn.id, user_id=authed.user_id, amount=50),
-        TransactionSplit(transaction_id=txn.id, user_id=partner.id, amount=50),
-    ])
+    db.add_all(
+        [
+            TransactionSplit(transaction_id=txn.id, user_id=authed.user_id, amount=50),
+            TransactionSplit(transaction_id=txn.id, user_id=partner.id, amount=50),
+        ]
+    )
     db.commit()
 
     settlements = get_bucket_settlement(db, authed.bucket_id)

@@ -3,6 +3,7 @@
 All routes use JWT Bearer auth (see app/api_auth.py).
 The existing HTML routes are completely untouched.
 """
+
 from fastapi import APIRouter
 
 from app.api import (

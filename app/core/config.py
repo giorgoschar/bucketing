@@ -1,4 +1,3 @@
-
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -26,9 +25,7 @@ class Settings(BaseSettings):
     cors_allowed_origins: str = ""
 
     # Supported currencies — single source of truth used across all routes
-    currencies: list[str] = [
-        "EUR", "USD", "GBP", "CHF", "JPY", "AUD", "CAD", "SEK", "NOK", "DKK"
-    ]
+    currencies: list[str] = ["EUR", "USD", "GBP", "CHF", "JPY", "AUD", "CAD", "SEK", "NOK", "DKK"]
 
     # AADE (Greek tax portal) receipt lookup
     aade_host: str = "www1.aade.gr"
@@ -88,7 +85,7 @@ class Settings(BaseSettings):
     # Web Push (VAPID) — set via environment variables in production
     # Generate with: vapid --gen  (after installing pywebpush)
     vapid_private_key: str = ""
-    vapid_public_key: str  = ""
+    vapid_public_key: str = ""
     vapid_claims_email: str = "admin@localhost"
 
     @model_validator(mode="after")
@@ -103,24 +100,24 @@ class Settings(BaseSettings):
             except (ValueError, TypeError) as exc:
                 raise RuntimeError(
                     "FIELD_ENCRYPTION_KEY is not a valid Fernet key (32 url-safe base64-encoded "
-                    "bytes). Generate one with: python -c \"from cryptography.fernet import "
-                    "Fernet; print(Fernet.generate_key().decode())\""
+                    'bytes). Generate one with: python -c "from cryptography.fernet import '
+                    'Fernet; print(Fernet.generate_key().decode())"'
                 ) from exc
         if not self.debug:
             if "change-me" in (self.app_secret_key or "").lower():
                 raise RuntimeError(
                     "APP_SECRET_KEY is still the .env.example placeholder. "
-                    "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+                    'Generate one with: python -c "import secrets; print(secrets.token_hex(32))"'
                 )
             if not self.app_secret_key:
                 raise RuntimeError(
                     "APP_SECRET_KEY must be set to a cryptographically random value in production. "
-                    "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+                    'Generate one with: python -c "import secrets; print(secrets.token_hex(32))"'
                 )
             if len(self.app_secret_key) < 32:
                 raise RuntimeError(
                     "APP_SECRET_KEY is too short (minimum 32 characters). "
-                    "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+                    'Generate one with: python -c "import secrets; print(secrets.token_hex(32))"'
                 )
             if not self.app_base_url:
                 raise RuntimeError(

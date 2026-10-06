@@ -2,6 +2,7 @@
 
 No network: every test drives the client through httpx.MockTransport.
 """
+
 import json
 from decimal import Decimal
 
@@ -22,12 +23,24 @@ SEARCH_PAYLOAD = {
             "unit_quantity": 1,
             "image_url": "https://img.example/p-123.jpg",
             "retailer_prices": [
-                {"retailer": "sklavenitis", "display_name": "Σκλαβενίτης",
-                 "price": 1.79, "unit_price": 1.79, "is_discount": False,
-                 "discount_pct": None, "last_updated": "2026-09-30"},
-                {"retailer": "ab", "display_name": "ΑΒ Βασιλόπουλος",
-                 "price": "1.59", "unit_price": "1.59", "is_discount": True,
-                 "discount_pct": 11, "last_updated": "2026-09-30"},
+                {
+                    "retailer": "sklavenitis",
+                    "display_name": "Σκλαβενίτης",
+                    "price": 1.79,
+                    "unit_price": 1.79,
+                    "is_discount": False,
+                    "discount_pct": None,
+                    "last_updated": "2026-09-30",
+                },
+                {
+                    "retailer": "ab",
+                    "display_name": "ΑΒ Βασιλόπουλος",
+                    "price": "1.59",
+                    "unit_price": "1.59",
+                    "is_discount": True,
+                    "discount_pct": 11,
+                    "last_updated": "2026-09-30",
+                },
             ],
             "price_stats": {"min": 1.59, "max": 1.79, "avg": 1.69},
         }
@@ -117,7 +130,9 @@ def test_get_requests_history_and_maps_product():
     assert req.method == "GET"
     assert req.url.path == "/products/p-123"
     assert dict(req.url.params) == {
-        "countries": "GR", "include_tax": "true", "include_history": "true",
+        "countries": "GR",
+        "include_tax": "true",
+        "include_history": "true",
     }
 
 
@@ -148,12 +163,15 @@ def test_timeout_becomes_unavailable():
         client.search("γάλα")
 
 
-@pytest.mark.parametrize("response", [
-    httpx.Response(500, text="oops"),
-    httpx.Response(403, text="<html>403 Forbidden</html>"),
-    httpx.Response(200, text="not json"),
-    httpx.Response(200, json={"unexpected": "shape"}),
-])
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(500, text="oops"),
+        httpx.Response(403, text="<html>403 Forbidden</html>"),
+        httpx.Response(200, text="not json"),
+        httpx.Response(200, json={"unexpected": "shape"}),
+    ],
+)
 def test_http_and_shape_errors_become_unavailable(response):
     client, _ = make_client(lambda req: response)
     with pytest.raises(PosokaneiUnavailable):
@@ -215,7 +233,9 @@ def test_requests_are_spaced():
 
     client, _ = make_client(
         lambda req: httpx.Response(200, json=SEARCH_PAYLOAD),
-        min_interval=0.25, clock=lambda: now[0], sleep=sleep,
+        min_interval=0.25,
+        clock=lambda: now[0],
+        sleep=sleep,
     )
     client.search("a")
     client.search("b")
@@ -241,9 +261,14 @@ def test_get_404_is_not_found_not_an_outage():
         client.get("p-gone")
 
 
-@pytest.mark.parametrize("response", [
-    httpx.Response(500), httpx.Response(503), httpx.Response(403, text="<html>"),
-])
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(500),
+        httpx.Response(503),
+        httpx.Response(403, text="<html>"),
+    ],
+)
 def test_get_outages_are_not_not_found(response):
     from app.integrations.posokanei import PosokaneiNotFound
 
@@ -271,11 +296,25 @@ def test_valid_ids_pass():
         assert valid_product_id(pid)
 
 
-@pytest.mark.parametrize("value,expected", [
-    (True, True), (False, False), (1, True), (0, False), ("true", True), ("True", True),
-    ("1", True), ("false", False), ("0", False), (0.5, False), (12, False),
-    ("yes", False), (None, False), ("0.15", False),
-])
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        (True, True),
+        (False, False),
+        (1, True),
+        (0, False),
+        ("true", True),
+        ("True", True),
+        ("1", True),
+        ("false", False),
+        ("0", False),
+        (0.5, False),
+        (12, False),
+        ("yes", False),
+        (None, False),
+        ("0.15", False),
+    ],
+)
 def test_is_discount_is_parsed_strictly(value, expected):
     payload = json.loads(json.dumps(SEARCH_PAYLOAD))
     payload["results"][0]["retailer_prices"][0]["is_discount"] = value
@@ -284,8 +323,12 @@ def test_is_discount_is_parsed_strictly(value, expected):
 
 
 def test_items_container_accepted_but_unknown_aliases_rejected():
-    client, _ = make_client(lambda req: httpx.Response(200, json={"items": SEARCH_PAYLOAD["results"]}))
+    client, _ = make_client(
+        lambda req: httpx.Response(200, json={"items": SEARCH_PAYLOAD["results"]})
+    )
     assert client.search("γάλα")[0].id == "p-123"
-    client, _ = make_client(lambda req: httpx.Response(200, json={"products": SEARCH_PAYLOAD["results"]}))
+    client, _ = make_client(
+        lambda req: httpx.Response(200, json={"products": SEARCH_PAYLOAD["results"]})
+    )
     with pytest.raises(PosokaneiUnavailable):
         client.search("γάλα")

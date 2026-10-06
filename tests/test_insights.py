@@ -1,4 +1,5 @@
 """Insights: date presets, filter consistency and chart scaling."""
+
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -35,11 +36,18 @@ def data(db, authed):
         (other.id, travel.id, 75, today - timedelta(days=40)),
     ]
     for bucket_id, cat_id, amount, when in rows:
-        db.add(Transaction(
-            bucket_id=bucket_id, household_id=authed.household_id,
-            amount=amount, currency="EUR", type="expense",
-            category_id=cat_id, transaction_date=when, paid_by=authed.user_id,
-        ))
+        db.add(
+            Transaction(
+                bucket_id=bucket_id,
+                household_id=authed.household_id,
+                amount=amount,
+                currency="EUR",
+                type="expense",
+                category_id=cat_id,
+                transaction_date=when,
+                paid_by=authed.user_id,
+            )
+        )
     db.commit()
     authed.other_bucket_id = other.id
     authed.food_id = food.id
@@ -50,6 +58,7 @@ def data(db, authed):
 # ---------------------------------------------------------------------------
 # Period resolution
 # ---------------------------------------------------------------------------
+
 
 def test_all_time_has_no_bounds():
     p = resolve_insight_period("all_time")
@@ -111,6 +120,7 @@ def test_unknown_preset_falls_back_to_this_month():
 # Filter consistency
 # ---------------------------------------------------------------------------
 
+
 def test_bucket_breakdown_respects_bucket_filter(db, data):
     """This chart used to ignore bucket_ids and render every bucket."""
     rows = get_insights_bucket_breakdown(
@@ -128,8 +138,7 @@ def test_bucket_breakdown_totals_match_the_summary(db, data):
 
 
 def test_summary_respects_category_filter(db, data):
-    s = get_insights_summary(db, data.household_id, None, None,
-                             category_ids=[data.food_id])
+    s = get_insights_summary(db, data.household_id, None, None, category_ids=[data.food_id])
     assert s["total_spent"] == 125.0
 
 
@@ -140,8 +149,9 @@ def test_budget_status_respects_bucket_filter(db, data):
     other.budget = 200
     db.commit()
 
-    rows = get_insights_budget_status(db, data.household_id, None, None,
-                                      bucket_ids=[data.bucket_id])
+    rows = get_insights_budget_status(
+        db, data.household_id, None, None, bucket_ids=[data.bucket_id]
+    )
     assert [r["bucket"].id for r in rows] == [data.bucket_id]
 
 
@@ -151,10 +161,13 @@ def test_budget_status_reports_true_percentage_over_100(db, data):
     b.budget = 100
     db.commit()
 
-    row = next(r for r in get_insights_budget_status(db, data.household_id, None, None)
-               if r["bucket"].id == data.bucket_id)
+    row = next(
+        r
+        for r in get_insights_budget_status(db, data.household_id, None, None)
+        if r["bucket"].id == data.bucket_id
+    )
     assert row["over_budget"] is True
-    assert row["pct"] == 100          # clamped for display
+    assert row["pct"] == 100  # clamped for display
     assert row["pct_actual"] == 150.0  # true value
     assert row["remaining"] == -50.0
 
@@ -165,34 +178,50 @@ def test_budget_status_counts_one_off_purchases(db, authed):
     b.budget = 100
     when = local_today()
     for amount, one_off in ((Decimal("127.60"), False), (Decimal("99"), True)):
-        db.add(Transaction(
-            bucket_id=authed.bucket_id, household_id=authed.household_id,
-            amount=amount, currency="EUR", type="expense", transaction_date=when,
-            paid_by=authed.user_id, exclude_from_forecast=one_off,
-        ))
+        db.add(
+            Transaction(
+                bucket_id=authed.bucket_id,
+                household_id=authed.household_id,
+                amount=amount,
+                currency="EUR",
+                type="expense",
+                transaction_date=when,
+                paid_by=authed.user_id,
+                exclude_from_forecast=one_off,
+            )
+        )
     db.commit()
 
-    row = next(r for r in get_insights_budget_status(db, authed.household_id, None, None)
-               if r["bucket"].id == authed.bucket_id)
+    row = next(
+        r
+        for r in get_insights_budget_status(db, authed.household_id, None, None)
+        if r["bucket"].id == authed.bucket_id
+    )
     assert row["spent"] == Decimal("226.60")
     assert row["over_budget"] is True
     # Every actual-spend figure includes the one-off...
-    assert get_insights_summary(db, authed.household_id, None, None)["total_spent"] == Decimal("226.60")
+    assert get_insights_summary(db, authed.household_id, None, None)["total_spent"] == Decimal(
+        "226.60"
+    )
     assert get_monthly_trend(db, authed.household_id, 1)[-1]["total"] == Decimal("226.60")
     # ...while the projection's trend baseline ignores it.
     from app.services.insights import _sum_expenses_by
+
     month = (when.year, when.month)
-    assert _sum_expenses_by(db, authed.household_id, None, None, group_by="month",
-                            include_one_offs=False)[month] == Decimal("127.60")
+    assert _sum_expenses_by(
+        db, authed.household_id, None, None, group_by="month", include_one_offs=False
+    )[month] == Decimal("127.60")
 
 
 # ---------------------------------------------------------------------------
 # Who paid
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def duo(db, authed):
     from tests.test_household_settlement import _add_member
+
     partner = _add_member(db, authed.household_id, "partner")
     db.commit()
     authed.partner_id = partner.id
@@ -201,8 +230,12 @@ def duo(db, authed):
 
 def _paid(db, ctx, amount, splits=(), payer="__me__"):
     t = Transaction(
-        bucket_id=ctx.bucket_id, household_id=ctx.household_id, amount=amount,
-        currency="EUR", type="expense", transaction_date=local_today(),
+        bucket_id=ctx.bucket_id,
+        household_id=ctx.household_id,
+        amount=amount,
+        currency="EUR",
+        type="expense",
+        transaction_date=local_today(),
         paid_by=ctx.user_id if payer == "__me__" else payer,
     )
     db.add(t)
@@ -249,8 +282,8 @@ def test_person_filter_means_share_everywhere(db, duo):
     # The ``paid_by`` param is the Person filter: that person's share, whoever
     # paid (see tests/test_shared_insights.py for the full matrix).
     a, b = duo.user_id, duo.partner_id
-    _paid(db, duo, 100, [(a, 50), (b, 50)])          # A paid, B owes a share
-    _paid(db, duo, 20)                               # A alone
+    _paid(db, duo, 100, [(a, 50), (b, 50)])  # A paid, B owes a share
+    _paid(db, duo, 20)  # A alone
     s = get_insights_summary(db, duo.household_id, None, None, paid_by=b)
     assert s["total_spent"] == Decimal("50")
     assert s["gross_total"] == Decimal("100")
@@ -265,6 +298,7 @@ def test_person_filter_means_share_everywhere(db, duo):
 # ---------------------------------------------------------------------------
 # Chart scaling
 # ---------------------------------------------------------------------------
+
 
 def test_category_trend_max_is_the_largest_monthly_value(db, data):
     """max_value used to be computed as a whole-period sum, which squashed
@@ -287,13 +321,23 @@ def test_category_trend_month_count(db, data):
 # HTTP surface
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("query", [
-    "", "preset=this_month", "preset=last_month", "preset=last_3m",
-    "preset=last_6m", "preset=this_year", "preset=all_time",
-    "preset=custom&start_date=2026-01-01&end_date=2026-06-30",
-    "preset=custom&start_date=bad&end_date=bad",
-    "preset=nonsense", "bucket_type=bills",
-])
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "",
+        "preset=this_month",
+        "preset=last_month",
+        "preset=last_3m",
+        "preset=last_6m",
+        "preset=this_year",
+        "preset=all_time",
+        "preset=custom&start_date=2026-01-01&end_date=2026-06-30",
+        "preset=custom&start_date=bad&end_date=bad",
+        "preset=nonsense",
+        "bucket_type=bills",
+    ],
+)
 def test_insights_page_renders(client, data, query):
     assert client.get(f"/insights?{query}").status_code == 200
 
@@ -315,14 +359,15 @@ def test_paid_and_share_both_sum_to_total_with_edge_cases(db, duo):
     from app.models import User
     from app.services import delete_transaction
     from tests.test_household_settlement import _add_member
+
     a, b = duo.user_id, duo.partner_id
     gone = _add_member(db, duo.household_id, "gone")
     db.commit()
     gone_id = gone.id
     _paid(db, duo, 100, [(a, 50), (b, 50)])
-    _paid(db, duo, 20, payer=None)                                # no payer, no split
+    _paid(db, duo, 20, payer=None)  # no payer, no split
     t = _paid(db, duo, 30, payer=b)
-    t.exchange_rate = 2                                           # 60 base
+    t.exchange_rate = 2  # 60 base
     db.commit()
     deleted = _paid(db, duo, 777)
     delete_transaction(db, deleted)
@@ -342,14 +387,23 @@ def test_paid_and_share_both_sum_to_total_with_edge_cases(db, duo):
 def test_forecast_ignores_one_off_purchases(db, authed):
     from app.models import TransactionType
     from app.services import get_forecast
+
     today = local_today()
 
     def add(amount, when, one_off=False):
-        db.add(Transaction(
-            bucket_id=authed.bucket_id, household_id=authed.household_id,
-            amount=amount, currency="EUR", exchange_rate=1, type=TransactionType.expense,
-            transaction_date=when, paid_by=authed.user_id, exclude_from_forecast=one_off,
-        ))
+        db.add(
+            Transaction(
+                bucket_id=authed.bucket_id,
+                household_id=authed.household_id,
+                amount=amount,
+                currency="EUR",
+                exchange_rate=1,
+                type=TransactionType.expense,
+                transaction_date=when,
+                paid_by=authed.user_id,
+                exclude_from_forecast=one_off,
+            )
+        )
 
     # three complete past months of history, plus this month's spend
     y, m = today.year, today.month
@@ -358,7 +412,7 @@ def test_forecast_ignores_one_off_purchases(db, authed):
         yy = y + (mm - 1) // 12
         mm = (mm - 1) % 12 + 1
         add(300, date(yy, mm, 10))
-        add(500, date(yy, mm, 11), one_off=True)     # one-off history must not lift the baseline
+        add(500, date(yy, mm, 11), one_off=True)  # one-off history must not lift the baseline
     add(Decimal("127.60"), today)
     db.commit()
     base = get_forecast(db, authed.household_id)
@@ -375,15 +429,25 @@ def test_forecast_ignores_one_off_purchases(db, authed):
 
 def test_dashboard_month_and_all_time_summary_count_one_offs(db, authed):
     from app.services import get_all_time_summary, get_month_summary
+
     today = local_today()
     for amount, one_off in ((Decimal("127.60"), False), (Decimal("99"), True)):
-        db.add(Transaction(
-            bucket_id=authed.bucket_id, household_id=authed.household_id,
-            amount=amount, currency="EUR", type="expense", transaction_date=today,
-            paid_by=authed.user_id, exclude_from_forecast=one_off,
-        ))
+        db.add(
+            Transaction(
+                bucket_id=authed.bucket_id,
+                household_id=authed.household_id,
+                amount=amount,
+                currency="EUR",
+                type="expense",
+                transaction_date=today,
+                paid_by=authed.user_id,
+                exclude_from_forecast=one_off,
+            )
+        )
     db.commit()
-    assert get_month_summary(db, authed.household_id, today.year, today.month)["total_spent"] == Decimal("226.60")
+    assert get_month_summary(db, authed.household_id, today.year, today.month)[
+        "total_spent"
+    ] == Decimal("226.60")
     assert get_all_time_summary(db, authed.household_id)["total_spent"] == Decimal("226.60")
 
 
@@ -391,13 +455,20 @@ def test_dashboard_month_and_all_time_summary_count_one_offs(db, authed):
 # Payment-method breakdown
 # ---------------------------------------------------------------------------
 
+
 def _pay(db, ctx, amount, method, rate=None, payer="__me__", deleted=False):
     from app.core.clock import utcnow_naive
+
     t = Transaction(
-        bucket_id=ctx.bucket_id, household_id=ctx.household_id, amount=amount,
-        currency="EUR", type="expense", transaction_date=local_today(),
+        bucket_id=ctx.bucket_id,
+        household_id=ctx.household_id,
+        amount=amount,
+        currency="EUR",
+        type="expense",
+        transaction_date=local_today(),
         paid_by=ctx.user_id if payer == "__me__" else payer,
-        payment_method=method, exchange_rate=rate,
+        payment_method=method,
+        exchange_rate=rate,
         deleted_at=utcnow_naive() if deleted else None,
     )
     db.add(t)
@@ -407,6 +478,7 @@ def _pay(db, ctx, amount, method, rate=None, payer="__me__", deleted=False):
 
 def _by_method(db, ctx, **filters):
     from app.services import InsightFilters, build_insights
+
     return build_insights(db, ctx.household_id, InsightFilters(preset="all_time", **filters))
 
 
@@ -423,9 +495,9 @@ def test_by_method_two_cash_one_card(db, authed):
 
 
 def test_by_method_uses_exchange_rates_and_omits_zero(db, authed):
-    _pay(db, authed, 10, "cash", rate=Decimal("2"))     # 20 base
-    _pay(db, authed, 20, "card", rate=Decimal("0.5"))   # 10 base
-    _pay(db, authed, 10, "card")                        # 10 base
+    _pay(db, authed, 10, "cash", rate=Decimal("2"))  # 20 base
+    _pay(db, authed, 20, "card", rate=Decimal("0.5"))  # 10 base
+    _pay(db, authed, 10, "card")  # 10 base
     data = _by_method(db, authed)
     amounts = {r["method"]: r["amount"] for r in data["by_method"]}
     assert amounts == {"cash": Decimal("20.00"), "card": Decimal("20.00")}
@@ -466,4 +538,4 @@ def test_by_method_in_widget(client, db, authed):
     page = client.get("/insights?preset=all_time").text
     assert "Payment method" in page and "Cash" in page and "Card" in page
     assert "Cash share" in page
-    assert "by_method" in page      # widget toggle key
+    assert "by_method" in page  # widget toggle key

@@ -38,7 +38,6 @@ from app.scheduler import start_scheduler, stop_scheduler
 logger = logging.getLogger(__name__)
 
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if not settings.vapid_private_key or not settings.vapid_public_key:
@@ -90,6 +89,7 @@ async def csrf_error_handler(request: Request, exc: CSRFError):
     )
     if is_background:
         from fastapi.responses import JSONResponse
+
         return JSONResponse({"detail": "CSRF validation failed"}, status_code=403)
     response = RedirectResponse(url="/login?expired=1", status_code=302)
     response.delete_cookie(COOKIE_NAME, path="/")
@@ -111,18 +111,22 @@ async def security_headers(request: Request, call_next):
     # and membership — a merely well-signed cookie gets nothing.
     if not request.cookies.get(CSRF_COOKIE_NAME) and request.cookies.get(COOKIE_NAME):
         from app.auth import generate_csrf_token
+
         authed_user = getattr(request.state, "user", None)
         if authed_user is not None:
             csrf_val = generate_csrf_token(authed_user.id)
             response.set_cookie(
-                CSRF_COOKIE_NAME, csrf_val,
-                httponly=False, samesite="strict",
+                CSRF_COOKIE_NAME,
+                csrf_val,
+                httponly=False,
+                samesite="strict",
                 max_age=settings.session_max_age_seconds,
                 secure=not settings.debug,
             )
     pre_nonce = getattr(request.state, "pre_csrf_nonce", None)
     if pre_nonce:
         from app.auth import set_pre_csrf_cookie
+
         set_pre_csrf_cookie(response, pre_nonce)
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -147,6 +151,7 @@ async def security_headers(request: Request, call_next):
     if not settings.debug:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
+
 
 # ---------------------------------------------------------------------------
 # Static files

@@ -1,6 +1,7 @@
 """
 Bucket summaries and typed bucket behaviour (trip/savings).
 """
+
 from collections import defaultdict
 from decimal import Decimal
 
@@ -39,7 +40,8 @@ def get_bucket_balance(db: Session, bucket_id: str) -> dict:
         func.sum(case((Transaction.type == TransactionType.income, base_amount_expr()), else_=0)), 0
     )
     expense_sum = func.coalesce(
-        func.sum(case((Transaction.type == TransactionType.expense, base_amount_expr()), else_=0)), 0
+        func.sum(case((Transaction.type == TransactionType.expense, base_amount_expr()), else_=0)),
+        0,
     )
     row = (
         db.query(income_sum, expense_sum)
@@ -55,7 +57,9 @@ def get_bucket_balance(db: Session, bucket_id: str) -> dict:
     }
 
 
-def get_bucket_spend_this_month(db: Session, household_id: str, year: int, month: int) -> dict[str, Decimal]:
+def get_bucket_spend_this_month(
+    db: Session, household_id: str, year: int, month: int
+) -> dict[str, Decimal]:
     """Return {bucket_id: spend} for all active buckets in the given month."""
     start, end = _month_range(year, month)
     rows = (
@@ -80,6 +84,7 @@ def get_bucket_spend_this_month(db: Session, household_id: str, year: int, month
 # labels with no behaviour attached. These give each one the summary that makes
 # the type worth choosing.
 # ---------------------------------------------------------------------------
+
 
 def get_trip_summary(db: Session, bucket: Bucket) -> dict:
     """Trip-shaped view of a bucket: duration, burn rate, per-person totals.
@@ -142,25 +147,25 @@ def get_trip_summary(db: Session, bucket: Bucket) -> dict:
         users = {u.id: u for u in db.query(User).filter(User.id.in_(per_person)).all()}
 
     return {
-        "total":          quantize(total),
-        "start":          start,
-        "end":            end,
-        "days":           days,
-        "nights":         nights,
-        "per_day":        quantize(total / days) if days and days > 0 else None,
-        "status":         status,
-        "days_until":     days_until,
+        "total": quantize(total),
+        "start": start,
+        "end": end,
+        "days": days,
+        "nights": nights,
+        "per_day": quantize(total / days) if days and days > 0 else None,
+        "status": status,
+        "days_until": days_until,
         "days_remaining": days_remaining,
-        "budget":         to_decimal(bucket.budget) if bucket.budget else None,
-        "remaining":      quantize(to_decimal(bucket.budget) - total) if bucket.budget else None,
+        "budget": to_decimal(bucket.budget) if bucket.budget else None,
+        "remaining": quantize(to_decimal(bucket.budget) - total) if bucket.budget else None,
         "transaction_count": len(txns),
         "per_person": sorted(
             (
                 {
                     "user_id": uid,
-                    "name":    users[uid].display_name if uid in users else "Unknown",
-                    "color":   users[uid].avatar_color if uid in users else "#9ca3af",
-                    "amount":  quantize(amount),
+                    "name": users[uid].display_name if uid in users else "Unknown",
+                    "color": users[uid].avatar_color if uid in users else "#9ca3af",
+                    "amount": quantize(amount),
                 }
                 for uid, amount in per_person.items()
             ),
@@ -175,19 +180,27 @@ def get_savings_summary(db: Session, bucket: Bucket) -> dict:
         return {}
 
     balance = get_bucket_balance(db, bucket.id)
-    saved = balance["net"]          # income minus expenses in this bucket
+    saved = balance["net"]  # income minus expenses in this bucket
     goal = to_decimal(bucket.goal_amount) if bucket.goal_amount else None
 
     result = {
-        "saved":     saved,
-        "goal":      goal,
+        "saved": saved,
+        "goal": goal,
         "target_date": bucket.end_date,
-        "income":    balance["income"],
-        "expenses":  balance["expenses"],
+        "income": balance["income"],
+        "expenses": balance["expenses"],
     }
     if not goal or goal <= 0:
-        result.update({"pct": None, "remaining": None, "per_month": None,
-                       "months_left": None, "on_track": None, "reached": False})
+        result.update(
+            {
+                "pct": None,
+                "remaining": None,
+                "per_month": None,
+                "months_left": None,
+                "on_track": None,
+                "reached": False,
+            }
+        )
         return result
 
     remaining = quantize(goal - saved)
@@ -205,8 +218,7 @@ def get_savings_summary(db: Session, bucket: Bucket) -> dict:
         )
     result["months_left"] = months_left
     result["per_month"] = (
-        quantize(remaining / months_left)
-        if months_left and remaining > 0 else None
+        quantize(remaining / months_left) if months_left and remaining > 0 else None
     )
     # Without a deadline there is nothing to be on track against.
     result["on_track"] = None if not bucket.end_date else (remaining <= 0 or bool(months_left))

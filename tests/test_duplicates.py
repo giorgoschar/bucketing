@@ -5,6 +5,7 @@ Two people logging the same dinner is the most common data-quality problem in a
 shared tracker. These surface likely repeats; they never block or delete
 anything, because a genuine repeat (two coffees the same day) is legitimate.
 """
+
 from datetime import timedelta
 
 from app.core.clock import local_today
@@ -16,10 +17,13 @@ def _expense(db, authed, amount, when=None, notes=None, bucket_id=None):
     txn = Transaction(
         bucket_id=bucket_id or authed.bucket_id,
         household_id=authed.household_id,
-        amount=amount, currency="EUR", exchange_rate=1,
+        amount=amount,
+        currency="EUR",
+        exchange_rate=1,
         type=TransactionType.expense,
         transaction_date=when or local_today(),
-        notes=notes, paid_by=authed.user_id,
+        notes=notes,
+        paid_by=authed.user_id,
     )
     db.add(txn)
     db.commit()
@@ -29,6 +33,7 @@ def _expense(db, authed, amount, when=None, notes=None, bucket_id=None):
 # ---------------------------------------------------------------------------
 # Candidate lookup (entry-time check)
 # ---------------------------------------------------------------------------
+
 
 def test_same_amount_same_day_is_flagged(db, authed):
     _expense(db, authed, 42.50, notes="Dinner")
@@ -71,8 +76,11 @@ def test_cross_bucket_duplicate_is_flagged(db, authed):
     db.commit()
 
     matches = find_duplicate_candidates(
-        db, authed.household_id, amount=42.50,
-        transaction_date=local_today(), bucket_id=authed.bucket_id,
+        db,
+        authed.household_id,
+        amount=42.50,
+        transaction_date=local_today(),
+        bucket_id=authed.bucket_id,
     )
     assert len(matches) == 1
 
@@ -80,18 +88,27 @@ def test_cross_bucket_duplicate_is_flagged(db, authed):
 def test_excludes_the_transaction_being_edited(db, authed):
     txn = _expense(db, authed, 42.50)
     matches = find_duplicate_candidates(
-        db, authed.household_id, amount=42.50,
-        transaction_date=local_today(), exclude_id=txn.id,
+        db,
+        authed.household_id,
+        amount=42.50,
+        transaction_date=local_today(),
+        exclude_id=txn.id,
     )
     assert matches == []
 
 
 def test_income_is_not_matched(db, authed):
-    db.add(Transaction(
-        bucket_id=authed.bucket_id, household_id=authed.household_id,
-        amount=42.50, currency="EUR", exchange_rate=1,
-        type=TransactionType.income, transaction_date=local_today(),
-    ))
+    db.add(
+        Transaction(
+            bucket_id=authed.bucket_id,
+            household_id=authed.household_id,
+            amount=42.50,
+            currency="EUR",
+            exchange_rate=1,
+            type=TransactionType.income,
+            transaction_date=local_today(),
+        )
+    )
     db.commit()
     matches = find_duplicate_candidates(
         db, authed.household_id, amount=42.50, transaction_date=local_today()
@@ -101,11 +118,17 @@ def test_income_is_not_matched(db, authed):
 
 def test_other_households_are_never_matched(db, authed, make_household):
     victim = make_household(name="Victim", username="dupvictim")
-    db.add(Transaction(
-        bucket_id=victim.bucket_id, household_id=victim.household_id,
-        amount=42.50, currency="EUR", exchange_rate=1,
-        type=TransactionType.expense, transaction_date=local_today(),
-    ))
+    db.add(
+        Transaction(
+            bucket_id=victim.bucket_id,
+            household_id=victim.household_id,
+            amount=42.50,
+            currency="EUR",
+            exchange_rate=1,
+            type=TransactionType.expense,
+            transaction_date=local_today(),
+        )
+    )
     db.commit()
 
     matches = find_duplicate_candidates(
@@ -117,6 +140,7 @@ def test_other_households_are_never_matched(db, authed, make_household):
 # ---------------------------------------------------------------------------
 # Household scan (review page)
 # ---------------------------------------------------------------------------
+
 
 def test_scan_finds_a_pair(db, authed):
     _expense(db, authed, 60.00, notes="Groceries")
@@ -159,11 +183,10 @@ def test_scan_respects_lookback(db, authed):
 # HTTP
 # ---------------------------------------------------------------------------
 
+
 def test_check_endpoint_returns_matches(client, db, authed):
     _expense(db, authed, 42.50, notes="Dinner")
-    r = client.get(
-        f"/transactions/check-duplicate?amount=42.50&transaction_date={local_today()}"
-    )
+    r = client.get(f"/transactions/check-duplicate?amount=42.50&transaction_date={local_today()}")
     assert r.status_code == 200
     dups = r.json()["duplicates"]
     assert len(dups) == 1
@@ -201,12 +224,18 @@ def test_duplicates_page_lists_groups(client, db, authed):
 def test_duplicates_page_is_household_scoped(client, db, authed, make_household):
     victim = make_household(name="Victim", username="dupvictim2")
     for _ in range(2):
-        db.add(Transaction(
-            bucket_id=victim.bucket_id, household_id=victim.household_id,
-            amount=77.00, currency="EUR", exchange_rate=1,
-            type=TransactionType.expense, transaction_date=local_today(),
-            notes="VictimSecret",
-        ))
+        db.add(
+            Transaction(
+                bucket_id=victim.bucket_id,
+                household_id=victim.household_id,
+                amount=77.00,
+                currency="EUR",
+                exchange_rate=1,
+                type=TransactionType.expense,
+                transaction_date=local_today(),
+                notes="VictimSecret",
+            )
+        )
     db.commit()
 
     r = client.get("/transactions/duplicates")

@@ -1,6 +1,7 @@
 """
 Auth routes: login, logout, first-run setup wizard, invite join, 2FA verify, register.
 """
+
 import json
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -59,6 +60,7 @@ def _client_ip(request: Request) -> str:
 # Root redirect
 # ---------------------------------------------------------------------------
 
+
 @router.get("/", response_class=HTMLResponse)
 def root(request: Request, db: Session = Depends(get_db)):
     if _is_first_run(db):
@@ -72,6 +74,7 @@ def root(request: Request, db: Session = Depends(get_db)):
 # ---------------------------------------------------------------------------
 # Setup wizard (first run only)
 # ---------------------------------------------------------------------------
+
 
 @router.get("/setup", response_class=HTMLResponse)
 def setup_page(request: Request, db: Session = Depends(get_db)):
@@ -125,16 +128,20 @@ def setup_submit(
     db.flush()
 
     # Add as owner
-    db.add(HouseholdMember(
-        household_id=household.id,
-        user_id=user.id,
-        role=MemberRole.owner,
-    ))
+    db.add(
+        HouseholdMember(
+            household_id=household.id,
+            user_id=user.id,
+            role=MemberRole.owner,
+        )
+    )
 
     db.commit()
     seed_categories(db, household.id)
 
-    security_logger.info("Setup: first user '%s' created from %s", user.username, _client_ip(request))
+    security_logger.info(
+        "Setup: first user '%s' created from %s", user.username, _client_ip(request)
+    )
 
     # Must enroll TOTP before accessing the app
     response = RedirectResponse("/settings/2fa/enroll", status_code=302)
@@ -145,6 +152,7 @@ def setup_submit(
 # ---------------------------------------------------------------------------
 # Login / Logout
 # ---------------------------------------------------------------------------
+
 
 @router.get("/login", response_class=HTMLResponse)
 def login_page(request: Request, db: Session = Depends(get_db)):
@@ -166,9 +174,7 @@ def login_submit(
 ):
     ip = _client_ip(request)
     identifier = username.strip().lower()
-    user = db.query(User).filter(
-        or_(User.username == identifier, User.email == identifier)
-    ).first()
+    user = db.query(User).filter(or_(User.username == identifier, User.email == identifier)).first()
     # Always run bcrypt, even for an unknown identifier, so response time does
     # not disclose which accounts exist.
     password_ok = verify_password_constant_time(password, user.password_hash if user else None)
@@ -210,6 +216,7 @@ def login_submit(
 # ---------------------------------------------------------------------------
 # 2FA Verify (TOTP code entry)
 # ---------------------------------------------------------------------------
+
 
 @router.get("/login/verify", response_class=HTMLResponse)
 def verify_totp_page(request: Request):
@@ -273,6 +280,7 @@ def verify_backup_submit(
     db: Session = Depends(get_db),
 ):
     import bcrypt as _bcrypt
+
     ip = _client_ip(request)
     pending = get_pending_session(request)
     if not pending or pending.get("state") != "2fa_pending":
@@ -316,7 +324,9 @@ def verify_backup_submit(
     db.commit()
     clear_failed_logins(db, user)
 
-    security_logger.info("Backup code used for '%s' from %s (%d remaining)", user.username, ip, len(codes))
+    security_logger.info(
+        "Backup code used for '%s' from %s (%d remaining)", user.username, ip, len(codes)
+    )
     response = RedirectResponse("/dashboard", status_code=302)
     set_session(response, user.id, pending["hh_id"], user.session_version)
     return response
@@ -325,6 +335,7 @@ def verify_backup_submit(
 # ---------------------------------------------------------------------------
 # Logout
 # ---------------------------------------------------------------------------
+
 
 @router.post("/logout")
 def logout(request: Request, db: Session = Depends(get_db)):
@@ -346,6 +357,7 @@ def logout(request: Request, db: Session = Depends(get_db)):
 # Household switcher
 # ---------------------------------------------------------------------------
 
+
 @router.post("/household/switch", response_class=HTMLResponse)
 def switch_household(
     request: Request,
@@ -354,9 +366,9 @@ def switch_household(
     auth=Depends(require_auth),
 ):
     user, _ = auth
-    membership = db.query(HouseholdMember).filter_by(
-        user_id=user.id, household_id=household_id
-    ).first()
+    membership = (
+        db.query(HouseholdMember).filter_by(user_id=user.id, household_id=household_id).first()
+    )
     if not membership:
         raise HTTPException(status_code=403, detail="Not a member of that household")
 
@@ -368,6 +380,7 @@ def switch_household(
 # ---------------------------------------------------------------------------
 # Register (Mode B — coming soon or future full registration)
 # ---------------------------------------------------------------------------
+
 
 @router.get("/register", response_class=HTMLResponse)
 def register_page(request: Request):
@@ -381,13 +394,12 @@ def register_page(request: Request):
 # Invite: join a household
 # ---------------------------------------------------------------------------
 
+
 @router.get("/join/{token}", response_class=HTMLResponse)
 def join_page(token: str, request: Request, db: Session = Depends(get_db)):
     invite = db.query(Invitation).filter_by(token=token).first()
     if not invite or invite.used_at:
-        return templates.TemplateResponse(
-            "auth/invite_invalid.html", {"request": request}
-        )
+        return templates.TemplateResponse("auth/invite_invalid.html", {"request": request})
     if invite.expires_at and invite.expires_at < utcnow_naive():
         return templates.TemplateResponse(
             "auth/invite_invalid.html", {"request": request, "expired": True}
@@ -460,17 +472,21 @@ def join_submit(
     db.add(user)
     db.flush()
 
-    db.add(HouseholdMember(
-        household_id=invite.household_id,
-        user_id=user.id,
-        role=MemberRole.member,
-    ))
+    db.add(
+        HouseholdMember(
+            household_id=invite.household_id,
+            user_id=user.id,
+            role=MemberRole.member,
+        )
+    )
 
     invite.used_at = utcnow_naive()
     invite.used_by = user.id
     db.commit()
 
-    security_logger.info("Invite used: '%s' joined household %s from %s", user.username, invite.household_id, ip)
+    security_logger.info(
+        "Invite used: '%s' joined household %s from %s", user.username, invite.household_id, ip
+    )
 
     # New user must enroll TOTP before accessing the app
     response = RedirectResponse("/settings/2fa/enroll", status_code=302)

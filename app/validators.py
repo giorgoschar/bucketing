@@ -7,6 +7,7 @@ the query, a member of household A could attach their data to household B's
 bucket, or split an expense onto a user outside their household. Everything that
 accepts an id from a request should run it through here.
 """
+
 import re
 from decimal import Decimal, InvalidOperation
 
@@ -87,7 +88,10 @@ def parse_year_month(year: int | None, month: int | None) -> tuple[int | None, i
 # Ownership checks
 # ---------------------------------------------------------------------------
 
-def require_bucket(db: Session, bucket_id: str | None, hh_id: str, *, optional: bool = False) -> Bucket | None:
+
+def require_bucket(
+    db: Session, bucket_id: str | None, hh_id: str, *, optional: bool = False
+) -> Bucket | None:
     """Return the bucket, asserting it belongs to this household."""
     if not bucket_id:
         if optional:
@@ -100,7 +104,11 @@ def require_bucket(db: Session, bucket_id: str | None, hh_id: str, *, optional: 
 
 
 def require_income_bucket(
-    db: Session, bucket_id: str | None, hh_id: str, *, not_found_status: int = 404,
+    db: Session,
+    bucket_id: str | None,
+    hh_id: str,
+    *,
+    not_found_status: int = 404,
 ) -> Bucket | None:
     """The optional bucket for an income entry: None when none was chosen,
     else an active bucket of this household with "Track income" on.
@@ -125,7 +133,7 @@ def require_takes_income(bucket: Bucket) -> None:
         raise HTTPException(
             status_code=400,
             detail="This bucket does not track income. Leave the bucket empty or "
-                   "turn on \"Track income\" for it.",
+            'turn on "Track income" for it.',
         )
 
 
@@ -160,7 +168,9 @@ def require_member(db: Session, user_id: str | None, hh_id: str) -> str | None:
     if not user_id:
         return None
     if user_id not in household_member_ids(db, hh_id):
-        raise HTTPException(status_code=400, detail="That person is not a member of this household.")
+        raise HTTPException(
+            status_code=400, detail="That person is not a member of this household."
+        )
     return user_id
 
 
@@ -181,8 +191,14 @@ def validate_split_users(user_ids, hh_id: str, db: Session) -> None:
 
 # Receipt extension -> the kind of content it must actually contain.
 RECEIPT_KIND_BY_EXT = {
-    ".jpg": "jpg", ".jpeg": "jpg", ".png": "png", ".gif": "gif",
-    ".webp": "webp", ".pdf": "pdf", ".heic": "heic", ".heif": "heic",
+    ".jpg": "jpg",
+    ".jpeg": "jpg",
+    ".png": "png",
+    ".gif": "gif",
+    ".webp": "webp",
+    ".pdf": "pdf",
+    ".heic": "heic",
+    ".heif": "heic",
 }
 
 _HEIC_BRANDS = {b"heic", b"heix", b"mif1", b"heif", b"hevc"}

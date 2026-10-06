@@ -1,6 +1,7 @@
 """
 Settings routes: household, members, invites, profile, categories, 2FA.
 """
+
 import base64
 import io
 import json
@@ -52,9 +53,16 @@ from app.validators import parse_color, require_unlocked
 router = APIRouter(prefix="/settings", dependencies=[Depends(require_csrf)])
 
 AVATAR_COLORS = [
-    "#6366f1", "#8b5cf6", "#ec4899", "#ef4444",
-    "#f97316", "#f59e0b", "#10b981", "#06b6d4",
-    "#3b82f6", "#84cc16",
+    "#6366f1",
+    "#8b5cf6",
+    "#ec4899",
+    "#ef4444",
+    "#f97316",
+    "#f59e0b",
+    "#10b981",
+    "#06b6d4",
+    "#3b82f6",
+    "#84cc16",
 ]
 
 
@@ -78,11 +86,7 @@ def settings_page(
     user, hh_id = auth
     ctx = base_ctx(db, user, hh_id)
 
-    members = (
-        db.query(HouseholdMember)
-        .filter_by(household_id=hh_id)
-        .all()
-    )
+    members = db.query(HouseholdMember).filter_by(household_id=hh_id).all()
     invitations = (
         db.query(Invitation)
         .filter_by(household_id=hh_id)
@@ -97,27 +101,28 @@ def settings_page(
     )
 
     # Check if current user is owner
-    my_membership = db.query(HouseholdMember).filter_by(
-        user_id=user.id, household_id=hh_id
-    ).first()
+    my_membership = db.query(HouseholdMember).filter_by(user_id=user.id, household_id=hh_id).first()
 
-    ctx.update({
-        "request": request,
-        "user": user,
-        "members": members,
-        "invitations": invitations,
-        "categories": categories,
-        "is_owner": my_membership and my_membership.role == MemberRole.owner,
-        "avatar_colors": AVATAR_COLORS,
-        "currencies": settings.currencies,
-        "category_rules": list_rules(db, hh_id),
-    })
+    ctx.update(
+        {
+            "request": request,
+            "user": user,
+            "members": members,
+            "invitations": invitations,
+            "categories": categories,
+            "is_owner": my_membership and my_membership.role == MemberRole.owner,
+            "avatar_colors": AVATAR_COLORS,
+            "currencies": settings.currencies,
+            "category_rules": list_rules(db, hh_id),
+        }
+    )
     return templates.TemplateResponse("settings/index.html", ctx)
 
 
 # ---------------------------------------------------------------------------
 # Household
 # ---------------------------------------------------------------------------
+
 
 @router.post("/household", response_class=HTMLResponse)
 def update_household(
@@ -151,11 +156,13 @@ def create_household(
     household = Household(name=name.strip(), default_currency=default_currency)
     db.add(household)
     db.flush()
-    db.add(HouseholdMember(
-        household_id=household.id,
-        user_id=user.id,
-        role=MemberRole.owner,
-    ))
+    db.add(
+        HouseholdMember(
+            household_id=household.id,
+            user_id=user.id,
+            role=MemberRole.owner,
+        )
+    )
     db.commit()
     seed_categories(db, household.id)
 
@@ -167,6 +174,7 @@ def create_household(
 # ---------------------------------------------------------------------------
 # Profile
 # ---------------------------------------------------------------------------
+
 
 @router.post("/profile", response_class=HTMLResponse)
 def update_profile(
@@ -181,26 +189,38 @@ def update_profile(
     avatar_color = parse_color(avatar_color, field="Avatar colour")
     email_clean = email.strip().lower() or None
     if email_clean:
-        conflict = db.query(User).filter(
-            User.email == email_clean, User.id != user.id
-        ).first()
+        conflict = db.query(User).filter(User.email == email_clean, User.id != user.id).first()
         if conflict:
             ctx = base_ctx(db, user, hh_id)
             members = db.query(HouseholdMember).filter_by(household_id=hh_id).all()
-            invitations = db.query(Invitation).filter_by(household_id=hh_id).filter(Invitation.used_at.is_(None)).all()
-            categories = db.query(Category).filter_by(household_id=hh_id).order_by(Category.is_default.desc(), Category.name).all()
-            my_membership = db.query(HouseholdMember).filter_by(user_id=user.id, household_id=hh_id).first()
-            ctx.update({
-                "request": request,
-                "user": user,
-                "members": members,
-                "invitations": invitations,
-                "categories": categories,
-                "is_owner": my_membership and my_membership.role == MemberRole.owner,
-                "avatar_colors": AVATAR_COLORS,
-                "currencies": settings.currencies,
-                "profile_error": "That email is already registered to another account.",
-            })
+            invitations = (
+                db.query(Invitation)
+                .filter_by(household_id=hh_id)
+                .filter(Invitation.used_at.is_(None))
+                .all()
+            )
+            categories = (
+                db.query(Category)
+                .filter_by(household_id=hh_id)
+                .order_by(Category.is_default.desc(), Category.name)
+                .all()
+            )
+            my_membership = (
+                db.query(HouseholdMember).filter_by(user_id=user.id, household_id=hh_id).first()
+            )
+            ctx.update(
+                {
+                    "request": request,
+                    "user": user,
+                    "members": members,
+                    "invitations": invitations,
+                    "categories": categories,
+                    "is_owner": my_membership and my_membership.role == MemberRole.owner,
+                    "avatar_colors": AVATAR_COLORS,
+                    "currencies": settings.currencies,
+                    "profile_error": "That email is already registered to another account.",
+                }
+            )
             return templates.TemplateResponse("settings/index.html", ctx)
     user.display_name = display_name.strip()
     user.email = email_clean
@@ -232,11 +252,23 @@ def change_password(
         return templates.TemplateResponse("settings/index.html", ctx)
     if len(new_password) < 12:
         ctx = base_ctx(db, user, hh_id)
-        ctx.update({"request": request, "user": user, "pw_error": "Password must be at least 12 characters."})
+        ctx.update(
+            {
+                "request": request,
+                "user": user,
+                "pw_error": "Password must be at least 12 characters.",
+            }
+        )
         return templates.TemplateResponse("settings/index.html", ctx)
     if verify_password(new_password, user.password_hash):
         ctx = base_ctx(db, user, hh_id)
-        ctx.update({"request": request, "user": user, "pw_error": "New password must differ from the current one."})
+        ctx.update(
+            {
+                "request": request,
+                "user": user,
+                "pw_error": "New password must differ from the current one.",
+            }
+        )
         return templates.TemplateResponse("settings/index.html", ctx)
 
     user.password_hash = hash_password(new_password)
@@ -257,6 +289,7 @@ def change_password(
 # ---------------------------------------------------------------------------
 # Invitations
 # ---------------------------------------------------------------------------
+
 
 @router.post("/invite", response_class=HTMLResponse)
 @limiter.limit("10/hour")
@@ -292,6 +325,7 @@ def create_invite(
 # ---------------------------------------------------------------------------
 # Categories
 # ---------------------------------------------------------------------------
+
 
 @router.post("/categories", response_class=HTMLResponse)
 def create_category(
@@ -334,6 +368,7 @@ def delete_category(
     # raises an IntegrityError on Postgres (and now on SQLite too, since foreign
     # keys are enforced). Detach the references first.
     from app.models import RecurringBill, Transaction
+
     db.query(Transaction).filter_by(category_id=cat_id).update(
         {"category_id": None}, synchronize_session=False
     )
@@ -348,6 +383,7 @@ def delete_category(
 # ---------------------------------------------------------------------------
 # 2FA — TOTP enroll
 # ---------------------------------------------------------------------------
+
 
 def _pending_secret(db: Session, user: User) -> str:
     """Return the user's in-progress TOTP secret, creating one if needed.
@@ -364,7 +400,9 @@ def _pending_secret(db: Session, user: User) -> str:
             # not enrolled — an enabled secret is never overwritten here.
             if user.totp_enabled:
                 raise
-            security_logger.error("Pending TOTP secret for user_id=%s is unreadable; restarting enrollment", user.id)
+            security_logger.error(
+                "Pending TOTP secret for user_id=%s is unreadable; restarting enrollment", user.id
+            )
     if not secret:
         secret = pyotp.random_base32()
         user.set_totp_secret(secret)
@@ -521,6 +559,7 @@ def enroll_totp_submit(
 # 2FA — disable (self) and admin reset
 # ---------------------------------------------------------------------------
 
+
 @router.post("/2fa/disable", response_class=HTMLResponse)
 @limiter.limit("5/minute")
 def disable_totp(
@@ -562,6 +601,7 @@ def disable_totp(
     security_logger.info("TOTP disabled for '%s'", user.username)
     response = RedirectResponse("/settings/2fa/enroll", status_code=302)
     from app.auth import set_pending_session
+
     set_pending_session(response, user.id, hh_id, "2fa_enroll")
     return response
 
@@ -579,9 +619,9 @@ def admin_reset_member_totp(
     owner, hh_id = auth
 
     # Confirm requester is owner
-    owner_membership = db.query(HouseholdMember).filter_by(
-        user_id=owner.id, household_id=hh_id
-    ).first()
+    owner_membership = (
+        db.query(HouseholdMember).filter_by(user_id=owner.id, household_id=hh_id).first()
+    )
     if not owner_membership or owner_membership.role != MemberRole.owner:
         raise HTTPException(status_code=403)
 
@@ -590,9 +630,9 @@ def admin_reset_member_totp(
         raise HTTPException(status_code=400, detail="Invalid authenticator code.")
 
     # Confirm target is a member of this household
-    target_membership = db.query(HouseholdMember).filter_by(
-        user_id=member_id, household_id=hh_id
-    ).first()
+    target_membership = (
+        db.query(HouseholdMember).filter_by(user_id=member_id, household_id=hh_id).first()
+    )
     if not target_membership:
         raise HTTPException(status_code=404)
 
@@ -610,7 +650,9 @@ def admin_reset_member_totp(
 
     security_logger.info(
         "Owner '%s' reset TOTP for member '%s' in household %s",
-        owner.username, target_user.username, hh_id,
+        owner.username,
+        target_user.username,
+        hh_id,
     )
     return RedirectResponse("/settings", status_code=302)
 
@@ -618,6 +660,7 @@ def admin_reset_member_totp(
 # ---------------------------------------------------------------------------
 # Member management (owner only): remove member + transfer ownership
 # ---------------------------------------------------------------------------
+
 
 @router.post("/remove-member/{member_id}", response_class=HTMLResponse)
 def remove_member(
@@ -629,23 +672,25 @@ def remove_member(
     """Owner removes a member from the household. All their data stays."""
     owner, hh_id = auth
 
-    owner_membership = db.query(HouseholdMember).filter_by(
-        user_id=owner.id, household_id=hh_id
-    ).first()
+    owner_membership = (
+        db.query(HouseholdMember).filter_by(user_id=owner.id, household_id=hh_id).first()
+    )
     if not owner_membership or owner_membership.role != MemberRole.owner:
         raise HTTPException(status_code=403)
 
     if member_id == owner.id:
         raise HTTPException(status_code=400, detail="Cannot remove yourself.")
 
-    target_membership = db.query(HouseholdMember).filter_by(
-        user_id=member_id, household_id=hh_id
-    ).first()
+    target_membership = (
+        db.query(HouseholdMember).filter_by(user_id=member_id, household_id=hh_id).first()
+    )
     if not target_membership:
         raise HTTPException(status_code=404)
 
     if target_membership.role == MemberRole.owner:
-        raise HTTPException(status_code=400, detail="Cannot remove another owner. Transfer ownership first.")
+        raise HTTPException(
+            status_code=400, detail="Cannot remove another owner. Transfer ownership first."
+        )
 
     db.delete(target_membership)
     target_user = db.get(User, member_id)
@@ -655,7 +700,9 @@ def remove_member(
 
     security_logger.info(
         "Owner '%s' removed member '%s' from household %s",
-        owner.username, member_id, hh_id,
+        owner.username,
+        member_id,
+        hh_id,
     )
     return RedirectResponse("/settings", status_code=302)
 
@@ -670,18 +717,18 @@ def transfer_ownership(
     """Transfer household ownership from the current owner to another member."""
     owner, hh_id = auth
 
-    owner_membership = db.query(HouseholdMember).filter_by(
-        user_id=owner.id, household_id=hh_id
-    ).first()
+    owner_membership = (
+        db.query(HouseholdMember).filter_by(user_id=owner.id, household_id=hh_id).first()
+    )
     if not owner_membership or owner_membership.role != MemberRole.owner:
         raise HTTPException(status_code=403)
 
     if member_id == owner.id:
         raise HTTPException(status_code=400, detail="Already the owner.")
 
-    target_membership = db.query(HouseholdMember).filter_by(
-        user_id=member_id, household_id=hh_id
-    ).first()
+    target_membership = (
+        db.query(HouseholdMember).filter_by(user_id=member_id, household_id=hh_id).first()
+    )
     if not target_membership:
         raise HTTPException(status_code=404)
 
@@ -692,7 +739,9 @@ def transfer_ownership(
     target_user = db.get(User, member_id)
     security_logger.info(
         "Ownership of household %s transferred from '%s' to '%s'",
-        hh_id, owner.username, target_user.username if target_user else member_id,
+        hh_id,
+        owner.username,
+        target_user.username if target_user else member_id,
     )
     return RedirectResponse("/settings", status_code=302)
 
@@ -700,6 +749,7 @@ def transfer_ownership(
 # ---------------------------------------------------------------------------
 # Leave household
 # ---------------------------------------------------------------------------
+
 
 @router.post("/leave-household", response_class=HTMLResponse)
 def leave_household(
@@ -710,37 +760,53 @@ def leave_household(
 ):
     user, hh_id = auth
 
-    my_membership = db.query(HouseholdMember).filter_by(
-        user_id=user.id, household_id=hh_id
-    ).first()
+    my_membership = db.query(HouseholdMember).filter_by(user_id=user.id, household_id=hh_id).first()
     if not my_membership:
         raise HTTPException(status_code=404)
 
     # Block owners from leaving if other members remain
     if my_membership.role == MemberRole.owner:
-        other_members = db.query(HouseholdMember).filter(
-            HouseholdMember.household_id == hh_id,
-            HouseholdMember.user_id != user.id,
-        ).count()
+        other_members = (
+            db.query(HouseholdMember)
+            .filter(
+                HouseholdMember.household_id == hh_id,
+                HouseholdMember.user_id != user.id,
+            )
+            .count()
+        )
         if other_members > 0:
             ctx = base_ctx(db, user, hh_id)
-            ctx.update({
-                "request": request,
-                "user": user,
-                "leave_error": "You are the owner. Use the ··· menu next to each member to transfer ownership or remove them before leaving.",
-            })
+            ctx.update(
+                {
+                    "request": request,
+                    "user": user,
+                    "leave_error": "You are the owner. Use the ··· menu next to each member to transfer ownership or remove them before leaving.",
+                }
+            )
             # Re-render settings with error
             members = db.query(HouseholdMember).filter_by(household_id=hh_id).all()
-            invitations = db.query(Invitation).filter_by(household_id=hh_id).filter(Invitation.used_at.is_(None)).all()
-            categories = db.query(Category).filter_by(household_id=hh_id).order_by(Category.is_default.desc(), Category.name).all()
-            ctx.update({
-                "members": members,
-                "invitations": invitations,
-                "categories": categories,
-                "is_owner": True,
-                "avatar_colors": AVATAR_COLORS,
-                "currencies": settings.currencies,
-            })
+            invitations = (
+                db.query(Invitation)
+                .filter_by(household_id=hh_id)
+                .filter(Invitation.used_at.is_(None))
+                .all()
+            )
+            categories = (
+                db.query(Category)
+                .filter_by(household_id=hh_id)
+                .order_by(Category.is_default.desc(), Category.name)
+                .all()
+            )
+            ctx.update(
+                {
+                    "members": members,
+                    "invitations": invitations,
+                    "categories": categories,
+                    "is_owner": True,
+                    "avatar_colors": AVATAR_COLORS,
+                    "currencies": settings.currencies,
+                }
+            )
             return templates.TemplateResponse("settings/index.html", ctx)
 
     household = db.get(Household, hh_id)
@@ -750,18 +816,26 @@ def leave_household(
     # them type its name. Nothing changes until it matches.
     if is_sole_member and confirm_name.strip() != household.name:
         ctx = base_ctx(db, user, hh_id)
-        ctx.update({
-            "request": request,
-            "user": user,
-            "leave_error": "You are the last member. Type the household name exactly to confirm leaving.",
-            "members": db.query(HouseholdMember).filter_by(household_id=hh_id).all(),
-            "invitations": db.query(Invitation).filter_by(household_id=hh_id).filter(Invitation.used_at.is_(None)).all(),
-            "categories": db.query(Category).filter_by(household_id=hh_id).order_by(Category.is_default.desc(), Category.name).all(),
-            "is_owner": my_membership.role == MemberRole.owner,
-            "avatar_colors": AVATAR_COLORS,
-            "currencies": settings.currencies,
-            "category_rules": list_rules(db, hh_id),
-        })
+        ctx.update(
+            {
+                "request": request,
+                "user": user,
+                "leave_error": "You are the last member. Type the household name exactly to confirm leaving.",
+                "members": db.query(HouseholdMember).filter_by(household_id=hh_id).all(),
+                "invitations": db.query(Invitation)
+                .filter_by(household_id=hh_id)
+                .filter(Invitation.used_at.is_(None))
+                .all(),
+                "categories": db.query(Category)
+                .filter_by(household_id=hh_id)
+                .order_by(Category.is_default.desc(), Category.name)
+                .all(),
+                "is_owner": my_membership.role == MemberRole.owner,
+                "avatar_colors": AVATAR_COLORS,
+                "currencies": settings.currencies,
+                "category_rules": list_rules(db, hh_id),
+            }
+        )
         return templates.TemplateResponse("settings/index.html", ctx)
 
     # Remove membership (and this household's Shortcut tokens, so rejoining
@@ -793,6 +867,7 @@ def leave_household(
 # ---------------------------------------------------------------------------
 # Categorisation rules
 # ---------------------------------------------------------------------------
+
 
 @router.post("/category-rules", response_class=HTMLResponse)
 def create_category_rule(

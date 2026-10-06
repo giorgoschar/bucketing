@@ -5,6 +5,7 @@ Session cookie payload:
   Full session:    {"user_id": "...", "hh_id": "...", "sv": <int>, "state": "authenticated"}
   Pending session: {"user_id": "...", "hh_id": "...", "state": "2fa_pending"|"2fa_enroll"}
 """
+
 import hashlib
 import hmac
 import logging
@@ -48,6 +49,7 @@ class CSRFError(Exception):
 # Passwords
 # ---------------------------------------------------------------------------
 
+
 def _prepare(plain: str) -> bytes:
     """SHA-256 digest → bytes, always <72 bytes for bcrypt."""
     return hashlib.sha256(plain.encode()).hexdigest().encode()
@@ -69,7 +71,9 @@ def verify_password(plain: str, hashed: str) -> bool:
 # A real bcrypt hash used to burn the same CPU time when the account does not
 # exist. Without it, "unknown user" returns in microseconds while "wrong
 # password" takes ~100ms, which reveals which usernames/emails are registered.
-_DUMMY_HASH = _bcrypt.hashpw(_prepare("dummy-password-for-timing-equalisation"), _bcrypt.gensalt()).decode()
+_DUMMY_HASH = _bcrypt.hashpw(
+    _prepare("dummy-password-for-timing-equalisation"), _bcrypt.gensalt()
+).decode()
 
 
 def verify_password_constant_time(plain: str, hashed: str | None) -> bool:
@@ -106,7 +110,9 @@ def register_failed_login(db: Session, user: User | None) -> None:
     if user.failed_logins >= LOCKOUT_THRESHOLD:
         user.locked_until = _naive_utcnow() + timedelta(minutes=LOCKOUT_MINUTES)
         user.failed_logins = 0
-        security_logger.warning("Account '%s' locked for %d minutes", user.username, LOCKOUT_MINUTES)
+        security_logger.warning(
+            "Account '%s' locked for %d minutes", user.username, LOCKOUT_MINUTES
+        )
     db.commit()
 
 
@@ -150,7 +156,9 @@ def verify_totp(db: Session, user: User, code: str) -> bool:
         # code, only one UPDATE matches a row.
         claimed = db.execute(
             update(User)
-            .where(User.id == user.id, or_(User.last_totp_step.is_(None), User.last_totp_step < step))
+            .where(
+                User.id == user.id, or_(User.last_totp_step.is_(None), User.last_totp_step < step)
+            )
             .values(last_totp_step=step),
             execution_options={"synchronize_session": False},
         ).rowcount
@@ -170,6 +178,7 @@ def verify_totp(db: Session, user: User, code: str) -> bool:
 # Session cookies
 # ---------------------------------------------------------------------------
 
+
 def _cookie_kwargs(max_age: int) -> dict:
     return {
         "httponly": True,
@@ -181,12 +190,14 @@ def _cookie_kwargs(max_age: int) -> dict:
 
 def set_session(response, user_id: str, household_id: str, session_version: int):
     """Set a full authenticated session cookie."""
-    value = _serializer.dumps({
-        "user_id": user_id,
-        "hh_id": household_id,
-        "sv": session_version,
-        "state": "authenticated",
-    })
+    value = _serializer.dumps(
+        {
+            "user_id": user_id,
+            "hh_id": household_id,
+            "sv": session_version,
+            "state": "authenticated",
+        }
+    )
     response.set_cookie(COOKIE_NAME, value, **_cookie_kwargs(settings.session_max_age_seconds))
     response.delete_cookie(PENDING_COOKIE_NAME)
     response.delete_cookie(PRE_CSRF_COOKIE_NAME)
@@ -204,11 +215,13 @@ def set_session(response, user_id: str, household_id: str, session_version: int)
 
 def set_pending_session(response, user_id: str, household_id: str, state: str):
     """Set a short-lived pending session (2fa_pending or 2fa_enroll)."""
-    value = _serializer.dumps({
-        "user_id": user_id,
-        "hh_id": household_id,
-        "state": state,
-    })
+    value = _serializer.dumps(
+        {
+            "user_id": user_id,
+            "hh_id": household_id,
+            "state": state,
+        }
+    )
     response.set_cookie(PENDING_COOKIE_NAME, value, **_cookie_kwargs(PENDING_MAX_AGE))
 
 
@@ -260,6 +273,7 @@ def invalidate_user_sessions(db: Session, user: User) -> None:
 # ---------------------------------------------------------------------------
 # CSRF — double-submit via itsdangerous-signed token
 # ---------------------------------------------------------------------------
+
 
 def generate_csrf_token(user_id: str) -> str:
     """Return a signed CSRF token tied to this user."""
@@ -314,8 +328,12 @@ def verify_pre_session_csrf_token(token: str, cookie_nonce: str | None) -> bool:
 
 def set_pre_csrf_cookie(response, nonce: str) -> None:
     response.set_cookie(
-        PRE_CSRF_COOKIE_NAME, nonce, httponly=True, samesite="lax",
-        max_age=PRE_SESSION_CSRF_MAX_AGE, secure=not settings.debug,
+        PRE_CSRF_COOKIE_NAME,
+        nonce,
+        httponly=True,
+        samesite="lax",
+        max_age=PRE_SESSION_CSRF_MAX_AGE,
+        secure=not settings.debug,
     )
 
 
@@ -337,6 +355,7 @@ def form_csrf_token(request: Request) -> str:
 # ---------------------------------------------------------------------------
 # FastAPI dependencies
 # ---------------------------------------------------------------------------
+
 
 def require_auth(request: Request, db: Session = Depends(get_db)):
     """
@@ -415,11 +434,7 @@ def require_household_member(
         raise HTTPException(status_code=302, headers={"Location": "/settings/2fa/enroll"})
 
     hh_id = session["hh_id"]
-    membership = (
-        db.query(HouseholdMember)
-        .filter_by(user_id=user.id, household_id=hh_id)
-        .first()
-    )
+    membership = db.query(HouseholdMember).filter_by(user_id=user.id, household_id=hh_id).first()
     if not membership:
         raise HTTPException(status_code=302, headers={"Location": "/dashboard"})
 
@@ -493,4 +508,3 @@ async def require_csrf(request: Request) -> None:
             request.client.host if request.client else "unknown",
         )
         raise CSRFError()
-

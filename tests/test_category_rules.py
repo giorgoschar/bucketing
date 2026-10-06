@@ -4,6 +4,7 @@ User-defined categorisation rules.
 Categorisation previously relied on a hardcoded keyword list plus fuzzy name
 matching, neither of which could learn from a correction.
 """
+
 import pytest
 
 from app.models import Category, CategoryRule
@@ -31,17 +32,21 @@ def cats(db, authed):
 # Pattern handling
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("raw,expected", [
-    ("LIDL", "lidl"),
-    ("  Lidl  Hellas ", "lidl hellas"),
-    # Greek: final sigma and accents fold away so OCR variants still match
-    ("ΣΚΛΑΒΕΝΙΤΗΣ", "σκλαβενιτησ"),
-    ("Σκλαβενίτης", "σκλαβενιτησ"),
-    ("ΚΑΦΈ", "καφε"),
-    ("", None),
-    ("x", None),        # too short to be meaningful
-    (None, None),
-])
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("LIDL", "lidl"),
+        ("  Lidl  Hellas ", "lidl hellas"),
+        # Greek: final sigma and accents fold away so OCR variants still match
+        ("ΣΚΛΑΒΕΝΙΤΗΣ", "σκλαβενιτησ"),
+        ("Σκλαβενίτης", "σκλαβενιτησ"),
+        ("ΚΑΦΈ", "καφε"),
+        ("", None),
+        ("x", None),  # too short to be meaningful
+        (None, None),
+    ],
+)
 def test_pattern_normalisation(raw, expected):
     assert normalise_pattern(raw) == expected
 
@@ -49,6 +54,7 @@ def test_pattern_normalisation(raw, expected):
 # ---------------------------------------------------------------------------
 # Matching
 # ---------------------------------------------------------------------------
+
 
 def test_rule_matches_case_insensitively(db, cats):
     learn_rule(db, cats.household_id, "LIDL", cats.groceries_id)
@@ -99,6 +105,7 @@ def test_rules_are_household_scoped(db, cats, make_household):
 # ---------------------------------------------------------------------------
 # Learning
 # ---------------------------------------------------------------------------
+
 
 def test_learning_creates_a_rule(db, cats):
     rule = learn_rule(db, cats.household_id, "Sklavenitis", cats.groceries_id)
@@ -151,42 +158,50 @@ def test_list_is_ordered_by_use(db, cats):
 # Resolution chain
 # ---------------------------------------------------------------------------
 
+
 def test_rule_beats_the_builtin_guess(db, cats):
     """The household's own correction outranks the hardcoded keyword list."""
-    learn_rule(db, cats.household_id, "lidl", cats.fuel_id)   # deliberately "wrong"
+    learn_rule(db, cats.household_id, "lidl", cats.fuel_id)  # deliberately "wrong"
     db.commit()
 
     resolved = resolve_category(
-        db, cats.household_id, merchant="LIDL HELLAS",
-        hint="groceries", raw_text="LIDL HELLAS",
+        db,
+        cats.household_id,
+        merchant="LIDL HELLAS",
+        hint="groceries",
+        raw_text="LIDL HELLAS",
     )
     assert resolved == cats.fuel_id
 
 
 def test_falls_back_to_builtin_when_no_rule(db, cats):
     resolved = resolve_category(
-        db, cats.household_id, merchant="Some Shop", hint="groceries",
+        db,
+        cats.household_id,
+        merchant="Some Shop",
+        hint="groceries",
     )
     assert resolved == cats.groceries_id
 
 
 def test_returns_none_when_nothing_matches(db, cats):
-    assert resolve_category(
-        db, cats.household_id, merchant="Unknown", hint=None
-    ) is None
+    assert resolve_category(db, cats.household_id, merchant="Unknown", hint=None) is None
 
 
 # ---------------------------------------------------------------------------
 # HTTP
 # ---------------------------------------------------------------------------
 
+
 def test_scan_parse_applies_a_rule(client, db, cats):
     learn_rule(db, cats.household_id, "sklavenitis", cats.fuel_id)
     db.commit()
 
-    r = client.post("/transactions/scan/parse",
-                    json={"text": "SKLAVENITIS SUPERMARKET\nΣΥΝΟΛΟ 42,50"},
-                    headers=cats.headers)
+    r = client.post(
+        "/transactions/scan/parse",
+        json={"text": "SKLAVENITIS SUPERMARKET\nΣΥΝΟΛΟ 42,50"},
+        headers=cats.headers,
+    )
     assert r.status_code == 200
     assert r.json()["category_id"] == cats.fuel_id
 
@@ -202,17 +217,27 @@ def test_settings_page_lists_rules(client, db, cats):
 
 
 def test_can_add_a_rule(client, db, cats):
-    r = client.post("/settings/category-rules", data={
-        "pattern": "Jumbo", "category_id": cats.groceries_id,
-    }, headers=cats.headers)
+    r = client.post(
+        "/settings/category-rules",
+        data={
+            "pattern": "Jumbo",
+            "category_id": cats.groceries_id,
+        },
+        headers=cats.headers,
+    )
     assert r.status_code == 302
     assert db.query(CategoryRule).one().pattern == "jumbo"
 
 
 def test_adding_a_too_short_rule_is_rejected(client, db, cats):
-    r = client.post("/settings/category-rules", data={
-        "pattern": "x", "category_id": cats.groceries_id,
-    }, headers=cats.headers)
+    r = client.post(
+        "/settings/category-rules",
+        data={
+            "pattern": "x",
+            "category_id": cats.groceries_id,
+        },
+        headers=cats.headers,
+    )
     assert r.status_code == 400
     assert db.query(CategoryRule).count() == 0
 
@@ -242,12 +267,19 @@ def test_cannot_delete_another_households_rule(client, db, cats, make_household)
 
 def test_saving_a_scan_learns_the_rule(client, db, cats):
     """The whole point: correct it once and it sticks."""
-    r = client.post("/transactions", data={
-        "bucket_id": cats.bucket_id, "transaction_date": "2026-07-20",
-        "amount": "42.50", "type": "expense",
-        "category_id": cats.groceries_id,
-        "merchant": "Sklavenitis Athens", "remember_rule": "on",
-    }, headers=cats.headers)
+    r = client.post(
+        "/transactions",
+        data={
+            "bucket_id": cats.bucket_id,
+            "transaction_date": "2026-07-20",
+            "amount": "42.50",
+            "type": "expense",
+            "category_id": cats.groceries_id,
+            "merchant": "Sklavenitis Athens",
+            "remember_rule": "on",
+        },
+        headers=cats.headers,
+    )
     assert r.status_code == 302
 
     rule = db.query(CategoryRule).one()
@@ -262,22 +294,36 @@ def test_rule_learning_failure_never_fails_a_saved_expense(client, db, cats, mon
         raise RuntimeError("rule store down")
 
     monkeypatch.setattr("app.routes.transactions.learn_rule", boom)
-    r = client.post("/transactions", data={
-        "bucket_id": cats.bucket_id, "transaction_date": "2026-07-20",
-        "amount": "42.50", "type": "expense",
-        "category_id": cats.groceries_id,
-        "merchant": "Sklavenitis", "remember_rule": "on",
-    }, headers=cats.headers)
+    r = client.post(
+        "/transactions",
+        data={
+            "bucket_id": cats.bucket_id,
+            "transaction_date": "2026-07-20",
+            "amount": "42.50",
+            "type": "expense",
+            "category_id": cats.groceries_id,
+            "merchant": "Sklavenitis",
+            "remember_rule": "on",
+        },
+        headers=cats.headers,
+    )
     assert r.status_code == 302
     assert db.query(Transaction).count() == 1
 
 
 def test_saving_without_the_toggle_learns_nothing(client, db, cats):
-    r = client.post("/transactions", data={
-        "bucket_id": cats.bucket_id, "transaction_date": "2026-07-20",
-        "amount": "42.50", "type": "expense",
-        "category_id": cats.groceries_id, "merchant": "Sklavenitis",
-    }, headers=cats.headers)
+    r = client.post(
+        "/transactions",
+        data={
+            "bucket_id": cats.bucket_id,
+            "transaction_date": "2026-07-20",
+            "amount": "42.50",
+            "type": "expense",
+            "category_id": cats.groceries_id,
+            "merchant": "Sklavenitis",
+        },
+        headers=cats.headers,
+    )
     assert r.status_code == 302
     assert db.query(CategoryRule).count() == 0
 

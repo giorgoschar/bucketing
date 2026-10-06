@@ -27,10 +27,15 @@ from tests.test_settlement_balance import _expense, pair  # noqa: F401
 
 def _shared(db, ctx, amount, payer, *, excluded=False, when=None):
     t = Transaction(
-        bucket_id=ctx.bucket_id, household_id=ctx.household_id,
-        amount=amount, currency="EUR", exchange_rate=1,
-        type=TransactionType.expense, transaction_date=when or local_today(),
-        paid_by=payer, exclude_from_settlement=excluded,
+        bucket_id=ctx.bucket_id,
+        household_id=ctx.household_id,
+        amount=amount,
+        currency="EUR",
+        exchange_rate=1,
+        type=TransactionType.expense,
+        transaction_date=when or local_today(),
+        paid_by=payer,
+        exclude_from_settlement=excluded,
     )
     db.add(t)
     db.flush()
@@ -44,6 +49,7 @@ def _shared(db, ctx, amount, payer, *, excluded=False, when=None):
 # ---------------------------------------------------------------------------
 # No payer recorded
 # ---------------------------------------------------------------------------
+
 
 def test_expense_with_no_payer_creates_no_debt(db, pair):
     """The reported bug: 100 shared 50/50 with nobody marked as having paid."""
@@ -86,6 +92,7 @@ def test_unsplit_expense_with_no_payer_is_ignored(db, pair):
 # Explicitly excluded
 # ---------------------------------------------------------------------------
 
+
 def test_excluded_expense_creates_no_debt(db, pair):
     _shared(db, pair, 100, pair.user_id, excluded=True)
     assert get_bucket_settlement(db, pair.bucket_id) == []
@@ -114,11 +121,12 @@ def test_excluded_expense_still_counts_as_spending(db, pair):
 # Reporting what was left out
 # ---------------------------------------------------------------------------
 
+
 def test_exclusions_report_counts_both_reasons(db, pair):
     _shared(db, pair, 100, None)
     _shared(db, pair, 60, None)
     _shared(db, pair, 30, pair.user_id, excluded=True)
-    _shared(db, pair, 500, pair.user_id)      # normal, must not be reported
+    _shared(db, pair, 500, pair.user_id)  # normal, must not be reported
 
     ex = get_settlement_exclusions(db, pair.household_id)
     assert ex["no_payer_count"] == 2
@@ -140,22 +148,36 @@ def test_only_settlement_enabled_buckets_are_reported(db, pair):
     other = Bucket(household_id=pair.household_id, name="Solo", enable_settlement=False)
     db.add(other)
     db.flush()
-    db.add(Transaction(
-        bucket_id=other.id, household_id=pair.household_id, amount=70,
-        currency="EUR", exchange_rate=1, type=TransactionType.expense,
-        transaction_date=local_today(), paid_by=None,
-    ))
+    db.add(
+        Transaction(
+            bucket_id=other.id,
+            household_id=pair.household_id,
+            amount=70,
+            currency="EUR",
+            exchange_rate=1,
+            type=TransactionType.expense,
+            transaction_date=local_today(),
+            paid_by=None,
+        )
+    )
     db.commit()
 
     assert get_settlement_exclusions(db, pair.household_id)["any"] is False
 
 
 def test_exclusions_are_currency_converted(db, pair):
-    db.add(Transaction(
-        bucket_id=pair.bucket_id, household_id=pair.household_id, amount=200,
-        currency="USD", exchange_rate=0.5, type=TransactionType.expense,
-        transaction_date=local_today(), paid_by=None,
-    ))
+    db.add(
+        Transaction(
+            bucket_id=pair.bucket_id,
+            household_id=pair.household_id,
+            amount=200,
+            currency="USD",
+            exchange_rate=0.5,
+            type=TransactionType.expense,
+            transaction_date=local_today(),
+            paid_by=None,
+        )
+    )
     db.commit()
     assert get_settlement_exclusions(db, pair.household_id)["no_payer_total"] == 100.0
 
@@ -163,6 +185,7 @@ def test_exclusions_are_currency_converted(db, pair):
 # ---------------------------------------------------------------------------
 # HTTP
 # ---------------------------------------------------------------------------
+
 
 def test_settle_up_page_explains_the_gap(client, db, pair):
     _shared(db, pair, 100, None)
@@ -173,11 +196,19 @@ def test_settle_up_page_explains_the_gap(client, db, pair):
 
 def test_edit_form_saves_the_exclusion(client, db, pair):
     t = _shared(db, pair, 100, pair.user_id)
-    r = client.post(f"/transactions/{t.id}/edit", data={
-        "bucket_id": pair.bucket_id, "transaction_date": local_today().isoformat(),
-        "amount": "100", "currency": "EUR", "type": "expense",
-        "paid_by": pair.user_id, "exclude_from_settlement": "on",
-    }, headers=pair.headers)
+    r = client.post(
+        f"/transactions/{t.id}/edit",
+        data={
+            "bucket_id": pair.bucket_id,
+            "transaction_date": local_today().isoformat(),
+            "amount": "100",
+            "currency": "EUR",
+            "type": "expense",
+            "paid_by": pair.user_id,
+            "exclude_from_settlement": "on",
+        },
+        headers=pair.headers,
+    )
     assert r.status_code == 302
 
     db.expire_all()
@@ -187,11 +218,18 @@ def test_edit_form_saves_the_exclusion(client, db, pair):
 
 def test_edit_form_can_clear_the_exclusion(client, db, pair):
     t = _shared(db, pair, 100, pair.user_id, excluded=True)
-    r = client.post(f"/transactions/{t.id}/edit", data={
-        "bucket_id": pair.bucket_id, "transaction_date": local_today().isoformat(),
-        "amount": "100", "currency": "EUR", "type": "expense",
-        "paid_by": pair.user_id,
-    }, headers=pair.headers)
+    r = client.post(
+        f"/transactions/{t.id}/edit",
+        data={
+            "bucket_id": pair.bucket_id,
+            "transaction_date": local_today().isoformat(),
+            "amount": "100",
+            "currency": "EUR",
+            "type": "expense",
+            "paid_by": pair.user_id,
+        },
+        headers=pair.headers,
+    )
     assert r.status_code == 302
 
     db.expire_all()
@@ -201,13 +239,21 @@ def test_edit_form_can_clear_the_exclusion(client, db, pair):
 def test_shared_expense_defaults_the_payer_to_the_submitter(client, db, pair):
     """Belt and braces behind the wizard's preselected payer: an offline replay
     or API client that omits paid_by must not create an unsettleable expense."""
-    r = client.post("/transactions", data={
-        "bucket_id": pair.bucket_id, "transaction_date": local_today().isoformat(),
-        "amount": "100", "currency": "EUR", "type": "expense",
-        "is_shared": "on",
-        f"split_{pair.user_id}": "50",
-        f"split_{pair.partner_id}": "50",
-    }, headers=pair.headers, follow_redirects=False)
+    r = client.post(
+        "/transactions",
+        data={
+            "bucket_id": pair.bucket_id,
+            "transaction_date": local_today().isoformat(),
+            "amount": "100",
+            "currency": "EUR",
+            "type": "expense",
+            "is_shared": "on",
+            f"split_{pair.user_id}": "50",
+            f"split_{pair.partner_id}": "50",
+        },
+        headers=pair.headers,
+        follow_redirects=False,
+    )
     assert r.status_code in (200, 302)
 
     txn = db.query(Transaction).filter(Transaction.amount == 100).one()

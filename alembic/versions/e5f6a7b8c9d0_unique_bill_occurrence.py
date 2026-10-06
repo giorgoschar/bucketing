@@ -11,8 +11,8 @@ then adds a unique constraint to prevent future duplicates.
 
 from alembic import op
 
-revision = 'e5f6a7b8c9d0'
-down_revision = 'd4e5f6a7b8c9'
+revision = "e5f6a7b8c9d0"
+down_revision = "d4e5f6a7b8c9"
 branch_labels = None
 depends_on = None
 
@@ -35,12 +35,12 @@ def upgrade():
 
     # Add unique index (works on both SQLite and PostgreSQL)
     op.create_index(
-        'uq_bill_occurrence',
-        'bill_occurrences',
-        ['bill_id', 'due_date'],
+        "uq_bill_occurrence",
+        "bill_occurrences",
+        ["bill_id", "due_date"],
         unique=True,
     )
 
 
 def downgrade():
-    op.drop_index('uq_bill_occurrence', table_name='bill_occurrences')
+    op.drop_index("uq_bill_occurrence", table_name="bill_occurrences")

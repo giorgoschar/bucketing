@@ -1,3 +1,4 @@
+import hashlib
 from decimal import Decimal
 from pathlib import Path
 
@@ -10,10 +11,34 @@ from app.schemas import OWN_SHARE_CHOICE
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
 
+STATIC_DIR = Path(__file__).parent.parent / "static"
+_asset_hashes: dict[str, tuple[float, str]] = {}
+
+
+def static_url(path: str) -> str:
+    """/static/<path>?v=<content hash>.
+
+    The service worker serves /static/ cache-first while pages come from the
+    network, so after a deploy new HTML could run against old cached JS
+    (Alpine then fails on functions the old file lacks). A content-hashed URL
+    is a different cache key, so a page always gets the JS it was built with.
+    """
+    file = STATIC_DIR / path
+    try:
+        mtime = file.stat().st_mtime
+    except OSError:
+        return f"/static/{path}"
+    cached = _asset_hashes.get(path)
+    if cached is None or cached[0] != mtime:
+        digest = hashlib.sha256(file.read_bytes()).hexdigest()[:10]
+        cached = _asset_hashes[path] = (mtime, digest)
+    return f"/static/{path}?v={cached[1]}"
+
 
 # ---------------------------------------------------------------------------
 # Custom Jinja2 filters
 # ---------------------------------------------------------------------------
+
 
 def format_currency(amount, currency="EUR") -> str:
     symbols = {"EUR": "€", "USD": "$", "GBP": "£", "CHF": "CHF ", "JPY": "¥"}
@@ -64,6 +89,7 @@ def per_litre(value, currency="EUR") -> str:
 
 
 templates.env.globals["form_csrf_token"] = form_csrf_token
+templates.env.globals["static_url"] = static_url
 templates.env.globals["payment_methods"] = list(PaymentMethod)
 # Payer dropdown value for "Each paid their own share" (see app.schemas).
 templates.env.globals["OWN_SHARE_CHOICE"] = OWN_SHARE_CHOICE

@@ -1,6 +1,7 @@
 """
 API insights / analytics route.
 """
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
@@ -20,23 +21,25 @@ def _bucket_row(row: dict, extra: dict) -> dict:
     """
     b = row["bucket"]
     return {
-        "bucket_id":   b.id,
+        "bucket_id": b.id,
         "bucket_name": b.name,
-        "icon":        b.icon,
-        "color":       b.color,
+        "icon": b.icon,
+        "color": b.color,
         **extra,
     }
 
 
 @router.get("")
 def insights(
-    preset:       str = Query(default="this_month"),  # this_month | last_month | last_3m | last_6m | this_year | all_time | custom
-    start_date:   str = Query(default=""),
-    end_date:     str = Query(default=""),
-    bucket_type:  str = Query(default=""),
-    bucket_ids:   str = Query(default=""),   # comma-separated
-    category_ids: str = Query(default=""),   # comma-separated
-    paid_by:      str = Query(default=""),
+    preset: str = Query(
+        default="this_month"
+    ),  # this_month | last_month | last_3m | last_6m | this_year | all_time | custom
+    start_date: str = Query(default=""),
+    end_date: str = Query(default=""),
+    bucket_type: str = Query(default=""),
+    bucket_ids: str = Query(default=""),  # comma-separated
+    category_ids: str = Query(default=""),  # comma-separated
+    paid_by: str = Query(default=""),
     auth=Depends(require_api_auth),
     db: Session = Depends(get_db),
 ):
@@ -47,51 +50,62 @@ def insights(
     user, hh_id = auth
 
     # Shared with the HTML route so both endpoints compute identical figures.
-    data = build_insights(db, hh_id, InsightFilters(
-        preset=preset, start_date=start_date, end_date=end_date,
-        bucket_type=bucket_type, bucket_ids=bucket_ids,
-        category_ids=category_ids, paid_by=paid_by,
-    ))
+    data = build_insights(
+        db,
+        hh_id,
+        InsightFilters(
+            preset=preset,
+            start_date=start_date,
+            end_date=end_date,
+            bucket_type=bucket_type,
+            bucket_ids=bucket_ids,
+            category_ids=category_ids,
+            paid_by=paid_by,
+        ),
+    )
     period, start, end = data["period"], data["start"], data["end"]
     summary = data["summary"]
 
     return {
-        "preset":          period["preset"],
-        "period_label":    period["period_label"],
-        "start_date":      start.isoformat() if start else None,
-        "end_date":        end.isoformat()   if end   else None,
+        "preset": period["preset"],
+        "period_label": period["period_label"],
+        "start_date": start.isoformat() if start else None,
+        "end_date": end.isoformat() if end else None,
         # Includes cash spending; logged_total is the expenses alone.
-        "total_spent":     summary["total_spent"],
-        "logged_total":    summary["logged_total"],
+        "total_spent": summary["total_spent"],
+        "logged_total": summary["logged_total"],
         "cash_not_logged": summary["cash_not_logged"],
-        "cash_outs":       summary["cash_outs"],
-        "income_total":    data["income_total"],
+        "cash_outs": summary["cash_outs"],
+        "income_total": data["income_total"],
         "bills_due_total": data["bills_due"],
-        "net":             data["net"],
+        "net": data["net"],
         # In / Out (logged + not-yet-logged cash) / Net for the period.
-        "in_out":          data["in_out"],
-        "paid_by":         summary.get("paid_by", {}),
-        "kpis":            data["kpis"],
-        "categories":      data["categories"],
-        "budget_status":   [
-            _bucket_row(row, {
-                "spent":       row["spent"],
-                "budget":      row["budget"],
-                "pct":         row["pct_actual"],
-                "remaining":   row["remaining"],
-                "over_budget": row["over_budget"],
-            })
+        "in_out": data["in_out"],
+        "paid_by": summary.get("paid_by", {}),
+        "kpis": data["kpis"],
+        "categories": data["categories"],
+        "budget_status": [
+            _bucket_row(
+                row,
+                {
+                    "spent": row["spent"],
+                    "budget": row["budget"],
+                    "pct": row["pct_actual"],
+                    "remaining": row["remaining"],
+                    "over_budget": row["over_budget"],
+                },
+            )
             for row in data["budget_status"]
         ],
         "bucket_breakdown": [
             _bucket_row(row, {"total": row["total"], "pct": row["pct"]})
             for row in data["bucket_breakdown"]
         ],
-        "category_trend":  data["category_trend"],
-        "monthly_trend":   data["trend"],
-        "forecast":        data["forecast"],
-        "by_method":       data["by_method"],
-        "cash_share":      data["cash_share"],
+        "category_trend": data["category_trend"],
+        "monthly_trend": data["trend"],
+        "forecast": data["forecast"],
+        "by_method": data["by_method"],
+        "cash_share": data["cash_share"],
         # Litres, spend and price per litre of fuel expenses; null without any.
-        "fuel":            data["fuel"],
+        "fuel": data["fuel"],
     }

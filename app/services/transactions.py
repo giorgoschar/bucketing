@@ -1,6 +1,7 @@
 """
 Transaction creation and soft deletion (shared by the HTML and JSON API routes).
 """
+
 import logging
 import os
 import shutil
@@ -90,7 +91,8 @@ def delete_transaction(db: Session, txn: Transaction, uploads_dir: str | None = 
     txn.deleted_at = utcnow_naive()
     # A take made for the expense ("I took this from my stash") goes with it.
     db.query(CashMovement).filter(
-        CashMovement.transaction_id == txn.id, CashMovement.active(),
+        CashMovement.transaction_id == txn.id,
+        CashMovement.active(),
     ).update({CashMovement.deleted_at: txn.deleted_at}, synchronize_session=False)
     db.commit()
     if not txn.receipt_path:
@@ -107,8 +109,9 @@ def delete_transaction(db: Session, txn: Transaction, uploads_dir: str | None = 
         # Retention counts from deletion, not from when the file was uploaded.
         os.utime(dest, None)
     except OSError:
-        logger.warning("Could not move receipt %s to trash for transaction %s",
-                       name, txn.id, exc_info=True)
+        logger.warning(
+            "Could not move receipt %s to trash for transaction %s", name, txn.id, exc_info=True
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -136,8 +139,7 @@ def _find_by_client_id(db: Session, household_id: str, client_id: str) -> Transa
     must not become a second row."""
     return (
         db.query(Transaction)
-        .filter(Transaction.household_id == household_id,
-                Transaction.client_id == client_id)
+        .filter(Transaction.household_id == household_id, Transaction.client_id == client_id)
         .first()
     )
 
@@ -184,8 +186,10 @@ def _resolve_splits(
     if data.type.value != "expense" or payer_mode != PayerMode.single.value:
         return []
     member_ids = [
-        uid for (uid,) in db.query(HouseholdMember.user_id)
-        .filter(HouseholdMember.household_id == household_id)
+        uid
+        for (uid,) in db.query(HouseholdMember.user_id).filter(
+            HouseholdMember.household_id == household_id
+        )
     ]
     if len(member_ids) < 2:
         return []
@@ -258,8 +262,12 @@ def create_transaction(
         raise HTTPException(status_code=400, detail=TAKE_NOT_PAYER)
     splits = _resolve_splits(db, household_id, data, payer_mode, paid_by, is_shared)
     fuel_price, fuel_litres = fuel_fields(
-        db, household_id, category_id=category_id, txn_type=data.type,
-        amount=data.amount, price=data.fuel_price_per_litre,
+        db,
+        household_id,
+        category_id=category_id,
+        txn_type=data.type,
+        amount=data.amount,
+        price=data.fuel_price_per_litre,
     )
 
     receipt_path = None
@@ -295,8 +303,13 @@ def create_transaction(
         if took_cash:
             # "I took this from my stash": the matching take, linked, in the
             # same database transaction (see app.services.cash).
-            link_take(db, txn, user.id, data.take_from or FROM_STASH,
-                      db.get(Household, household_id).default_currency)
+            link_take(
+                db,
+                txn,
+                user.id,
+                data.take_from or FROM_STASH,
+                db.get(Household, household_id).default_currency,
+            )
         db.commit()
     except Exception as exc:
         db.rollback()
@@ -356,8 +369,11 @@ def update_transaction(
     # Income moved into a bucket (or an entry turned into income) must land
     # where it is counted; income already in its bucket stays editable even
     # after that bucket stopped tracking income or was archived.
-    if (bucket is not None and data.type == TransactionType.income
-            and (txn.type != TransactionType.income or txn.bucket_id != bucket.id)):
+    if (
+        bucket is not None
+        and data.type == TransactionType.income
+        and (txn.type != TransactionType.income or txn.bucket_id != bucket.id)
+    ):
         require_takes_income(bucket)
     paid_by = require_member(db, data.paid_by, household_id)
     category_id = require_category(db, data.category_id, household_id)
@@ -384,8 +400,12 @@ def update_transaction(
     else:
         price = None
     fuel_price, fuel_litres = fuel_fields(
-        db, household_id, category_id=category_id, txn_type=data.type,
-        amount=data.amount, price=price,
+        db,
+        household_id,
+        category_id=category_id,
+        txn_type=data.type,
+        amount=data.amount,
+        price=price,
     )
 
     txn.bucket_id = data.bucket_id

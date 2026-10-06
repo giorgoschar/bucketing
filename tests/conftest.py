@@ -8,6 +8,7 @@ expenses.db.
 Set TEST_DATABASE_URL (a disposable Postgres database) to run the same tests on
 Postgres instead: its public schema is dropped and recreated for every test.
 """
+
 import os
 import sys
 from pathlib import Path
@@ -69,7 +70,7 @@ def engine(tmp_path):
         eng.dispose()
         return
 
-    url = f"sqlite:///{tmp_path/'test.db'}"
+    url = f"sqlite:///{tmp_path / 'test.db'}"
     eng = create_engine(url, connect_args={"check_same_thread": False})
 
     @event.listens_for(eng, "connect")
@@ -193,11 +194,15 @@ def login(client):
     """Log a user in through the real password + TOTP flow. Returns CSRF headers."""
 
     def _login(username, secret):
-        r = client.post("/login", data={"username": username, "password": PASSWORD,
-                                        **form_csrf(client, "/login")})
+        r = client.post(
+            "/login",
+            data={"username": username, "password": PASSWORD, **form_csrf(client, "/login")},
+        )
         assert r.status_code == 302, f"login failed: {r.status_code}"
-        r = client.post("/login/verify", data={"code": pyotp.TOTP(secret).now(),
-                                               **form_csrf(client, "/login/verify")})
+        r = client.post(
+            "/login/verify",
+            data={"code": pyotp.TOTP(secret).now(), **form_csrf(client, "/login/verify")},
+        )
         assert r.status_code == 302, f"totp verify failed: {r.status_code}"
         token = client.cookies.get("csrf_token")
         assert token, "no CSRF cookie issued after login"
@@ -220,9 +225,19 @@ def make_bill(db):
     from app.models import BillOccurrence, OccurrenceStatus, RecurringBill
     from app.scheduler import today_local
 
-    def _make(household_id, bucket_id=None, *, amount=45, auto_pay=True,
-              due=None, paid_by=None, occurrence=True, name="Internet",
-              interval_months=1, occ_amount=None):
+    def _make(
+        household_id,
+        bucket_id=None,
+        *,
+        amount=45,
+        auto_pay=True,
+        due=None,
+        paid_by=None,
+        occurrence=True,
+        name="Internet",
+        interval_months=1,
+        occ_amount=None,
+    ):
         bill = RecurringBill(
             household_id=household_id,
             bucket_id=bucket_id,

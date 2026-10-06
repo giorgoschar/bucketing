@@ -5,6 +5,7 @@ Per-bucket settlement answers "who owes whom for the Florence trip". This
 answers "who owes whom, full stop" — nets every settlement-enabled bucket
 together so members square up once instead of bucket by bucket.
 """
+
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
@@ -48,17 +49,19 @@ def settlement_page(
     )
 
     settlement = get_household_settlement(db, hh_id)
-    ctx.update({
-        "request":     request,
-        "user":        user,
-        "settlement":  settlement,
-        "settle_fingerprint": settlement_fingerprint(settlement),
-        "settle_stale": request.query_params.get("settle") == "stale",
-        "balances":    get_member_balances(db, hh_id),
-        "history":     get_household_settlement_history(db, hh_id),
-        "enabled_buckets": enabled_buckets,
-        "exclusions":  get_settlement_exclusions(db, hh_id),
-    })
+    ctx.update(
+        {
+            "request": request,
+            "user": user,
+            "settlement": settlement,
+            "settle_fingerprint": settlement_fingerprint(settlement),
+            "settle_stale": request.query_params.get("settle") == "stale",
+            "balances": get_member_balances(db, hh_id),
+            "history": get_household_settlement_history(db, hh_id),
+            "enabled_buckets": enabled_buckets,
+            "exclusions": get_settlement_exclusions(db, hh_id),
+        }
+    )
     return templates.TemplateResponse("settlement.html", ctx)
 
 
@@ -90,7 +93,8 @@ def settle_household(
 
     try:
         record_household_settlement(
-            db, hh_id,
+            db,
+            hh_id,
             created_by=user.id,
             from_user_id=payer,
             to_user_id=payee,
@@ -128,27 +132,26 @@ def person_page(
 
     ctx = base_ctx(db, user, hh_id)
     members = get_member_balances(db, hh_id)
-    target_name = next(
-        (m["name"] for m in members if m["user_id"] == target_id), user.display_name
+    target_name = next((m["name"] for m in members if m["user_id"] == target_id), user.display_name)
+    ctx.update(
+        {
+            "request": request,
+            "user": user,
+            "summary": get_person_summary(db, hh_id, target_id, period["start"], period["end"]),
+            "members": members,
+            "target_id": target_id,
+            "target_name": target_name,
+            # Labels read "your share" on your own page and "Georgia's share" on
+            # someone else's. The page used to say "their" either way, which is a
+            # strange thing to read about yourself on a page titled "My money".
+            "is_self": target_id == user.id,
+            "period_label": period["period_label"],
+            "preset": period["preset"],
+            # Their wallet; a put back into the stash only when it is yours
+            # (app.services.cash).
+            "wallet": wallet_summary(
+                db, hh_id, target_id, period["start"], period["end"], viewer_id=user.id
+            ),
+        }
     )
-    ctx.update({
-        "request":      request,
-        "user":         user,
-        "summary":      get_person_summary(db, hh_id, target_id,
-                                           period["start"], period["end"]),
-        "members":      members,
-        "target_id":    target_id,
-        "target_name":  target_name,
-        # Labels read "your share" on your own page and "Georgia's share" on
-        # someone else's. The page used to say "their" either way, which is a
-        # strange thing to read about yourself on a page titled "My money".
-        "is_self":      target_id == user.id,
-        "period_label": period["period_label"],
-        "preset":       period["preset"],
-        # Their wallet; a put back into the stash only when it is yours
-        # (app.services.cash).
-        "wallet":       wallet_summary(db, hh_id, target_id,
-                                       period["start"], period["end"],
-                                       viewer_id=user.id),
-    })
     return templates.TemplateResponse("person.html", ctx)

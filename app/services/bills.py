@@ -2,6 +2,7 @@
 Generate BillOccurrence rows for a RecurringBill.
 Called when a bill is created or updated.
 """
+
 from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import NamedTuple
@@ -24,8 +25,8 @@ from app.models import (
 )
 
 # Guard rails for open-ended bills.
-MAX_INTERVAL_MONTHS = 120   # 10 years between occurrences
-MAX_OCCURRENCES = 600       # hard ceiling on rows generated per bill
+MAX_INTERVAL_MONTHS = 120  # 10 years between occurrences
+MAX_OCCURRENCES = 600  # hard ceiling on rows generated per bill
 HORIZON_YEARS = 10
 
 
@@ -57,8 +58,7 @@ def generate_occurrences(db: Session, bill: RecurringBill) -> None:
     bill.interval_months = normalise_interval_months(bill.interval_months)
 
     existing_dates = {
-        row.due_date for row in
-        db.query(BillOccurrence.due_date).filter_by(bill_id=bill.id).all()
+        row.due_date for row in db.query(BillOccurrence.due_date).filter_by(bill_id=bill.id).all()
     }
 
     horizon = date(local_today().year + HORIZON_YEARS, 12, 31)
@@ -81,12 +81,14 @@ def generate_occurrences(db: Session, bill: RecurringBill) -> None:
             # discard the not-yet-committed bill these rows point at.
             try:
                 with db.begin_nested():
-                    db.add(BillOccurrence(
-                        bill_id=bill.id,
-                        due_date=current,
-                        amount=None,  # will use bill.amount unless variable
-                        status=OccurrenceStatus.unpaid,
-                    ))
+                    db.add(
+                        BillOccurrence(
+                            bill_id=bill.id,
+                            due_date=current,
+                            amount=None,  # will use bill.amount unless variable
+                            status=OccurrenceStatus.unpaid,
+                        )
+                    )
                     db.flush()
             except IntegrityError:
                 pass
@@ -109,7 +111,9 @@ def delete_future_occurrences(db: Session, bill_id: str) -> None:
     ).delete(synchronize_session=False)
 
 
-def resolve_bill_payer(db: Session, bill: RecurringBill, fallback_user_id: str | None = None) -> str | None:
+def resolve_bill_payer(
+    db: Session, bill: RecurringBill, fallback_user_id: str | None = None
+) -> str | None:
     """Who pays a bill occurrence when no explicit payer was given.
 
     A bill expense without a payer is silently excluded from settle-up, so:
@@ -118,8 +122,10 @@ def resolve_bill_payer(db: Session, bill: RecurringBill, fallback_user_id: str |
     column, so the owner stands in for "the bill's creator".
     """
     member_ids = {
-        uid for (uid,) in db.query(HouseholdMember.user_id)
-        .filter(HouseholdMember.household_id == bill.household_id).all()
+        uid
+        for (uid,) in db.query(HouseholdMember.user_id)
+        .filter(HouseholdMember.household_id == bill.household_id)
+        .all()
     }
     if bill.paid_by_default and bill.paid_by_default in member_ids:
         return bill.paid_by_default
@@ -127,8 +133,10 @@ def resolve_bill_payer(db: Session, bill: RecurringBill, fallback_user_id: str |
         return fallback_user_id
     owner = (
         db.query(HouseholdMember.user_id)
-        .filter(HouseholdMember.household_id == bill.household_id,
-                HouseholdMember.role == MemberRole.owner)
+        .filter(
+            HouseholdMember.household_id == bill.household_id,
+            HouseholdMember.role == MemberRole.owner,
+        )
         .order_by(HouseholdMember.joined_at)
         .first()
     )
@@ -182,12 +190,20 @@ def bill_has_payment_history(db: Session, bill_id: str) -> bool:
     Deleting such a bill would cascade away the only record of those payments
     (for bucketless bills the paid occurrence *is* the payment record).
     """
-    return db.query(BillOccurrence.id).filter(
-        BillOccurrence.bill_id == bill_id,
-        (BillOccurrence.status == OccurrenceStatus.paid)
-        | ((BillOccurrence.status == OccurrenceStatus.skipped) & BillOccurrence.amount.isnot(None))
-        | BillOccurrence.transaction_id.isnot(None),
-    ).first() is not None
+    return (
+        db.query(BillOccurrence.id)
+        .filter(
+            BillOccurrence.bill_id == bill_id,
+            (BillOccurrence.status == OccurrenceStatus.paid)
+            | (
+                (BillOccurrence.status == OccurrenceStatus.skipped)
+                & BillOccurrence.amount.isnot(None)
+            )
+            | BillOccurrence.transaction_id.isnot(None),
+        )
+        .first()
+        is not None
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -225,8 +241,9 @@ def _scaled_splits(bill: RecurringBill, amount: Decimal, payer: str | None) -> d
     return shares
 
 
-def claim_occurrence(db: Session, occ: BillOccurrence, *, paid_by: str | None,
-                     paid_on: datetime) -> bool:
+def claim_occurrence(
+    db: Session, occ: BillOccurrence, *, paid_by: str | None, paid_on: datetime
+) -> bool:
     """Atomically flip an unpaid occurrence to paid. False if someone else won.
 
     Does not commit. Callers that lose the claim should not write anything.
@@ -350,10 +367,12 @@ def effective_overrides(bill: RecurringBill, submitted) -> dict[str, Decimal] | 
 # Repairing past payments
 # ---------------------------------------------------------------------------
 
+
 class PayerBackfill(NamedTuple):
     """What :func:`backfill_bill_payer` changed."""
-    updated: int   # transactions given a payer (or made own share)
-    resplit: int   # of those, own-share rows whose own splits were replaced
+
+    updated: int  # transactions given a payer (or made own share)
+    resplit: int  # of those, own-share rows whose own splits were replaced
 
 
 def backfill_bill_payer(db: Session, bill: RecurringBill) -> PayerBackfill:
@@ -384,8 +403,10 @@ def backfill_bill_payer(db: Session, bill: RecurringBill) -> PayerBackfill:
             return PayerBackfill(0, 0)
     else:
         member_ids = {
-            uid for (uid,) in db.query(HouseholdMember.user_id)
-            .filter(HouseholdMember.household_id == bill.household_id).all()
+            uid
+            for (uid,) in db.query(HouseholdMember.user_id)
+            .filter(HouseholdMember.household_id == bill.household_id)
+            .all()
         }
         payer = bill.paid_by_default if bill.paid_by_default in member_ids else None
         if not payer:

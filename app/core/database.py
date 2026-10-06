@@ -11,6 +11,7 @@ connect_args = {"check_same_thread": False} if _is_sqlite else {}
 engine = create_engine(settings.database_url, connect_args=connect_args)
 
 if _is_sqlite:
+
     @event.listens_for(engine, "connect")
     def _sqlite_pragmas(dbapi_connection, connection_record):
         """SQLite ignores foreign keys unless asked, which silently defeats every
@@ -20,6 +21,8 @@ if _is_sqlite:
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.close()
+
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 

@@ -3,6 +3,7 @@
 Data must be preserved: deleting a transaction only hides it, the receipt file
 is moved (not removed), and the last member leaving archives the household.
 """
+
 import os
 import time
 from datetime import timedelta
@@ -42,10 +43,16 @@ def uploads_cwd(tmp_path, monkeypatch):
 
 def _txn(db, hh, notes, amount=10, **kw):
     t = Transaction(
-        bucket_id=hh.bucket_id, household_id=hh.household_id, amount=amount,
-        currency="EUR", exchange_rate=1, type=TransactionType.expense,
+        bucket_id=hh.bucket_id,
+        household_id=hh.household_id,
+        amount=amount,
+        currency="EUR",
+        exchange_rate=1,
+        type=TransactionType.expense,
         transaction_date=kw.pop("transaction_date", local_today()),
-        paid_by=hh.user_id, notes=notes, **kw,
+        paid_by=hh.user_id,
+        notes=notes,
+        **kw,
     )
     db.add(t)
     db.commit()
@@ -61,6 +68,7 @@ def _receipt(name="r1.jpg", content=b"img"):
 
 
 # ---- service ---------------------------------------------------------------
+
 
 def test_delete_sets_deleted_at_and_keeps_row_and_splits(db, make_household):
     hh = make_household()
@@ -98,6 +106,7 @@ def test_delete_with_missing_receipt_file_still_works(db, make_household):
 
 
 # ---- exclusion from every read ---------------------------------------------
+
 
 def test_deleted_absent_from_summaries_and_insights(db, make_household):
     hh = make_household()
@@ -160,8 +169,10 @@ def test_deleted_transaction_edit_receipt_and_redelete_404(client, db, authed):
 def test_api_list_get_delete(client, db, make_household):
     hh = make_household(username="apiuser")
     r = client.post("/api/v1/auth/login", json={"username": hh.username, "password": PASSWORD})
-    r = client.post("/api/v1/auth/totp/verify", json={
-        "pending_token": r.json()["pending_token"], "code": pyotp.TOTP(hh.secret).now()})
+    r = client.post(
+        "/api/v1/auth/totp/verify",
+        json={"pending_token": r.json()["pending_token"], "code": pyotp.TOTP(hh.secret).now()},
+    )
     h = {"Authorization": f"Bearer {r.json()['access_token']}"}
     keep = _txn(db, hh, "keep")
     gone = _txn(db, hh, "gone")
@@ -178,8 +189,13 @@ def test_api_list_get_delete(client, db, make_household):
 
 def test_client_id_of_deleted_txn_is_a_clear_error(client, db, authed):
     url = "/transactions"
-    data = {"bucket_id": authed.bucket_id, "amount": "5", "type": "expense",
-            "client_id": "abc", "transaction_date": local_today().isoformat()}
+    data = {
+        "bucket_id": authed.bucket_id,
+        "amount": "5",
+        "type": "expense",
+        "client_id": "abc",
+        "transaction_date": local_today().isoformat(),
+    }
     r = client.post(url, headers=authed.headers, data=data)
     assert r.status_code in (200, 302), r.text[:200]
     t = db.query(Transaction).filter_by(client_id="abc").one()
@@ -192,8 +208,10 @@ def test_client_id_of_deleted_txn_is_a_clear_error(client, db, authed):
 
 # ---- trash purge -----------------------------------------------------------
 
+
 def test_purge_trash_removes_only_old_files(db):
     from app.scheduler import _purge_trash, today_local
+
     os.makedirs("uploads/.trash")
     old, new, live = "uploads/.trash/old.jpg", "uploads/.trash/new.jpg", "uploads/live.jpg"
     for p in (old, new, live):
@@ -212,6 +230,7 @@ def test_purge_trash_removes_only_old_files(db):
 
 def test_purge_trash_never_touches_db_rows(db, make_household):
     from app.scheduler import _purge_trash, today_local
+
     hh = make_household()
     t = _txn(db, hh, "x")
     t.deleted_at = utcnow_naive() - timedelta(days=90)
@@ -224,10 +243,12 @@ def test_purge_trash_registered_in_job():
     import inspect
 
     import app.scheduler as s
+
     assert "_purge_trash" in inspect.getsource(s.auto_mark_paid_job)
 
 
 # ---- archive instead of delete household -----------------------------------
+
 
 def test_leave_last_member_requires_confirm_name(client, db, authed):
     _txn(db, authed, "keepme")
@@ -242,8 +263,9 @@ def test_leave_last_member_requires_confirm_name(client, db, authed):
 def test_leave_last_member_archives_and_preserves_data(client, db, authed):
     _txn(db, authed, "keepme")
     name = db.get(Household, authed.household_id).name
-    r = client.post("/settings/leave-household", headers=authed.headers,
-                    data={"confirm_name": name})
+    r = client.post(
+        "/settings/leave-household", headers=authed.headers, data={"confirm_name": name}
+    )
     assert r.status_code == 302
     db.expire_all()
     hh = db.get(Household, authed.household_id)
@@ -264,9 +286,11 @@ def test_archived_household_hidden_from_switcher(db, make_household):
 
 # ---- purge script ----------------------------------------------------------
 
+
 def _purge_module():
     import importlib.util
     from pathlib import Path
+
     path = Path(__file__).resolve().parent.parent / "scripts" / "purge_household.py"
     spec = importlib.util.spec_from_file_location("purge_household", path)
     mod = importlib.util.module_from_spec(spec)
@@ -311,8 +335,10 @@ def test_purge_script_cli_requires_explicit_flag():
 
 # ---- review fixes ----------------------------------------------------------
 
+
 def test_trash_retention_counts_from_deletion_not_upload(db, make_household):
     from app.scheduler import _purge_trash, today_local
+
     hh = make_household()
     path = _receipt("old.jpg")
     old = time.time() - 90 * 86400
@@ -330,12 +356,14 @@ def test_trash_retention_counts_from_deletion_not_upload(db, make_household):
 
 def test_move_failure_keeps_row_deleted_and_file_in_uploads(db, make_household, monkeypatch):
     import app.services.transactions as services
+
     hh = make_household()
     _receipt("keep.jpg")
     t = _txn(db, hh, "x", receipt_path="keep.jpg")
 
     def boom(*a, **k):
         raise OSError("disk")
+
     monkeypatch.setattr(services.shutil, "move", boom)
     delete_transaction(db, t)
 
@@ -351,6 +379,7 @@ def test_commit_failure_does_not_move_receipt(db, make_household, monkeypatch):
 
     def bad_commit():
         raise RuntimeError("commit failed")
+
     monkeypatch.setattr(db, "commit", bad_commit)
     with pytest.raises(RuntimeError):
         delete_transaction(db, t)
@@ -361,8 +390,10 @@ def test_commit_failure_does_not_move_receipt(db, make_household, monkeypatch):
 def test_api_refuses_to_delete_bucket_with_transactions(client, db, make_household):
     hh = make_household(username="bk1")
     r = client.post("/api/v1/auth/login", json={"username": hh.username, "password": PASSWORD})
-    r = client.post("/api/v1/auth/totp/verify", json={
-        "pending_token": r.json()["pending_token"], "code": pyotp.TOTP(hh.secret).now()})
+    r = client.post(
+        "/api/v1/auth/totp/verify",
+        json={"pending_token": r.json()["pending_token"], "code": pyotp.TOTP(hh.secret).now()},
+    )
     h = {"Authorization": f"Bearer {r.json()['access_token']}"}
     t = _txn(db, hh, "x")
     delete_transaction(db, t)  # even a soft-deleted txn blocks deletion

@@ -1,4 +1,5 @@
 """Single clock/timezone helpers (app/clock.py)."""
+
 from datetime import UTC, date, datetime
 
 import pytest
@@ -54,6 +55,7 @@ def test_new_transaction_form_defaults_to_local_date(client, authed, monkeypatch
 @pytest.mark.parametrize("module", ["app.scheduler"])
 def test_scheduler_today_local_delegates_to_clock(module, monkeypatch):
     import app.scheduler as scheduler
+
     monkeypatch.setattr(config.settings, "app_timezone", "Europe/Athens")
     _freeze(monkeypatch, datetime(2026, 2, 28, 23, 30, tzinfo=UTC))
     assert scheduler.today_local() == date(2026, 3, 1)

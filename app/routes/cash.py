@@ -8,6 +8,7 @@ own wallet without ever seeing the balance; household owners get no special
 access. Each member logs and deletes only their own movements (a hidden one
 answers 404, as if it did not exist). See app.services.cash for the model.
 """
+
 from datetime import date
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -47,16 +48,18 @@ def _list_ctx(db: Session, user, hh_id: str, month: str | None) -> dict:
     # You first, then everyone else: your card carries the "Still have" form.
     ordered = sorted(members, key=lambda m: m.id != user.id)
     wallets = wallet_summaries(db, hh_id, [m.id for m in ordered], start, end, viewer_id=user.id)
-    ctx.update({
-        "user": user,
-        "month": month_key,
-        "today": local_today(),
-        "names": {m.id: m.display_name for m in members},
-        "others": [m for m in members if m.id != user.id],
-        "stash": stash_balance(db, hh_id, user.id),
-        "wallets": [(m, wallets[m.id]) for m in ordered],
-        "movements": list_movements(db, hh_id, user.id, start=start, end=end),
-    })
+    ctx.update(
+        {
+            "user": user,
+            "month": month_key,
+            "today": local_today(),
+            "names": {m.id: m.display_name for m in members},
+            "others": [m for m in members if m.id != user.id],
+            "stash": stash_balance(db, hh_id, user.id),
+            "wallets": [(m, wallets[m.id]) for m in ordered],
+            "movements": list_movements(db, hh_id, user.id, start=start, end=end),
+        }
+    )
     return ctx
 
 
@@ -119,7 +122,9 @@ def add_cash(
     try:
         when = date.fromisoformat(movement_date.strip()) if movement_date.strip() else local_today()
     except ValueError:
-        raise HTTPException(status_code=400, detail="Date must be a valid date (YYYY-MM-DD).") from None
+        raise HTTPException(
+            status_code=400, detail="Date must be a valid date (YYYY-MM-DD)."
+        ) from None
     if len(note.strip()) > 500:
         raise HTTPException(status_code=400, detail="Note must be at most 500 characters.")
     stash_owner = None if source.strip() in ("", FROM_BANK) else source.strip()
@@ -129,14 +134,22 @@ def add_cash(
         raise HTTPException(status_code=400, detail="Choose the bucket the cash was spent on.")
     if kind == TAKE and spend_bucket_id.strip():
         if stash_owner not in (None, user.id):
-            raise HTTPException(status_code=400,
-                                detail="Spending it straight away works from your own stash or the bank.")
+            raise HTTPException(
+                status_code=400,
+                detail="Spending it straight away works from your own stash or the bank.",
+            )
         bucket = require_bucket(db, spend_bucket_id.strip(), hh_id)
         try:
             withdraw_and_spend(
-                db, user=user, household_id=hh_id, bucket=bucket, amount=value,
-                source=FROM_STASH if stash_owner else FROM_BANK, when=when,
-                category_id=require_category(db, category_id, hh_id), notes=note,
+                db,
+                user=user,
+                household_id=hh_id,
+                bucket=bucket,
+                amount=value,
+                source=FROM_STASH if stash_owner else FROM_BANK,
+                when=when,
+                category_id=require_category(db, category_id, hh_id),
+                notes=note,
                 currency=household.default_currency,
             )
         except ValidationError as exc:
@@ -145,8 +158,14 @@ def add_cash(
     else:
         # cash is household-currency only
         record_movement(
-            db, household_id=hh_id, actor_id=user.id, kind=kind, amount=value,
-            currency=household.default_currency, when=when, note=note,
+            db,
+            household_id=hh_id,
+            actor_id=user.id,
+            kind=kind,
+            amount=value,
+            currency=household.default_currency,
+            when=when,
+            note=note,
             stash_owner_id=stash_owner,
         )
     return _respond(request, db, user, hh_id, month or None)

@@ -19,6 +19,7 @@ Notifications carry a stable ``dedupe_key`` protected by a unique constraint.
 Setting ``ENABLE_SCHEDULER=false`` on all but one worker avoids the redundant
 work, but correctness does not depend on it.
 """
+
 import logging
 from datetime import date, datetime, timedelta
 
@@ -41,10 +42,10 @@ CONTRACT_WARNING_DAYS = (30, 10)
 # Bill drift: how far a charge must move from its own recent average before it
 # is worth mentioning. Both gates must be passed, so a 30% jump on a EUR 3 bill
 # stays quiet.
-DRIFT_PCT_THRESHOLD = 25.0     # percent
-DRIFT_MIN_ABSOLUTE = 5.0       # household currency
-DRIFT_MIN_HISTORY = 3          # prior charges needed to form a baseline
-DRIFT_LOOKBACK_DAYS = 35       # only comment on a recently-landed charge
+DRIFT_PCT_THRESHOLD = 25.0  # percent
+DRIFT_MIN_ABSOLUTE = 5.0  # household currency
+DRIFT_MIN_HISTORY = 3  # prior charges needed to form a baseline
+DRIFT_LOOKBACK_DAYS = 35  # only comment on a recently-landed charge
 
 # Budget warnings, as percentages of a bucket's monthly budget.
 BUDGET_THRESHOLDS = (80, 100)
@@ -122,6 +123,7 @@ def _notify_members(db, user_ids, *, household_id, type, title, body, link, dedu
 # Auto-pay
 # ---------------------------------------------------------------------------
 
+
 def _auto_pay_due_bills(db, today: date) -> int:
     """Mark fixed-amount auto-pay occurrences as paid once they are due.
 
@@ -170,18 +172,20 @@ def _auto_pay_due_bills(db, today: date) -> int:
         # The bill's payer mode: own share (no payer, scaled splits) or a
         # single payer resolved from the default / owner.
         payer, payer_mode = bills_service.resolve_bill_payment(db, bill)
-        pending.append({
-            "occ_id":     occ.id,
-            "due_date":   occ.due_date,
-            "amount":     pay_amount,
-            "household_id":    bill.household_id,
-            "bucket_id":       bill.bucket_id,
-            "category_id":     bill.category_id,
-            "paid_by_default": payer,
-            "payer_mode":      payer_mode,
-            "currency":        bill.currency,
-            "name":            bill.name,
-        })
+        pending.append(
+            {
+                "occ_id": occ.id,
+                "due_date": occ.due_date,
+                "amount": pay_amount,
+                "household_id": bill.household_id,
+                "bucket_id": bill.bucket_id,
+                "category_id": bill.category_id,
+                "paid_by_default": payer,
+                "payer_mode": payer_mode,
+                "currency": bill.currency,
+                "name": bill.name,
+            }
+        )
 
     count = 0
     for item in pending:
@@ -191,7 +195,8 @@ def _auto_pay_due_bills(db, today: date) -> int:
         # prevents duplicate auto-pay transactions.
         occ = db.get(BillOccurrence, item["occ_id"])
         if not bills_service.settle_occurrence(
-            db, occ,
+            db,
+            occ,
             amount=item["amount"],
             paid_by=item["paid_by_default"],
             payer_mode=item["payer_mode"],
@@ -226,6 +231,7 @@ def _auto_pay_due_bills(db, today: date) -> int:
 # ---------------------------------------------------------------------------
 # Notifications
 # ---------------------------------------------------------------------------
+
 
 def _notify_due_soon(db, today: date) -> None:
     """Remind members about bills due in 3 days."""
@@ -347,11 +353,7 @@ def _notify_bill_drift(db, today: date) -> None:
 
     lookback_start = today - timedelta(days=DRIFT_LOOKBACK_DAYS)
 
-    bills = (
-        db.query(RecurringBill)
-        .filter(RecurringBill.is_active.is_(True))
-        .all()
-    )
+    bills = db.query(RecurringBill).filter(RecurringBill.is_active.is_(True)).all()
     members_by_hh = _members_by_household(db, {b.household_id for b in bills})
 
     for bill in bills:
@@ -374,7 +376,7 @@ def _notify_bill_drift(db, today: date) -> None:
         if latest.due_date < lookback_start:
             continue
 
-        history = [float(o.amount) for o in occs[-(DRIFT_MIN_HISTORY + 1):-1]]
+        history = [float(o.amount) for o in occs[-(DRIFT_MIN_HISTORY + 1) : -1]]
         baseline = sum(history) / len(history)
         if baseline <= 0:
             continue
@@ -480,7 +482,7 @@ def _notify_budget_thresholds(db, today: date) -> None:
 # Consecutive PosoKanei failures after which the refresh stage gives up for
 # the day: when the API is down every call would fail, so stop knocking.
 PRICE_REFRESH_MAX_FAILURES = 3
-PRICE_DROP_RATIO = 0.9   # current min ≤ 90% of the 30-day median
+PRICE_DROP_RATIO = 0.9  # current min ≤ 90% of the 30-day median
 
 
 def _refresh_tracked_prices(db, today: date) -> int:
@@ -496,21 +498,30 @@ def _refresh_tracked_prices(db, today: date) -> int:
     from app.models import PriceSnapshot, Product, StockItem
     from app.services.stock import record_snapshots
 
-    last_snap = (db.query(PriceSnapshot.product_id.label("pid"),
-                          func.max(PriceSnapshot.snapshot_date).label("last"))
-                 .group_by(PriceSnapshot.product_id)
-                 .subquery())
-    rows = (db.query(Product.id, last_snap.c.last)
-            .join(StockItem, StockItem.product_id == Product.id)
-            .outerjoin(last_snap, last_snap.c.pid == Product.id)
-            .filter(Product.posokanei_id.isnot(None),
-                    Product.archived_at.is_(None),
-                    StockItem.track_price.is_(True))
-            .all())
+    last_snap = (
+        db.query(
+            PriceSnapshot.product_id.label("pid"),
+            func.max(PriceSnapshot.snapshot_date).label("last"),
+        )
+        .group_by(PriceSnapshot.product_id)
+        .subquery()
+    )
+    rows = (
+        db.query(Product.id, last_snap.c.last)
+        .join(StockItem, StockItem.product_id == Product.id)
+        .outerjoin(last_snap, last_snap.c.pid == Product.id)
+        .filter(
+            Product.posokanei_id.isnot(None),
+            Product.archived_at.is_(None),
+            StockItem.track_price.is_(True),
+        )
+        .all()
+    )
     # Deterministic and fair: never-priced first, then the stalest, so a
     # stage cut short by an outage starts where it left off next time.
     product_ids = [
-        pid for pid, last in sorted(rows, key=lambda r: (r[1] is not None, r[1] or today, r[0]))
+        pid
+        for pid, last in sorted(rows, key=lambda r: (r[1] is not None, r[1] or today, r[0]))
         if last is None or last < today
     ]
     stored = failures = 0
@@ -547,10 +558,12 @@ def _notify_stock_and_prices(db, today: date) -> None:
     from app.models import NotificationType, Product, StockItem, StockMovement
     from app.services.stock import price_advice_bulk
 
-    items = (db.query(StockItem)
-             .join(Product, Product.id == StockItem.product_id)
-             .filter(Product.archived_at.is_(None))
-             .all())
+    items = (
+        db.query(StockItem)
+        .join(Product, Product.id == StockItem.product_id)
+        .filter(Product.archived_at.is_(None))
+        .all()
+    )
     if not items:
         return
     members_by_hh = _members_by_household(db, {i.household_id for i in items})
@@ -561,14 +574,18 @@ def _notify_stock_and_prices(db, today: date) -> None:
     low = [i for i in items if to_decimal(i.quantity) <= to_decimal(i.min_quantity)]
     recent: dict[str, list] = {}
     if low:
-        for m in (db.query(StockMovement)
-                  .filter(StockMovement.stock_item_id.in_([i.id for i in low]),
-                          StockMovement.created_at >= since)
-                  .order_by(StockMovement.created_at.desc())):
+        for m in (
+            db.query(StockMovement)
+            .filter(
+                StockMovement.stock_item_id.in_([i.id for i in low]),
+                StockMovement.created_at >= since,
+            )
+            .order_by(StockMovement.created_at.desc())
+        ):
             recent.setdefault(m.stock_item_id, []).append(m)
     for item in low:
         qty, crossed = to_decimal(item.quantity), False
-        for m in recent.get(item.id, []):          # newest first: undo each
+        for m in recent.get(item.id, []):  # newest first: undo each
             qty -= to_decimal(m.delta)
             if qty > to_decimal(item.min_quantity):
                 crossed = True
@@ -577,7 +594,8 @@ def _notify_stock_and_prices(db, today: date) -> None:
             continue
         name = item.product.name
         _notify_members(
-            db, members_by_hh.get(item.household_id, []),
+            db,
+            members_by_hh.get(item.household_id, []),
             household_id=item.household_id,
             type=NotificationType.stock_low,
             title=f"Running low: {name}",
@@ -601,7 +619,8 @@ def _notify_stock_and_prices(db, today: date) -> None:
         product = item.product
         pct = (1 - current / median) * 100
         _notify_members(
-            db, members_by_hh.get(item.household_id, []),
+            db,
+            members_by_hh.get(item.household_id, []),
             household_id=item.household_id,
             type=NotificationType.price_drop,
             title=f"Price drop: {product.name} {pct:.0f}% below usual",
@@ -648,6 +667,7 @@ def _purge_trash(db, today: date, uploads_dir: str | None = None) -> int:
 # Job entry point
 # ---------------------------------------------------------------------------
 
+
 def auto_mark_paid_job() -> None:
     """Daily bills job: auto-pay due bills, then send the reminder notifications.
 
@@ -693,6 +713,7 @@ def _acquire_scheduler_lock(engine=None) -> bool:
     global _lock_conn
     if engine is None:
         from app.core.database import engine as app_engine
+
         engine = app_engine
     if engine.dialect.name != "postgresql":
         return True
@@ -704,7 +725,11 @@ def _acquire_scheduler_lock(engine=None) -> bool:
     # would silently kill it (and the lock with it).
     conn.execution_options(isolation_level="AUTOCOMMIT")
     try:
-        got = bool(conn.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": SCHEDULER_LOCK_KEY}).scalar())
+        got = bool(
+            conn.execute(
+                text("SELECT pg_try_advisory_lock(:k)"), {"k": SCHEDULER_LOCK_KEY}
+            ).scalar()
+        )
     except Exception:
         conn.close()
         raise
@@ -748,8 +773,8 @@ def start_scheduler() -> None:
         CronTrigger(hour=0, minute=5, timezone=_tz()),
         id="auto_mark_paid_daily",
         replace_existing=True,
-        coalesce=True,        # collapse missed runs into one
-        max_instances=1,      # never overlap with a still-running job
+        coalesce=True,  # collapse missed runs into one
+        max_instances=1,  # never overlap with a still-running job
         misfire_grace_time=3600,
     )
     # Run shortly after startup to catch bills missed while the server was down.

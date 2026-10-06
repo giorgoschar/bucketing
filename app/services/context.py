@@ -38,5 +38,7 @@ def full_ctx(db: Session, user, hh_id: str) -> dict:
     ctx["fuel_category_id"] = next(
         (c.id for c in ctx["categories"] if c.system_key == FUEL_SYSTEM_KEY), ""
     )
-    ctx["buckets"] = db.query(Bucket).filter_by(household_id=hh_id, status=BucketStatus.active).all()
+    ctx["buckets"] = (
+        db.query(Bucket).filter_by(household_id=hh_id, status=BucketStatus.active).all()
+    )
     return ctx

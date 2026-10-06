@@ -1,6 +1,7 @@
 """
 Bills routes: recurring bills + occurrences.
 """
+
 from datetime import date
 from decimal import Decimal
 
@@ -65,10 +66,14 @@ def _parse_iso_date(value: str, field: str, *, required: bool = True):
     try:
         return date.fromisoformat(value)
     except ValueError:
-        raise HTTPException(status_code=400, detail=f"{field} must be a valid date (YYYY-MM-DD).") from None
+        raise HTTPException(
+            status_code=400, detail=f"{field} must be a valid date (YYYY-MM-DD)."
+        ) from None
 
 
-async def _collect_splits(request: Request, hh_id: str, db: Session) -> tuple[list[tuple[str, float]], float]:
+async def _collect_splits(
+    request: Request, hh_id: str, db: Session
+) -> tuple[list[tuple[str, float]], float]:
     """Read split_{user_id} form fields, validating each user is in the household."""
     form_data = await request.form()
     splits: list[tuple[str, float]] = []
@@ -102,7 +107,6 @@ def _bill_payer(db: Session, hh_id: str, value: str, splits) -> tuple[str | None
     return require_member(db, payer, hh_id), mode
 
 
-
 @router.get("", response_class=HTMLResponse)
 def bills_page(
     request: Request,
@@ -116,40 +120,56 @@ def bills_page(
     notice = None
     if backfilled is not None:
         # Only a count is reflected, never free text.
-        notice = (f"Updated {backfilled} past payment{'s' if backfilled != 1 else ''} "
-                  "that had no payer.")
+        notice = (
+            f"Updated {backfilled} past payment{'s' if backfilled != 1 else ''} that had no payer."
+        )
         if resplit:
-            notice += (f" {resplit} of them had splits that did not add up to its amount; "
-                       "they now use the bill's split.")
+            notice += (
+                f" {resplit} of them had splits that did not add up to its amount; "
+                "they now use the bill's split."
+            )
     return _render_bills(request, db, user, hh_id, page=page, notice=notice)
 
 
-def _render_bills(request, db, user, hh_id, *, page: int = 1, error: str | None = None,
-                  notice: str | None = None, status_code: int = 200):
+def _render_bills(
+    request,
+    db,
+    user,
+    hh_id,
+    *,
+    page: int = 1,
+    error: str | None = None,
+    notice: str | None = None,
+    status_code: int = 200,
+):
     ctx = full_ctx(db, user, hh_id)
 
     overdue = get_overdue_bills(db, hh_id)
     upcoming = get_upcoming_bills(db, hh_id, days=settings.upcoming_bills_days)
 
     BILLS_PAGE_SIZE = 20
-    bills_q = db.query(RecurringBill).filter_by(household_id=hh_id).order_by(RecurringBill.created_at)
+    bills_q = (
+        db.query(RecurringBill).filter_by(household_id=hh_id).order_by(RecurringBill.created_at)
+    )
     bills_total = bills_q.count()
     bills_total_pages = max(1, -(-bills_total // BILLS_PAGE_SIZE))
     page = min(page, bills_total_pages)
     all_bills = bills_q.offset((page - 1) * BILLS_PAGE_SIZE).limit(BILLS_PAGE_SIZE).all()
 
-    ctx.update({
-        "request": request,
-        "user": user,
-        "overdue": overdue,
-        "upcoming": upcoming,
-        "all_bills": all_bills,
-        "today": local_today(),
-        "bills_page": page,
-        "bills_total_pages": bills_total_pages,
-        "error": error,
-        "notice": notice,
-    })
+    ctx.update(
+        {
+            "request": request,
+            "user": user,
+            "overdue": overdue,
+            "upcoming": upcoming,
+            "all_bills": all_bills,
+            "today": local_today(),
+            "bills_page": page,
+            "bills_total_pages": bills_total_pages,
+            "error": error,
+            "notice": notice,
+        }
+    )
     return templates.TemplateResponse("bills/list.html", ctx, status_code=status_code)
 
 
@@ -252,7 +272,8 @@ async def mark_paid(
     # Blank = the bill's default (its payer mode, then its default payer).
     chosen, chosen_mode = payer_choice(paid_by)
     payer, payer_mode = resolve_bill_payment(
-        db, bill,
+        db,
+        bill,
         paid_by=require_member(db, chosen, hh_id),
         payer_mode=chosen_mode if chosen_mode == PayerMode.own_share.value else None,
         fallback_user_id=user.id,
@@ -266,13 +287,16 @@ async def mark_paid(
     overrides, _ = await _collect_splits(request, hh_id, db)
     try:
         paid = settle_occurrence(
-            db, occ,
+            db,
+            occ,
             amount=pay_amount,
             paid_by=payer,
             payer_mode=payer_mode,
             paid_on=utcnow_naive(),
             payment_method=pm,
-            split_overrides=effective_overrides(bill, {uid: Decimal(str(a)) for uid, a in overrides}),
+            split_overrides=effective_overrides(
+                bill, {uid: Decimal(str(a)) for uid, a in overrides}
+            ),
         )
     except ValueError as exc:
         db.rollback()
@@ -340,7 +364,9 @@ def skip_occurrence(
     # Skipping a paid occurrence would leave its transaction behind while the
     # bill history stops reporting it as paid.
     if occ.status == OccurrenceStatus.paid:
-        raise HTTPException(status_code=400, detail="Cannot skip an occurrence that is already paid.")
+        raise HTTPException(
+            status_code=400, detail="Cannot skip an occurrence that is already paid."
+        )
 
     occ.status = OccurrenceStatus.skipped
     db.commit()
@@ -484,6 +510,7 @@ def delete_bill(
 # ---------------------------------------------------------------------------
 # Bill payment history
 # ---------------------------------------------------------------------------
+
 
 @router.get("/{bill_id}/history", response_class=HTMLResponse)
 def bill_history(

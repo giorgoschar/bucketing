@@ -1,6 +1,7 @@
 """
 Duplicate transaction detection.
 """
+
 from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
@@ -49,28 +50,30 @@ def find_duplicate_candidates(
     target = to_decimal(amount)
     lo, hi = target - DUPLICATE_AMOUNT_TOLERANCE, target + DUPLICATE_AMOUNT_TOLERANCE
 
-    q = (
-        db.query(Transaction)
-        .filter(
-            Transaction.active(),
-            Transaction.household_id == household_id,
-            Transaction.type == TransactionType.expense,
-            Transaction.amount >= lo,
-            Transaction.amount <= hi,
-            Transaction.transaction_date >= transaction_date - timedelta(days=window_days),
-            Transaction.transaction_date <= transaction_date + timedelta(days=window_days),
-        )
+    q = db.query(Transaction).filter(
+        Transaction.active(),
+        Transaction.household_id == household_id,
+        Transaction.type == TransactionType.expense,
+        Transaction.amount >= lo,
+        Transaction.amount <= hi,
+        Transaction.transaction_date >= transaction_date - timedelta(days=window_days),
+        Transaction.transaction_date <= transaction_date + timedelta(days=window_days),
     )
     if exclude_id:
         q = q.filter(Transaction.id != exclude_id)
     if bucket_id:
         # Same-bucket matches first: a stronger signal than a cross-bucket one.
-        q = q.order_by((Transaction.bucket_id == bucket_id).desc(),
-                       Transaction.transaction_date.desc())
+        q = q.order_by(
+            (Transaction.bucket_id == bucket_id).desc(), Transaction.transaction_date.desc()
+        )
     else:
         q = q.order_by(Transaction.transaction_date.desc())
 
-    return q.options(joinedload(Transaction.bucket), joinedload(Transaction.paid_by_user)).limit(5).all()
+    return (
+        q.options(joinedload(Transaction.bucket), joinedload(Transaction.paid_by_user))
+        .limit(5)
+        .all()
+    )
 
 
 def find_household_duplicates(

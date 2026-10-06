@@ -1,6 +1,7 @@
 """
 API transactions routes — full CRUD + receipt scan.
 """
+
 import uuid
 from datetime import date
 from pathlib import Path
@@ -40,28 +41,29 @@ router = APIRouter(prefix="/transactions", tags=["transactions"])
 # Schemas
 # ---------------------------------------------------------------------------
 
+
 def _txn_dict(t: Transaction) -> dict:
     return {
-        "id":             t.id,
-        "bucket_id":      t.bucket_id,
-        "household_id":   t.household_id,
-        "amount":         quantize(t.amount),
-        "currency":       t.currency,
-        "exchange_rate":  float(t.exchange_rate or 1),
-        "type":           t.type.value,
-        "paid_by":        t.paid_by,
-        "payer_mode":     t.payer_mode,
-        "category_id":    t.category_id,
-        "notes":          t.notes,
+        "id": t.id,
+        "bucket_id": t.bucket_id,
+        "household_id": t.household_id,
+        "amount": quantize(t.amount),
+        "currency": t.currency,
+        "exchange_rate": float(t.exchange_rate or 1),
+        "type": t.type.value,
+        "paid_by": t.paid_by,
+        "payer_mode": t.payer_mode,
+        "category_id": t.category_id,
+        "notes": t.notes,
         "transaction_date": t.transaction_date.isoformat() if t.transaction_date else None,
-        "receipt_path":   t.receipt_path,
+        "receipt_path": t.receipt_path,
         "payment_method": t.payment_method,
-        "merchant":       t.merchant,
+        "merchant": t.merchant,
         "fuel_price_per_litre": t.fuel_price_per_litre,
-        "fuel_litres":    t.fuel_litres,
+        "fuel_litres": t.fuel_litres,
         "exclude_from_forecast": t.exclude_from_forecast,
         "exclude_from_settlement": t.exclude_from_settlement,
-        "created_at":     t.created_at.isoformat() if t.created_at else None,
+        "created_at": t.created_at.isoformat() if t.created_at else None,
         "splits": [
             {"user_id": s.user_id, "amount": quantize(s.amount), "is_settled": s.is_settled}
             for s in (t.splits or [])
@@ -73,15 +75,16 @@ def _txn_dict(t: Transaction) -> dict:
 # Routes
 # ---------------------------------------------------------------------------
 
+
 @router.get("")
 def list_transactions(
-    page:        int   = Query(1, ge=1),
-    page_size:   int   = Query(50, ge=1, le=200),
-    bucket_id:   str   = Query(default=""),
-    category_id: str   = Query(default=""),
-    type:        str   = Query(default=""),
-    year:        int   = Query(default=None),
-    month:       int   = Query(default=None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    bucket_id: str = Query(default=""),
+    category_id: str = Query(default=""),
+    type: str = Query(default=""),
+    year: int = Query(default=None),
+    month: int = Query(default=None),
     auth=Depends(require_api_auth),
     db: Session = Depends(get_db),
 ):
@@ -96,13 +99,15 @@ def list_transactions(
         try:
             q = q.filter(Transaction.type == TransactionType(type))
         except ValueError:
-            raise HTTPException(status_code=400, detail=f"Unknown transaction type '{type}'") from None
+            raise HTTPException(
+                status_code=400, detail=f"Unknown transaction type '{type}'"
+            ) from None
     parse_year_month(year, month)
     if year and month:
         start = date(year, month, 1)
         end_m = month + 1 if month < 12 else 1
         end_y = year if month < 12 else year + 1
-        end   = date(end_y, end_m, 1)
+        end = date(end_y, end_m, 1)
         q = q.filter(Transaction.transaction_date >= start, Transaction.transaction_date < end)
     elif year:
         q = q.filter(
@@ -119,10 +124,10 @@ def list_transactions(
         .all()
     )
     return {
-        "total":     total,
-        "page":      page,
+        "total": total,
+        "page": page,
         "page_size": page_size,
-        "items":     [_txn_dict(t) for t in items],
+        "items": [_txn_dict(t) for t in items],
     }
 
 
@@ -141,7 +146,11 @@ def create_transaction(
 
     try:
         txn = create_transaction_service(
-            db, household_id=hh_id, bucket=bucket, user=user, data=body,
+            db,
+            household_id=hh_id,
+            bucket=bucket,
+            user=user,
+            data=body,
         )
     except DeletedTransactionReplay:
         raise HTTPException(
@@ -162,7 +171,13 @@ def get_transaction(
     db: Session = Depends(get_db),
 ):
     user, hh_id = auth
-    txn = db.query(Transaction).options(joinedload(Transaction.splits)).filter(Transaction.active()).filter_by(id=txn_id, household_id=hh_id).first()
+    txn = (
+        db.query(Transaction)
+        .options(joinedload(Transaction.splits))
+        .filter(Transaction.active())
+        .filter_by(id=txn_id, household_id=hh_id)
+        .first()
+    )
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found")
     return _txn_dict(txn)
@@ -179,7 +194,12 @@ def update_transaction(
     a blank payer keeps the current one (and, with no ``payer_mode`` given, its
     mode), a blank date keeps the current date."""
     user, hh_id = auth
-    txn = db.query(Transaction).filter(Transaction.active()).filter_by(id=txn_id, household_id=hh_id).first()
+    txn = (
+        db.query(Transaction)
+        .filter(Transaction.active())
+        .filter_by(id=txn_id, household_id=hh_id)
+        .first()
+    )
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
@@ -204,7 +224,12 @@ def delete_transaction(
     db: Session = Depends(get_db),
 ):
     user, hh_id = auth
-    txn = db.query(Transaction).filter(Transaction.active()).filter_by(id=txn_id, household_id=hh_id).first()
+    txn = (
+        db.query(Transaction)
+        .filter(Transaction.active())
+        .filter_by(id=txn_id, household_id=hh_id)
+        .first()
+    )
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
@@ -222,7 +247,12 @@ async def upload_receipt(
 ):
     """Upload or replace a receipt image/PDF for a transaction."""
     user, hh_id = auth
-    txn = db.query(Transaction).filter(Transaction.active()).filter_by(id=txn_id, household_id=hh_id).first()
+    txn = (
+        db.query(Transaction)
+        .filter(Transaction.active())
+        .filter_by(id=txn_id, household_id=hh_id)
+        .first()
+    )
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
@@ -266,10 +296,10 @@ async def scan_parse(
     category_id = match_category(parsed["category_hint"], categories)
 
     return {
-        "amount":         parsed["amount"],
-        "currency":       parsed["currency"],
-        "date":           parsed["date"],
-        "merchant":       parsed["merchant"],
-        "category_hint":  parsed["category_hint"],
-        "category_id":    category_id,
+        "amount": parsed["amount"],
+        "currency": parsed["currency"],
+        "date": parsed["date"],
+        "merchant": parsed["merchant"],
+        "category_hint": parsed["category_hint"],
+        "category_id": category_id,
     }

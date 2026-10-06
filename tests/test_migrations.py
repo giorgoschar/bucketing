@@ -5,6 +5,7 @@ Migration safety.
 database, so these guard the two things that matter: the chain applies cleanly
 from scratch, and it ends up matching the ORM models.
 """
+
 import subprocess
 import sys
 from pathlib import Path
@@ -21,7 +22,7 @@ def _db_url(tmp_path, name):
     if TEST_DATABASE_URL:
         reset_pg_schema(TEST_DATABASE_URL)
         return TEST_DATABASE_URL
-    return f"sqlite:///{tmp_path/name}"
+    return f"sqlite:///{tmp_path / name}"
 
 
 def _alembic(args, db_url):
@@ -36,7 +37,10 @@ def _alembic(args, db_url):
     }
     return subprocess.run(
         [sys.executable, "-m", "alembic", *args],
-        cwd=ROOT, env=env, capture_output=True, text=True,
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
     )
 
 
@@ -47,10 +51,20 @@ def test_migrations_apply_from_scratch(tmp_path):
 
     tables = set(inspect(create_engine(db_url)).get_table_names())
     expected = {
-        "users", "households", "household_members", "invitations", "categories",
-        "buckets", "transactions", "transaction_splits", "recurring_bills",
-        "bill_occurrences", "recurring_bill_splits", "notifications",
-        "push_subscriptions", "refresh_tokens",
+        "users",
+        "households",
+        "household_members",
+        "invitations",
+        "categories",
+        "buckets",
+        "transactions",
+        "transaction_splits",
+        "recurring_bills",
+        "bill_occurrences",
+        "recurring_bill_splits",
+        "notifications",
+        "push_subscriptions",
+        "refresh_tokens",
     }
     assert expected <= tables, f"missing: {expected - tables}"
 
@@ -101,18 +115,25 @@ def test_dedupe_migration_preserves_existing_notifications(tmp_path):
     engine = create_engine(db_url)
     hh_id, user_id = str(uuid.uuid4()), str(uuid.uuid4())
     with engine.begin() as conn:
-        conn.execute(text(
-            "INSERT INTO households (id, name, default_currency) VALUES (:i, 'H', 'EUR')"
-        ), {"i": hh_id})
-        conn.execute(text(
-            "INSERT INTO users (id, username, display_name, password_hash, session_version, totp_enabled, email_verified) "
-            "VALUES (:i, 'u', 'U', 'x', 0, false, false)"
-        ), {"i": user_id})
+        conn.execute(
+            text("INSERT INTO households (id, name, default_currency) VALUES (:i, 'H', 'EUR')"),
+            {"i": hh_id},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO users (id, username, display_name, password_hash, session_version, totp_enabled, email_verified) "
+                "VALUES (:i, 'u', 'U', 'x', 0, false, false)"
+            ),
+            {"i": user_id},
+        )
         for n in range(4):
-            conn.execute(text(
-                "INSERT INTO notifications (id, household_id, user_id, type, title, is_read) "
-                "VALUES (:i, :h, :u, 'general', :t, false)"
-            ), {"i": str(uuid.uuid4()), "h": hh_id, "u": user_id, "t": f"note {n}"})
+            conn.execute(
+                text(
+                    "INSERT INTO notifications (id, household_id, user_id, type, title, is_read) "
+                    "VALUES (:i, :h, :u, 'general', :t, false)"
+                ),
+                {"i": str(uuid.uuid4()), "h": hh_id, "u": user_id, "t": f"note {n}"},
+            )
 
     assert _alembic(["upgrade", "head"], db_url).returncode == 0
 
@@ -148,9 +169,7 @@ def test_notification_enum_members_are_all_migrated():
 
     from app.models import NotificationType
 
-    migrations = "\n".join(
-        p.read_text() for p in (ROOT / "alembic" / "versions").glob("*.py")
-    )
+    migrations = "\n".join(p.read_text() for p in (ROOT / "alembic" / "versions").glob("*.py"))
 
     # Values in the original CREATE TYPE, plus any added later via ALTER TYPE.
     created = set()
@@ -158,13 +177,15 @@ def test_notification_enum_members_are_all_migrated():
     if idx != -1:
         # The statement is built from concatenated Python string literals, so
         # scan the following window rather than matching a single-line pattern.
-        window = migrations[idx:idx + 400]
-        window = window[:window.find(";")] if ";" in window else window
+        window = migrations[idx : idx + 400]
+        window = window[: window.find(";")] if ";" in window else window
         created |= set(re.findall(r"['\"]([a-z_]+)['\"]", window))
-    created |= set(re.findall(
-        r"ALTER TYPE notificationtype ADD VALUE (?:IF NOT EXISTS )?['\"]([a-z_]+)['\"]",
-        migrations,
-    ))
+    created |= set(
+        re.findall(
+            r"ALTER TYPE notificationtype ADD VALUE (?:IF NOT EXISTS )?['\"]([a-z_]+)['\"]",
+            migrations,
+        )
+    )
     # The migration may build the list from a Python tuple.
     for block in re.findall(r"NEW_VALUES\s*=\s*\(([^)]*)\)", migrations):
         created |= set(re.findall(r"['\"]([a-z_]+)['\"]", block))
@@ -188,34 +209,56 @@ def test_security_hardening_migration_preserves_data(tmp_path):
     engine = create_engine(db_url)
     hh_id, user_id, tx_id, bucket_id = (str(uuid.uuid4()) for _ in range(4))
     with engine.begin() as conn:
-        conn.execute(text(
-            "INSERT INTO households (id, name, default_currency) VALUES (:i, 'H', 'EUR')"
-        ), {"i": hh_id})
-        conn.execute(text(
-            "INSERT INTO users (id, username, display_name, password_hash, session_version, "
-            "totp_enabled, totp_secret, email_verified) "
-            "VALUES (:i, 'u', 'U', 'x', 0, true, 'PLAINSECRET', false)"
-        ), {"i": user_id})
-        conn.execute(text(
-            "INSERT INTO buckets (id, household_id, name, type, status, show_income, enable_settlement) "
-            "VALUES (:b, :h, 'B', 'custom', 'active', true, false)"
-        ), {"b": bucket_id, "h": hh_id})
-        conn.execute(text(
-            "INSERT INTO transactions (id, bucket_id, household_id, amount, currency, exchange_rate, "
-            "type, paid_by, transaction_date, exclude_from_forecast, exclude_from_settlement) "
-            "VALUES (:i, :b, :h, 12.5, 'EUR', 1, 'expense', :u, '2026-01-01', false, false)"
-        ), {"i": tx_id, "b": bucket_id, "h": hh_id, "u": user_id})
+        conn.execute(
+            text("INSERT INTO households (id, name, default_currency) VALUES (:i, 'H', 'EUR')"),
+            {"i": hh_id},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO users (id, username, display_name, password_hash, session_version, "
+                "totp_enabled, totp_secret, email_verified) "
+                "VALUES (:i, 'u', 'U', 'x', 0, true, 'PLAINSECRET', false)"
+            ),
+            {"i": user_id},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO buckets (id, household_id, name, type, status, show_income, enable_settlement) "
+                "VALUES (:b, :h, 'B', 'custom', 'active', true, false)"
+            ),
+            {"b": bucket_id, "h": hh_id},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO transactions (id, bucket_id, household_id, amount, currency, exchange_rate, "
+                "type, paid_by, transaction_date, exclude_from_forecast, exclude_from_settlement) "
+                "VALUES (:i, :b, :h, 12.5, 'EUR', 1, 'expense', :u, '2026-01-01', false, false)"
+            ),
+            {"i": tx_id, "b": bucket_id, "h": hh_id, "u": user_id},
+        )
 
     def check():
         with engine.connect() as conn:
-            row = conn.execute(text(
-                "SELECT totp_secret, failed_logins, locked_until, last_totp_step "
-                "FROM users WHERE id = :i"), {"i": user_id}).one()
+            row = conn.execute(
+                text(
+                    "SELECT totp_secret, failed_logins, locked_until, last_totp_step "
+                    "FROM users WHERE id = :i"
+                ),
+                {"i": user_id},
+            ).one()
             assert tuple(row) == ("PLAINSECRET", 0, None, None)
-            assert conn.execute(text(
-                "SELECT deleted_at FROM transactions WHERE id = :i"), {"i": tx_id}).scalar() is None
-            assert conn.execute(text(
-                "SELECT archived_at FROM households WHERE id = :i"), {"i": hh_id}).scalar() is None
+            assert (
+                conn.execute(
+                    text("SELECT deleted_at FROM transactions WHERE id = :i"), {"i": tx_id}
+                ).scalar()
+                is None
+            )
+            assert (
+                conn.execute(
+                    text("SELECT archived_at FROM households WHERE id = :i"), {"i": hh_id}
+                ).scalar()
+                is None
+            )
 
     up = _alembic(["upgrade", "head"], db_url)
     assert up.returncode == 0, up.stderr
@@ -252,19 +295,23 @@ def test_stock_migration_tables_and_barcode_uniqueness(tmp_path):
     hh1, hh2 = str(uuid.uuid4()), str(uuid.uuid4())
 
     def add_product(conn, hh, barcode):
-        conn.execute(text(
-            "INSERT INTO products (id, household_id, name, barcode) VALUES (:i, :h, 'Milk', :b)"
-        ), {"i": str(uuid.uuid4()), "h": hh, "b": barcode})
+        conn.execute(
+            text(
+                "INSERT INTO products (id, household_id, name, barcode) VALUES (:i, :h, 'Milk', :b)"
+            ),
+            {"i": str(uuid.uuid4()), "h": hh, "b": barcode},
+        )
 
     with engine.begin() as conn:
         for hh in (hh1, hh2):
-            conn.execute(text(
-                "INSERT INTO households (id, name, default_currency) VALUES (:i, 'H', 'EUR')"
-            ), {"i": hh})
+            conn.execute(
+                text("INSERT INTO households (id, name, default_currency) VALUES (:i, 'H', 'EUR')"),
+                {"i": hh},
+            )
         add_product(conn, hh1, None)
-        add_product(conn, hh1, None)              # NULL barcodes never collide
+        add_product(conn, hh1, None)  # NULL barcodes never collide
         add_product(conn, hh1, "5201054017906")
-        add_product(conn, hh2, "5201054017906")   # other household: fine
+        add_product(conn, hh2, "5201054017906")  # other household: fine
     with pytest.raises(IntegrityError), engine.begin() as conn:
         add_product(conn, hh1, "5201054017906")
     engine.dispose()
@@ -272,7 +319,8 @@ def test_stock_migration_tables_and_barcode_uniqueness(tmp_path):
     import importlib.util
 
     spec = importlib.util.spec_from_file_location(
-        "stock_mig", ROOT / "alembic" / "versions" / "a5b6c7d8e9f0_stock_and_prices.py")
+        "stock_mig", ROOT / "alembic" / "versions" / "a5b6c7d8e9f0_stock_and_prices.py"
+    )
     mig = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mig)
     down = _alembic(["downgrade", mig.down_revision], db_url)

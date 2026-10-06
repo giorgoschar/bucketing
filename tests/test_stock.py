@@ -1,4 +1,5 @@
 """Stock list: CRUD, HTMX adjust, PosoKanei lookup, isolation, degraded mode."""
+
 from decimal import Decimal
 
 import pytest
@@ -18,15 +19,27 @@ from tests.test_api import api  # noqa: F401  (fixture)
 
 def _summary(pid="p-1", name="Γάλα 1L", barcode="5201054017906", prices=(("ab", "1.59"),)):
     rps = [
-        RetailerPrice(retailer=r, display_name=r.upper(), price=Decimal(p),
-                      unit_price=Decimal(p), is_discount=False, discount_pct=None,
-                      last_updated=None)
+        RetailerPrice(
+            retailer=r,
+            display_name=r.upper(),
+            price=Decimal(p),
+            unit_price=Decimal(p),
+            is_discount=False,
+            discount_pct=None,
+            last_updated=None,
+        )
         for r, p in prices
     ]
     values = [Decimal(p) for _, p in prices]
     return ProductSummary(
-        id=pid, name=name, brand="ΔΕΛΤΑ", barcode=barcode, unit="l",
-        unit_quantity=Decimal("1"), image_url=None, retailer_prices=rps,
+        id=pid,
+        name=name,
+        brand="ΔΕΛΤΑ",
+        barcode=barcode,
+        unit="l",
+        unit_quantity=Decimal("1"),
+        image_url=None,
+        retailer_prices=rps,
         price_stats=PriceStats(min(values), max(values), None),
     )
 
@@ -84,15 +97,23 @@ def _add(client, authed, **over):
 
 def test_add_and_adjust_records_movements(db, make_household):
     hh = make_household()
-    item = stock_svc.add_product(db, hh.household_id, hh.user_id, name="Rice",
-                                 quantity=Decimal("2"), min_quantity=Decimal("1"))
+    item = stock_svc.add_product(
+        db,
+        hh.household_id,
+        hh.user_id,
+        name="Rice",
+        quantity=Decimal("2"),
+        min_quantity=Decimal("1"),
+    )
     stock_svc.adjust_stock(db, hh.household_id, item.id, Decimal("-1"), hh.user_id)
     stock_svc.adjust_stock(db, hh.household_id, item.id, Decimal("3"), hh.user_id)
     db.commit()
 
     assert item.quantity == Decimal("4")
-    reasons = [(m.reason, m.delta) for m in
-               db.query(StockMovement).order_by(StockMovement.created_at, StockMovement.delta)]
+    reasons = [
+        (m.reason, m.delta)
+        for m in db.query(StockMovement).order_by(StockMovement.created_at, StockMovement.delta)
+    ]
     assert ("use", Decimal("-1")) in reasons and ("buy", Decimal("3")) in reasons
 
 
@@ -152,8 +173,7 @@ def test_add_rejects_bad_barcode(client, authed, db):
 
 
 def test_add_requires_csrf(client, authed, db):
-    r = client.post("/stock", data={"name": "Rice"},
-                    headers={"Accept": "application/json"})
+    r = client.post("/stock", data={"name": "Rice"}, headers={"Accept": "application/json"})
     assert r.status_code == 403
     assert db.query(Product).count() == 0
 
@@ -162,8 +182,9 @@ def test_htmx_adjust_returns_row(client, authed, db):
     _add(client, authed, name="Pasta", quantity="2")
     item = db.query(StockItem).one()
 
-    r = client.post(f"/stock/{item.id}/adjust?delta=-1",
-                    headers={**authed.headers, "HX-Request": "true"})
+    r = client.post(
+        f"/stock/{item.id}/adjust?delta=-1", headers={**authed.headers, "HX-Request": "true"}
+    )
     assert r.status_code == 200
     assert f'id="stock-row-{item.id}"' in r.text
     db.expire_all()
@@ -188,8 +209,11 @@ def test_adjust_rejects_bad_delta(client, authed, db, delta):
 def test_settings_update_min_and_tracking(client, authed, db):
     _add(client, authed)
     item = db.query(StockItem).one()
-    r = client.post(f"/stock/{item.id}/settings",
-                    data={"min_quantity": "3", "track_price": ""}, headers=authed.headers)
+    r = client.post(
+        f"/stock/{item.id}/settings",
+        data={"min_quantity": "3", "track_price": ""},
+        headers=authed.headers,
+    )
     assert r.status_code == 303
     db.expire_all()
     item = db.get(StockItem, item.id)
@@ -199,8 +223,14 @@ def test_settings_update_min_and_tracking(client, authed, db):
 def test_remove_archives_and_keeps_history(client, authed, db):
     _add(client, authed, name="Coffee")
     item = db.query(StockItem).one()
-    db.add(PriceSnapshot(product_id=item.product_id, retailer="ab", price=Decimal("3"),
-                         snapshot_date=local_today()))
+    db.add(
+        PriceSnapshot(
+            product_id=item.product_id,
+            retailer="ab",
+            price=Decimal("3"),
+            snapshot_date=local_today(),
+        )
+    )
     db.commit()
 
     r = client.post(f"/stock/{item.id}/archive", headers=authed.headers)
@@ -213,8 +243,16 @@ def test_remove_archives_and_keeps_history(client, authed, db):
 
 
 def test_add_from_posokanei_snapshots_prices(client, authed, db, fake):
-    _add(client, authed, name="Γάλα 1L", posokanei_id="p-1", barcode="5201054017906",
-         brand="ΔΕΛΤΑ", unit="l", unit_quantity="1")
+    _add(
+        client,
+        authed,
+        name="Γάλα 1L",
+        posokanei_id="p-1",
+        barcode="5201054017906",
+        brand="ΔΕΛΤΑ",
+        unit="l",
+        unit_quantity="1",
+    )
     product = db.query(Product).one()
     assert product.posokanei_id == "p-1" and product.brand == "ΔΕΛΤΑ"
     snaps = db.query(PriceSnapshot).all()
@@ -251,7 +289,7 @@ def test_refresh_button_snapshots_prices(client, authed, db, fake):
 
 
 def test_page_renders_when_posokanei_is_down(client, authed, db, down):
-    _add(client, authed, name="Milk", posokanei_id="p-1")   # add still works
+    _add(client, authed, name="Milk", posokanei_id="p-1")  # add still works
     assert db.query(Product).count() == 1
     r = client.get("/stock")
     assert r.status_code == 200
@@ -297,8 +335,11 @@ def test_other_household_cannot_see_or_touch_stock(client, db, authed, make_hous
     headers = login(other.username, other.secret)
 
     assert "Secret saffron" not in client.get("/stock").text
-    for path in (f"/stock/{item.id}/adjust?delta=1", f"/stock/{item.id}/archive",
-                 f"/stock/{item.id}/refresh"):
+    for path in (
+        f"/stock/{item.id}/adjust?delta=1",
+        f"/stock/{item.id}/archive",
+        f"/stock/{item.id}/refresh",
+    ):
         assert client.post(path, headers=headers).status_code == 404, path
     r = client.post(f"/stock/{item.id}/settings", data={"min_quantity": "9"}, headers=headers)
     assert r.status_code == 404
@@ -319,8 +360,9 @@ def test_requires_login(client):
 
 def test_api_list_and_adjust(client, db, api, fake):  # noqa: F811
     headers, hh = api
-    r = client.post("/api/v1/stock", json={"name": "Flour", "quantity": 2, "min_quantity": 1},
-                    headers=headers)
+    r = client.post(
+        "/api/v1/stock", json={"name": "Flour", "quantity": 2, "min_quantity": 1}, headers=headers
+    )
     assert r.status_code == 201, r.text
     item_id = r.json()["id"]
 
@@ -357,7 +399,10 @@ def test_api_product_lookup_proxies(client, api, fake):  # noqa: F811
 
 def test_api_product_lookup_unavailable(client, api, down):  # noqa: F811
     headers, _ = api
-    assert client.get("/api/v1/products/search", params={"q": "xy"}, headers=headers).status_code == 503
+    assert (
+        client.get("/api/v1/products/search", params={"q": "xy"}, headers=headers).status_code
+        == 503
+    )
     assert client.get("/api/v1/products/barcode/123456", headers=headers).status_code == 503
 
 

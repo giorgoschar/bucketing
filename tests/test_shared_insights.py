@@ -11,6 +11,7 @@ Insights are correct for shared amounts.
 Scenario used throughout: rent 1100 paid 800 / 300 directly ("each paid their
 own share") and groceries paid by one person and shared equally.
 """
+
 from datetime import timedelta
 from decimal import Decimal
 
@@ -50,13 +51,30 @@ def duo(db, authed):
     return authed
 
 
-def _expense(db, ctx, amount, *, payer="__me__", splits=(), mode="single",
-             category_id=None, method="card", when=None, type_="expense"):
+def _expense(
+    db,
+    ctx,
+    amount,
+    *,
+    payer="__me__",
+    splits=(),
+    mode="single",
+    category_id=None,
+    method="card",
+    when=None,
+    type_="expense",
+):
     t = Transaction(
-        bucket_id=ctx.bucket_id, household_id=ctx.household_id, amount=amount,
-        currency="EUR", type=TransactionType(type_), transaction_date=when or local_today(),
-        paid_by=ctx.user_id if payer == "__me__" else payer, payer_mode=mode,
-        category_id=category_id, payment_method=method,
+        bucket_id=ctx.bucket_id,
+        household_id=ctx.household_id,
+        amount=amount,
+        currency="EUR",
+        type=TransactionType(type_),
+        transaction_date=when or local_today(),
+        paid_by=ctx.user_id if payer == "__me__" else payer,
+        payer_mode=mode,
+        category_id=category_id,
+        payment_method=method,
     )
     db.add(t)
     db.flush()
@@ -67,8 +85,15 @@ def _expense(db, ctx, amount, *, payer="__me__", splits=(), mode="single",
 
 
 def _rent(db, ctx, **kw):
-    return _expense(db, ctx, 1100, payer=None, mode=PayerMode.own_share.value,
-                    splits=[(ctx.user_id, 800), (ctx.partner_id, 300)], **kw)
+    return _expense(
+        db,
+        ctx,
+        1100,
+        payer=None,
+        mode=PayerMode.own_share.value,
+        splits=[(ctx.user_id, 800), (ctx.partner_id, 300)],
+        **kw,
+    )
 
 
 def _category(db, ctx, name):
@@ -84,8 +109,10 @@ def _insights(db, ctx, **filters):
 
 def _form(ctx, **extra):
     return {
-        "bucket_id": ctx.bucket_id, "transaction_date": local_today().isoformat(),
-        "type": "expense", **extra,
+        "bucket_id": ctx.bucket_id,
+        "transaction_date": local_today().isoformat(),
+        "type": "expense",
+        **extra,
     }
 
 
@@ -98,6 +125,7 @@ def _splits(db, txn_id):
 # ---------------------------------------------------------------------------
 # 1. Equal split is stored
 # ---------------------------------------------------------------------------
+
 
 def test_equal_split_divides_exactly_and_payer_takes_the_cent():
     shares = equal_split(D("10.00"), ["a", "b", "c"], payer="b")
@@ -115,9 +143,16 @@ def test_equal_split_even_amount():
 
 
 def test_shared_create_with_blank_splits_stores_an_equal_split(client, db, duo):
-    r = client.post("/transactions", headers=duo.headers, data=_form(
-        duo, amount="10.01", is_shared="on", paid_by=duo.partner_id,
-    ))
+    r = client.post(
+        "/transactions",
+        headers=duo.headers,
+        data=_form(
+            duo,
+            amount="10.01",
+            is_shared="on",
+            paid_by=duo.partner_id,
+        ),
+    )
     assert r.status_code == 302, r.text
     t = db.query(Transaction).one()
     # The odd cent sits with the payer; the shares add up to the total exactly.
@@ -125,44 +160,77 @@ def test_shared_create_with_blank_splits_stores_an_equal_split(client, db, duo):
 
 
 def test_shared_create_keeps_explicit_splits(client, db, duo):
-    r = client.post("/transactions", headers=duo.headers, data=_form(
-        duo, amount="90", is_shared="on",
-        **{f"split_{duo.user_id}": "30", f"split_{duo.partner_id}": "60"},
-    ))
+    r = client.post(
+        "/transactions",
+        headers=duo.headers,
+        data=_form(
+            duo,
+            amount="90",
+            is_shared="on",
+            **{f"split_{duo.user_id}": "30", f"split_{duo.partner_id}": "60"},
+        ),
+    )
     assert r.status_code == 302, r.text
     t = db.query(Transaction).one()
     assert _splits(db, t.id) == {duo.user_id: D("30"), duo.partner_id: D("60")}
 
 
 def test_unshared_create_stores_no_split(client, db, duo):
-    r = client.post("/transactions", headers=duo.headers, data=_form(
-        duo, amount="40", is_shared="off",
-    ))
+    r = client.post(
+        "/transactions",
+        headers=duo.headers,
+        data=_form(
+            duo,
+            amount="40",
+            is_shared="off",
+        ),
+    )
     assert r.status_code == 302
     assert db.query(TransactionSplit).count() == 0
 
 
 def test_shared_create_in_a_one_person_household_stores_no_split(client, db, authed):
-    r = client.post("/transactions", headers=authed.headers, data=_form(
-        authed, amount="40", is_shared="on",
-    ))
+    r = client.post(
+        "/transactions",
+        headers=authed.headers,
+        data=_form(
+            authed,
+            amount="40",
+            is_shared="on",
+        ),
+    )
     assert r.status_code == 302
     assert db.query(TransactionSplit).count() == 0
 
 
 def test_shared_income_stores_no_split(client, db, duo):
-    r = client.post("/transactions", headers=duo.headers, data=_form(
-        duo, amount="40", is_shared="on", type="income", paid_by=duo.user_id,
-    ))
+    r = client.post(
+        "/transactions",
+        headers=duo.headers,
+        data=_form(
+            duo,
+            amount="40",
+            is_shared="on",
+            type="income",
+            paid_by=duo.user_id,
+        ),
+    )
     assert r.status_code == 302
     assert db.query(TransactionSplit).count() == 0
 
 
 def test_edit_marked_shared_with_blank_splits_stores_an_equal_split(client, db, duo):
     t = _expense(db, duo, 60)
-    r = client.post(f"/transactions/{t.id}/edit", headers=duo.headers, data=_form(
-        duo, amount="60", paid_by=duo.user_id, is_shared="on",
-    ))
+    r = client.post(
+        f"/transactions/{t.id}/edit",
+        headers=duo.headers,
+        data=_form(
+            duo,
+            amount="60",
+            paid_by=duo.user_id,
+            is_shared="on",
+        ),
+    )
     assert r.status_code == 302
     assert _splits(db, t.id) == {duo.user_id: D("30.00"), duo.partner_id: D("30.00")}
 
@@ -170,19 +238,32 @@ def test_edit_marked_shared_with_blank_splits_stores_an_equal_split(client, db, 
 def test_edit_marked_not_shared_drops_the_split(client, db, duo):
     t = _expense(db, duo, 60, splits=[(duo.user_id, 30), (duo.partner_id, 30)])
     # The hidden split inputs still post their values when the toggle is off.
-    r = client.post(f"/transactions/{t.id}/edit", headers=duo.headers, data=_form(
-        duo, amount="60", paid_by=duo.user_id, is_shared="off",
-        **{f"split_{duo.user_id}": "30", f"split_{duo.partner_id}": "30"},
-    ))
+    r = client.post(
+        f"/transactions/{t.id}/edit",
+        headers=duo.headers,
+        data=_form(
+            duo,
+            amount="60",
+            paid_by=duo.user_id,
+            is_shared="off",
+            **{f"split_{duo.user_id}": "30", f"split_{duo.partner_id}": "30"},
+        ),
+    )
     assert r.status_code == 302
     assert _splits(db, t.id) == {}
 
 
 def test_edit_without_shared_flag_keeps_old_behaviour(client, db, duo):
     t = _expense(db, duo, 60)
-    r = client.post(f"/transactions/{t.id}/edit", headers=duo.headers, data=_form(
-        duo, amount="60", paid_by=duo.user_id,
-    ))
+    r = client.post(
+        f"/transactions/{t.id}/edit",
+        headers=duo.headers,
+        data=_form(
+            duo,
+            amount="60",
+            paid_by=duo.user_id,
+        ),
+    )
     assert r.status_code == 302
     assert _splits(db, t.id) == {}
 
@@ -198,9 +279,16 @@ def test_equal_split_makes_insights_and_settlement_agree(client, db, duo):
 
     db.get(Bucket, duo.bucket_id).enable_settlement = True
     db.commit()
-    client.post("/transactions", headers=duo.headers, data=_form(
-        duo, amount="60", is_shared="on", paid_by=duo.user_id,
-    ))
+    client.post(
+        "/transactions",
+        headers=duo.headers,
+        data=_form(
+            duo,
+            amount="60",
+            is_shared="on",
+            paid_by=duo.user_id,
+        ),
+    )
     summary = _insights(db, duo)["summary"]["paid_by"]
     assert summary[duo.user_id]["share"] == D("30.00")
     assert summary[duo.partner_id]["share"] == D("30.00")
@@ -221,7 +309,7 @@ def test_unsplit_expense_in_a_settlement_bucket_is_shared_everywhere(db, duo):
 
     _settle_bucket(db, duo)
     a, b = duo.user_id, duo.partner_id
-    _expense(db, duo, 10)                                       # Spotify, no splits
+    _expense(db, duo, 10)  # Spotify, no splits
     _expense(db, duo, 30, payer=b, splits=[(a, 15), (b, 15)])
     nets = {r["user_id"]: r["net"] for r in get_member_balances(db, duo.household_id)}
     assert nets == {a: D("-10.00"), b: D("10.00")}
@@ -232,8 +320,9 @@ def test_unsplit_expense_in_a_settlement_bucket_is_shared_everywhere(db, duo):
         person = _insights(db, duo, paid_by=uid)
         assert person["summary"]["total_spent"] == D("20.00"), uid
         assert person["kpis"]["count"] == 2, uid
-        me = get_person_summary(db, duo.household_id, uid, local_today().replace(day=1),
-                                local_today())
+        me = get_person_summary(
+            db, duo.household_id, uid, local_today().replace(day=1), local_today()
+        )
         assert me["my_share"] == D("20.00"), uid
         # Paid out minus my share is the settle-up position.
         assert me["balance"] == nets[uid], uid
@@ -277,11 +366,18 @@ def test_trip_per_person_follows_settle_up(db, duo):
 # 2. Person filter is share-based
 # ---------------------------------------------------------------------------
 
+
 def test_person_filter_reports_the_persons_share_everywhere(db, duo):
     food = _category(db, duo, "Food")
-    _expense(db, duo, 100, splits=[(duo.user_id, 50), (duo.partner_id, 50)],
-             category_id=food.id, method="cash")
-    _expense(db, duo, 30, category_id=food.id)            # mine alone
+    _expense(
+        db,
+        duo,
+        100,
+        splits=[(duo.user_id, 50), (duo.partner_id, 50)],
+        category_id=food.id,
+        method="cash",
+    )
+    _expense(db, duo, 30, category_id=food.id)  # mine alone
 
     data = _insights(db, duo, paid_by=duo.partner_id)
     assert data["summary"]["total_spent"] == D("50.00")
@@ -307,9 +403,16 @@ def test_person_filter_includes_expenses_the_person_did_not_pay(db, duo):
 
 def test_rent_own_share_and_shared_groceries(client, db, duo):
     _rent(db, duo)
-    r = client.post("/transactions", headers=duo.headers, data=_form(
-        duo, amount="60", is_shared="on", paid_by=duo.user_id,
-    ))
+    r = client.post(
+        "/transactions",
+        headers=duo.headers,
+        data=_form(
+            duo,
+            amount="60",
+            is_shared="on",
+            paid_by=duo.user_id,
+        ),
+    )
     assert r.status_code == 302
 
     me = _insights(db, duo, paid_by=duo.user_id)
@@ -330,6 +433,7 @@ def test_rent_own_share_and_shared_groceries(client, db, duo):
 
 def test_person_filter_keeps_income_received_by_the_person(db, duo):
     from app.models import Bucket
+
     db.get(Bucket, duo.bucket_id).show_income = True
     db.commit()
     _expense(db, duo, 1000, type_="income")
@@ -342,15 +446,23 @@ def test_person_totals_match_the_me_page(client, db, duo):
     a, b = duo.user_id, duo.partner_id
     food = _category(db, duo, "Food")
     home = _category(db, duo, "Home")
-    _expense(db, duo, 40, category_id=food.id)                                # solo
-    _expense(db, duo, 90, splits=[(a, 30), (b, 60)], category_id=food.id)     # explicit split
-    r = client.post("/transactions", headers=duo.headers, data=_form(         # blank → equal
-        duo, amount="50", is_shared="on", paid_by=b, category_id=food.id,
-    ))
+    _expense(db, duo, 40, category_id=food.id)  # solo
+    _expense(db, duo, 90, splits=[(a, 30), (b, 60)], category_id=food.id)  # explicit split
+    r = client.post(
+        "/transactions",
+        headers=duo.headers,
+        data=_form(  # blank → equal
+            duo,
+            amount="50",
+            is_shared="on",
+            paid_by=b,
+            category_id=food.id,
+        ),
+    )
     assert r.status_code == 302
-    _rent(db, duo, category_id=home.id)                                       # own share
-    _expense(db, duo, 20, payer=None)                                         # no payer
-    _expense(db, duo, 999, when=local_today() - timedelta(days=400))          # out of range
+    _rent(db, duo, category_id=home.id)  # own share
+    _expense(db, duo, 20, payer=None)  # no payer
+    _expense(db, duo, 999, when=local_today() - timedelta(days=400))  # out of range
 
     data_start = local_today().replace(day=1)
     for uid, expected in ((a, D("895.00")), (b, D("385.00"))):
@@ -377,8 +489,10 @@ def test_me_counts_cash_like_the_person_filter(db, duo):
     today = local_today()
     _expense(db, duo, 200, payer=a)
     for user, kind, amount, cat in (
-        (a, "take", 50, None), (a, "stash_in", 20, None),
-        (a, "out", 15, gifts.id), (b, "take", 30, None),
+        (a, "take", 50, None),
+        (a, "stash_in", 20, None),
+        (a, "out", 15, gifts.id),
+        (b, "take", 30, None),
     ):
         add_movement(db, duo.household_id, user, kind, D(amount), "EUR", today, cat)
     start = today.replace(day=1)
@@ -387,7 +501,7 @@ def test_me_counts_cash_like_the_person_filter(db, duo):
     me = get_person_summary(db, duo.household_id, a, start, today)
     ins = build_insights(db, duo.household_id, InsightFilters(preset="this_month", paid_by=a))
     assert me["my_share"] == ins["summary"]["total_spent"] == expected
-    assert me["paid_out"] == expected          # their own cash
+    assert me["paid_out"] == expected  # their own cash
     assert me["balance"] == D("0.00")
     assert {r["name"]: r["amount"] for r in me["by_category"]} == {
         r["name"]: r["amount"] for r in ins["categories"]
@@ -429,6 +543,7 @@ def test_api_insights_person_filter_is_share_based(client, db, api):  # noqa: F8
 # 3. Budget status honours the category and person filters
 # ---------------------------------------------------------------------------
 
+
 def test_budget_status_honours_category_filter(db, duo):
     db.get(Bucket, duo.bucket_id).budget = 500
     db.commit()
@@ -457,6 +572,7 @@ def test_budget_status_honours_person_filter(db, duo):
 # ---------------------------------------------------------------------------
 # 4. Bills due excludes skipped occurrences
 # ---------------------------------------------------------------------------
+
 
 def test_bills_due_excludes_skipped_occurrences(db, duo, make_bill):
     today = local_today()

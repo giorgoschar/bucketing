@@ -1,5 +1,6 @@
 """Routes that had no direct tests: income, invites, switcher, member
 management, leave-household and the AADE QR scan."""
+
 from datetime import timedelta
 from unittest.mock import patch
 
@@ -36,9 +37,14 @@ def test_income_form_ignores_foreign_bucket(client, db, authed, make_household):
 
 
 def _income_form(authed, **over):
-    data = {"bucket_id": authed.bucket_id, "transaction_date": local_today().isoformat(),
-            "amount": "250.50", "currency": "EUR", "received_by": authed.user_id,
-            "notes": " salary "}
+    data = {
+        "bucket_id": authed.bucket_id,
+        "transaction_date": local_today().isoformat(),
+        "amount": "250.50",
+        "currency": "EUR",
+        "received_by": authed.user_id,
+        "notes": " salary ",
+    }
     data.update(over)
     return data
 
@@ -52,9 +58,14 @@ def test_income_create_saves_and_redirects(client, db, authed):
     assert t.paid_by == authed.user_id and t.household_id == authed.household_id
 
 
-@pytest.mark.parametrize("over", [
-    {"bucket_id": "nope"}, {"currency": "XXX"}, {"transaction_date": "31/12/2026"},
-])
+@pytest.mark.parametrize(
+    "over",
+    [
+        {"bucket_id": "nope"},
+        {"currency": "XXX"},
+        {"transaction_date": "31/12/2026"},
+    ],
+)
 def test_income_create_rejects_bad_input(client, db, authed, over):
     r = client.post("/income", headers=authed.headers, data=_income_form(authed, **over))
     assert r.status_code == 400
@@ -63,8 +74,9 @@ def test_income_create_rejects_bad_input(client, db, authed, over):
 
 def test_income_create_rejects_foreign_bucket(client, db, authed, make_household):
     other = make_household(name="Other", username="someone")
-    r = client.post("/income", headers=authed.headers,
-                    data=_income_form(authed, bucket_id=other.bucket_id))
+    r = client.post(
+        "/income", headers=authed.headers, data=_income_form(authed, bucket_id=other.bucket_id)
+    )
     assert r.status_code == 400
     assert db.query(Transaction).count() == 0
 
@@ -77,10 +89,14 @@ def test_income_create_requires_csrf(client, db, authed):
 
 # ---------------------------------------------------------------- /income (API)
 
+
 def test_api_income_create(client, db, api):
     headers, hh = api
-    r = client.post("/api/v1/income", headers=headers,
-                    json={"bucket_id": hh.bucket_id, "amount": 100, "notes": "gift"})
+    r = client.post(
+        "/api/v1/income",
+        headers=headers,
+        json={"bucket_id": hh.bucket_id, "amount": 100, "notes": "gift"},
+    )
     assert r.status_code == 201, r.text
     body = r.json()
     assert body["type"] == "income" and body["amount"] == 100.0
@@ -99,8 +115,9 @@ def test_api_income_unknown_bucket_is_404(client, db, api):
 def test_api_income_foreign_bucket_is_404(client, db, api, make_household):
     headers, _ = api
     other = make_household(name="Other", username="someone")
-    r = client.post("/api/v1/income", headers=headers,
-                    json={"bucket_id": other.bucket_id, "amount": 1})
+    r = client.post(
+        "/api/v1/income", headers=headers, json={"bucket_id": other.bucket_id, "amount": 1}
+    )
     assert r.status_code == 404
 
 
@@ -112,6 +129,7 @@ def test_api_income_requires_auth(client, api):
 
 # ---------------------------------------------------------------- /join/{token}
 
+
 def _invite(db, hh, **kw):
     inv = Invitation(household_id=hh.household_id, created_by=hh.user_id, **kw)
     db.add(inv)
@@ -120,8 +138,13 @@ def _invite(db, hh, **kw):
 
 
 def _join_data(client, token, **over):
-    data = {"display_name": "Newbie", "username": "Newbie", "email": "New@Example.com",
-            "password": PASSWORD, **form_csrf(client, f"/join/{token}")}
+    data = {
+        "display_name": "Newbie",
+        "username": "Newbie",
+        "email": "New@Example.com",
+        "password": PASSWORD,
+        **form_csrf(client, f"/join/{token}"),
+    }
     data.update(over)
     return data
 
@@ -173,11 +196,14 @@ def test_join_expired_invite_rejected(client, db, make_household):
     assert db.query(User).count() == 1
 
 
-@pytest.mark.parametrize("over,msg", [
-    ({"password": "short"}, "12 characters"),
-    ({"email": "owner@example.com"}, "email"),
-    ({"username": "OWNER", "email": "other@x.com"}, "Username"),
-])
+@pytest.mark.parametrize(
+    "over,msg",
+    [
+        ({"password": "short"}, "12 characters"),
+        ({"email": "owner@example.com"}, "email"),
+        ({"username": "OWNER", "email": "other@x.com"}, "Username"),
+    ],
+)
 def test_join_validation_errors(client, db, make_household, over, msg):
     hh = make_household(username="owner")
     inv = _invite(db, hh)
@@ -190,6 +216,7 @@ def test_join_validation_errors(client, db, make_household, over, msg):
 
 # ---------------------------------------------------------------- /household/switch
 
+
 def _second_household(db, user_id, name="Second"):
     hh = Household(name=name, default_currency="EUR")
     db.add(hh)
@@ -201,8 +228,7 @@ def _second_household(db, user_id, name="Second"):
 
 def test_switch_to_own_household(client, db, authed):
     other = _second_household(db, authed.user_id)
-    r = client.post("/household/switch", headers=authed.headers,
-                    data={"household_id": other.id})
+    r = client.post("/household/switch", headers=authed.headers, data={"household_id": other.id})
     assert r.status_code == 302 and r.headers["location"] == "/dashboard"
     assert "session=" in r.headers.get("set-cookie", "")
     page = client.get("/dashboard")
@@ -211,12 +237,14 @@ def test_switch_to_own_household(client, db, authed):
 
 def test_switch_to_foreign_household_forbidden(client, db, authed, make_household):
     other = make_household(name="Stranger", username="stranger")
-    r = client.post("/household/switch", headers=authed.headers,
-                    data={"household_id": other.household_id})
+    r = client.post(
+        "/household/switch", headers=authed.headers, data={"household_id": other.household_id}
+    )
     assert r.status_code == 403
 
 
 # ---------------------------------------------------------------- member management
+
 
 @pytest.fixture()
 def pair(app, db, make_household):
@@ -236,9 +264,18 @@ def _role(db, hh_id, user_id):
 
 def test_remove_member_keeps_their_data(db, pair):
     c, owner, member, _ = pair
-    db.add(Transaction(bucket_id=owner.bucket_id, household_id=owner.household_id, amount=5,
-                       currency="EUR", exchange_rate=1, type=TransactionType.expense,
-                       transaction_date=local_today(), paid_by=member.id))
+    db.add(
+        Transaction(
+            bucket_id=owner.bucket_id,
+            household_id=owner.household_id,
+            amount=5,
+            currency="EUR",
+            exchange_rate=1,
+            type=TransactionType.expense,
+            transaction_date=local_today(),
+            paid_by=member.id,
+        )
+    )
     db.commit()
     r = c.post(f"/settings/remove-member/{member.id}", headers=c.headers_csrf)
     assert r.status_code == 302 and r.headers["location"] == "/settings"
@@ -293,6 +330,7 @@ def test_transfer_ownership_guards(db, pair, make_household):
 
 # ---------------------------------------------------------------- leave household
 
+
 def test_owner_cannot_leave_while_members_remain(db, pair):
     c, owner, _, _ = pair
     r = c.post("/settings/leave-household", headers=c.headers_csrf, data={})
@@ -303,8 +341,9 @@ def test_owner_cannot_leave_while_members_remain(db, pair):
 def test_member_leaves_and_household_survives(app, db, pair):
     _, owner, member, secret = pair
     mc = _web_login(app, "member", secret)
-    r = mc.post("/settings/leave-household",
-                headers={"X-CSRF-Token": mc.cookies.get("csrf_token")}, data={})
+    r = mc.post(
+        "/settings/leave-household", headers={"X-CSRF-Token": mc.cookies.get("csrf_token")}, data={}
+    )
     assert r.status_code == 302 and r.headers["location"] == "/setup"
     assert _role(db, owner.household_id, member.id) is None
     assert db.get(Household, owner.household_id).archived_at is None
@@ -312,8 +351,11 @@ def test_member_leaves_and_household_survives(app, db, pair):
 
 def test_leave_switches_to_remaining_household(client, db, authed):
     other = _second_household(db, authed.user_id)
-    r = client.post("/settings/leave-household", headers=authed.headers, data={
-        "confirm_name": db.get(Household, authed.household_id).name})
+    r = client.post(
+        "/settings/leave-household",
+        headers=authed.headers,
+        data={"confirm_name": db.get(Household, authed.household_id).name},
+    )
     assert r.status_code == 302 and r.headers["location"] == "/settings"
     assert _role(db, other.id, authed.user_id) == MemberRole.owner
 
@@ -345,8 +387,7 @@ class _FakeAsyncClient:
 
 
 def _patch_httpx(response=None, exc=None):
-    return patch("app.routes.scan.httpx.AsyncClient",
-                 lambda **kw: _FakeAsyncClient(response, exc))
+    return patch("app.routes.scan.httpx.AsyncClient", lambda **kw: _FakeAsyncClient(response, exc))
 
 
 def _scan(client, authed, url=AADE_URL):
@@ -364,12 +405,15 @@ def test_scan_qr_parses_receipt(client, authed):
 
 # Other https hosts are provider pages, fetched through the SSRF guard to find
 # the AADE link (tests/test_scan_qr_mydata.py).
-@pytest.mark.parametrize("url", [
-    "http://www1.aade.gr/tameiakes/myweb/q1.php?x=1",
-    "https://10.0.0.1/tameiakes/myweb/q1.php",
-    "https://www1.aade.gr:8080/tameiakes/myweb/q1.php",
-    "x" * 501,
-])
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://www1.aade.gr/tameiakes/myweb/q1.php?x=1",
+        "https://10.0.0.1/tameiakes/myweb/q1.php",
+        "https://www1.aade.gr:8080/tameiakes/myweb/q1.php",
+        "x" * 501,
+    ],
+)
 def test_scan_qr_blocks_disallowed_urls_without_fetching(client, authed, url):
     with patch("app.routes.scan.httpx.AsyncClient") as ac:
         r = _scan(client, authed, url)
@@ -377,11 +421,14 @@ def test_scan_qr_blocks_disallowed_urls_without_fetching(client, authed, url):
     ac.assert_not_called()
 
 
-@pytest.mark.parametrize("kwargs,status", [
-    ({"exc": httpx.ReadTimeout("slow")}, 504),
-    ({"exc": httpx.ConnectError("down")}, 502),
-    ({"response": httpx.Response(500, text="boom")}, 502),
-])
+@pytest.mark.parametrize(
+    "kwargs,status",
+    [
+        ({"exc": httpx.ReadTimeout("slow")}, 504),
+        ({"exc": httpx.ConnectError("down")}, 502),
+        ({"response": httpx.Response(500, text="boom")}, 502),
+    ],
+)
 def test_scan_qr_upstream_failures(client, authed, kwargs, status):
     with _patch_httpx(**kwargs):
         assert _scan(client, authed).status_code == status

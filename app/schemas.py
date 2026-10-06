@@ -7,6 +7,7 @@ from the web form or the API. Field validators reuse the helpers in
 so pydantic collects them into a ``ValidationError`` — FastAPI turns that into a
 422 for JSON bodies; the HTML route maps it to its own re-rendered error.
 """
+
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -171,6 +172,7 @@ class TransactionCreate(BaseModel):
     ``payment_method`` is validated against ``PaymentMethod`` (default card).
     ``bucket_id`` may be left out (or blank) only for income.
     """
+
     model_config = ConfigDict(str_strip_whitespace=True)
 
     bucket_id: str | None = None
@@ -298,8 +300,9 @@ class TransactionCreate(BaseModel):
     @model_validator(mode="after")
     def _cash_fields(self) -> "TransactionCreate":
         """Only a cash expense can have cash taken for it."""
-        if self.took_cash and (self.payment_method != PaymentMethod.cash.value
-                               or self.type != TransactionType.expense):
+        if self.took_cash and (
+            self.payment_method != PaymentMethod.cash.value or self.type != TransactionType.expense
+        ):
             raise ValueError("Only a cash expense can have cash taken for it.")
         return self
 

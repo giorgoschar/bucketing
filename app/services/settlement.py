@@ -1,6 +1,7 @@
 """
 Bucket and household settlement calculations.
 """
+
 import hashlib
 from collections import defaultdict
 from decimal import Decimal
@@ -58,8 +59,9 @@ def bucket_participants(db: Session, bucket_ids) -> dict[str, set[str]]:
         return out
     payers = (
         db.query(Transaction.bucket_id, Transaction.paid_by)
-        .filter(Transaction.bucket_id.in_(bucket_ids), Transaction.paid_by.isnot(None),
-                *_takes_part())
+        .filter(
+            Transaction.bucket_id.in_(bucket_ids), Transaction.paid_by.isnot(None), *_takes_part()
+        )
         .distinct()
     )
     split_users = (
@@ -90,12 +92,15 @@ def settlement_members(db: Session, household_id: str) -> dict[str, set[str]]:
     expense the way settle-up does.
     """
     buckets = [
-        bid for (bid,) in db.query(Bucket.id).filter(
-            Bucket.household_id == household_id, Bucket.enable_settlement.is_(True),
+        bid
+        for (bid,) in db.query(Bucket.id).filter(
+            Bucket.household_id == household_id,
+            Bucket.enable_settlement.is_(True),
         )
     ]
     return {
-        bid: members for bid, members in bucket_participants(db, buckets).items()
+        bid: members
+        for bid, members in bucket_participants(db, buckets).items()
         if len(members) >= 2
     }
 
@@ -119,9 +124,7 @@ def compute_bucket_net(db: Session, bucket_id: str) -> dict[str, Decimal]:
         .all()
     )
     # Payments already recorded against this bucket.
-    recorded = (
-        db.query(Settlement).filter(Settlement.bucket_id == bucket_id).all()
-    )
+    recorded = db.query(Settlement).filter(Settlement.bucket_id == bucket_id).all()
     if not txns and not recorded:
         return {}
 
@@ -133,7 +136,8 @@ def compute_bucket_net(db: Session, bucket_id: str) -> dict[str, Decimal]:
     # Own-share expenses have no single payer but are fully paid, so they stay
     # (and net to zero: everyone paid exactly their share).
     txns = [
-        t for t in txns
+        t
+        for t in txns
         if not t.exclude_from_settlement
         and (t.paid_by or t.payer_mode == PayerMode.own_share.value)
     ]
@@ -183,8 +187,12 @@ def simplify_debts(db: Session, net: dict[str, Decimal]) -> list[dict]:
     users = {u.id: u for u in db.query(User).filter(User.id.in_(user_ids)).all()}
 
     # Greedy settlement: pair largest creditor with largest debtor
-    creditors = sorted([(uid, v) for uid, v in net.items() if v > Decimal("0.005")], key=lambda x: -x[1])
-    debtors   = sorted([(uid, -v) for uid, v in net.items() if v < Decimal("-0.005")], key=lambda x: -x[1])
+    creditors = sorted(
+        [(uid, v) for uid, v in net.items() if v > Decimal("0.005")], key=lambda x: -x[1]
+    )
+    debtors = sorted(
+        [(uid, -v) for uid, v in net.items() if v < Decimal("-0.005")], key=lambda x: -x[1]
+    )
 
     settlements = []
     ci, di = 0, 0
@@ -195,16 +203,18 @@ def simplify_debts(db: Session, net: dict[str, Decimal]) -> list[dict]:
         if amount > Decimal("0.01"):
             cu = users.get(cuid)
             du = users.get(duid)
-            settlements.append({
-                # ids are needed to record a payment against this suggestion
-                "from_id":    duid,
-                "to_id":      cuid,
-                "from_name":  du.display_name if du else duid,
-                "to_name":    cu.display_name if cu else cuid,
-                "from_color": du.avatar_color if du else "#9ca3af",
-                "to_color":   cu.avatar_color if cu else "#6366f1",
-                "amount":     amount,
-            })
+            settlements.append(
+                {
+                    # ids are needed to record a payment against this suggestion
+                    "from_id": duid,
+                    "to_id": cuid,
+                    "from_name": du.display_name if du else duid,
+                    "to_name": cu.display_name if cu else cuid,
+                    "from_color": du.avatar_color if du else "#9ca3af",
+                    "to_color": cu.avatar_color if cu else "#6366f1",
+                    "amount": amount,
+                }
+            )
         if camt > damt:
             creditors[ci] = (cuid, quantize(camt - damt))
             di += 1
@@ -253,8 +263,10 @@ def get_settlement_exclusions(db: Session, household_id: str) -> dict:
     )
 
     out = {
-        "no_payer_count": 0, "no_payer_total": ZERO,
-        "excluded_count": 0, "excluded_total": ZERO,
+        "no_payer_count": 0,
+        "no_payer_total": ZERO,
+        "excluded_count": 0,
+        "excluded_total": ZERO,
     }
     for excluded, count, total in rows:
         prefix = "excluded" if excluded else "no_payer"
@@ -324,17 +336,23 @@ def record_household_settlement(
     ``SettlementChanged`` is raised and nothing is recorded.
     """
     outstanding = (
-        get_bucket_settlement(db, bucket_id) if bucket_id
+        get_bucket_settlement(db, bucket_id)
+        if bucket_id
         else get_household_settlement(db, household_id)
     )
     if expected is not None and settlement_fingerprint(outstanding) != expected.strip():
-        raise SettlementChanged("Balances changed since this page was loaded — review and try again.")
+        raise SettlementChanged(
+            "Balances changed since this page was loaded — review and try again."
+        )
 
     if from_user_id and to_user_id:
         if amount is None:
             amount = next(
-                (r["amount"] for r in outstanding
-                 if r["from_id"] == from_user_id and r["to_id"] == to_user_id),
+                (
+                    r["amount"]
+                    for r in outstanding
+                    if r["from_id"] == from_user_id and r["to_id"] == to_user_id
+                ),
                 None,
             )
             if amount is None:
@@ -349,7 +367,7 @@ def record_household_settlement(
             continue
         row = Settlement(
             household_id=household_id,
-            bucket_id=bucket_id,     # None: household-scoped
+            bucket_id=bucket_id,  # None: household-scoped
             from_user_id=payer,
             to_user_id=payee,
             amount=value,
@@ -378,20 +396,23 @@ def get_household_settlement_history(db: Session, household_id: str, limit: int 
     bucket_ids = {r.bucket_id for r in rows if r.bucket_id}
     buckets = (
         {b.id: b for b in db.query(Bucket).filter(Bucket.id.in_(bucket_ids)).all()}
-        if bucket_ids else {}
+        if bucket_ids
+        else {}
     )
 
     return [
         {
-            "id":          r.id,
-            "from_name":   users[r.from_user_id].display_name if r.from_user_id in users else "?",
-            "to_name":     users[r.to_user_id].display_name if r.to_user_id in users else "?",
-            "from_color":  users[r.from_user_id].avatar_color if r.from_user_id in users else "#9ca3af",
-            "to_color":    users[r.to_user_id].avatar_color if r.to_user_id in users else "#6366f1",
-            "amount":      quantize(r.amount),
-            "note":        r.note,
+            "id": r.id,
+            "from_name": users[r.from_user_id].display_name if r.from_user_id in users else "?",
+            "to_name": users[r.to_user_id].display_name if r.to_user_id in users else "?",
+            "from_color": users[r.from_user_id].avatar_color
+            if r.from_user_id in users
+            else "#9ca3af",
+            "to_color": users[r.to_user_id].avatar_color if r.to_user_id in users else "#6366f1",
+            "amount": quantize(r.amount),
+            "note": r.note,
             "bucket_name": buckets[r.bucket_id].name if r.bucket_id in buckets else None,
-            "created_at":  r.created_at,
+            "created_at": r.created_at,
         }
         for r in rows
     ]
@@ -425,9 +446,9 @@ def get_member_balances(db: Session, household_id: str) -> list[dict]:
     return [
         {
             "user_id": m.id,
-            "name":    m.display_name,
-            "color":   m.avatar_color,
-            "net":     quantize(net.get(m.id, ZERO)),
+            "name": m.display_name,
+            "color": m.avatar_color,
+            "net": quantize(net.get(m.id, ZERO)),
         }
         for m in members
     ]
@@ -447,13 +468,15 @@ def get_bucket_settlement_history(db: Session, bucket_id: str) -> list[dict]:
         users = {u.id: u for u in db.query(User).filter(User.id.in_(ids)).all()}
     return [
         {
-            "id":         r.id,
-            "from_name":  users[r.from_user_id].display_name if r.from_user_id in users else "?",
-            "to_name":    users[r.to_user_id].display_name if r.to_user_id in users else "?",
-            "from_color": users[r.from_user_id].avatar_color if r.from_user_id in users else "#9ca3af",
-            "to_color":   users[r.to_user_id].avatar_color if r.to_user_id in users else "#6366f1",
-            "amount":     quantize(r.amount),
-            "note":       r.note,
+            "id": r.id,
+            "from_name": users[r.from_user_id].display_name if r.from_user_id in users else "?",
+            "to_name": users[r.to_user_id].display_name if r.to_user_id in users else "?",
+            "from_color": users[r.from_user_id].avatar_color
+            if r.from_user_id in users
+            else "#9ca3af",
+            "to_color": users[r.to_user_id].avatar_color if r.to_user_id in users else "#6366f1",
+            "amount": quantize(r.amount),
+            "note": r.note,
             "created_at": r.created_at,
         }
         for r in rows

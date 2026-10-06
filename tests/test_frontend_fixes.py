@@ -1,5 +1,6 @@
 """Final-review frontend fixes: C8/C11 (stock → expense link), C9 (scan payment
 method), C5+C6 (cash add form reset, member select, htmx error handler)."""
+
 import html as htmllib
 import json
 import re
@@ -24,12 +25,17 @@ def _expense_href(text):
 # C8 / C11
 # ---------------------------------------------------------------------------
 
+
 def test_mark_bought_without_prices_still_offers_expense_link(client, db, authed):
-    item = stock_svc.add_product(db, authed.household_id, authed.user_id, name="Milk",
-                                 quantity=D("0"), min_quantity=D("1"))
+    item = stock_svc.add_product(
+        db, authed.household_id, authed.user_id, name="Milk", quantity=D("0"), min_quantity=D("1")
+    )
     db.commit()
-    r = client.post("/stock/shopping/bought",
-                    data={"item_id": [item.id], f"qty_{item.id}": "2"}, headers=authed.headers)
+    r = client.post(
+        "/stock/shopping/bought",
+        data={"item_id": [item.id], f"qty_{item.id}": "2"},
+        headers=authed.headers,
+    )
     assert r.status_code == 200
     href = _expense_href(r.text)
     assert href, "the mark-bought → expense flow must appear even with no prices"
@@ -49,7 +55,9 @@ def test_new_expense_honours_currency_prefill(client, authed):
 
 def test_shopping_mark_bought_form_does_not_push_url():
     tpl = open("templates/stock/shopping.html").read()
-    form = re.search(r'<form method="POST" action="/stock/shopping/bought"[^>]*>', tpl, re.S).group(0)
+    form = re.search(r'<form method="POST" action="/stock/shopping/bought"[^>]*>', tpl, re.S).group(
+        0
+    )
     assert 'hx-push-url="false"' in form
 
 
@@ -57,10 +65,11 @@ def test_shopping_mark_bought_form_does_not_push_url():
 # C9
 # ---------------------------------------------------------------------------
 
+
 def test_scan_form_offers_payment_method(client, authed):
     page = client.get("/transactions/scan").text
-    form = page[page.index('action="/transactions"'):]
-    form = form[:form.index("</form>")]
+    form = page[page.index('action="/transactions"') :]
+    form = form[: form.index("</form>")]
     for v in ("card", "cash"):
         assert f'data-payment-method="{v}"' in form
     assert 'name="payment_method"' in form
@@ -71,10 +80,21 @@ def test_scan_form_offers_payment_method(client, authed):
 
 def test_scan_form_cash_is_stored(client, db, authed):
     from app.models import Transaction
-    r = client.post("/transactions", data={
-        "bucket_id": authed.bucket_id, "transaction_date": "2026-07-20", "amount": "8.40",
-        "type": "expense", "exchange_rate": "1.0", "is_shared": "off", "payment_method": "cash",
-    }, headers=authed.headers, follow_redirects=False)
+
+    r = client.post(
+        "/transactions",
+        data={
+            "bucket_id": authed.bucket_id,
+            "transaction_date": "2026-07-20",
+            "amount": "8.40",
+            "type": "expense",
+            "exchange_rate": "1.0",
+            "is_shared": "off",
+            "payment_method": "cash",
+        },
+        headers=authed.headers,
+        follow_redirects=False,
+    )
     assert r.status_code in (200, 302)
     assert db.query(Transaction).one().payment_method == "cash"
 
@@ -83,10 +103,11 @@ def test_scan_form_cash_is_stored(client, db, authed):
 # C5 + C6
 # ---------------------------------------------------------------------------
 
+
 def _add_form(page):
     """The "Take to wallet" form."""
     start = page.index('name="kind" value="take"')
-    return page[page.rfind("<form", 0, start):page.index("</form>", start)]
+    return page[page.rfind("<form", 0, start) : page.index("</form>", start)]
 
 
 def test_cash_add_form_resets_after_successful_htmx_add(client, authed):
@@ -118,7 +139,7 @@ def test_cash_take_sources_for_a_non_owner(client, db, make_household, login):
 def test_global_htmx_response_error_handler_shows_detail_safely():
     js = open("static/lib.js").read()
     assert "htmx:responseError" in js
-    handler = js[js.index("__libHtmxErrorInstalled"):]
+    handler = js[js.index("__libHtmxErrorInstalled") :]
     assert "detail" in handler
     assert "textContent" in handler
     assert "innerHTML" not in handler

@@ -35,32 +35,43 @@ Revises: b6c7d8e9f0a1
 Create Date: 2026-10-05 14:00:00.000000
 
 """
+
 import sqlalchemy as sa
 
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = 'c7d8e9f0a1b2'
-down_revision = 'b6c7d8e9f0a1'
+revision = "c7d8e9f0a1b2"
+down_revision = "b6c7d8e9f0a1"
 branch_labels = None
 depends_on = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table('cash_movements') as batch:
-        batch.alter_column('kind', existing_type=sa.String(length=8),
-                           type_=sa.String(length=16), existing_nullable=False)
-        batch.add_column(sa.Column('stash_owner_id', sa.String(), nullable=True))
-        batch.add_column(sa.Column('transaction_id', sa.String(), nullable=True))
+    with op.batch_alter_table("cash_movements") as batch:
+        batch.alter_column(
+            "kind",
+            existing_type=sa.String(length=8),
+            type_=sa.String(length=16),
+            existing_nullable=False,
+        )
+        batch.add_column(sa.Column("stash_owner_id", sa.String(), nullable=True))
+        batch.add_column(sa.Column("transaction_id", sa.String(), nullable=True))
         batch.create_foreign_key(
-            'fk_cash_movements_stash_owner_id', 'users', ['stash_owner_id'], ['id'],
+            "fk_cash_movements_stash_owner_id",
+            "users",
+            ["stash_owner_id"],
+            ["id"],
         )
         batch.create_foreign_key(
-            'fk_cash_movements_transaction_id', 'transactions',
-            ['transaction_id'], ['id'], ondelete='SET NULL',
+            "fk_cash_movements_transaction_id",
+            "transactions",
+            ["transaction_id"],
+            ["id"],
+            ondelete="SET NULL",
         )
-    op.create_index('ix_cash_movements_stash_owner_id', 'cash_movements', ['stash_owner_id'])
-    op.create_index('ix_cash_movements_transaction_id', 'cash_movements', ['transaction_id'])
+    op.create_index("ix_cash_movements_stash_owner_id", "cash_movements", ["stash_owner_id"])
+    op.create_index("ix_cash_movements_transaction_id", "cash_movements", ["transaction_id"])
 
     op.execute("UPDATE cash_movements SET kind = 'take' WHERE kind = 'in'")
     op.execute("UPDATE cash_movements SET kind = 'still_have' WHERE kind = 'count'")
@@ -68,15 +79,15 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     conn = op.get_bind()
-    cols = {c['name'] for c in sa.inspect(conn).get_columns('cash_movements')}
+    cols = {c["name"] for c in sa.inspect(conn).get_columns("cash_movements")}
     meaningless = "kind NOT IN ('in', 'out', 'take')"
-    if 'stash_owner_id' in cols:
+    if "stash_owner_id" in cols:
         meaningless += " OR (kind = 'take' AND stash_owner_id IS NOT NULL)"
-    if 'pocket' in cols:
+    if "pocket" in cols:
         meaningless += " OR pocket = 'private'"
-    blocking = conn.execute(sa.text(
-        f"SELECT COUNT(*) FROM cash_movements WHERE deleted_at IS NULL AND ({meaningless})"
-    )).scalar()
+    blocking = conn.execute(
+        sa.text(f"SELECT COUNT(*) FROM cash_movements WHERE deleted_at IS NULL AND ({meaningless})")
+    ).scalar()
     if blocking:
         raise RuntimeError(
             f"Cannot downgrade: {blocking} cash movement(s) are stash movements, takes from "
@@ -88,22 +99,26 @@ def downgrade() -> None:
     # Soft-deleted rows only (see above): fit them back into VARCHAR(8).
     op.execute("UPDATE cash_movements SET kind = 'count' WHERE kind = 'still_have'")
 
-    if 'cash_pocket' in {c['name'] for c in sa.inspect(conn).get_columns('transactions')}:
-        with op.batch_alter_table('transactions') as batch:
-            batch.drop_column('cash_pocket')
+    if "cash_pocket" in {c["name"] for c in sa.inspect(conn).get_columns("transactions")}:
+        with op.batch_alter_table("transactions") as batch:
+            batch.drop_column("cash_pocket")
 
-    indexes = {i['name'] for i in sa.inspect(conn).get_indexes('cash_movements')}
-    for name in ('ix_cash_movements_transaction_id', 'ix_cash_movements_stash_owner_id'):
+    indexes = {i["name"] for i in sa.inspect(conn).get_indexes("cash_movements")}
+    for name in ("ix_cash_movements_transaction_id", "ix_cash_movements_stash_owner_id"):
         if name in indexes:
-            op.drop_index(name, table_name='cash_movements')
-    with op.batch_alter_table('cash_movements') as batch:
-        if 'stash_owner_id' in cols:
-            batch.drop_constraint('fk_cash_movements_stash_owner_id', type_='foreignkey')
-            batch.drop_column('stash_owner_id')
-        if 'transaction_id' in cols:
-            batch.drop_constraint('fk_cash_movements_transaction_id', type_='foreignkey')
-            batch.drop_column('transaction_id')
-        if 'pocket' in cols:
-            batch.drop_column('pocket')
-        batch.alter_column('kind', existing_type=sa.String(length=16),
-                           type_=sa.String(length=8), existing_nullable=False)
+            op.drop_index(name, table_name="cash_movements")
+    with op.batch_alter_table("cash_movements") as batch:
+        if "stash_owner_id" in cols:
+            batch.drop_constraint("fk_cash_movements_stash_owner_id", type_="foreignkey")
+            batch.drop_column("stash_owner_id")
+        if "transaction_id" in cols:
+            batch.drop_constraint("fk_cash_movements_transaction_id", type_="foreignkey")
+            batch.drop_column("transaction_id")
+        if "pocket" in cols:
+            batch.drop_column("pocket")
+        batch.alter_column(
+            "kind",
+            existing_type=sa.String(length=16),
+            type_=sa.String(length=8),
+            existing_nullable=False,
+        )

@@ -17,15 +17,16 @@ Revises: f4a5b6c7d8e9
 Create Date: 2026-10-01
 
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
 
 from alembic import op
 
-revision: str = 'a5b6c7d8e9f0'
+revision: str = "a5b6c7d8e9f0"
 # NOTE: re-pointed to the Phase 5 head (f4a5b6c7d8e9) when merged after Phase 5.
-down_revision: str | None = 'f4a5b6c7d8e9'
+down_revision: str | None = "f4a5b6c7d8e9"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -59,8 +60,11 @@ def upgrade() -> None:
     )
     op.create_index("ix_products_household_id", "products", ["household_id"])
     op.create_index(
-        "uq_products_household_barcode", "products", ["household_id", "barcode"],
-        unique=True, postgresql_where=sa.text("barcode IS NOT NULL"),
+        "uq_products_household_barcode",
+        "products",
+        ["household_id", "barcode"],
+        unique=True,
+        postgresql_where=sa.text("barcode IS NOT NULL"),
     )
 
     op.create_table(

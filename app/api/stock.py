@@ -1,6 +1,7 @@
 """
 API stock list and PosoKanei product lookup (auth-only proxy).
 """
+
 from dataclasses import asdict
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -32,7 +33,9 @@ def item_payload(item, prices=None) -> dict:
         "min_quantity": item.min_quantity,
         "track_price": item.track_price,
         "low": item.quantity <= item.min_quantity,
-        "cheapest": None if best is None else {
+        "cheapest": None
+        if best is None
+        else {
             "retailer": best.retailer,
             "retailer_name": stock_svc.retailer_label(best.retailer),
             "price": best.price,
@@ -70,9 +73,16 @@ def add_stock(body: StockAdd, auth=Depends(require_api_auth), db: Session = Depe
     user, hh_id = auth
     try:
         item = stock_svc.add_product(
-            db, hh_id, user.id, name=body.name, brand=body.brand, barcode=body.barcode,
-            posokanei_id=body.posokanei_id, unit=body.unit,
-            quantity=body.quantity, min_quantity=body.min_quantity,
+            db,
+            hh_id,
+            user.id,
+            name=body.name,
+            brand=body.brand,
+            barcode=body.barcode,
+            posokanei_id=body.posokanei_id,
+            unit=body.unit,
+            quantity=body.quantity,
+            min_quantity=body.min_quantity,
         )
     except StockError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
@@ -81,12 +91,14 @@ def add_stock(body: StockAdd, auth=Depends(require_api_auth), db: Session = Depe
 
 
 @router.post("/{item_id}/adjust")
-def adjust_stock(item_id: str, body: StockAdjust,
-                 auth=Depends(require_api_auth), db: Session = Depends(get_db)):
+def adjust_stock(
+    item_id: str, body: StockAdjust, auth=Depends(require_api_auth), db: Session = Depends(get_db)
+):
     user, hh_id = auth
     try:
-        delta = stock_svc.parse_quantity(body.delta, field="Change",
-                                         allow_zero=False, allow_negative=True)
+        delta = stock_svc.parse_quantity(
+            body.delta, field="Change", allow_zero=False, allow_negative=True
+        )
     except StockError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
     item = stock_svc.adjust_stock(db, hh_id, item_id, delta, user.id)
@@ -121,9 +133,15 @@ def shopping(auth=Depends(require_api_auth), db: Session = Depends(get_db)):
 
     return {
         "items": [row(r) for r in data["items"]],
-        "groups": [{"retailer": g["retailer"], "retailer_name": g["retailer_name"],
-                    "total": g["total"], "item_ids": [r["item"].id for r in g["items"]]}
-                   for g in data["groups"]],
+        "groups": [
+            {
+                "retailer": g["retailer"],
+                "retailer_name": g["retailer_name"],
+                "total": g["total"],
+                "item_ids": [r["item"].id for r in g["items"]],
+            }
+            for g in data["groups"]
+        ],
         "best_single_store": data["best_single_store"],
         "total": data["total"],
     }

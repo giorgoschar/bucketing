@@ -1,4 +1,5 @@
 """POST /api/v1/ingest/apple-pay — the iOS Shortcut endpoint (Phase 5)."""
+
 from datetime import date
 from decimal import Decimal
 
@@ -37,11 +38,13 @@ def ingest(db, make_household):
     db.add(cat)
     db.flush()
     learn_rule(db, hh.household_id, "Sklavenitis", cat.id, created_by=hh.user_id)
-    record, raw = issue_personal_token(db, user_id=hh.user_id,
-                                       household_id=hh.household_id, name="iPhone")
+    record, raw = issue_personal_token(
+        db, user_id=hh.user_id, household_id=hh.household_id, name="iPhone"
+    )
     db.commit()
-    return SimpleNamespace(hh=hh, token=record, raw=raw, category=cat,
-                           headers={"Authorization": f"Bearer {raw}"})
+    return SimpleNamespace(
+        hh=hh, token=record, raw=raw, category=cat, headers={"Authorization": f"Bearer {raw}"}
+    )
 
 
 def _post(client, ingest, **body):
@@ -124,8 +127,12 @@ def test_default_bucket_is_used(client, db, ingest):
 
 
 def test_archived_default_bucket_falls_back_to_day2day(client, db, ingest):
-    trip = Bucket(household_id=ingest.hh.household_id, name="Trip", type=BucketType.trip,
-                  status=BucketStatus.archived)
+    trip = Bucket(
+        household_id=ingest.hh.household_id,
+        name="Trip",
+        type=BucketType.trip,
+        status=BucketStatus.archived,
+    )
     db.add(trip)
     db.flush()
     ingest.token.default_bucket_id = trip.id
@@ -182,8 +189,9 @@ def test_revoked_token_is_401(client, db, ingest):
     from app.services import revoke_personal_token
 
     assert _post(client, ingest).status_code == 201
-    revoke_personal_token(db, token_id=ingest.token.id, user_id=ingest.hh.user_id,
-                          household_id=ingest.hh.household_id)
+    revoke_personal_token(
+        db, token_id=ingest.token.id, user_id=ingest.hh.user_id, household_id=ingest.hh.household_id
+    )
     db.commit()
     assert _post(client, ingest, merchant="Other").status_code == 401
 
@@ -193,8 +201,9 @@ def test_removed_member_token_is_401(client, db, ingest):
 
     bob = _add_member(db, ingest.hh.household_id, "bob")
     db.commit()
-    _, raw = issue_personal_token(db, user_id=bob.id, household_id=ingest.hh.household_id,
-                                  name="Bob")
+    _, raw = issue_personal_token(
+        db, user_id=bob.id, household_id=ingest.hh.household_id, name="Bob"
+    )
     db.commit()
     headers = {"Authorization": f"Bearer {raw}"}
     r = client.post(URL, json={"merchant": "A", "amount": "1"}, headers=headers)
@@ -218,11 +227,13 @@ def test_rate_limit_is_per_token(client, db, ingest):
     assert db.query(Transaction).count() == 60
 
     # Another token (same client IP) has its own budget.
-    _, raw = issue_personal_token(db, user_id=ingest.hh.user_id,
-                                  household_id=ingest.hh.household_id, name="iPad")
+    _, raw = issue_personal_token(
+        db, user_id=ingest.hh.user_id, household_id=ingest.hh.household_id, name="iPad"
+    )
     db.commit()
-    r = client.post(URL, json={"merchant": "Other", "amount": "1"},
-                    headers={"Authorization": f"Bearer {raw}"})
+    r = client.post(
+        URL, json={"merchant": "Other", "amount": "1"}, headers={"Authorization": f"Bearer {raw}"}
+    )
     assert r.status_code == 201
 
 
@@ -247,7 +258,7 @@ def test_same_payload_twice_creates_one_row(client, db, ingest):
     assert second.json()["duplicate"] is True
     assert second.json()["id"] == first.json()["id"]
     assert _rows(db) == 1
-    assert _ingest_notifications(db) == 1   # no second notification on replay
+    assert _ingest_notifications(db) == 1  # no second notification on replay
 
 
 def test_locale_string_and_number_amounts_dedupe(client, db, ingest):
@@ -275,9 +286,13 @@ def test_replay_without_occurred_at_in_same_minute_dedupes(client, db, ingest, m
 
     import app.services.ingest as ingest_mod
 
-    times = iter([datetime(2026, 10, 1, 9, 15, 2, tzinfo=UTC),
-                  datetime(2026, 10, 1, 9, 15, 41, tzinfo=UTC),
-                  datetime(2026, 10, 1, 9, 16, 0, tzinfo=UTC)])
+    times = iter(
+        [
+            datetime(2026, 10, 1, 9, 15, 2, tzinfo=UTC),
+            datetime(2026, 10, 1, 9, 15, 41, tzinfo=UTC),
+            datetime(2026, 10, 1, 9, 16, 0, tzinfo=UTC),
+        ]
+    )
     monkeypatch.setattr(ingest_mod, "utcnow", lambda: next(times))
     assert _post(client, ingest).status_code == 201
     assert _post(client, ingest).json().get("duplicate") is True
@@ -343,14 +358,23 @@ def test_guide_explains_minute_boundary_and_revocation(client, authed):
     assert "Changing your password or resetting 2FA revokes your Shortcut tokens" in text
 
 
-
 def test_automations_page_has_shortcut_guide(client, authed):
     r = client.get("/settings/automations")
     assert r.status_code == 200
     text = r.text
-    for needle in ("Shortcuts", "Automation", "Wallet", "Run Immediately",
-                   "Get Contents of URL", "Authorization", "Bearer",
-                   "/api/v1/ingest/apple-pay", "merchant", "amount", "card"):
+    for needle in (
+        "Shortcuts",
+        "Automation",
+        "Wallet",
+        "Run Immediately",
+        "Get Contents of URL",
+        "Authorization",
+        "Bearer",
+        "/api/v1/ingest/apple-pay",
+        "merchant",
+        "amount",
+        "card",
+    ):
         assert needle in text, needle
     assert "time out" in text or "timeout" in text
     assert "duplicate" in text.lower()

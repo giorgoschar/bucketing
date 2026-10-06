@@ -4,6 +4,7 @@ Ciphertext is prefixed with ``enc:`` so rows written before encryption existed
 (plain base32 secrets) keep working: ``decrypt_str`` returns any value without
 the prefix unchanged, and callers re-encrypt lazily.
 """
+
 import base64
 import logging
 
@@ -24,9 +25,9 @@ _warned = False
 
 
 def _derived() -> Fernet:
-    raw = HKDF(
-        algorithm=hashes.SHA256(), length=32, salt=_HKDF_SALT, info=_HKDF_INFO
-    ).derive(settings.app_secret_key.encode())
+    raw = HKDF(algorithm=hashes.SHA256(), length=32, salt=_HKDF_SALT, info=_HKDF_INFO).derive(
+        settings.app_secret_key.encode()
+    )
     return Fernet(base64.urlsafe_b64encode(raw))
 
 
@@ -61,7 +62,7 @@ def needs_rotation(value: str | None) -> bool:
     if not value or not value.startswith(PREFIX):
         return bool(value)
     try:
-        _primary().decrypt(value[len(PREFIX):].encode())
+        _primary().decrypt(value[len(PREFIX) :].encode())
         return False
     except InvalidToken:
         return True
@@ -78,4 +79,4 @@ def encrypt_str(s: str) -> str:
 def decrypt_str(s: str) -> str:
     if not s.startswith(PREFIX):
         return s  # legacy plaintext value
-    return _multi().decrypt(s[len(PREFIX):].encode()).decode()
+    return _multi().decrypt(s[len(PREFIX) :].encode()).decode()

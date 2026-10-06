@@ -1,4 +1,5 @@
 """Bill drift and budget threshold alerts."""
+
 from datetime import timedelta
 
 import pytest
@@ -25,43 +26,47 @@ def run_job(monkeypatch, SessionLocal):
     return scheduler.auto_mark_paid_job
 
 
-def _variable_bill(db, household_id, bucket_id, amounts, *, name="Electricity",
-                   currency="EUR"):
+def _variable_bill(db, household_id, bucket_id, amounts, *, name="Electricity", currency="EUR"):
     """A variable bill with one paid occurrence per amount, monthly, most recent last."""
     bill = RecurringBill(
-        household_id=household_id, bucket_id=bucket_id, name=name,
-        amount=None, currency=currency, start_date=today_local(),
-        interval_months=1, is_auto_pay=False, is_active=True,
+        household_id=household_id,
+        bucket_id=bucket_id,
+        name=name,
+        amount=None,
+        currency=currency,
+        start_date=today_local(),
+        interval_months=1,
+        is_auto_pay=False,
+        is_active=True,
     )
     db.add(bill)
     db.flush()
     n = len(amounts)
     for i, amount in enumerate(amounts):
-        db.add(BillOccurrence(
-            bill_id=bill.id,
-            due_date=today_local() - timedelta(days=30 * (n - 1 - i)),
-            amount=amount,
-            status=OccurrenceStatus.paid,
-        ))
+        db.add(
+            BillOccurrence(
+                bill_id=bill.id,
+                due_date=today_local() - timedelta(days=30 * (n - 1 - i)),
+                amount=amount,
+                status=OccurrenceStatus.paid,
+            )
+        )
     db.commit()
     return bill
 
 
 def _drift_notifications(db):
-    return db.query(Notification).filter(
-        Notification.type == NotificationType.bill_drift
-    ).all()
+    return db.query(Notification).filter(Notification.type == NotificationType.bill_drift).all()
 
 
 def _budget_notifications(db):
-    return db.query(Notification).filter(
-        Notification.type == NotificationType.budget_warning
-    ).all()
+    return db.query(Notification).filter(Notification.type == NotificationType.budget_warning).all()
 
 
 # ---------------------------------------------------------------------------
 # Bill drift
 # ---------------------------------------------------------------------------
+
 
 def test_spike_is_reported(db, authed, run_job):
     _variable_bill(db, authed.household_id, authed.bucket_id, [50, 52, 48, 90])
@@ -104,16 +109,26 @@ def test_insufficient_history_is_quiet(db, authed, run_job):
 def test_fixed_bill_never_drifts(db, authed, run_job):
     """A fixed bill has no per-occurrence amounts, so there is nothing to compare."""
     bill = RecurringBill(
-        household_id=authed.household_id, bucket_id=authed.bucket_id,
-        name="Rent", amount=800, currency="EUR", start_date=today_local(),
-        interval_months=1, is_active=True, is_auto_pay=False,
+        household_id=authed.household_id,
+        bucket_id=authed.bucket_id,
+        name="Rent",
+        amount=800,
+        currency="EUR",
+        start_date=today_local(),
+        interval_months=1,
+        is_active=True,
+        is_auto_pay=False,
     )
     db.add(bill)
     db.flush()
     for i in range(5):
-        db.add(BillOccurrence(bill_id=bill.id,
-                              due_date=today_local() - timedelta(days=30 * i),
-                              status=OccurrenceStatus.paid))
+        db.add(
+            BillOccurrence(
+                bill_id=bill.id,
+                due_date=today_local() - timedelta(days=30 * i),
+                status=OccurrenceStatus.paid,
+            )
+        )
     db.commit()
 
     run_job()
@@ -155,12 +170,19 @@ def test_inactive_bill_is_skipped(db, authed, run_job):
 # Budget thresholds
 # ---------------------------------------------------------------------------
 
+
 def _spend(db, authed, amount):
-    db.add(Transaction(
-        bucket_id=authed.bucket_id, household_id=authed.household_id,
-        amount=amount, currency="EUR", exchange_rate=1,
-        type=TransactionType.expense, transaction_date=today_local(),
-    ))
+    db.add(
+        Transaction(
+            bucket_id=authed.bucket_id,
+            household_id=authed.household_id,
+            amount=amount,
+            currency="EUR",
+            exchange_rate=1,
+            type=TransactionType.expense,
+            transaction_date=today_local(),
+        )
+    )
     db.commit()
 
 
@@ -212,7 +234,7 @@ def test_crossing_a_second_threshold_later_notifies_again(db, authed, run_job):
     run_job()
     assert len(_budget_notifications(db)) == 1
 
-    _spend(db, authed, 40)   # now 125% — a genuinely new state
+    _spend(db, authed, 40)  # now 125% — a genuinely new state
     run_job()
     assert len(_budget_notifications(db)) == 2
 
@@ -237,11 +259,17 @@ def test_budget_warning_respects_exchange_rate(db, authed, run_job):
     """Spend is converted before comparison, matching every other total."""
     db.get(Bucket, authed.bucket_id).budget = 100
     db.commit()
-    db.add(Transaction(
-        bucket_id=authed.bucket_id, household_id=authed.household_id,
-        amount=180, currency="USD", exchange_rate=0.5,  # = 90 base
-        type=TransactionType.expense, transaction_date=today_local(),
-    ))
+    db.add(
+        Transaction(
+            bucket_id=authed.bucket_id,
+            household_id=authed.household_id,
+            amount=180,
+            currency="USD",
+            exchange_rate=0.5,  # = 90 base
+            type=TransactionType.expense,
+            transaction_date=today_local(),
+        )
+    )
     db.commit()
 
     run_job()

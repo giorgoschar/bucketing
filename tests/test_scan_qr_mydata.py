@@ -1,6 +1,7 @@
 """QR scan through AADE's myDATA receipt page (mydatapi.aade.gr), reached
 either directly from the QR code or via the "AADE" link on an e-invoicing
 provider's receipt page (e.g. einvoice.impact.gr)."""
+
 import asyncio
 import socket
 from unittest.mock import AsyncMock, patch
@@ -12,8 +13,10 @@ from fastapi import HTTPException
 from app.routes import scan
 from app.routes.scan import _check_public_host, _parse_gr_number, _parse_mydata_qr_html
 
-MYDATA_URL = ("https://mydatapi.aade.gr/myDATA/TimologioQR/QRInfo"
-              "?q=Dsffq2BZQ%2b3laQtRzCNe3vmS0HYj995F10ah4OM5V%2fC7S0U%3d")
+MYDATA_URL = (
+    "https://mydatapi.aade.gr/myDATA/TimologioQR/QRInfo"
+    "?q=Dsffq2BZQ%2b3laQtRzCNe3vmS0HYj995F10ah4OM5V%2fC7S0U%3d"
+)
 PROVIDER_URL = "https://einvoice.impact.gr/p/EL800865360/7A38951C/71A647D6"
 
 # Mirrors the AADE page: values live in readonly inputs keyed by id.
@@ -28,7 +31,7 @@ MYDATA_HTML = """<html><body><table>
 
 # A provider page with the AADE button (href is HTML-escaped as on the real page).
 PROVIDER_HTML = f"""<html><body><h1>Receipt</h1>
-<fluent-anchor id="erpQrBtn" href="{MYDATA_URL.replace('&', '&amp;')}">AADE</fluent-anchor>
+<fluent-anchor id="erpQrBtn" href="{MYDATA_URL.replace("&", "&amp;")}">AADE</fluent-anchor>
 </body></html>"""
 
 
@@ -61,10 +64,19 @@ def _scan(client, authed, url):
 
 # ---------------------------------------------------------------- parsing
 
-@pytest.mark.parametrize("raw,expected", [
-    ("14,00", 14.0), ("1.214,00", 1214.0), (" 2,71 ", 2.71),
-    ("14.00", 14.0), ("1,214.50", 1214.5), ("abc", None), ("", None),
-])
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("14,00", 14.0),
+        ("1.214,00", 1214.0),
+        (" 2,71 ", 2.71),
+        ("14.00", 14.0),
+        ("1,214.50", 1214.5),
+        ("abc", None),
+        ("", None),
+    ],
+)
 def test_parse_gr_number(raw, expected):
     assert _parse_gr_number(raw) == expected
 
@@ -84,6 +96,7 @@ def test_parse_mydata_qr_html_without_issuer_name():
 
 # ---------------------------------------------------------------- routes
 
+
 def test_direct_mydata_qr(client, authed):
     p, fake = _patch_aade(httpx.Response(200, text=MYDATA_HTML))
     with p, patch.object(scan, "_fetch_public_page", AsyncMock()) as public:
@@ -93,17 +106,20 @@ def test_direct_mydata_qr(client, authed):
     assert body["amount"] == 1214.0 and body["date"] == "2026-10-05"
     assert body["merchant"] == "AGK ATHENS PARKING ΙΚΕ"
     assert fake.urls == [MYDATA_URL]
-    public.assert_not_called()          # AADE's own host needs no public-page fetch
+    public.assert_not_called()  # AADE's own host needs no public-page fetch
 
 
 def test_provider_page_is_followed_to_aade(client, authed):
     p, fake = _patch_aade(httpx.Response(200, text=MYDATA_HTML))
-    with p, patch.object(scan, "_fetch_public_page", AsyncMock(return_value=PROVIDER_HTML)) as public:
+    with (
+        p,
+        patch.object(scan, "_fetch_public_page", AsyncMock(return_value=PROVIDER_HTML)) as public,
+    ):
         r = _scan(client, authed, PROVIDER_URL)
     assert r.status_code == 200, r.text
     assert r.json()["amount"] == 1214.0
     public.assert_awaited_once_with(PROVIDER_URL)
-    assert fake.urls == [MYDATA_URL]    # the unescaped AADE link, nothing else
+    assert fake.urls == [MYDATA_URL]  # the unescaped AADE link, nothing else
 
 
 def test_provider_page_without_aade_link(client, authed):
@@ -115,8 +131,10 @@ def test_provider_page_without_aade_link(client, authed):
 
 def test_provider_page_link_to_a_lookalike_host_is_ignored(client, authed):
     evil = PROVIDER_HTML.replace("mydatapi.aade.gr", "mydatapi.aade.gr.evil.com")
-    with patch.object(scan, "_fetch_public_page", AsyncMock(return_value=evil)), \
-            patch("app.routes.scan.httpx.AsyncClient") as ac:
+    with (
+        patch.object(scan, "_fetch_public_page", AsyncMock(return_value=evil)),
+        patch("app.routes.scan.httpx.AsyncClient") as ac,
+    ):
         r = _scan(client, authed, PROVIDER_URL)
     assert r.status_code == 400
     ac.assert_not_called()
@@ -129,18 +147,23 @@ def test_aade_page_without_a_total_is_a_502(client, authed):
     assert r.status_code == 502
 
 
-@pytest.mark.parametrize("url", [
-    "http://einvoice.impact.gr/p/x",              # not https
-    "https://user@einvoice.impact.gr/p/x",        # credentials
-    "https://einvoice.impact.gr:8443/p/x",        # odd port
-    "https://127.0.0.1/p/x",                      # IP literal
-    "https://[::1]/p/x",
-    "javascript:alert(1)",
-    "not a url",
-])
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://einvoice.impact.gr/p/x",  # not https
+        "https://user@einvoice.impact.gr/p/x",  # credentials
+        "https://einvoice.impact.gr:8443/p/x",  # odd port
+        "https://127.0.0.1/p/x",  # IP literal
+        "https://[::1]/p/x",
+        "javascript:alert(1)",
+        "not a url",
+    ],
+)
 def test_unsafe_urls_rejected_without_fetching(client, authed, url):
-    with patch("app.routes.scan.httpx.AsyncClient") as ac, \
-            patch.object(scan, "_resolve", AsyncMock()) as resolve:
+    with (
+        patch("app.routes.scan.httpx.AsyncClient") as ac,
+        patch.object(scan, "_resolve", AsyncMock()) as resolve,
+    ):
         r = _scan(client, authed, url)
     assert r.status_code == 400
     ac.assert_not_called()
@@ -149,15 +172,27 @@ def test_unsafe_urls_rejected_without_fetching(client, authed, url):
 
 # ---------------------------------------------------------------- SSRF guard
 
+
 def _addrinfo(*ips):
-    return [(socket.AF_INET6 if ":" in ip else socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, 443))
-            for ip in ips]
+    return [
+        (socket.AF_INET6 if ":" in ip else socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, 443))
+        for ip in ips
+    ]
 
 
-@pytest.mark.parametrize("ips", [
-    ("127.0.0.1",), ("10.0.0.5",), ("192.168.1.10",), ("169.254.169.254",),
-    ("100.64.0.1",), ("::1",), ("fd00::1",), ("93.184.216.34", "10.0.0.1"),
-])
+@pytest.mark.parametrize(
+    "ips",
+    [
+        ("127.0.0.1",),
+        ("10.0.0.5",),
+        ("192.168.1.10",),
+        ("169.254.169.254",),
+        ("100.64.0.1",),
+        ("::1",),
+        ("fd00::1",),
+        ("93.184.216.34", "10.0.0.1"),
+    ],
+)
 def test_check_public_host_rejects_non_public_addresses(ips):
     with patch.object(scan, "_resolve", AsyncMock(return_value=_addrinfo(*ips))):
         with pytest.raises(HTTPException) as exc:

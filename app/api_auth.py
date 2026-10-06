@@ -15,6 +15,7 @@ Access token claims:
     "exp":   <unix timestamp>
   }
 """
+
 import hashlib
 import hmac
 import secrets
@@ -39,6 +40,7 @@ _ALGORITHM = settings.jwt_algorithm
 # Token creation
 # ---------------------------------------------------------------------------
 
+
 def _utcnow() -> datetime:
     return utcnow()
 
@@ -47,11 +49,11 @@ def create_access_token(user_id: str, household_id: str, session_version: int) -
     """Return a signed JWT access token with scope='api'."""
     expire = _utcnow() + timedelta(minutes=settings.jwt_access_token_expire_minutes)
     payload = {
-        "sub":   user_id,
-        "hh":    household_id,
-        "sv":    session_version,
+        "sub": user_id,
+        "hh": household_id,
+        "sv": session_version,
         "scope": "api",
-        "exp":   expire,
+        "exp": expire,
     }
     return jwt.encode(payload, settings.effective_jwt_secret, algorithm=_ALGORITHM)
 
@@ -60,18 +62,19 @@ def create_pending_token(user_id: str, household_id: str) -> str:
     """Return a short-lived JWT valid only for the TOTP-verify endpoint (scope='2fa_pending')."""
     expire = _utcnow() + timedelta(minutes=5)
     payload = {
-        "sub":   user_id,
-        "hh":    household_id,
+        "sub": user_id,
+        "hh": household_id,
         "scope": "2fa_pending",
-        "exp":   expire,
+        "exp": expire,
     }
     return jwt.encode(payload, settings.effective_jwt_secret, algorithm=_ALGORITHM)
 
 
 def _is_member(db: Session, household_id: str | None, user_id: str) -> bool:
-    return db.query(HouseholdMember).filter_by(
-        household_id=household_id, user_id=user_id
-    ).first() is not None
+    return (
+        db.query(HouseholdMember).filter_by(household_id=household_id, user_id=user_id).first()
+        is not None
+    )
 
 
 def revoke_member_access(db: Session, user: User, household_id: str) -> None:
@@ -88,6 +91,7 @@ def revoke_member_access(db: Session, user: User, household_id: str) -> None:
     # Personal ingest tokens too, so re-adding the member later does not
     # revive an old Shortcut.
     from app.services.personal_tokens import revoke_user_tokens
+
     revoke_user_tokens(db, user.id, household_id)
 
 
@@ -95,8 +99,9 @@ def _hash_token(raw: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
-def create_refresh_token(user_id: str, household_id: str, db: Session,
-                         session_version: int = 0) -> str:
+def create_refresh_token(
+    user_id: str, household_id: str, db: Session, session_version: int = 0
+) -> str:
     """
     Generate a cryptographically random refresh token, store its hash in the DB,
     and return the raw token to the caller (never stored in plaintext).
@@ -119,6 +124,7 @@ def create_refresh_token(user_id: str, household_id: str, db: Session,
 # Token verification helpers
 # ---------------------------------------------------------------------------
 
+
 def _decode_token(token: str) -> dict:
     """Decode and return JWT claims; raises HTTPException on any failure."""
     try:
@@ -134,6 +140,7 @@ def _decode_token(token: str) -> dict:
 # ---------------------------------------------------------------------------
 # FastAPI dependencies
 # ---------------------------------------------------------------------------
+
 
 def require_api_auth(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
@@ -224,8 +231,10 @@ def _ingest_failure(request: Request | None, detail: str = "Invalid ingest token
         from app.core.ratelimit import client_key, limiter
 
         if not limiter.limiter.hit(parse(INGEST_FAILURE_LIMIT), "ingest-fail", client_key(request)):
-            return HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                                 detail="Too many failed attempts; try again later.")
+            return HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many failed attempts; try again later.",
+            )
     return _ingest_unauthorized(detail)
 
 
@@ -256,7 +265,9 @@ def require_ingest_token(
         raise _ingest_failure(request, "Token revoked")
     if INGEST_SCOPE not in record.scope_list:
         raise _ingest_failure(request, "Token scope is not valid for this endpoint")
-    if db.get(User, record.user_id) is None or not _is_member(db, record.household_id, record.user_id):
+    if db.get(User, record.user_id) is None or not _is_member(
+        db, record.household_id, record.user_id
+    ):
         raise _ingest_failure(request, "Not a member of this household")
 
     record.last_used_at = utcnow_naive()
@@ -305,7 +316,9 @@ def rotate_refresh_token(raw_token: str, db: Session) -> tuple[str, str]:
     record = db.query(RefreshToken).filter_by(token_hash=token_hash).first()
 
     if not record or record.revoked:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token invalid or revoked")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token invalid or revoked"
+        )
 
     now = _utcnow()
     expires_at = record.expires_at
@@ -314,7 +327,9 @@ def rotate_refresh_token(raw_token: str, db: Session) -> tuple[str, str]:
         expires_at = expires_at.replace(tzinfo=UTC)
 
     if now > expires_at:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token expired")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token expired"
+        )
 
     user = db.get(User, record.user_id)
     if not user:
@@ -323,15 +338,22 @@ def rotate_refresh_token(raw_token: str, db: Session) -> tuple[str, str]:
     if record.session_version != user.session_version:
         record.revoked = True
         db.commit()
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session invalidated — please log in again")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session invalidated — please log in again",
+        )
 
     if not _is_member(db, record.household_id, user.id):
         record.revoked = True
         db.commit()
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not a member of this household")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Not a member of this household"
+        )
 
     if not user.totp_enabled:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="TOTP enrollment required")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="TOTP enrollment required"
+        )
 
     # Revoke old token
     record.revoked = True

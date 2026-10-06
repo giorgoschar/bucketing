@@ -13,6 +13,7 @@ Politeness: one request at a time per process, at least ``min_interval``
 seconds apart (≤ 4 req/s), a 15 s timeout, an identifying User-Agent, and a
 5-minute in-process cache of successful responses.
 """
+
 from __future__ import annotations
 
 import logging
@@ -53,13 +54,13 @@ _PRODUCT_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 
 def valid_product_id(value) -> bool:
     """A PosoKanei product id safe to put in a URL path segment."""
-    return (isinstance(value, str) and bool(_PRODUCT_ID_RE.match(value))
-            and value not in (".", ".."))
+    return isinstance(value, str) and bool(_PRODUCT_ID_RE.match(value)) and value not in (".", "..")
 
 
 # ---------------------------------------------------------------------------
 # Data shapes
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class RetailerPrice:
@@ -82,6 +83,7 @@ class PriceStats:
 @dataclass(frozen=True)
 class PricePoint:
     """One historical observation (only present on ``get(include_history)``)."""
+
     date: str
     retailer: str
     price: Decimal
@@ -111,6 +113,7 @@ class ProductSummary:
 # ---------------------------------------------------------------------------
 # Mapping (tolerant: the API is undocumented, so accept common key variants)
 # ---------------------------------------------------------------------------
+
 
 def _dec(value) -> Decimal | None:
     if value is None or value == "" or isinstance(value, bool):
@@ -163,13 +166,15 @@ def _map_history(raw) -> list[PricePoint]:
         day = _str(h.get("date"))
         if price is None or day is None:
             continue
-        points.append(PricePoint(
-            date=day[:10],
-            retailer=(_str(h.get("retailer")) or "unknown")[:40],
-            price=price,
-            unit_price=_dec(h.get("unit_price")),
-            is_discount=_bool(h.get("is_discount")),
-        ))
+        points.append(
+            PricePoint(
+                date=day[:10],
+                retailer=(_str(h.get("retailer")) or "unknown")[:40],
+                price=price,
+                unit_price=_dec(h.get("unit_price")),
+                is_discount=_bool(h.get("is_discount")),
+            )
+        )
     return points
 
 
@@ -216,7 +221,9 @@ def _map_product(raw) -> ProductSummary:
 def _map_search(payload) -> list[ProductSummary]:
     if isinstance(payload, list):
         items = payload
-    elif isinstance(payload, dict) and isinstance(payload.get("results", payload.get("items")), list):
+    elif isinstance(payload, dict) and isinstance(
+        payload.get("results", payload.get("items")), list
+    ):
         items = payload.get("results", payload.get("items"))
     else:
         raise PosokaneiUnavailable("unexpected search shape")
@@ -226,6 +233,7 @@ def _map_search(payload) -> list[ProductSummary]:
 # ---------------------------------------------------------------------------
 # Client
 # ---------------------------------------------------------------------------
+
 
 class PosokaneiClient:
     def __init__(
@@ -328,8 +336,9 @@ class PosokaneiClient:
         if not query:
             return []
         body = {"query": query, "page": page, "page_size": page_size}
-        return self._call(("search", query, page, page_size), _map_search,
-                          "POST", "/products/search", json=body)
+        return self._call(
+            ("search", query, page, page_size), _map_search, "POST", "/products/search", json=body
+        )
 
     def by_barcode(self, barcode: str) -> ProductSummary | None:
         barcode = (barcode or "").strip()
@@ -338,7 +347,9 @@ class PosokaneiClient:
         return self._call(
             ("barcode", barcode),
             lambda p: None if p is None else _map_product(p),
-            "GET", f"/products/barcode/{barcode}", allow_404=True,
+            "GET",
+            f"/products/barcode/{barcode}",
+            allow_404=True,
         )
 
     def get(self, product_id: str, include_history: bool = True) -> ProductSummary:
@@ -350,6 +361,7 @@ class PosokaneiClient:
             "include_tax": "true",
             "include_history": "true" if include_history else "false",
         }
+
         def mapper(payload):
             if payload is None:
                 raise PosokaneiNotFound(f"product {pid} not found")
@@ -357,9 +369,14 @@ class PosokaneiClient:
 
         # quote() is defence in depth: valid_product_id already excludes
         # anything that could change the path.
-        return self._call(("get", pid, include_history), mapper,
-                          "GET", f"/products/{quote(pid, safe='')}", params=params,
-                          allow_404=True)
+        return self._call(
+            ("get", pid, include_history),
+            mapper,
+            "GET",
+            f"/products/{quote(pid, safe='')}",
+            params=params,
+            allow_404=True,
+        )
 
 
 # ---------------------------------------------------------------------------

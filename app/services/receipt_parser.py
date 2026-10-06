@@ -3,6 +3,7 @@ Receipt text parser — extracts structured fields from raw OCR text.
 Supports Greek (ell) and English receipts.
 No external dependencies.
 """
+
 import re
 from difflib import SequenceMatcher
 
@@ -10,18 +11,42 @@ from difflib import SequenceMatcher
 # Greek month name mapping
 # ---------------------------------------------------------------------------
 _GREEK_MONTHS = {
-    "ΙΑΝΟΥΑΡΙΟΥ": 1, "ΙΑΝΟΥΑΡΙΟΣ": 1, "ΙΑΝ": 1,
-    "ΦΕΒΡΟΥΑΡΙΟΥ": 2, "ΦΕΒΡΟΥΑΡΙΟΣ": 2, "ΦΕΒ": 2,
-    "ΜΑΡΤΙΟΥ": 3, "ΜΑΡΤΙΟΣ": 3, "ΜΑΡ": 3,
-    "ΑΠΡΙΛΙΟΥ": 4, "ΑΠΡΙΛΙΟΣ": 4, "ΑΠΡ": 4,
-    "ΜΑΪΟΥ": 5, "ΜΑΙΟΥ": 5, "ΜΑΪΟΣ": 5, "ΜΑΙ": 5,
-    "ΙΟΥΝΙΟΥ": 6, "ΙΟΥΝΙΟΣ": 6, "ΙΟΥ": 6,
-    "ΙΟΥΛΙΟΥ": 7, "ΙΟΥΛΙΟΣ": 7,
-    "ΑΥΓΟΥΣΤΟΥ": 8, "ΑΥΓΟΥΣΤΟΣ": 8, "ΑΥΓ": 8,
-    "ΣΕΠΤΕΜΒΡΙΟΥ": 9, "ΣΕΠΤΕΜΒΡΙΟΣ": 9, "ΣΕΠ": 9,
-    "ΟΚΤΩΒΡΙΟΥ": 10, "ΟΚΤΩΒΡΙΟΣ": 10, "ΟΚΤ": 10,
-    "ΝΟΕΜΒΡΙΟΥ": 11, "ΝΟΕΜΒΡΙΟΣ": 11, "ΝΟΕ": 11,
-    "ΔΕΚΕΜΒΡΙΟΥ": 12, "ΔΕΚΕΜΒΡΙΟΣ": 12, "ΔΕΚ": 12,
+    "ΙΑΝΟΥΑΡΙΟΥ": 1,
+    "ΙΑΝΟΥΑΡΙΟΣ": 1,
+    "ΙΑΝ": 1,
+    "ΦΕΒΡΟΥΑΡΙΟΥ": 2,
+    "ΦΕΒΡΟΥΑΡΙΟΣ": 2,
+    "ΦΕΒ": 2,
+    "ΜΑΡΤΙΟΥ": 3,
+    "ΜΑΡΤΙΟΣ": 3,
+    "ΜΑΡ": 3,
+    "ΑΠΡΙΛΙΟΥ": 4,
+    "ΑΠΡΙΛΙΟΣ": 4,
+    "ΑΠΡ": 4,
+    "ΜΑΪΟΥ": 5,
+    "ΜΑΙΟΥ": 5,
+    "ΜΑΪΟΣ": 5,
+    "ΜΑΙ": 5,
+    "ΙΟΥΝΙΟΥ": 6,
+    "ΙΟΥΝΙΟΣ": 6,
+    "ΙΟΥ": 6,
+    "ΙΟΥΛΙΟΥ": 7,
+    "ΙΟΥΛΙΟΣ": 7,
+    "ΑΥΓΟΥΣΤΟΥ": 8,
+    "ΑΥΓΟΥΣΤΟΣ": 8,
+    "ΑΥΓ": 8,
+    "ΣΕΠΤΕΜΒΡΙΟΥ": 9,
+    "ΣΕΠΤΕΜΒΡΙΟΣ": 9,
+    "ΣΕΠ": 9,
+    "ΟΚΤΩΒΡΙΟΥ": 10,
+    "ΟΚΤΩΒΡΙΟΣ": 10,
+    "ΟΚΤ": 10,
+    "ΝΟΕΜΒΡΙΟΥ": 11,
+    "ΝΟΕΜΒΡΙΟΣ": 11,
+    "ΝΟΕ": 11,
+    "ΔΕΚΕΜΒΡΙΟΥ": 12,
+    "ΔΕΚΕΜΒΡΙΟΣ": 12,
+    "ΔΕΚ": 12,
 }
 
 # ---------------------------------------------------------------------------
@@ -29,11 +54,25 @@ _GREEK_MONTHS = {
 # ---------------------------------------------------------------------------
 _TOTAL_KEYWORDS = [
     # Greek
-    "ΣΥΝΟΛΟ ΠΛΗΡΩΤΕΟ", "ΤΕΛΙΚΟ ΣΥΝΟΛΟ", "ΣΥΝΟΛΟ", "ΠΛΗΡΩΤΕΟ", "ΠΛΗΡΩΤΕΑ",
-    "ΓΕΝΙΚΟ ΣΥΝΟΛΟ", "ΣΥΝΟΛΙΚΗ ΑΞΙΑ", "ΤΕΛΙΚΗ ΑΞΙΑ", "ΑΞΙΑ", "ΠΟΣΟ",
+    "ΣΥΝΟΛΟ ΠΛΗΡΩΤΕΟ",
+    "ΤΕΛΙΚΟ ΣΥΝΟΛΟ",
+    "ΣΥΝΟΛΟ",
+    "ΠΛΗΡΩΤΕΟ",
+    "ΠΛΗΡΩΤΕΑ",
+    "ΓΕΝΙΚΟ ΣΥΝΟΛΟ",
+    "ΣΥΝΟΛΙΚΗ ΑΞΙΑ",
+    "ΤΕΛΙΚΗ ΑΞΙΑ",
+    "ΑΞΙΑ",
+    "ΠΟΣΟ",
     # English
-    "GRAND TOTAL", "TOTAL DUE", "AMOUNT DUE", "TOTAL PAYABLE", "TOTAL",
-    "BALANCE DUE", "NET TOTAL", "SUM",
+    "GRAND TOTAL",
+    "TOTAL DUE",
+    "AMOUNT DUE",
+    "TOTAL PAYABLE",
+    "TOTAL",
+    "BALANCE DUE",
+    "NET TOTAL",
+    "SUM",
 ]
 # Sort by descending length so multi-word phrases match first
 _TOTAL_KEYWORDS.sort(key=len, reverse=True)
@@ -43,32 +82,165 @@ _TOTAL_KEYWORDS.sort(key=len, reverse=True)
 # ---------------------------------------------------------------------------
 _CATEGORY_RULES: list[tuple[list[str], str]] = [
     # Food / groceries
-    (["ΣΟΥΠΕΡ ΜΑΡΚΕΤ", "SUPER MARKET", "SUPERMARKET", "ΑΒΑΞ", "SKLAVENITIS",
-      "ΣΚΛΑΒΕΝΙΤΗΣ", "ΣΠΑΡ", "SPAR", "ΜΑΡΙΝΟΠΟΥΛΟΣ", "LIDL", "ALDI", "AB ΒΑΣΙΛΟΠΟΥΛΟΣ",
-      "ΒΑΣΙΛΟΠΟΥΛΟΣ", "ΓΑΛΑΞΙΑΣ", "BAZAAR", "ΜΙΝΙΜΑΡΚΕΤ", "MINIMARKET"], "groceries"),
+    (
+        [
+            "ΣΟΥΠΕΡ ΜΑΡΚΕΤ",
+            "SUPER MARKET",
+            "SUPERMARKET",
+            "ΑΒΑΞ",
+            "SKLAVENITIS",
+            "ΣΚΛΑΒΕΝΙΤΗΣ",
+            "ΣΠΑΡ",
+            "SPAR",
+            "ΜΑΡΙΝΟΠΟΥΛΟΣ",
+            "LIDL",
+            "ALDI",
+            "AB ΒΑΣΙΛΟΠΟΥΛΟΣ",
+            "ΒΑΣΙΛΟΠΟΥΛΟΣ",
+            "ΓΑΛΑΞΙΑΣ",
+            "BAZAAR",
+            "ΜΙΝΙΜΑΡΚΕΤ",
+            "MINIMARKET",
+        ],
+        "groceries",
+    ),
     # Dining out
-    (["ΕΣΤΙΑΤΟΡΙΟ", "ΤΑΒΕΡΝΑ", "ΜΕΖΕΔΟΠΩΛΕΙΟ", "ΚΑΦΕ", "ΚΑΦΕΤΕΡΙΑ", "CAFE",
-      "COFFEE", "RESTAURANT", "PIZZERIA", "ΠΙΤΣΑΡΙΑ", "ΜΠΑΡ", "BAR", "GRILL",
-      "ΣΟΥΒΛΑΤΖΙΔΙΚΟ", "FAST FOOD", "DELIVERY", "EFOOD", "WOLT", "FOODY",
-      "ΑΝΑΨΥΚΤΗΡΙΟ", "ΑΡΤΟΠΟΙΕΙΟ", "ΑΡΤΟΖΑΧΑΡΟΠΛΑΣΤΕΙΟ", "ΖΑΧΑΡΟΠΛΑΣΤΕΙΟ",
-      "ΖΥΜΑΡΙΑ", "ΖΥΜΑΡΗ", "ΨΗΤΟΠΩΛΕΙΟ", "ΣΝΑΚ", "SNACK", "ΚΥΛΙΚΕΙΟ",
-      "ESPRESSO", "FREDDO", "FRAPPE", "CAPPUCCINO"], "food & drink"),
+    (
+        [
+            "ΕΣΤΙΑΤΟΡΙΟ",
+            "ΤΑΒΕΡΝΑ",
+            "ΜΕΖΕΔΟΠΩΛΕΙΟ",
+            "ΚΑΦΕ",
+            "ΚΑΦΕΤΕΡΙΑ",
+            "CAFE",
+            "COFFEE",
+            "RESTAURANT",
+            "PIZZERIA",
+            "ΠΙΤΣΑΡΙΑ",
+            "ΜΠΑΡ",
+            "BAR",
+            "GRILL",
+            "ΣΟΥΒΛΑΤΖΙΔΙΚΟ",
+            "FAST FOOD",
+            "DELIVERY",
+            "EFOOD",
+            "WOLT",
+            "FOODY",
+            "ΑΝΑΨΥΚΤΗΡΙΟ",
+            "ΑΡΤΟΠΟΙΕΙΟ",
+            "ΑΡΤΟΖΑΧΑΡΟΠΛΑΣΤΕΙΟ",
+            "ΖΑΧΑΡΟΠΛΑΣΤΕΙΟ",
+            "ΖΥΜΑΡΙΑ",
+            "ΖΥΜΑΡΗ",
+            "ΨΗΤΟΠΩΛΕΙΟ",
+            "ΣΝΑΚ",
+            "SNACK",
+            "ΚΥΛΙΚΕΙΟ",
+            "ESPRESSO",
+            "FREDDO",
+            "FRAPPE",
+            "CAPPUCCINO",
+        ],
+        "food & drink",
+    ),
     # Transport / fuel
-    (["ΒΕΝΖΙΝΑΔΙΚΟ", "ΠΡΑΤΗΡΙΟ", "SHELL", "BP", "AVIN", "ΕΛΙΝ", "ELIN", "REVOIL",
-      "ΜΟΤΟΡ ΟΙΛ", "MOTOR OIL", "FUEL", "ΕΛΒΟΚ", "PARKING", "ΠΑΡΚΙΝΓΚ",
-      "ΚΤΕΛ", "ΑΤΤΙΚΟ ΜΕΤΡΟ", "METRO", "TAXI", "UBER", "BEAT"], "transport"),
+    (
+        [
+            "ΒΕΝΖΙΝΑΔΙΚΟ",
+            "ΠΡΑΤΗΡΙΟ",
+            "SHELL",
+            "BP",
+            "AVIN",
+            "ΕΛΙΝ",
+            "ELIN",
+            "REVOIL",
+            "ΜΟΤΟΡ ΟΙΛ",
+            "MOTOR OIL",
+            "FUEL",
+            "ΕΛΒΟΚ",
+            "PARKING",
+            "ΠΑΡΚΙΝΓΚ",
+            "ΚΤΕΛ",
+            "ΑΤΤΙΚΟ ΜΕΤΡΟ",
+            "METRO",
+            "TAXI",
+            "UBER",
+            "BEAT",
+        ],
+        "transport",
+    ),
     # Health / pharmacy
-    (["ΦΑΡΜΑΚΕΙΟ", "PHARMACY", "APOTHEKE", "ΦΑΡΜΑ", "PHARMA",
-      "ΚΛΙΝΙΚΗ", "ΝΟΣΟΚΟΜΕΙΟ", "ΙΑΤΡΕΙΟ", "DOCTOR", "DENTAL"], "health"),
+    (
+        [
+            "ΦΑΡΜΑΚΕΙΟ",
+            "PHARMACY",
+            "APOTHEKE",
+            "ΦΑΡΜΑ",
+            "PHARMA",
+            "ΚΛΙΝΙΚΗ",
+            "ΝΟΣΟΚΟΜΕΙΟ",
+            "ΙΑΤΡΕΙΟ",
+            "DOCTOR",
+            "DENTAL",
+        ],
+        "health",
+    ),
     # Utilities / telecom
-    (["ΔΕΗ", "ΕΥΔΑΠ", "ΔΕΠΑ", "COSMOTE", "VODAFONE", "WIND", "NOVA",
-      "ΤΗΛΕΦΩΝΟ", "ΡΕΥΜΑ", "ΝΕΡΟ", "INTERNET", "TELECOM"], "utilities"),
+    (
+        [
+            "ΔΕΗ",
+            "ΕΥΔΑΠ",
+            "ΔΕΠΑ",
+            "COSMOTE",
+            "VODAFONE",
+            "WIND",
+            "NOVA",
+            "ΤΗΛΕΦΩΝΟ",
+            "ΡΕΥΜΑ",
+            "ΝΕΡΟ",
+            "INTERNET",
+            "TELECOM",
+        ],
+        "utilities",
+    ),
     # Entertainment
-    (["CINEMA", "ΚΙΝΗΜΑΤΟΓΡΑΦΟΣ", "ΘΕΑΤΡΟ", "THEATRE", "CONCERT", "SPOTIFY",
-      "NETFLIX", "YOUTUBE", "STEAM", "GAMING", "DISNEY", "AMAZON PRIME"], "entertainment"),
+    (
+        [
+            "CINEMA",
+            "ΚΙΝΗΜΑΤΟΓΡΑΦΟΣ",
+            "ΘΕΑΤΡΟ",
+            "THEATRE",
+            "CONCERT",
+            "SPOTIFY",
+            "NETFLIX",
+            "YOUTUBE",
+            "STEAM",
+            "GAMING",
+            "DISNEY",
+            "AMAZON PRIME",
+        ],
+        "entertainment",
+    ),
     # Shopping / clothing
-    (["ZARA", "H&M", "PULL", "MANGO", "ΈΝΔΥΣΗ", "ΡΟΥΧΑ", "ΠΑΠΟΥΤΣΙΑ",
-      "SHOES", "CLOTHING", "BOUTIQUE", "JUMBO", "ИКЕА", "IKEA", "LEROY"], "shopping"),
+    (
+        [
+            "ZARA",
+            "H&M",
+            "PULL",
+            "MANGO",
+            "ΈΝΔΥΣΗ",
+            "ΡΟΥΧΑ",
+            "ΠΑΠΟΥΤΣΙΑ",
+            "SHOES",
+            "CLOTHING",
+            "BOUTIQUE",
+            "JUMBO",
+            "ИКЕА",
+            "IKEA",
+            "LEROY",
+        ],
+        "shopping",
+    ),
 ]
 
 
@@ -80,8 +252,14 @@ _CATEGORY_RULES: list[tuple[list[str], str]] = [
 # Corrected before parsing so keyword matching still works.
 _OCR_FIXES: list[tuple[str, str]] = [
     # Greek total keywords corrupted by digit/letter swaps
-    (r"[5Ss][Y\u03a5][Nn][O\u039f][\u039blL][O\u039f]", "\u03a3\u03a5\u039d\u039f\u039b\u039f"),  # 5YNOΛO / SYNOЛО -> ΣΥΝΟΛΟ
-    (r"[Pp][Ll\u039b][Hh\u0397][Pp\u03a1][Oo\u03a9][Tt\u03a4][Ee\u0395][Oo\u039f]", "\u03a0\u039b\u0397\u03a1\u03a9\u03a4\u0395\u039f"),
+    (
+        r"[5Ss][Y\u03a5][Nn][O\u039f][\u039blL][O\u039f]",
+        "\u03a3\u03a5\u039d\u039f\u039b\u039f",
+    ),  # 5YNOΛO / SYNOЛО -> ΣΥΝΟΛΟ
+    (
+        r"[Pp][Ll\u039b][Hh\u0397][Pp\u03a1][Oo\u03a9][Tt\u03a4][Ee\u0395][Oo\u039f]",
+        "\u03a0\u039b\u0397\u03a1\u03a9\u03a4\u0395\u039f",
+    ),
     # Lowercase l between Greek capitals -> iota
     (r"(?<=[\u0391-\u03a9])l(?=[\u0391-\u03a9])", "\u0399"),
     # Trailing E after a number likely means euro
@@ -136,7 +314,7 @@ def _extract_numbers_near(text: str, keyword: str) -> list[float]:
         return results
     # Take 250 chars from keyword — receipts often put the amount on the next line
     # e.g. ΣΥΝΟΛΟ\nΠΙΣΤ.ΚΑΡΤΑ    4,30 ΕΥΡΩ
-    snippet = _strip_vat_percentages(norm[kw_pos: kw_pos + 250])
+    snippet = _strip_vat_percentages(norm[kw_pos : kw_pos + 250])
     for m in re.finditer(r"\d[\d.,]*\d|\d", snippet):
         val = _parse_number(m.group())
         if val is not None and val > 0:
@@ -147,6 +325,7 @@ def _extract_numbers_near(text: str, keyword: str) -> list[float]:
 # ---------------------------------------------------------------------------
 # Field extractors
 # ---------------------------------------------------------------------------
+
 
 def _extract_amount(text: str) -> float | None:
     norm = _normalize(text)
@@ -171,7 +350,8 @@ def _extract_amount(text: str) -> float | None:
 
     # Filter out implausible values: years, large codes, and Greek VAT rates (6/13/24)
     reasonable = [
-        v for v in candidates
+        v
+        for v in candidates
         if 0.01 <= v <= 99_999
         and v not in _GREEK_VAT_RATES
         and not (1990 <= v <= 2100)  # year-like numbers
@@ -221,15 +401,37 @@ def _extract_date(text: str) -> str | None:
 # Prefixes that identify boilerplate lines printed on every Greek fiscal receipt.
 # None of these are the merchant name.
 _MERCHANT_SKIP_PREFIXES: tuple[str, ...] = (
-    "ΦΟΡΟΛΟΓΙΚΗ ΑΠΟΔΕΙΞΗ", "ΑΠΟΔΕΙΞΗ ΛΙΑΝΙΚΗΣ", "ΑΠΟΔΕΙΞΗ ΛΙΑΝΙΚOY",
-    "FISCAL", "RECEIPT",
-    "ΑΦΜ", "ΔΟΥ", "ΥΠ:", "ΥΠ.", "ΕΔ:", "ΕΔ.",
-    "ΜΗΧΑΝΗ", "ΩΡΑ:", "ΩΡΑ ",
-    "ΠΑΡΑΣΚΕΥΗ", "ΣΑΒΒΑΤΟ", "ΚΥΡΙΑΚΗ", "ΔΕΥΤΕΡΑ", "ΤΡΙΤΗ", "ΤΕΤΑΡΤΗ", "ΠΕΜΠΤΗ",
-    "ΗΜΕΡΟΜΗΝΙΑ", "ΗΜΕΡΗΣΙΟΣ",
-    "ΑΡΙΘΜΟΣ", "ΑΡΙΘ.",
-    "ΠΛΗΡΩΜΗ", "ΠΙΣΤ.", "ΜΕΤΡΗΤΑ", "CASH",
-    "ECB", "QR",
+    "ΦΟΡΟΛΟΓΙΚΗ ΑΠΟΔΕΙΞΗ",
+    "ΑΠΟΔΕΙΞΗ ΛΙΑΝΙΚΗΣ",
+    "ΑΠΟΔΕΙΞΗ ΛΙΑΝΙΚOY",
+    "FISCAL",
+    "RECEIPT",
+    "ΑΦΜ",
+    "ΔΟΥ",
+    "ΥΠ:",
+    "ΥΠ.",
+    "ΕΔ:",
+    "ΕΔ.",
+    "ΜΗΧΑΝΗ",
+    "ΩΡΑ:",
+    "ΩΡΑ ",
+    "ΠΑΡΑΣΚΕΥΗ",
+    "ΣΑΒΒΑΤΟ",
+    "ΚΥΡΙΑΚΗ",
+    "ΔΕΥΤΕΡΑ",
+    "ΤΡΙΤΗ",
+    "ΤΕΤΑΡΤΗ",
+    "ΠΕΜΠΤΗ",
+    "ΗΜΕΡΟΜΗΝΙΑ",
+    "ΗΜΕΡΗΣΙΟΣ",
+    "ΑΡΙΘΜΟΣ",
+    "ΑΡΙΘ.",
+    "ΠΛΗΡΩΜΗ",
+    "ΠΙΣΤ.",
+    "ΜΕΤΡΗΤΑ",
+    "CASH",
+    "ECB",
+    "QR",
 )
 
 
@@ -274,6 +476,7 @@ def _extract_category_hint(text: str) -> str | None:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def parse_receipt_text(text: str) -> dict:
     """

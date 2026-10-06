@@ -72,6 +72,7 @@ Currency: movements live in the household currency. There is no FX source for
 cash, so the routes force ``currency`` to the household default (the API rejects
 a different one); cash expenses enter in base currency (``to_base``).
 """
+
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
@@ -120,15 +121,20 @@ NOT_LOGGED_CASH_LABEL = {"name": "Cash (not yet logged)", "icon": "💵", "color
 OWN_STASH_SHORT = "Not enough cash in your stash."
 
 # An expense cash was taken for ("I took this from my stash").
-TAKE_KEEPS_PAYER = ("Cash was taken for this expense, so it stays paid by whoever took it "
-                    "(or switch it away from cash).")
-TAKE_AMOUNT_TAKERS = ("Cash was taken from a stash for this expense: only the person who "
-                      "took it can change the amount.")
+TAKE_KEEPS_PAYER = (
+    "Cash was taken for this expense, so it stays paid by whoever took it "
+    "(or switch it away from cash)."
+)
+TAKE_AMOUNT_TAKERS = (
+    "Cash was taken from a stash for this expense: only the person who "
+    "took it can change the amount."
+)
 
 
 # ---------------------------------------------------------------------------
 # Months
 # ---------------------------------------------------------------------------
+
 
 def _first(d: date) -> date:
     return d.replace(day=1)
@@ -158,6 +164,7 @@ def _months(first: date, last: date) -> list[date]:
 # The stash
 # ---------------------------------------------------------------------------
 
+
 def _stash_rows(owner_id: str):
     """Filter: the movements that make up ``owner_id``'s stash."""
     return or_(
@@ -172,7 +179,8 @@ def stash_balance(db: Session, household_id: str, owner_id: str) -> Decimal:
     Only ever shown to the owner (see the module docstring).
     """
     rows = db.query(CashMovement.kind, CashMovement.amount).filter(
-        CashMovement.household_id == household_id, CashMovement.active(),
+        CashMovement.household_id == household_id,
+        CashMovement.active(),
         _stash_rows(owner_id),
     )
     total = ZERO
@@ -182,8 +190,13 @@ def stash_balance(db: Session, household_id: str, owner_id: str) -> Decimal:
 
 
 def require_stash_covers(
-    db: Session, household_id: str, owner_id: str, amount: Decimal, actor_id: str,
-    *, freed: Decimal = ZERO,
+    db: Session,
+    household_id: str,
+    owner_id: str,
+    amount: Decimal,
+    actor_id: str,
+    *,
+    freed: Decimal = ZERO,
 ) -> None:
     """400 unless ``owner_id``'s stash holds ``amount`` (plus ``freed``: what an
     edited take already had out of it).
@@ -202,6 +215,7 @@ def require_stash_covers(
 # ---------------------------------------------------------------------------
 # Writing
 # ---------------------------------------------------------------------------
+
 
 def add_movement(
     db: Session,
@@ -227,11 +241,16 @@ def add_movement(
     if kind not in KINDS:
         raise ValueError(f"kind must be one of {KINDS}")
     mv = CashMovement(
-        household_id=household_id, user_id=user_id, kind=kind,
+        household_id=household_id,
+        user_id=user_id,
+        kind=kind,
         stash_owner_id=stash_owner_id if kind == TAKE else None,
-        amount=amount, currency=currency, movement_date=movement_date,
+        amount=amount,
+        currency=currency,
+        movement_date=movement_date,
         category_id=(category_id or None) if kind == OUT else None,
-        note=(note or "").strip() or None, transaction_id=transaction_id,
+        note=(note or "").strip() or None,
+        transaction_id=transaction_id,
     )
     db.add(mv)
     if commit:
@@ -243,8 +262,12 @@ def add_movement(
 
 
 def _member_ids(db: Session, household_id: str) -> list[str]:
-    return [uid for (uid,) in db.query(HouseholdMember.user_id)
-            .filter(HouseholdMember.household_id == household_id)]
+    return [
+        uid
+        for (uid,) in db.query(HouseholdMember.user_id).filter(
+            HouseholdMember.household_id == household_id
+        )
+    ]
 
 
 def record_movement(
@@ -272,8 +295,9 @@ def record_movement(
         if owner not in _member_ids(db, household_id):
             raise HTTPException(status_code=400, detail="That stash is not in this household.")
         require_stash_covers(db, household_id, owner, amount, actor_id)
-    return add_movement(db, household_id, actor_id, kind, amount, currency, when, note=note,
-                        stash_owner_id=owner)
+    return add_movement(
+        db, household_id, actor_id, kind, amount, currency, when, note=note, stash_owner_id=owner
+    )
 
 
 def delete_movement(db: Session, movement: CashMovement) -> None:
@@ -291,8 +315,12 @@ def delete_own_movement(db: Session, household_id: str, actor_id: str, movement_
     """
     mv = (
         db.query(CashMovement)
-        .filter(CashMovement.id == movement_id, CashMovement.household_id == household_id,
-                CashMovement.active(), _visible_to(actor_id))
+        .filter(
+            CashMovement.id == movement_id,
+            CashMovement.household_id == household_id,
+            CashMovement.active(),
+            _visible_to(actor_id),
+        )
         .first()
     )
     if not mv:
@@ -308,9 +336,11 @@ def delete_own_movement(db: Session, household_id: str, actor_id: str, movement_
 # "I took this from my stash": a take linked to its cash expense
 # ---------------------------------------------------------------------------
 
+
 def _linked(db: Session, txn_id: str):
     return db.query(CashMovement).filter(
-        CashMovement.transaction_id == txn_id, CashMovement.active(),
+        CashMovement.transaction_id == txn_id,
+        CashMovement.active(),
     )
 
 
@@ -319,7 +349,11 @@ def has_linked_take(db: Session, txn_id: str) -> bool:
 
 
 def link_take(
-    db: Session, txn: Transaction, taker_id: str, source: str, currency: str,
+    db: Session,
+    txn: Transaction,
+    taker_id: str,
+    source: str,
+    currency: str,
 ) -> CashMovement:
     """Record the take a cash expense was paid with, into ``taker_id``'s
     wallet from their stash (``source`` "stash") or the bank. Does not commit.
@@ -329,8 +363,17 @@ def link_take(
     if owner:
         require_stash_covers(db, txn.household_id, owner, amount, taker_id)
     return add_movement(
-        db, txn.household_id, taker_id, TAKE, amount, currency, txn.transaction_date,
-        note="Taken for an expense", stash_owner_id=owner, transaction_id=txn.id, commit=False,
+        db,
+        txn.household_id,
+        taker_id,
+        TAKE,
+        amount,
+        currency,
+        txn.transaction_date,
+        note="Taken for an expense",
+        stash_owner_id=owner,
+        transaction_id=txn.id,
+        commit=False,
     )
 
 
@@ -371,8 +414,9 @@ def sync_linked_take(db: Session, txn: Transaction, actor_id: str) -> None:
         if mv.stash_owner_id and amount != mv.amount and actor_id != mv.stash_owner_id:
             raise HTTPException(status_code=403, detail=TAKE_AMOUNT_TAKERS)
         if mv.stash_owner_id and amount > mv.amount:
-            require_stash_covers(db, txn.household_id, mv.stash_owner_id, amount, actor_id,
-                                 freed=Decimal(mv.amount))
+            require_stash_covers(
+                db, txn.household_id, mv.stash_owner_id, amount, actor_id, freed=Decimal(mv.amount)
+            )
         mv.amount = amount
         mv.movement_date = txn.transaction_date
 
@@ -403,10 +447,18 @@ def withdraw_and_spend(
     from app.services.transactions import create_transaction
 
     data = TransactionCreate(
-        bucket_id=bucket.id, amount=amount, currency=currency or "EUR",
-        type=TransactionType.expense, paid_by=user.id, category_id=category_id,
-        notes=notes, merchant=merchant, transaction_date=when,
-        payment_method=PaymentMethod.cash.value, took_cash=True, take_from=source,
+        bucket_id=bucket.id,
+        amount=amount,
+        currency=currency or "EUR",
+        type=TransactionType.expense,
+        paid_by=user.id,
+        category_id=category_id,
+        notes=notes,
+        merchant=merchant,
+        transaction_date=when,
+        payment_method=PaymentMethod.cash.value,
+        took_cash=True,
+        take_from=source,
     )
     return create_transaction(db, household_id=household_id, bucket=bucket, user=user, data=data)
 
@@ -414,6 +466,7 @@ def withdraw_and_spend(
 # ---------------------------------------------------------------------------
 # Reading movements: each member sees their own, plus takes from their stash
 # ---------------------------------------------------------------------------
+
 
 def _visible_to(viewer_id: str):
     """Filter: the viewer's own movements and other members' takes from
@@ -467,6 +520,7 @@ def list_movements(
 # The ledger: wallet movements + credited cash expenses, grouped per member
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class _Ledger:
     # member -> rows
@@ -507,7 +561,8 @@ def _load_ledger(
         ledger.note(mv.movement_date)
 
     linked = exists().where(
-        CashMovement.transaction_id == Transaction.id, CashMovement.active(),
+        CashMovement.transaction_id == Transaction.id,
+        CashMovement.active(),
     )
     tq = (
         db.query(Transaction)
@@ -522,10 +577,12 @@ def _load_ledger(
         .options(joinedload(Transaction.splits))
     )
     if member_ids is not None:
-        tq = tq.filter(or_(
-            Transaction.paid_by.in_(member_ids),
-            Transaction.splits.any(TransactionSplit.user_id.in_(member_ids)),
-        ))
+        tq = tq.filter(
+            or_(
+                Transaction.paid_by.in_(member_ids),
+                Transaction.splits.any(TransactionSplit.user_id.in_(member_ids)),
+            )
+        )
     for t in tq.all():
         for uid, amount in paid_for(t).items():
             if amount and (member_ids is None or uid in member_ids):
@@ -562,8 +619,11 @@ def _still_have_end(movements: list, expenses: list, first: date) -> Decimal | N
         return None
     total = Decimal(mark.amount)
     for m in movements:
-        if (first <= m.movement_date <= last and m.kind != STILL_HAVE
-                and _after(m.movement_date, m.created_at, mark)):
+        if (
+            first <= m.movement_date <= last
+            and m.kind != STILL_HAVE
+            and _after(m.movement_date, m.created_at, mark)
+        ):
             total += Decimal(m.amount) if m.kind == TAKE else -Decimal(m.amount)
     total -= sum((a for d, c, a in expenses if first <= d <= last and _after(d, c, mark)), ZERO)
     return total
@@ -602,24 +662,27 @@ def _breakdown(ledger: _Ledger, member_id: str, months: list[date]) -> list[dict
 
         carried = prev_end if prev_end is not None else ZERO
         taken, put_back, outs = total(TAKE), total(PUT_BACK), total(OUT)
-        labelled = sum((Decimal(m.amount) for m in in_month
-                        if m.kind == OUT and m.category_id), ZERO)
+        labelled = sum(
+            (Decimal(m.amount) for m in in_month if m.kind == OUT and m.category_id), ZERO
+        )
         logged = sum((a for d, _c, a in expenses if first <= d <= last), ZERO)
         spent = carried + taken - put_back - (end if end is not None else ZERO)
-        out.append({
-            "month":        first,
-            "carried":      quantize(carried),
-            "taken":        quantize(taken),
-            "put_back":     quantize(put_back),
-            "still_have":   quantize(end) if end is not None else None,
-            "spent":        quantize(max(spent, ZERO)),
-            "logged":       quantize(logged),
-            "outs":         quantize(outs),
-            "labelled_out": quantize(labelled),
-            # Before the shortfall pass below; may be negative.
-            "not_yet_logged": spent - logged - outs + excess,
-            "_after_mark":  prev_end is not None,
-        })
+        out.append(
+            {
+                "month": first,
+                "carried": quantize(carried),
+                "taken": quantize(taken),
+                "put_back": quantize(put_back),
+                "still_have": quantize(end) if end is not None else None,
+                "spent": quantize(max(spent, ZERO)),
+                "logged": quantize(logged),
+                "outs": quantize(outs),
+                "labelled_out": quantize(labelled),
+                # Before the shortfall pass below; may be negative.
+                "not_yet_logged": spent - logged - outs + excess,
+                "_after_mark": prev_end is not None,
+            }
+        )
 
     # Latest month first: a month that logged (or put back) more than it had
     # takes the shortfall from the not-yet-logged cash of the month before,
@@ -629,7 +692,7 @@ def _breakdown(ledger: _Ledger, member_id: str, months: list[date]) -> list[dict
         value = row["not_yet_logged"] - shortfall
         row["not_yet_logged"] = quantize(max(value, ZERO))
         shortfall = ZERO if row.pop("_after_mark") else max(-value, ZERO)
-    return out[:len(months)]
+    return out[: len(months)]
 
 
 def _not_logged_within(row: dict, movements: list, start: date | None, end: date | None) -> Decimal:
@@ -643,38 +706,47 @@ def _not_logged_within(row: dict, movements: list, start: date | None, end: date
     if (start is None or start <= first) and (end is None or end >= last):
         return row["not_yet_logged"]
     sources = [(first, row["carried"])] + [
-        (m.movement_date, Decimal(m.amount)) for m in movements
+        (m.movement_date, Decimal(m.amount))
+        for m in movements
         if m.kind == TAKE and first <= m.movement_date <= last
     ]
     total = sum((a for _d, a in sources), ZERO)
-    inside = sum((a for d, a in sources
-                  if (start is None or d >= start) and (end is None or d <= end)), ZERO)
+    inside = sum(
+        (a for d, a in sources if (start is None or d >= start) and (end is None or d <= end)), ZERO
+    )
     return row["not_yet_logged"] * inside / total if total else ZERO
 
 
 def _earliest(db: Session, household_id: str, member_ids: set[str] | None) -> date | None:
     """The first date anything happened to a wallet: a movement or a cash expense."""
     mq = db.query(func.min(CashMovement.movement_date)).filter(
-        CashMovement.household_id == household_id, CashMovement.active(),
+        CashMovement.household_id == household_id,
+        CashMovement.active(),
         CashMovement.kind.in_(WALLET_KINDS),
     )
     tq = db.query(func.min(Transaction.transaction_date)).filter(
-        Transaction.household_id == household_id, Transaction.active(),
+        Transaction.household_id == household_id,
+        Transaction.active(),
         Transaction.type == TransactionType.expense,
         Transaction.payment_method == PaymentMethod.cash.value,
     )
     if member_ids is not None:
         mq = mq.filter(CashMovement.user_id.in_(member_ids))
-        tq = tq.filter(or_(
-            Transaction.paid_by.in_(member_ids),
-            Transaction.splits.any(TransactionSplit.user_id.in_(member_ids)),
-        ))
+        tq = tq.filter(
+            or_(
+                Transaction.paid_by.in_(member_ids),
+                Transaction.splits.any(TransactionSplit.user_id.in_(member_ids)),
+            )
+        )
     found = [d for d in (mq.scalar(), tq.scalar()) if d is not None]
     return min(found) if found else None
 
 
 def _span(
-    db: Session, household_id: str, start: date | None, end: date | None,
+    db: Session,
+    household_id: str,
+    start: date | None,
+    end: date | None,
     member_ids: set[str] | None,
 ) -> list[date]:
     """The calendar months overlapping [start, end]; open ends run from the
@@ -691,7 +763,11 @@ def _span(
 
 
 def monthly_breakdown(
-    db: Session, household_id: str, member_id: str, first_month: date, last_month: date,
+    db: Session,
+    household_id: str,
+    member_id: str,
+    first_month: date,
+    last_month: date,
 ) -> list[dict]:
     """The formula's terms for each month from ``first_month`` to ``last_month``.
 
@@ -711,7 +787,8 @@ def monthly_breakdown(
 def not_yet_logged(db: Session, household_id: str, member_id: str, month_start: date) -> Decimal:
     """Cash the member spent in the month that no cash expense explains yet."""
     return monthly_breakdown(db, household_id, member_id, month_start, month_start)[0][
-        "not_yet_logged"]
+        "not_yet_logged"
+    ]
 
 
 _SUM_KEYS = ("taken", "put_back", "spent", "logged", "outs", "labelled_out", "not_yet_logged")
@@ -751,17 +828,24 @@ def wallet_summaries(
 
 
 def wallet_summary(
-    db: Session, household_id: str, member_id: str, start: date | None, end: date | None,
-    *, viewer_id: str | None = None,
+    db: Session,
+    household_id: str,
+    member_id: str,
+    start: date | None,
+    end: date | None,
+    *,
+    viewer_id: str | None = None,
 ) -> dict:
     """One member's :func:`wallet_summaries` entry."""
-    return wallet_summaries(db, household_id, [member_id], start, end,
-                            viewer_id=viewer_id)[member_id]
+    return wallet_summaries(db, household_id, [member_id], start, end, viewer_id=viewer_id)[
+        member_id
+    ]
 
 
 # ---------------------------------------------------------------------------
 # Insights: not-yet-logged cash and labelled outs as spending
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class CashSpend:
@@ -771,6 +855,7 @@ class CashSpend:
     the labelled legacy ``out`` movements dated in the period as (date,
     category_id, amount).
     """
+
     not_logged: dict = field(default_factory=dict)
     outs: list = field(default_factory=list)
 
@@ -848,8 +933,11 @@ def cash_spending(
         movements = ledger.movements.get(uid, [])
         if include_not_logged:
             for row in _breakdown(ledger, uid, months):
-                part = (_not_logged_within(row, movements, start, end)
-                        if row["not_yet_logged"] else ZERO)
+                part = (
+                    _not_logged_within(row, movements, start, end)
+                    if row["not_yet_logged"]
+                    else ZERO
+                )
                 if part:
                     not_logged[(row["month"].year, row["month"].month)] += part
         for mv in movements:
@@ -867,6 +955,7 @@ def cash_spending(
 # ---------------------------------------------------------------------------
 # Misc
 # ---------------------------------------------------------------------------
+
 
 def parse_month(raw: str | None) -> tuple[date, date, str]:
     """``YYYY-MM`` (default: the current local month) -> (first day, last day, normalised)."""

@@ -1,4 +1,5 @@
 """Service layer package; re-exports the public API so `from app.services import X` keeps working."""
+
 from app.services.buckets import (  # noqa: F401
     get_bucket_balance,
     get_bucket_month_summary,

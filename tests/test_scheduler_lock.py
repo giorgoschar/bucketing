@@ -1,4 +1,5 @@
 """Scheduler leader election: only one process may run the scheduler."""
+
 import os
 from unittest.mock import MagicMock
 
@@ -25,7 +26,7 @@ def _fake_engine(got):
 
 
 def test_sqlite_always_runs(tmp_path):
-    eng = create_engine(f"sqlite:///{tmp_path/'x.db'}")
+    eng = create_engine(f"sqlite:///{tmp_path / 'x.db'}")
     assert sched._acquire_scheduler_lock(eng) is True
     assert sched._lock_conn is None
 
@@ -103,12 +104,16 @@ def test_real_postgres_second_connection_cannot_take_lock():
     other = eng.connect()
     try:
         assert sched._acquire_scheduler_lock(eng) is True
-        got = other.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": sched.SCHEDULER_LOCK_KEY}).scalar()
+        got = other.execute(
+            text("SELECT pg_try_advisory_lock(:k)"), {"k": sched.SCHEDULER_LOCK_KEY}
+        ).scalar()
         assert got is False
         # A second process trying the same thing is refused.
         assert sched._acquire_scheduler_lock(eng) is False
         sched._release_scheduler_lock()
-        got = other.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": sched.SCHEDULER_LOCK_KEY}).scalar()
+        got = other.execute(
+            text("SELECT pg_try_advisory_lock(:k)"), {"k": sched.SCHEDULER_LOCK_KEY}
+        ).scalar()
         assert got is True
         other.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": sched.SCHEDULER_LOCK_KEY})
     finally:

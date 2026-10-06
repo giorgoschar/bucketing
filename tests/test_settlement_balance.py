@@ -34,14 +34,21 @@ from tests.conftest import PASSWORD
 @pytest.fixture()
 def pair(db, authed):
     partner = User(
-        username="partner", display_name="Partner", email="p@example.com",
+        username="partner",
+        display_name="Partner",
+        email="p@example.com",
         password_hash=hash_password(PASSWORD),
-        totp_secret=pyotp.random_base32(), totp_enabled=True, session_version=0,
+        totp_secret=pyotp.random_base32(),
+        totp_enabled=True,
+        session_version=0,
     )
     db.add(partner)
     db.flush()
-    db.add(HouseholdMember(household_id=authed.household_id, user_id=partner.id,
-                           role=MemberRole.member))
+    db.add(
+        HouseholdMember(
+            household_id=authed.household_id, user_id=partner.id, role=MemberRole.member
+        )
+    )
     db.get(Bucket, authed.bucket_id).enable_settlement = True
     db.commit()
     authed.partner_id = partner.id
@@ -50,9 +57,14 @@ def pair(db, authed):
 
 def _expense(db, ctx, amount, payer, splits=(), bucket_id=None):
     t = Transaction(
-        bucket_id=bucket_id or ctx.bucket_id, household_id=ctx.household_id,
-        amount=amount, currency="EUR", exchange_rate=1,
-        type=TransactionType.expense, transaction_date=local_today(), paid_by=payer,
+        bucket_id=bucket_id or ctx.bucket_id,
+        household_id=ctx.household_id,
+        amount=amount,
+        currency="EUR",
+        exchange_rate=1,
+        type=TransactionType.expense,
+        transaction_date=local_today(),
+        paid_by=payer,
     )
     db.add(t)
     db.flush()
@@ -66,8 +78,9 @@ def _expense(db, ctx, amount, payer, splits=(), bucket_id=None):
 # shares_for
 # ---------------------------------------------------------------------------
 
+
 def test_partial_splits_leave_the_remainder_with_the_payer(db, pair):
-    """"You owe me 50 of this 100" logged as one 50 split.
+    """ "You owe me 50 of this 100" logged as one 50 split.
 
     The other 50 used to be attributed to nobody.
     """
@@ -79,8 +92,7 @@ def test_partial_splits_leave_the_remainder_with_the_payer(db, pair):
 
 
 def test_full_splits_are_untouched(db, pair):
-    t = _expense(db, pair, 100, pair.user_id,
-                 [(pair.user_id, 40), (pair.partner_id, 60)])
+    t = _expense(db, pair, 100, pair.user_id, [(pair.user_id, 40), (pair.partner_id, 60)])
     shares = shares_for(t)
     assert shares[pair.user_id] == 40.0
     assert shares[pair.partner_id] == 60.0
@@ -100,10 +112,10 @@ def test_unsplit_expense_divides_among_members_when_asked(db, pair):
 
 def test_shares_always_sum_to_the_total(db, pair):
     for amount, splits in [
-        (100, [(None, 50)]),          # partial
-        (100, [(None, 100)]),         # full, other person only
-        (100, []),                    # none
-        (99.99, [(None, 33.33)]),     # awkward remainder
+        (100, [(None, 50)]),  # partial
+        (100, [(None, 100)]),  # full, other person only
+        (100, []),  # none
+        (99.99, [(None, 33.33)]),  # awkward remainder
     ]:
         resolved = [(pair.partner_id if uid is None else uid, amt) for uid, amt in splits]
         t = _expense(db, pair, amount, pair.user_id, resolved)
@@ -113,6 +125,7 @@ def test_shares_always_sum_to_the_total(db, pair):
 # ---------------------------------------------------------------------------
 # Balances
 # ---------------------------------------------------------------------------
+
 
 def test_nets_sum_to_zero_with_partial_splits(db, pair):
     """The invariant the reported bug violated."""
@@ -124,10 +137,9 @@ def test_nets_sum_to_zero_with_partial_splits(db, pair):
 
 
 def test_nets_sum_to_zero_across_mixed_expenses(db, pair):
-    _expense(db, pair, 100, pair.user_id, [(pair.partner_id, 50)])          # partial
-    _expense(db, pair, 60, pair.partner_id,
-             [(pair.user_id, 30), (pair.partner_id, 30)])                    # full
-    _expense(db, pair, 40, pair.user_id)                                     # unsplit
+    _expense(db, pair, 100, pair.user_id, [(pair.partner_id, 50)])  # partial
+    _expense(db, pair, 60, pair.partner_id, [(pair.user_id, 30), (pair.partner_id, 30)])  # full
+    _expense(db, pair, 40, pair.user_id)  # unsplit
     net = compute_bucket_net(db, pair.bucket_id)
     assert round(sum(net.values()), 2) == 0.0
 
@@ -148,14 +160,14 @@ def test_suggested_transfer_matches_the_real_debt(db, pair):
 
 
 def test_person_share_agrees_with_settlement(db, pair):
-    """"My share" and the settlement position must tell the same story."""
+    """ "My share" and the settlement position must tell the same story."""
     _expense(db, pair, 100, pair.user_id, [(pair.partner_id, 50)])
 
     mine = get_person_summary(db, pair.household_id, pair.user_id)
     theirs = get_person_summary(db, pair.household_id, pair.partner_id)
 
     assert mine["paid_out"] == 100.0
-    assert mine["my_share"] == 50.0     # not 0, despite having no split row
+    assert mine["my_share"] == 50.0  # not 0, despite having no split row
     assert theirs["my_share"] == 50.0
     assert round(mine["my_share"] + theirs["my_share"], 2) == 100.0
     assert mine["net"] == 50.0
@@ -164,8 +176,7 @@ def test_person_share_agrees_with_settlement(db, pair):
 
 def test_splits_exceeding_the_total_still_balance(db, pair):
     """Bad legacy data must not break the books."""
-    _expense(db, pair, 100, pair.user_id,
-             [(pair.user_id, 80), (pair.partner_id, 80)])
+    _expense(db, pair, 100, pair.user_id, [(pair.user_id, 80), (pair.partner_id, 80)])
     net = compute_bucket_net(db, pair.bucket_id)
     assert round(sum(net.values()), 2) == 0.0
 

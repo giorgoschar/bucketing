@@ -1,6 +1,7 @@
 """
 Per-person spending summary.
 """
+
 from collections import defaultdict
 from datetime import date
 from decimal import Decimal
@@ -56,8 +57,8 @@ def get_person_summary(
     txns = q.all()
     split_members = settlement_members(db, household_id)
 
-    paid_out = ZERO      # money this person actually fronted
-    my_share = ZERO      # what they are responsible for
+    paid_out = ZERO  # money this person actually fronted
+    my_share = ZERO  # what they are responsible for
     shared_count = 0
     by_bucket: dict[str, Decimal] = defaultdict(Decimal)
     by_category: dict[str | None, Decimal] = defaultdict(Decimal)
@@ -89,15 +90,16 @@ def get_person_summary(
             if largest is None or share > largest["amount"]:
                 largest = {
                     "amount": share,
-                    "notes":  t.notes,
-                    "date":   t.transaction_date,
+                    "notes": t.notes,
+                    "date": t.transaction_date,
                 }
 
     # Cash: theirs (the Person filter's scope), and everyone's for the
     # household total.
     cash = cash_spending(db, household_id, start, end, cash_scope(db, household_id, user_id))
     household_total += cash_spending(
-        db, household_id, start, end, cash_scope(db, household_id, None)).total
+        db, household_id, start, end, cash_scope(db, household_id, None)
+    ).total
     paid_out += cash.total
     my_share += cash.total
     for cid, amount in cash.by_category(NOT_LOGGED_CASH).items():
@@ -107,13 +109,12 @@ def get_person_summary(
 
     buckets = {}
     if by_bucket:
-        buckets = {
-            b.id: b for b in db.query(Bucket).filter(Bucket.id.in_(by_bucket)).all()
-        }
+        buckets = {b.id: b for b in db.query(Bucket).filter(Bucket.id.in_(by_bucket)).all()}
     cat_ids = [c for c in by_category if c and c != NOT_LOGGED_CASH]
     categories = (
         {c.id: c for c in db.query(Category).filter(Category.id.in_(cat_ids)).all()}
-        if cat_ids else {}
+        if cat_ids
+        else {}
     )
 
     # Household-wide net position, reusing the settlement maths.
@@ -126,18 +127,18 @@ def get_person_summary(
         largest["amount"] = quantize(largest["amount"])
 
     return {
-        "paid_out":  quantize(paid_out),
-        "my_share":  quantize(my_share),
+        "paid_out": quantize(paid_out),
+        "my_share": quantize(my_share),
         # The gap between the two headline figures, for this period only. This
         # is what makes them legible: fronting EUR 600 against a EUR 400 share
         # means EUR 200 went out on someone else's behalf.
-        "balance":   quantize(paid_out - my_share),
+        "balance": quantize(paid_out - my_share),
         # Positive: fronted more than their share. This is the settlement view.
-        "net":       net,
+        "net": net,
         "household_total": quantize(household_total),
         # How much of the household's spending this person carries.
         "share_pct": quantize(my_share / household_total * 100, TENTH) if household_total else None,
-        "largest":   largest,
+        "largest": largest,
         "trend": [
             {"label": date(y, m, 1).strftime("%b"), "total": quantize(v)}
             for (y, m), v in sorted(by_month.items())
@@ -147,9 +148,9 @@ def get_person_summary(
         "by_bucket": sorted(
             (
                 {
-                    "name":   buckets[bid].name if bid in buckets else "Unknown",
-                    "icon":   buckets[bid].icon if bid in buckets else "🪣",
-                    "color":  buckets[bid].color if bid in buckets else "#9ca3af",
+                    "name": buckets[bid].name if bid in buckets else "Unknown",
+                    "icon": buckets[bid].icon if bid in buckets else "🪣",
+                    "color": buckets[bid].color if bid in buckets else "#9ca3af",
                     "amount": quantize(amount),
                 }
                 for bid, amount in by_bucket.items()
@@ -159,11 +160,15 @@ def get_person_summary(
         "by_category": sorted(
             (
                 {
-                    **(NOT_LOGGED_CASH_LABEL if cid == NOT_LOGGED_CASH else {
-                        "name":  categories[cid].name if cid in categories else "Uncategorised",
-                        "icon":  categories[cid].icon if cid in categories else "📦",
-                        "color": categories[cid].color if cid in categories else "#9ca3af",
-                    }),
+                    **(
+                        NOT_LOGGED_CASH_LABEL
+                        if cid == NOT_LOGGED_CASH
+                        else {
+                            "name": categories[cid].name if cid in categories else "Uncategorised",
+                            "icon": categories[cid].icon if cid in categories else "📦",
+                            "color": categories[cid].color if cid in categories else "#9ca3af",
+                        }
+                    ),
                     "amount": quantize(amount),
                 }
                 for cid, amount in by_category.items()

@@ -5,6 +5,7 @@ Scenario: rent is 1100; the user pays 800 and the flatmate 300, each straight
 to the landlord as the lease says. Nobody owes anybody, and insights must show
 who paid what (800 / 300), not a single payer and not "Unassigned".
 """
+
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -39,9 +40,15 @@ def _rent(db, ctx, *, amount=1100, splits=None, payment_method="card"):
     """The 800/300 own-share rent expense."""
     splits = splits if splits is not None else [(ctx.user_id, 800), (ctx.partner_id, 300)]
     t = Transaction(
-        bucket_id=ctx.bucket_id, household_id=ctx.household_id, amount=amount,
-        currency="EUR", type=TransactionType.expense, transaction_date=local_today(),
-        paid_by=None, payer_mode=PayerMode.own_share.value, payment_method=payment_method,
+        bucket_id=ctx.bucket_id,
+        household_id=ctx.household_id,
+        amount=amount,
+        currency="EUR",
+        type=TransactionType.expense,
+        transaction_date=local_today(),
+        paid_by=None,
+        payer_mode=PayerMode.own_share.value,
+        payment_method=payment_method,
     )
     db.add(t)
     db.flush()
@@ -55,9 +62,12 @@ def _rent(db, ctx, *, amount=1100, splits=None, payment_method="card"):
 # paid_for
 # ---------------------------------------------------------------------------
 
+
 def _txn(amount, paid_by=None, mode="single", splits=()):
     return SimpleNamespace(
-        amount=Decimal(amount), exchange_rate=Decimal("1"), paid_by=paid_by,
+        amount=Decimal(amount),
+        exchange_rate=Decimal("1"),
+        paid_by=paid_by,
         payer_mode=mode,
         splits=[SimpleNamespace(user_id=u, amount=Decimal(a)) for u, a in splits],
     )
@@ -85,6 +95,7 @@ def test_paid_for_applies_the_exchange_rate():
 # ---------------------------------------------------------------------------
 # Settlement, insights, person view, cash
 # ---------------------------------------------------------------------------
+
 
 def test_own_share_rent_nets_to_zero_in_settlement(db, duo):
     from app.services import get_bucket_settlement, get_member_balances
@@ -144,8 +155,12 @@ def test_wallet_summary_counts_own_cash_share(db, duo):
 def test_missing_payer_search_excludes_own_share(client, db, duo):
     rent = _rent(db, duo)
     orphan = Transaction(
-        bucket_id=duo.bucket_id, household_id=duo.household_id, amount=20,
-        currency="EUR", type=TransactionType.expense, transaction_date=local_today(),
+        bucket_id=duo.bucket_id,
+        household_id=duo.household_id,
+        amount=20,
+        currency="EUR",
+        type=TransactionType.expense,
+        transaction_date=local_today(),
         notes="orphan-row",
     )
     db.add(orphan)
@@ -158,6 +173,7 @@ def test_missing_payer_search_excludes_own_share(client, db, duo):
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
+
 
 def _create(**kw):
     base = {"bucket_id": "b", "amount": "1100", "payer_mode": "own_share"}
@@ -181,8 +197,10 @@ def test_own_share_requires_splits_matching_the_total():
 
 
 def test_own_share_accepts_a_cent_of_rounding_and_drops_the_payer():
-    data = _create(paid_by="a", splits=[{"user_id": "a", "amount": "800"},
-                                        {"user_id": "b", "amount": "299.99"}])
+    data = _create(
+        paid_by="a",
+        splits=[{"user_id": "a", "amount": "800"}, {"user_id": "b", "amount": "299.99"}],
+    )
     assert data.paid_by is None
     assert data.payer_mode == "own_share"
 
@@ -198,11 +216,19 @@ def test_unknown_payer_mode_is_rejected():
 
 
 def test_html_create_own_share(client, db, duo):
-    r = client.post("/transactions", headers=duo.headers, data={
-        "bucket_id": duo.bucket_id, "transaction_date": local_today().isoformat(),
-        "amount": "1100", "paid_by": OWN_SHARE_CHOICE, "is_shared": "on",
-        f"split_{duo.user_id}": "800", f"split_{duo.partner_id}": "300",
-    })
+    r = client.post(
+        "/transactions",
+        headers=duo.headers,
+        data={
+            "bucket_id": duo.bucket_id,
+            "transaction_date": local_today().isoformat(),
+            "amount": "1100",
+            "paid_by": OWN_SHARE_CHOICE,
+            "is_shared": "on",
+            f"split_{duo.user_id}": "800",
+            f"split_{duo.partner_id}": "300",
+        },
+    )
     assert r.status_code == 302, r.text
     t = db.query(Transaction).one()
     assert t.payer_mode == "own_share"
@@ -211,30 +237,52 @@ def test_html_create_own_share(client, db, duo):
 
 
 def test_html_create_own_share_parses_splits_even_if_not_marked_shared(client, db, duo):
-    r = client.post("/transactions", headers=duo.headers, data={
-        "bucket_id": duo.bucket_id, "transaction_date": local_today().isoformat(),
-        "amount": "1100", "paid_by": OWN_SHARE_CHOICE, "is_shared": "off",
-        f"split_{duo.user_id}": "800", f"split_{duo.partner_id}": "300",
-    })
+    r = client.post(
+        "/transactions",
+        headers=duo.headers,
+        data={
+            "bucket_id": duo.bucket_id,
+            "transaction_date": local_today().isoformat(),
+            "amount": "1100",
+            "paid_by": OWN_SHARE_CHOICE,
+            "is_shared": "off",
+            f"split_{duo.user_id}": "800",
+            f"split_{duo.partner_id}": "300",
+        },
+    )
     assert r.status_code == 302, r.text
     assert db.query(Transaction).one().payer_mode == "own_share"
 
 
 def test_html_create_own_share_rejects_mismatched_splits(client, db, duo):
-    r = client.post("/transactions", headers=duo.headers, data={
-        "bucket_id": duo.bucket_id, "transaction_date": local_today().isoformat(),
-        "amount": "1100", "paid_by": OWN_SHARE_CHOICE, "is_shared": "on",
-        f"split_{duo.user_id}": "800",
-    })
+    r = client.post(
+        "/transactions",
+        headers=duo.headers,
+        data={
+            "bucket_id": duo.bucket_id,
+            "transaction_date": local_today().isoformat(),
+            "amount": "1100",
+            "paid_by": OWN_SHARE_CHOICE,
+            "is_shared": "on",
+            f"split_{duo.user_id}": "800",
+        },
+    )
     assert r.status_code == 400
     assert db.query(Transaction).count() == 0
 
 
 def test_html_shared_single_still_defaults_payer_to_submitter(client, db, duo):
-    r = client.post("/transactions", headers=duo.headers, data={
-        "bucket_id": duo.bucket_id, "transaction_date": local_today().isoformat(),
-        "amount": "100", "paid_by": "", "is_shared": "on",
-    })
+    r = client.post(
+        "/transactions",
+        headers=duo.headers,
+        data={
+            "bucket_id": duo.bucket_id,
+            "transaction_date": local_today().isoformat(),
+            "amount": "100",
+            "paid_by": "",
+            "is_shared": "on",
+        },
+    )
     assert r.status_code == 302
     t = db.query(Transaction).one()
     assert t.payer_mode == "single"
@@ -244,19 +292,26 @@ def test_html_shared_single_still_defaults_payer_to_submitter(client, db, duo):
 def test_html_edit_switches_to_own_share_and_back(client, db, duo):
     t = _rent(db, duo)
     form = {
-        "bucket_id": duo.bucket_id, "transaction_date": local_today().isoformat(),
-        "amount": "1100", "type": "expense",
-        f"split_{duo.user_id}": "800", f"split_{duo.partner_id}": "300",
+        "bucket_id": duo.bucket_id,
+        "transaction_date": local_today().isoformat(),
+        "amount": "1100",
+        "type": "expense",
+        f"split_{duo.user_id}": "800",
+        f"split_{duo.partner_id}": "300",
     }
-    r = client.post(f"/transactions/{t.id}/edit", headers=duo.headers,
-                    data={**form, "paid_by": duo.partner_id})
+    r = client.post(
+        f"/transactions/{t.id}/edit", headers=duo.headers, data={**form, "paid_by": duo.partner_id}
+    )
     assert r.status_code == 302
     db.expire_all()
     t = db.get(Transaction, t.id)
     assert (t.payer_mode, t.paid_by) == ("single", duo.partner_id)
 
-    r = client.post(f"/transactions/{t.id}/edit", headers=duo.headers,
-                    data={**form, "paid_by": OWN_SHARE_CHOICE})
+    r = client.post(
+        f"/transactions/{t.id}/edit",
+        headers=duo.headers,
+        data={**form, "paid_by": OWN_SHARE_CHOICE},
+    )
     assert r.status_code == 302
     db.expire_all()
     t = db.get(Transaction, t.id)
@@ -265,10 +320,17 @@ def test_html_edit_switches_to_own_share_and_back(client, db, duo):
 
 def test_html_edit_own_share_without_splits_is_rejected(client, db, duo):
     t = _rent(db, duo)
-    r = client.post(f"/transactions/{t.id}/edit", headers=duo.headers, data={
-        "bucket_id": duo.bucket_id, "transaction_date": local_today().isoformat(),
-        "amount": "1100", "type": "expense", "paid_by": OWN_SHARE_CHOICE,
-    })
+    r = client.post(
+        f"/transactions/{t.id}/edit",
+        headers=duo.headers,
+        data={
+            "bucket_id": duo.bucket_id,
+            "transaction_date": local_today().isoformat(),
+            "amount": "1100",
+            "type": "expense",
+            "paid_by": OWN_SHARE_CHOICE,
+        },
+    )
     assert r.status_code == 400
     db.expire_all()
     assert len(db.get(Transaction, t.id).splits) == 2
@@ -304,15 +366,24 @@ def test_duplicate_keeps_own_share_and_its_splits(client, db, duo):
 # API parity
 # ---------------------------------------------------------------------------
 
+
 def test_api_create_own_share(client, db, api):  # noqa: F811
     headers, hh = api
     partner = _add_member(db, hh.household_id, "flatmate")
     db.commit()
-    r = client.post("/api/v1/transactions", headers=headers, json={
-        "bucket_id": hh.bucket_id, "amount": "1100", "payer_mode": "own_share",
-        "splits": [{"user_id": hh.user_id, "amount": "800"},
-                   {"user_id": partner.id, "amount": "300"}],
-    })
+    r = client.post(
+        "/api/v1/transactions",
+        headers=headers,
+        json={
+            "bucket_id": hh.bucket_id,
+            "amount": "1100",
+            "payer_mode": "own_share",
+            "splits": [
+                {"user_id": hh.user_id, "amount": "800"},
+                {"user_id": partner.id, "amount": "300"},
+            ],
+        },
+    )
     assert r.status_code == 201, r.text
     body = r.json()
     assert body["payer_mode"] == "own_share"
@@ -321,17 +392,28 @@ def test_api_create_own_share(client, db, api):  # noqa: F811
 
 def test_api_create_own_share_without_splits_is_422(client, api):  # noqa: F811
     headers, hh = api
-    r = client.post("/api/v1/transactions", headers=headers, json={
-        "bucket_id": hh.bucket_id, "amount": "1100", "payer_mode": "own_share",
-    })
+    r = client.post(
+        "/api/v1/transactions",
+        headers=headers,
+        json={
+            "bucket_id": hh.bucket_id,
+            "amount": "1100",
+            "payer_mode": "own_share",
+        },
+    )
     assert r.status_code == 422
 
 
 def test_api_single_create_reports_payer_mode(client, api):  # noqa: F811
     headers, hh = api
-    r = client.post("/api/v1/transactions", headers=headers, json={
-        "bucket_id": hh.bucket_id, "amount": "10",
-    })
+    r = client.post(
+        "/api/v1/transactions",
+        headers=headers,
+        json={
+            "bucket_id": hh.bucket_id,
+            "amount": "10",
+        },
+    )
     assert r.status_code == 201
     assert r.json()["payer_mode"] == "single"
     assert r.json()["paid_by"] == hh.user_id
@@ -343,11 +425,19 @@ def test_api_update_without_payer_mode_keeps_own_share(client, db, api):  # noqa
     db.commit()
     hh.partner_id = partner.id
     t = _rent(db, hh)
-    r = client.put(f"/api/v1/transactions/{t.id}", headers=headers, json={
-        "bucket_id": hh.bucket_id, "amount": "1100", "notes": "rent",
-        "splits": [{"user_id": hh.user_id, "amount": "800"},
-                   {"user_id": partner.id, "amount": "300"}],
-    })
+    r = client.put(
+        f"/api/v1/transactions/{t.id}",
+        headers=headers,
+        json={
+            "bucket_id": hh.bucket_id,
+            "amount": "1100",
+            "notes": "rent",
+            "splits": [
+                {"user_id": hh.user_id, "amount": "800"},
+                {"user_id": partner.id, "amount": "300"},
+            ],
+        },
+    )
     assert r.status_code == 200, r.text
     assert r.json()["payer_mode"] == "own_share"
     assert r.json()["paid_by"] is None
@@ -359,11 +449,18 @@ def test_api_update_own_share_with_bad_splits_is_rejected(client, db, api):  # n
     db.commit()
     hh.partner_id = partner.id
     t = _rent(db, hh)
-    r = client.put(f"/api/v1/transactions/{t.id}", headers=headers, json={
-        "bucket_id": hh.bucket_id, "amount": "1200",
-        "splits": [{"user_id": hh.user_id, "amount": "800"},
-                   {"user_id": partner.id, "amount": "300"}],
-    })
+    r = client.put(
+        f"/api/v1/transactions/{t.id}",
+        headers=headers,
+        json={
+            "bucket_id": hh.bucket_id,
+            "amount": "1200",
+            "splits": [
+                {"user_id": hh.user_id, "amount": "800"},
+                {"user_id": partner.id, "amount": "300"},
+            ],
+        },
+    )
     assert r.status_code in (400, 422)
 
 
@@ -371,9 +468,11 @@ def test_api_update_own_share_with_bad_splits_is_rejected(client, db, api):  # n
 # Bills
 # ---------------------------------------------------------------------------
 
+
 def _own_share_bill(db, make_bill, ctx, *, splits=True, auto_pay=False):
-    bill, occ = make_bill(ctx.household_id, ctx.bucket_id, amount=1100,
-                          auto_pay=auto_pay, name="Rent")
+    bill, occ = make_bill(
+        ctx.household_id, ctx.bucket_id, amount=1100, auto_pay=auto_pay, name="Rent"
+    )
     bill.payer_mode = PayerMode.own_share.value
     if splits:
         db.add(RecurringBillSplit(bill_id=bill.id, user_id=ctx.user_id, amount=800))
@@ -384,21 +483,27 @@ def _own_share_bill(db, make_bill, ctx, *, splits=True, auto_pay=False):
 
 def test_html_pay_own_share_bill(client, db, duo, make_bill):
     bill, occ = _own_share_bill(db, make_bill, duo)
-    r = client.post(f"/bills/{bill.id}/occurrences/{occ.id}/pay",
-                    data={"paid_by": ""}, headers=duo.headers)
+    r = client.post(
+        f"/bills/{bill.id}/occurrences/{occ.id}/pay", data={"paid_by": ""}, headers=duo.headers
+    )
     assert r.status_code in (200, 302), r.text
     db.expire_all()
     t = db.query(Transaction).one()
     assert (t.payer_mode, t.paid_by) == ("own_share", None)
-    assert {s.user_id: float(s.amount) for s in t.splits} == {duo.user_id: 800.0,
-                                                               duo.partner_id: 300.0}
+    assert {s.user_id: float(s.amount) for s in t.splits} == {
+        duo.user_id: 800.0,
+        duo.partner_id: 300.0,
+    }
     assert db.get(type(occ), occ.id).paid_by is None
 
 
 def test_html_pay_own_share_bill_scales_a_variable_amount(client, db, duo, make_bill):
     bill, occ = _own_share_bill(db, make_bill, duo)
-    r = client.post(f"/bills/{bill.id}/occurrences/{occ.id}/pay",
-                    data={"paid_by": "", "amount": "1210"}, headers=duo.headers)
+    r = client.post(
+        f"/bills/{bill.id}/occurrences/{occ.id}/pay",
+        data={"paid_by": "", "amount": "1210"},
+        headers=duo.headers,
+    )
     assert r.status_code in (200, 302), r.text
     t = db.query(Transaction).one()
     assert sum(Decimal(str(s.amount)) for s in t.splits) == Decimal("1210")
@@ -406,18 +511,26 @@ def test_html_pay_own_share_bill_scales_a_variable_amount(client, db, duo, make_
 
 def test_html_pay_with_explicit_member_overrides_own_share(client, db, duo, make_bill):
     bill, occ = _own_share_bill(db, make_bill, duo)
-    client.post(f"/bills/{bill.id}/occurrences/{occ.id}/pay",
-                data={"paid_by": duo.partner_id}, headers=duo.headers)
+    client.post(
+        f"/bills/{bill.id}/occurrences/{occ.id}/pay",
+        data={"paid_by": duo.partner_id},
+        headers=duo.headers,
+    )
     t = db.query(Transaction).one()
     assert (t.payer_mode, t.paid_by) == ("single", duo.partner_id)
 
 
 def test_html_pay_can_choose_own_share_explicitly(client, db, duo, make_bill):
     bill, occ = make_bill(duo.household_id, duo.bucket_id, amount=1100, auto_pay=False)
-    r = client.post(f"/bills/{bill.id}/occurrences/{occ.id}/pay", headers=duo.headers, data={
-        "paid_by": OWN_SHARE_CHOICE,
-        f"split_{duo.user_id}": "800", f"split_{duo.partner_id}": "300",
-    })
+    r = client.post(
+        f"/bills/{bill.id}/occurrences/{occ.id}/pay",
+        headers=duo.headers,
+        data={
+            "paid_by": OWN_SHARE_CHOICE,
+            f"split_{duo.user_id}": "800",
+            f"split_{duo.partner_id}": "300",
+        },
+    )
     assert r.status_code in (200, 302), r.text
     t = db.query(Transaction).one()
     assert (t.payer_mode, t.paid_by) == ("own_share", None)
@@ -448,7 +561,8 @@ def test_autopay_own_share_bill(db, duo, make_bill, monkeypatch, SessionLocal):
 
 
 def test_autopay_own_share_bill_without_splits_falls_back_to_single(
-        db, duo, make_bill, monkeypatch, SessionLocal):
+    db, duo, make_bill, monkeypatch, SessionLocal
+):
     import app.core.database as database
     import app.scheduler as scheduler
 
@@ -462,21 +576,34 @@ def test_autopay_own_share_bill_without_splits_falls_back_to_single(
 
 
 def test_html_create_own_share_bill(client, db, duo):
-    r = client.post("/bills", headers=duo.headers, data={
-        "name": "Rent", "amount": "1100", "start_date": local_today().isoformat(),
-        "paid_by_default": OWN_SHARE_CHOICE,
-        f"split_{duo.user_id}": "800", f"split_{duo.partner_id}": "300",
-    })
+    r = client.post(
+        "/bills",
+        headers=duo.headers,
+        data={
+            "name": "Rent",
+            "amount": "1100",
+            "start_date": local_today().isoformat(),
+            "paid_by_default": OWN_SHARE_CHOICE,
+            f"split_{duo.user_id}": "800",
+            f"split_{duo.partner_id}": "300",
+        },
+    )
     assert r.status_code == 302, r.text
     bill = db.query(RecurringBill).one()
     assert (bill.payer_mode, bill.paid_by_default) == ("own_share", None)
 
 
 def test_html_own_share_bill_needs_splits(client, db, duo):
-    r = client.post("/bills", headers=duo.headers, data={
-        "name": "Rent", "amount": "1100", "start_date": local_today().isoformat(),
-        "paid_by_default": OWN_SHARE_CHOICE,
-    })
+    r = client.post(
+        "/bills",
+        headers=duo.headers,
+        data={
+            "name": "Rent",
+            "amount": "1100",
+            "start_date": local_today().isoformat(),
+            "paid_by_default": OWN_SHARE_CHOICE,
+        },
+    )
     assert r.status_code == 400
     assert db.query(RecurringBill).count() == 0
 
@@ -492,12 +619,20 @@ def test_api_bill_payer_mode_round_trip(client, db, api):  # noqa: F811
     headers, hh = api
     partner = _add_member(db, hh.household_id, "flatmate")
     db.commit()
-    r = client.post("/api/v1/bills", headers=headers, json={
-        "name": "Rent", "amount": "1100", "start_date": local_today().isoformat(),
-        "payer_mode": "own_share",
-        "splits": [{"user_id": hh.user_id, "amount": "800"},
-                   {"user_id": partner.id, "amount": "300"}],
-    })
+    r = client.post(
+        "/api/v1/bills",
+        headers=headers,
+        json={
+            "name": "Rent",
+            "amount": "1100",
+            "start_date": local_today().isoformat(),
+            "payer_mode": "own_share",
+            "splits": [
+                {"user_id": hh.user_id, "amount": "800"},
+                {"user_id": partner.id, "amount": "300"},
+            ],
+        },
+    )
     assert r.status_code == 201, r.text
     assert r.json()["payer_mode"] == "own_share"
     assert r.json()["paid_by_default"] is None
@@ -505,10 +640,16 @@ def test_api_bill_payer_mode_round_trip(client, db, api):  # noqa: F811
 
 def test_api_bill_rejects_unknown_payer_mode(client, api):  # noqa: F811
     headers, hh = api
-    r = client.post("/api/v1/bills", headers=headers, json={
-        "name": "Rent", "amount": "1100", "start_date": local_today().isoformat(),
-        "payer_mode": "both",
-    })
+    r = client.post(
+        "/api/v1/bills",
+        headers=headers,
+        json={
+            "name": "Rent",
+            "amount": "1100",
+            "start_date": local_today().isoformat(),
+            "payer_mode": "both",
+        },
+    )
     assert r.status_code == 422
 
 
@@ -516,22 +657,31 @@ def test_api_bill_rejects_unknown_payer_mode(client, api):  # noqa: F811
 # A cent of rounding is absorbed, never left to nobody
 # ---------------------------------------------------------------------------
 
+
 def test_own_share_cent_of_rounding_goes_to_the_largest_share():
-    data = _create(splits=[{"user_id": "a", "amount": "800"},
-                           {"user_id": "b", "amount": "299.99"}])
+    data = _create(splits=[{"user_id": "a", "amount": "800"}, {"user_id": "b", "amount": "299.99"}])
     assert {s.user_id: s.amount for s in data.splits} == {
-        "a": Decimal("800.01"), "b": Decimal("299.99"),
+        "a": Decimal("800.01"),
+        "b": Decimal("299.99"),
     }
 
 
 def test_own_share_saved_a_cent_short_shows_no_unassigned(client, db, duo):
     from app.services import get_insights_summary
 
-    r = client.post("/transactions", headers=duo.headers, data={
-        "bucket_id": duo.bucket_id, "transaction_date": local_today().isoformat(),
-        "amount": "1100", "paid_by": OWN_SHARE_CHOICE, "is_shared": "on",
-        f"split_{duo.user_id}": "800", f"split_{duo.partner_id}": "299.99",
-    })
+    r = client.post(
+        "/transactions",
+        headers=duo.headers,
+        data={
+            "bucket_id": duo.bucket_id,
+            "transaction_date": local_today().isoformat(),
+            "amount": "1100",
+            "paid_by": OWN_SHARE_CHOICE,
+            "is_shared": "on",
+            f"split_{duo.user_id}": "800",
+            f"split_{duo.partner_id}": "299.99",
+        },
+    )
     assert r.status_code == 302, r.text
     t = db.query(Transaction).one()
     assert sum(Decimal(str(s.amount)) for s in t.splits) == Decimal("1100")
@@ -545,19 +695,26 @@ def test_api_own_share_update_absorbs_the_cent(client, db, api):  # noqa: F811
     partner = _add_member(db, hh.household_id, "flatmate")
     db.commit()
     body = {
-        "bucket_id": hh.bucket_id, "amount": "100", "payer_mode": "own_share",
+        "bucket_id": hh.bucket_id,
+        "amount": "100",
+        "payer_mode": "own_share",
         "transaction_date": local_today().isoformat(),
-        "splits": [{"user_id": hh.user_id, "amount": "50"},
-                   {"user_id": partner.id, "amount": "50"}],
+        "splits": [
+            {"user_id": hh.user_id, "amount": "50"},
+            {"user_id": partner.id, "amount": "50"},
+        ],
     }
     r = client.post("/api/v1/transactions", headers=headers, json=body)
     assert r.status_code == 201, r.text
-    body["splits"] = [{"user_id": hh.user_id, "amount": "33.33"},
-                      {"user_id": partner.id, "amount": "66.66"}]
+    body["splits"] = [
+        {"user_id": hh.user_id, "amount": "33.33"},
+        {"user_id": partner.id, "amount": "66.66"},
+    ]
     r = client.put(f"/api/v1/transactions/{r.json()['id']}", headers=headers, json=body)
     assert r.status_code == 200, r.text
     db.expire_all()
     t = db.query(Transaction).one()
     assert {s.user_id: Decimal(str(s.amount)) for s in t.splits} == {
-        hh.user_id: Decimal("33.33"), partner.id: Decimal("66.67"),
+        hh.user_id: Decimal("33.33"),
+        partner.id: Decimal("66.67"),
     }

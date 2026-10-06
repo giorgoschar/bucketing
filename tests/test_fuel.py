@@ -11,6 +11,7 @@ The built-in Fuel category and litres.
   when the expense is not (or no longer) fuel.
 * Insights report a Fuel card from those litres, under the usual filters.
 """
+
 import uuid
 from datetime import date, timedelta
 from decimal import Decimal
@@ -39,11 +40,7 @@ D = Decimal
 
 
 def _fuel(db, household_id) -> Category:
-    return (
-        db.query(Category)
-        .filter_by(household_id=household_id, system_key=FUEL_SYSTEM_KEY)
-        .one()
-    )
+    return db.query(Category).filter_by(household_id=household_id, system_key=FUEL_SYSTEM_KEY).one()
 
 
 @pytest.fixture()
@@ -86,14 +83,13 @@ def _latest(db, household_id) -> Transaction:
 # Seeding and uniqueness
 # ---------------------------------------------------------------------------
 
+
 def test_seed_creates_exactly_one_fuel_category(db, make_household):
     hh = make_household()
     seed_categories(db, hh.household_id)
     seed_categories(db, hh.household_id)  # idempotent
     fuel = (
-        db.query(Category)
-        .filter_by(household_id=hh.household_id, system_key=FUEL_SYSTEM_KEY)
-        .all()
+        db.query(Category).filter_by(household_id=hh.household_id, system_key=FUEL_SYSTEM_KEY).all()
     )
     assert len(fuel) == 1
     assert fuel[0].name == "Fuel"
@@ -129,11 +125,7 @@ def test_new_household_gets_the_fuel_category(client, db, authed):
     r = client.post("/settings/household/new", data={"name": "Second home"}, headers=authed.headers)
     assert r.status_code == 302
     db.expire_all()
-    rows = (
-        db.query(Category)
-        .filter(Category.system_key == FUEL_SYSTEM_KEY)
-        .all()
-    )
+    rows = db.query(Category).filter(Category.system_key == FUEL_SYSTEM_KEY).all()
     assert len(rows) == 1
     assert rows[0].household_id != authed.household_id
 
@@ -146,20 +138,24 @@ def test_migration_seeds_fuel_and_adopts_existing(tmp_path):
     hh_a, hh_b, cat_a = (str(uuid.uuid4()) for _ in range(3))
     with engine.begin() as conn:
         for hh in (hh_a, hh_b):
-            conn.execute(text(
-                "INSERT INTO households (id, name, default_currency) VALUES (:i, 'H', 'EUR')"
-            ), {"i": hh})
-        conn.execute(text(
-            "INSERT INTO categories (id, household_id, name, color, icon, is_default) "
-            "VALUES (:i, :h, 'Καύσιμα', '#000000', 'x', false)"
-        ), {"i": cat_a, "h": hh_a})
+            conn.execute(
+                text("INSERT INTO households (id, name, default_currency) VALUES (:i, 'H', 'EUR')"),
+                {"i": hh},
+            )
+        conn.execute(
+            text(
+                "INSERT INTO categories (id, household_id, name, color, icon, is_default) "
+                "VALUES (:i, :h, 'Καύσιμα', '#000000', 'x', false)"
+            ),
+            {"i": cat_a, "h": hh_a},
+        )
 
     up = _alembic(["upgrade", "head"], db_url)
     assert up.returncode == 0, up.stderr
     with engine.connect() as conn:
-        rows = conn.execute(text(
-            "SELECT id, household_id, name, icon FROM categories WHERE system_key = 'fuel'"
-        )).all()
+        rows = conn.execute(
+            text("SELECT id, household_id, name, icon FROM categories WHERE system_key = 'fuel'")
+        ).all()
     by_hh = {r.household_id: r for r in rows}
     assert set(by_hh) == {hh_a, hh_b}
     assert by_hh[hh_a].id == cat_a  # adopted
@@ -177,6 +173,7 @@ def test_migration_seeds_fuel_and_adopts_existing(tmp_path):
 # ---------------------------------------------------------------------------
 # Locked category
 # ---------------------------------------------------------------------------
+
 
 def test_html_delete_of_fuel_category_is_refused(client, db, fuel_hh):
     r = client.post(f"/settings/categories/{fuel_hh.fuel_id}/delete", headers=fuel_hh.headers)
@@ -199,8 +196,11 @@ def test_api_cannot_edit_or_delete_fuel_category(client, db, api):  # noqa: F811
     db.commit()
     fuel = _fuel(db, hh.household_id)
 
-    r = client.put(f"/api/v1/settings/categories/{fuel.id}", headers=headers,
-                   json={"name": "Gas", "color": "#000000", "icon": "x"})
+    r = client.put(
+        f"/api/v1/settings/categories/{fuel.id}",
+        headers=headers,
+        json={"name": "Gas", "color": "#000000", "icon": "x"},
+    )
     assert r.status_code == 403
     r = client.delete(f"/api/v1/settings/categories/{fuel.id}", headers=headers)
     assert r.status_code == 403
@@ -226,9 +226,11 @@ def test_category_rule_may_map_to_fuel(db, fuel_hh):
 # Litres on create / edit / duplicate (HTML)
 # ---------------------------------------------------------------------------
 
+
 def test_create_fuel_expense_computes_litres(client, db, fuel_hh):
-    r = _post_expense(client, fuel_hh, fuel_price_per_litre="1.789",
-                      fuel_litres="999")  # a client value is never trusted
+    r = _post_expense(
+        client, fuel_hh, fuel_price_per_litre="1.789", fuel_litres="999"
+    )  # a client value is never trusted
     assert r.status_code == 302, r.text
     t = _latest(db, fuel_hh.household_id)
     assert t.fuel_price_per_litre == D("1.789")
@@ -287,8 +289,14 @@ def test_edit_recomputes_litres_and_clears_on_category_change(client, db, fuel_h
     t = db.get(Transaction, t.id)
     assert t.fuel_litres == D("50.000")
 
-    r = _edit(client, fuel_hh, t.id, amount="75", category_id=fuel_hh.other_id,
-              fuel_price_per_litre="1.50")
+    r = _edit(
+        client,
+        fuel_hh,
+        t.id,
+        amount="75",
+        category_id=fuel_hh.other_id,
+        fuel_price_per_litre="1.50",
+    )
     assert r.status_code == 302, r.text
     db.expire_all()
     t = db.get(Transaction, t.id)
@@ -348,6 +356,7 @@ def test_search_rows_show_litres(client, db, fuel_hh):
 # API
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def fuel_api(db, api):  # noqa: F811
     headers, hh = api
@@ -362,10 +371,17 @@ def fuel_api(db, api):  # noqa: F811
 
 def test_api_create_and_update_fuel(client, db, fuel_api):
     headers, hh = fuel_api
-    r = client.post("/api/v1/transactions", headers=headers, json={
-        "bucket_id": hh.bucket_id, "amount": "60", "category_id": hh.fuel_id,
-        "fuel_price_per_litre": "1.789", "fuel_litres": "1",
-    })
+    r = client.post(
+        "/api/v1/transactions",
+        headers=headers,
+        json={
+            "bucket_id": hh.bucket_id,
+            "amount": "60",
+            "category_id": hh.fuel_id,
+            "fuel_price_per_litre": "1.789",
+            "fuel_litres": "1",
+        },
+    )
     assert r.status_code == 201, r.text
     body = r.json()
     assert D(str(body["fuel_litres"])) == D("33.538")
@@ -373,17 +389,29 @@ def test_api_create_and_update_fuel(client, db, fuel_api):
     txn_id = body["id"]
 
     # An omitted price keeps the stored one; litres follow the new amount.
-    r = client.put(f"/api/v1/transactions/{txn_id}", headers=headers, json={
-        "bucket_id": hh.bucket_id, "amount": "71.56", "category_id": hh.fuel_id,
-    })
+    r = client.put(
+        f"/api/v1/transactions/{txn_id}",
+        headers=headers,
+        json={
+            "bucket_id": hh.bucket_id,
+            "amount": "71.56",
+            "category_id": hh.fuel_id,
+        },
+    )
     assert r.status_code == 200, r.text
     assert D(str(r.json()["fuel_litres"])) == D("40.000")
 
     # Another category clears both fields.
-    r = client.put(f"/api/v1/transactions/{txn_id}", headers=headers, json={
-        "bucket_id": hh.bucket_id, "amount": "71.56", "category_id": hh.other_id,
-        "fuel_price_per_litre": "1.789",
-    })
+    r = client.put(
+        f"/api/v1/transactions/{txn_id}",
+        headers=headers,
+        json={
+            "bucket_id": hh.bucket_id,
+            "amount": "71.56",
+            "category_id": hh.other_id,
+            "fuel_price_per_litre": "1.789",
+        },
+    )
     assert r.status_code == 200, r.text
     assert r.json()["fuel_litres"] is None
     assert r.json()["fuel_price_per_litre"] is None
@@ -391,28 +419,46 @@ def test_api_create_and_update_fuel(client, db, fuel_api):
 
 def test_api_rejects_zero_price(client, fuel_api):
     headers, hh = fuel_api
-    r = client.post("/api/v1/transactions", headers=headers, json={
-        "bucket_id": hh.bucket_id, "amount": "60", "category_id": hh.fuel_id,
-        "fuel_price_per_litre": "0",
-    })
+    r = client.post(
+        "/api/v1/transactions",
+        headers=headers,
+        json={
+            "bucket_id": hh.bucket_id,
+            "amount": "60",
+            "category_id": hh.fuel_id,
+            "fuel_price_per_litre": "0",
+        },
+    )
     assert r.status_code == 422
 
 
 def test_api_rejects_absurd_litres(client, fuel_api):
     headers, hh = fuel_api
-    r = client.post("/api/v1/transactions", headers=headers, json={
-        "bucket_id": hh.bucket_id, "amount": "99999999", "category_id": hh.fuel_id,
-        "fuel_price_per_litre": "0.0001",
-    })
+    r = client.post(
+        "/api/v1/transactions",
+        headers=headers,
+        json={
+            "bucket_id": hh.bucket_id,
+            "amount": "99999999",
+            "category_id": hh.fuel_id,
+            "fuel_price_per_litre": "0.0001",
+        },
+    )
     assert r.status_code == 400
 
 
 def test_income_never_gets_litres(client, db, fuel_api):
     headers, hh = fuel_api
-    r = client.post("/api/v1/transactions", headers=headers, json={
-        "amount": "60", "type": "income", "category_id": hh.fuel_id,
-        "fuel_price_per_litre": "1.5",
-    })
+    r = client.post(
+        "/api/v1/transactions",
+        headers=headers,
+        json={
+            "amount": "60",
+            "type": "income",
+            "category_id": hh.fuel_id,
+            "fuel_price_per_litre": "1.5",
+        },
+    )
     assert r.status_code == 201, r.text
     assert r.json()["fuel_litres"] is None
 
@@ -421,15 +467,32 @@ def test_income_never_gets_litres(client, db, fuel_api):
 # Insights
 # ---------------------------------------------------------------------------
 
-def _fill(db, ctx, amount, price, *, when, rate=1, currency="EUR", bucket_id=None,
-          payer="__me__", splits=()):
+
+def _fill(
+    db,
+    ctx,
+    amount,
+    price,
+    *,
+    when,
+    rate=1,
+    currency="EUR",
+    bucket_id=None,
+    payer="__me__",
+    splits=(),
+):
     amount, price = D(str(amount)), D(str(price))
     t = Transaction(
-        bucket_id=bucket_id or ctx.bucket_id, household_id=ctx.household_id,
-        amount=amount, currency=currency, exchange_rate=D(str(rate)),
-        type=TransactionType.expense, transaction_date=when,
+        bucket_id=bucket_id or ctx.bucket_id,
+        household_id=ctx.household_id,
+        amount=amount,
+        currency=currency,
+        exchange_rate=D(str(rate)),
+        type=TransactionType.expense,
+        transaction_date=when,
         paid_by=ctx.user_id if payer == "__me__" else payer,
-        category_id=ctx.fuel_id, fuel_price_per_litre=price,
+        category_id=ctx.fuel_id,
+        fuel_price_per_litre=price,
         fuel_litres=(amount / price).quantize(D("0.001")),
     )
     db.add(t)
@@ -444,13 +507,21 @@ JAN, FEB = date(2026, 1, 10), date(2026, 2, 12)
 
 
 def test_insights_fuel_totals_and_monthly_trend(db, fuel_hh):
-    _fill(db, fuel_hh, 60, "1.50", when=JAN)    # 40 L
-    _fill(db, fuel_hh, 90, "1.80", when=FEB)    # 50 L
+    _fill(db, fuel_hh, 60, "1.50", when=JAN)  # 40 L
+    _fill(db, fuel_hh, 90, "1.80", when=FEB)  # 50 L
     # A fuel expense without a price adds no litres and stays out of €/L.
-    db.add(Transaction(bucket_id=fuel_hh.bucket_id, household_id=fuel_hh.household_id,
-                       amount=30, currency="EUR", type=TransactionType.expense,
-                       transaction_date=FEB, paid_by=fuel_hh.user_id,
-                       category_id=fuel_hh.fuel_id))
+    db.add(
+        Transaction(
+            bucket_id=fuel_hh.bucket_id,
+            household_id=fuel_hh.household_id,
+            amount=30,
+            currency="EUR",
+            type=TransactionType.expense,
+            transaction_date=FEB,
+            paid_by=fuel_hh.user_id,
+            category_id=fuel_hh.fuel_id,
+        )
+    )
     db.commit()
 
     fuel = get_insights_fuel(db, fuel_hh.household_id, date(2026, 1, 1), date(2026, 2, 28))
@@ -466,7 +537,7 @@ def test_insights_fuel_totals_and_monthly_trend(db, fuel_hh):
 
 
 def test_insights_fuel_converts_spend_to_base_currency(db, fuel_hh):
-    _fill(db, fuel_hh, 60, "1.50", when=JAN)                       # 40 L, 60 EUR
+    _fill(db, fuel_hh, 60, "1.50", when=JAN)  # 40 L, 60 EUR
     _fill(db, fuel_hh, 100, "2.00", when=JAN, currency="USD", rate="0.9")  # 50 L, 90 EUR
     fuel = get_insights_fuel(db, fuel_hh.household_id, JAN, JAN)
     assert fuel["litres"] == D("90.000")
@@ -487,16 +558,24 @@ def test_insights_fuel_respects_date_and_bucket_filters(db, fuel_hh):
     assert only_other["litres"] == D("50.000")
     assert get_insights_fuel(db, fuel_hh.household_id, date(2025, 1, 1), date(2025, 1, 31)) is None
     # A category filter without Fuel leaves no fuel data.
-    assert get_insights_fuel(db, fuel_hh.household_id, None, None,
-                             category_ids=[fuel_hh.other_id]) is None
+    assert (
+        get_insights_fuel(db, fuel_hh.household_id, None, None, category_ids=[fuel_hh.other_id])
+        is None
+    )
 
 
 def test_insights_fuel_person_filter_scales_by_share(db, fuel_hh):
     partner = _add_member(db, fuel_hh.household_id, "partner")
     db.commit()
     # 60 EUR / 40 L shared 45 / 15: the partner's quarter is 10 L and 15 EUR.
-    _fill(db, fuel_hh, 60, "1.50", when=JAN,
-          splits=[(fuel_hh.user_id, D("45")), (partner.id, D("15"))])
+    _fill(
+        db,
+        fuel_hh,
+        60,
+        "1.50",
+        when=JAN,
+        splits=[(fuel_hh.user_id, D("45")), (partner.id, D("15"))],
+    )
     _fill(db, fuel_hh, 90, "1.80", when=JAN)  # mine alone
 
     theirs = get_insights_fuel(db, fuel_hh.household_id, JAN, JAN, paid_by=partner.id)
@@ -535,9 +614,15 @@ def test_api_insights_fuel(client, db, fuel_api):
     assert len(body["fuel"]["months"]) == 1
 
     last_year = (local_today() - timedelta(days=400)).isoformat()
-    body = client.get("/api/v1/insights", headers=headers, params={
-        "preset": "custom", "start_date": last_year, "end_date": last_year,
-    }).json()
+    body = client.get(
+        "/api/v1/insights",
+        headers=headers,
+        params={
+            "preset": "custom",
+            "start_date": last_year,
+            "end_date": last_year,
+        },
+    ).json()
     assert body["fuel"] is None
 
 
@@ -545,8 +630,9 @@ def test_api_insights_fuel(client, db, fuel_api):
 # Review fixes
 # ---------------------------------------------------------------------------
 
+
 def test_seed_does_not_adopt_an_ambiguous_gas_category(db, make_household):
-    """"Gas" is often the natural-gas utility: it stays an ordinary category."""
+    """ "Gas" is often the natural-gas utility: it stays an ordinary category."""
     hh = make_household()
     gas = Category(household_id=hh.household_id, name="Gas", icon="🔥")
     db.add(gas)
@@ -577,23 +663,32 @@ def test_migration_skips_gas_and_prefers_exact_fuel(tmp_path):
     ids = {}
     with engine.begin() as conn:
         for hh in (hh_gas, hh_mixed, hh_both):
-            conn.execute(text(
-                "INSERT INTO households (id, name, default_currency) VALUES (:i, 'H', 'EUR')"
-            ), {"i": hh})
-        for hh, name in ((hh_gas, "Gas"), (hh_mixed, "Gas"), (hh_mixed, "Petrol"),
-                         (hh_both, "Diesel"), (hh_both, "Fuel")):
+            conn.execute(
+                text("INSERT INTO households (id, name, default_currency) VALUES (:i, 'H', 'EUR')"),
+                {"i": hh},
+            )
+        for hh, name in (
+            (hh_gas, "Gas"),
+            (hh_mixed, "Gas"),
+            (hh_mixed, "Petrol"),
+            (hh_both, "Diesel"),
+            (hh_both, "Fuel"),
+        ):
             ids[(hh, name)] = str(uuid.uuid4())
-            conn.execute(text(
-                "INSERT INTO categories (id, household_id, name, color, icon, is_default) "
-                "VALUES (:i, :h, :n, '#000000', 'x', false)"
-            ), {"i": ids[(hh, name)], "h": hh, "n": name})
+            conn.execute(
+                text(
+                    "INSERT INTO categories (id, household_id, name, color, icon, is_default) "
+                    "VALUES (:i, :h, :n, '#000000', 'x', false)"
+                ),
+                {"i": ids[(hh, name)], "h": hh, "n": name},
+            )
 
     up = _alembic(["upgrade", "head"], db_url)
     assert up.returncode == 0, up.stderr
     with engine.connect() as conn:
-        rows = conn.execute(text(
-            "SELECT id, household_id, name FROM categories WHERE system_key = 'fuel'"
-        )).all()
+        rows = conn.execute(
+            text("SELECT id, household_id, name FROM categories WHERE system_key = 'fuel'")
+        ).all()
     by_hh = {r.household_id: r for r in rows}
     assert by_hh[hh_gas].name == "Fuel" and by_hh[hh_gas].id != ids[(hh_gas, "Gas")]
     assert by_hh[hh_mixed].id == ids[(hh_mixed, "Petrol")]
@@ -603,18 +698,32 @@ def test_migration_skips_gas_and_prefers_exact_fuel(tmp_path):
 
 def test_api_update_changing_currency_drops_the_stored_price(client, db, fuel_api):
     headers, hh = fuel_api
-    r = client.post("/api/v1/transactions", headers=headers, json={
-        "bucket_id": hh.bucket_id, "amount": "50", "currency": "EUR",
-        "category_id": hh.fuel_id, "fuel_price_per_litre": "1.80",
-    })
+    r = client.post(
+        "/api/v1/transactions",
+        headers=headers,
+        json={
+            "bucket_id": hh.bucket_id,
+            "amount": "50",
+            "currency": "EUR",
+            "category_id": hh.fuel_id,
+            "fuel_price_per_litre": "1.80",
+        },
+    )
     assert r.status_code == 201, r.text
     txn_id = r.json()["id"]
 
     # The stored price is in EUR: it cannot carry over to a USD amount.
-    r = client.put(f"/api/v1/transactions/{txn_id}", headers=headers, json={
-        "bucket_id": hh.bucket_id, "amount": "55", "currency": "USD",
-        "exchange_rate": "0.9", "category_id": hh.fuel_id,
-    })
+    r = client.put(
+        f"/api/v1/transactions/{txn_id}",
+        headers=headers,
+        json={
+            "bucket_id": hh.bucket_id,
+            "amount": "55",
+            "currency": "USD",
+            "exchange_rate": "0.9",
+            "category_id": hh.fuel_id,
+        },
+    )
     assert r.status_code == 200, r.text
     assert r.json()["fuel_price_per_litre"] is None
     assert r.json()["fuel_litres"] is None
@@ -625,9 +734,16 @@ def test_insights_fuel_person_filter_skips_unpriced_fills_outside_their_share(db
     db.commit()
     _fill(db, fuel_hh, 60, "1.50", when=JAN, payer=partner.id)  # theirs, priced
     # The partner paid, but it is all mine: nothing of it is theirs.
-    t = Transaction(bucket_id=fuel_hh.bucket_id, household_id=fuel_hh.household_id,
-                    amount=D("60"), currency="EUR", type=TransactionType.expense,
-                    transaction_date=JAN, paid_by=partner.id, category_id=fuel_hh.fuel_id)
+    t = Transaction(
+        bucket_id=fuel_hh.bucket_id,
+        household_id=fuel_hh.household_id,
+        amount=D("60"),
+        currency="EUR",
+        type=TransactionType.expense,
+        transaction_date=JAN,
+        paid_by=partner.id,
+        category_id=fuel_hh.fuel_id,
+    )
     db.add(t)
     db.flush()
     db.add(TransactionSplit(transaction_id=t.id, user_id=fuel_hh.user_id, amount=D("60")))
@@ -658,23 +774,33 @@ def test_insights_fuel_per_car(db, fuel_hh):
     car2 = Bucket(household_id=fuel_hh.household_id, name="Car 2", icon="🚙")
     db.add(car2)
     db.commit()
-    _fill(db, fuel_hh, 60, "1.50", when=JAN)                        # car 1: 40 L
-    _fill(db, fuel_hh, 90, "1.80", when=FEB)                        # car 1: 50 L
-    _fill(db, fuel_hh, 38, "1.90", when=FEB, bucket_id=car2.id)     # car 2: 20 L
+    _fill(db, fuel_hh, 60, "1.50", when=JAN)  # car 1: 40 L
+    _fill(db, fuel_hh, 90, "1.80", when=FEB)  # car 1: 50 L
+    _fill(db, fuel_hh, 38, "1.90", when=FEB, bucket_id=car2.id)  # car 2: 20 L
 
     fuel = get_insights_fuel(db, fuel_hh.household_id, date(2026, 1, 1), date(2026, 2, 28))
     cars = {c["bucket_id"]: c for c in fuel["cars"]}
     assert set(cars) == {fuel_hh.bucket_id, car2.id}
     one, two = cars[fuel_hh.bucket_id], cars[car2.id]
     assert (one["litres"], one["spend"], one["avg_price_per_litre"], one["fills"]) == (
-        D("90.000"), D("150.00"), D("1.667"), 2)
+        D("90.000"),
+        D("150.00"),
+        D("1.667"),
+        2,
+    )
     assert (two["litres"], two["spend"], two["avg_price_per_litre"], two["fills"]) == (
-        D("20.000"), D("38.00"), D("1.900"), 1)
+        D("20.000"),
+        D("38.00"),
+        D("1.900"),
+        1,
+    )
     assert two["name"] == "Car 2" and two["icon"] == "🚙"
     # Most litres first; each car carries its own monthly trend.
     assert [c["bucket_id"] for c in fuel["cars"]] == [fuel_hh.bucket_id, car2.id]
     assert [(m["month"], m["avg_price_per_litre"]) for m in one["months"]] == [
-        (1, D("1.500")), (2, D("1.800"))]
+        (1, D("1.500")),
+        (2, D("1.800")),
+    ]
     assert [(m["month"], m["litres"]) for m in two["months"]] == [(2, D("20.000"))]
     # The household figures are unchanged.
     assert fuel["litres"] == D("110.000") and fuel["spend"] == D("188.00")
@@ -688,7 +814,7 @@ def test_insights_page_shows_per_car_fuel(client, db, fuel_hh):
     _fill(db, fuel_hh, 60, "1.50", when=today)
     _fill(db, fuel_hh, 38, "1.90", when=today, bucket_id=car2.id)
     page = client.get("/insights").text
-    card = page.split('x-show="show(\'fuel\')"', 1)[1].split("x-show=", 1)[0]
+    card = page.split("x-show=\"show('fuel')\"", 1)[1].split("x-show=", 1)[0]
     # One section per car, each with its own figures; no cross-car total
     # (different cars may take different fuel).
     first = db.get(Bucket, fuel_hh.bucket_id).name
@@ -717,7 +843,8 @@ def test_insights_fuel_refuels_per_car(db, fuel_hh):
     assert [r["litres"] for r in one] == [D("40.000"), D("50.000"), D("50.000")]
     assert [r["spend"] for r in one] == [D("60.00"), D("90.00"), D("90.00")]
     assert [(r["date"], r["price_per_litre"]) for r in cars[car2.id]["refuels"]] == [
-        (FEB, D("1.900"))]
+        (FEB, D("1.900"))
+    ]
 
 
 def test_insights_page_draws_price_per_refuel(client, db, fuel_hh):
@@ -725,7 +852,7 @@ def test_insights_page_draws_price_per_refuel(client, db, fuel_hh):
     _fill(db, fuel_hh, 60, "1.50", when=today - timedelta(days=3))
     _fill(db, fuel_hh, 66, "1.65", when=today)
     page = client.get("/insights?preset=all_time").text
-    card = page.split('x-show="show(\'fuel\')"', 1)[1].split("x-show=", 1)[0]
+    card = page.split("x-show=\"show('fuel')\"", 1)[1].split("x-show=", 1)[0]
     assert 'aria-label="Price per litre per refuel' in card
-    assert card.count("<circle") == 2            # one point per refuel
+    assert card.count("<circle") == 2  # one point per refuel
     assert "€1.650/L" in card and "40.00 L" in card

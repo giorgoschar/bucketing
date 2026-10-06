@@ -10,6 +10,7 @@ when Alpine initialises the nodes being inserted — it threw
 These are cheap guards against that regressing. Behaviour is verified in a real
 browser separately; these keep the structural invariant honest.
 """
+
 import json
 import re
 from pathlib import Path
@@ -47,18 +48,14 @@ def test_head_loads_the_file_before_alpine(source):
     alpine = 'src="/static/vendor/alpine.min.js"'
     assert src in base, f"{src} is not loaded"
     # Match the tags, not prose mentioning the filename.
-    assert base.index(src) < base.index(alpine), (
-        f"/{source} must load before alpine.min.js"
-    )
+    assert base.index(src) < base.index(alpine), f"/{source} must load before alpine.min.js"
 
 
 @pytest.mark.parametrize("factory", sorted(HEAD_LOADED))
 def test_factory_is_not_also_defined_in_a_template(factory):
     """A duplicate definition in a swapped body reintroduces the race."""
     for tpl in TEMPLATES.rglob("*.html"):
-        assert f"function {factory}(" not in tpl.read_text(), (
-            f"{factory} is redefined in {tpl}"
-        )
+        assert f"function {factory}(" not in tpl.read_text(), f"{factory} is redefined in {tpl}"
 
 
 @pytest.mark.parametrize("source", sorted(set(HEAD_LOADED.values())))
@@ -87,6 +84,7 @@ def test_x_model_is_never_given_a_non_assignable_expression():
 # ---------------------------------------------------------------------------
 # hx-boost re-execution hazards
 # ---------------------------------------------------------------------------
+
 
 def test_global_listeners_are_registered_once():
     """base.html re-executes on every boosted body swap.
@@ -133,7 +131,7 @@ def test_no_duplicate_form_field_names_in_a_form():
     for match in re.finditer(r'<input[^>]*name="(end_date|start_date|goal_amount)"[^>]*>', html):
         tag = match.group(0)
         assert ":disabled=" in tag, (
-            f'{match.group(1)} must be :disabled when hidden, or it still submits: {tag[:120]}'
+            f"{match.group(1)} must be :disabled when hidden, or it still submits: {tag[:120]}"
         )
 
 
@@ -149,7 +147,8 @@ def test_dates_render_day_first():
 
     # No template should be back on the anglophone format.
     offenders = [
-        str(p) for p in TEMPLATES.rglob("*.html")
+        str(p)
+        for p in TEMPLATES.rglob("*.html")
         if "strftime('%d %b" in p.read_text() or 'strftime("%d %b' in p.read_text()
     ]
     assert not offenders, f"day-month strftime left in {offenders}"
@@ -159,13 +158,15 @@ def test_dates_render_day_first():
 # Tailwind build
 # ---------------------------------------------------------------------------
 
+
 def test_no_template_loads_the_tailwind_cdn():
     """cdn.tailwindcss.com ships a JIT compiler that generates CSS in the
     browser on every page load. It is explicitly not for production."""
     # Match the tag, not prose: base.html explains in a comment why the CDN was
     # removed, and that mention must not trip this.
     offenders = [
-        str(p) for p in TEMPLATES.rglob("*.html")
+        str(p)
+        for p in TEMPLATES.rglob("*.html")
         if 'src="https://cdn.tailwindcss.com"' in p.read_text()
     ]
     assert not offenders, f"Tailwind CDN still loaded in {offenders}"
@@ -179,7 +180,7 @@ def test_built_stylesheet_exists_and_is_substantial():
 
 def test_every_base_template_links_the_stylesheet():
     for base in ("templates/base.html", "templates/auth/base_auth.html"):
-        assert '/static/css/app.css' in Path(base).read_text(), f"{base} has no stylesheet"
+        assert "/static/css/app.css" in Path(base).read_text(), f"{base} has no stylesheet"
 
 
 def test_tailwind_scans_the_static_js():
@@ -191,16 +192,24 @@ def test_tailwind_scans_the_static_js():
     assert "./templates/**/*.html" in config
 
 
-@pytest.mark.parametrize("cls", [
-    # built at runtime in JS, so only present if the JS is scanned
-    "bg-amber-500", "bg-red-500", "bg-emerald-500",
-    # arbitrary values, only present with JIT-style scanning
-    r"text-\[11px\]", r"w-\[10rem\]",
-    # dark mode and the custom palette
-    r"dark\:bg-gray-900", "bg-primary-500",
-    # migrated from the old inline <style>
-    "x-cloak", "htmx-indicator",
-])
+@pytest.mark.parametrize(
+    "cls",
+    [
+        # built at runtime in JS, so only present if the JS is scanned
+        "bg-amber-500",
+        "bg-red-500",
+        "bg-emerald-500",
+        # arbitrary values, only present with JIT-style scanning
+        r"text-\[11px\]",
+        r"w-\[10rem\]",
+        # dark mode and the custom palette
+        r"dark\:bg-gray-900",
+        "bg-primary-500",
+        # migrated from the old inline <style>
+        "x-cloak",
+        "htmx-indicator",
+    ],
+)
 def test_critical_classes_survived_purging(cls):
     assert cls in Path("static/css/app.css").read_text(), (
         f"{cls} was purged — check tailwind.config.js content globs, then npm run css"
@@ -229,7 +238,7 @@ def test_inline_scripts_are_syntactically_balanced():
         html = Path(tpl).read_text()
         for m in re.finditer(r"<script>(.*?)</script>", html, re.S):
             body = m.group(1)
-            line = html[:m.start()].count("\n") + 1
+            line = html[: m.start()].count("\n") + 1
             assert body.count("{") == body.count("}"), (
                 f"{tpl} script at line {line}: unbalanced braces"
             )
@@ -241,6 +250,7 @@ def test_inline_scripts_are_syntactically_balanced():
 # ---------------------------------------------------------------------------
 # Charts
 # ---------------------------------------------------------------------------
+
 
 def test_charts_need_no_javascript_library():
     """Charts sit inside #insights-body, which is replaced on every filter
@@ -346,9 +356,17 @@ _EXPR = re.compile(r"\{\{.*?\}\}", re.S)
 # <script> block. New interpolations fail by default; add here only after
 # proving the value is not user-controlled.
 _ALLOWED_ATTR_EXPRS = {
-    "{{ bill.id }}", "{{ bucket.type.value }}", "{{ bucket.id }}",
-    "{{ cat.id }}", "{{ u.id }}", "{{ member.id }}", "{{ p }}",
-    "{{ value }}", "{{ key }}", "{{ amt }}", "{{ i }}",
+    "{{ bill.id }}",
+    "{{ bucket.type.value }}",
+    "{{ bucket.id }}",
+    "{{ cat.id }}",
+    "{{ u.id }}",
+    "{{ member.id }}",
+    "{{ p }}",
+    "{{ value }}",
+    "{{ key }}",
+    "{{ amt }}",
+    "{{ i }}",
     "{{ 'true' if bill.is_auto_pay else 'false' }}",
     "{{ 'true' if bill.splits else 'false' }}",
     "{{ 'true' if not bill.amount else 'false' }}",
@@ -402,8 +420,7 @@ def test_hostile_names_render_inert(client, db, authed):
 
     hh_id = db.query(HouseholdMember).first().household_id
     db.add(Category(household_id=hh_id, name=EVIL, color="#112233", icon="x"))
-    db.add(Category(household_id=hh_id, name="<script>boom</script>",
-                    color="#112233", icon="x"))
+    db.add(Category(household_id=hh_id, name="<script>boom</script>", color="#112233", icon="x"))
     for u in db.query(User).all():
         u.display_name = EVIL
     db.commit()
@@ -424,12 +441,14 @@ def test_csp_hardening_directives(client):
         assert d in csp
 
 
-@pytest.mark.parametrize("bad", ["red", "#12345", "#1234567", "#gggggg",
-                                 "url(javascript:x)", "#fff;x:y", ""])
+@pytest.mark.parametrize(
+    "bad", ["red", "#12345", "#1234567", "#gggggg", "url(javascript:x)", "#fff;x:y", ""]
+)
 def test_parse_color_rejects(bad):
     from fastapi import HTTPException
 
     from app.validators import parse_color
+
     with pytest.raises(HTTPException) as e:
         parse_color(bad)
     assert e.value.status_code == 400
@@ -437,17 +456,25 @@ def test_parse_color_rejects(bad):
 
 def test_parse_color_normalises():
     from app.validators import parse_color
+
     assert parse_color(" #AbCdEf ") == "#abcdef"
 
 
 def test_html_settings_reject_bad_colors(client, db, authed):
     from app.models import Category, User
-    r = client.post("/settings/categories", data={
-        "name": "X", "color": 'red;" onload="x', "icon": "a"}, headers=authed.headers)
+
+    r = client.post(
+        "/settings/categories",
+        data={"name": "X", "color": 'red;" onload="x', "icon": "a"},
+        headers=authed.headers,
+    )
     assert r.status_code == 400
     assert db.query(Category).filter_by(name="X").count() == 0
-    r = client.post("/settings/profile", data={
-        "display_name": "N", "avatar_color": "nope"}, headers=authed.headers)
+    r = client.post(
+        "/settings/profile",
+        data={"display_name": "N", "avatar_color": "nope"},
+        headers=authed.headers,
+    )
     assert r.status_code == 400
     assert db.query(User).filter_by(avatar_color="nope").count() == 0
 
@@ -456,19 +483,29 @@ def test_api_settings_reject_bad_colors(client, make_household):
     import pyotp
 
     from tests.conftest import PASSWORD
+
     hh = make_household()
-    r = client.post("/api/v1/auth/login",
-                    json={"username": hh.username, "password": PASSWORD})
+    r = client.post("/api/v1/auth/login", json={"username": hh.username, "password": PASSWORD})
     p = r.json()["pending_token"]
-    r = client.post("/api/v1/auth/totp/verify",
-                    json={"pending_token": p, "code": pyotp.TOTP(hh.secret).now()})
+    r = client.post(
+        "/api/v1/auth/totp/verify", json={"pending_token": p, "code": pyotp.TOTP(hh.secret).now()}
+    )
     h = {"Authorization": f"Bearer {r.json()['access_token']}"}
-    assert client.post("/api/v1/settings/categories", headers=h,
-                       json={"name": "X", "color": "<b>"}).status_code == 400
-    assert client.put("/api/v1/settings/profile", headers=h,
-                      json={"display_name": "N", "avatar_color": "bad"}).status_code == 400
-    ok = client.post("/api/v1/settings/categories", headers=h,
-                     json={"name": "X", "color": "#ABCDEF"})
+    assert (
+        client.post(
+            "/api/v1/settings/categories", headers=h, json={"name": "X", "color": "<b>"}
+        ).status_code
+        == 400
+    )
+    assert (
+        client.put(
+            "/api/v1/settings/profile", headers=h, json={"display_name": "N", "avatar_color": "bad"}
+        ).status_code
+        == 400
+    )
+    ok = client.post(
+        "/api/v1/settings/categories", headers=h, json={"name": "X", "color": "#ABCDEF"}
+    )
     assert ok.status_code == 201 and ok.json()["color"] == "#abcdef"
 
 
@@ -478,6 +515,7 @@ def test_scan_page_renders_currency_as_json(client, db, authed):
     import html as htmllib
 
     from app.models import Household, HouseholdMember
+
     hh = db.get(Household, db.query(HouseholdMember).first().household_id)
     r = client.get("/transactions/scan")
     assert r.status_code == 200
@@ -492,24 +530,30 @@ def test_api_household_rejects_script_currency(client, make_household):
     import pyotp
 
     from tests.conftest import PASSWORD
+
     hh = make_household()
-    r = client.post("/api/v1/auth/login",
-                    json={"username": hh.username, "password": PASSWORD})
-    r = client.post("/api/v1/auth/totp/verify", json={
-        "pending_token": r.json()["pending_token"],
-        "code": pyotp.TOTP(hh.secret).now()})
+    r = client.post("/api/v1/auth/login", json={"username": hh.username, "password": PASSWORD})
+    r = client.post(
+        "/api/v1/auth/totp/verify",
+        json={"pending_token": r.json()["pending_token"], "code": pyotp.TOTP(hh.secret).now()},
+    )
     h = {"Authorization": f"Bearer {r.json()['access_token']}"}
-    bad = client.put("/api/v1/settings/household", headers=h,
-                     json={"name": "H", "default_currency": "');alert(1);//"})
+    bad = client.put(
+        "/api/v1/settings/household",
+        headers=h,
+        json={"name": "H", "default_currency": "');alert(1);//"},
+    )
     assert bad.status_code == 400
-    ok = client.put("/api/v1/settings/household", headers=h,
-                    json={"name": "H", "default_currency": "EUR"})
+    ok = client.put(
+        "/api/v1/settings/household", headers=h, json={"name": "H", "default_currency": "EUR"}
+    )
     assert ok.status_code == 200
 
 
 # ---------------------------------------------------------------------------
 # Task 2.6: CSRF on every mutating fetch, no CDN, single lib.js
 # ---------------------------------------------------------------------------
+
 
 def _first_party_sources():
     """Templates and our own static JS; vendored libraries are not ours."""
@@ -526,7 +570,7 @@ def _fetch_calls(text):
         while i < len(text) and depth:
             depth += {"(": 1, ")": -1}.get(text[i], 0)
             i += 1
-        yield m.start(), text[m.start():i]
+        yield m.start(), text[m.start() : i]
 
 
 def test_every_mutating_fetch_carries_a_csrf_token():
@@ -671,9 +715,14 @@ def test_scanner_libraries_are_vendored():
 
 def test_receipt_scanner_uses_vendored_paths_and_fetch_helper():
     js = (STATIC / "receipt-scanner.js").read_text()
-    for needle in ("'/static/vendor/tesseract'", "TESS_BASE + '/worker.min.js'",
-                   "TESS_BASE + '/core'", "TESS_BASE + '/lang'",
-                   "'/static/vendor/pdfjs'", "PDFJS_BASE + '/pdf.worker.min.mjs'"):
+    for needle in (
+        "'/static/vendor/tesseract'",
+        "TESS_BASE + '/worker.min.js'",
+        "TESS_BASE + '/core'",
+        "TESS_BASE + '/lang'",
+        "'/static/vendor/pdfjs'",
+        "PDFJS_BASE + '/pdf.worker.min.mjs'",
+    ):
         assert needle in js, needle
     assert js.count("app.fetchJSON(") >= 2
     assert "{{" not in js and "{%" not in js
@@ -709,7 +758,7 @@ def test_offline_save_failure_is_reported_not_swallowed():
     save = js.index("await window.offlineExpenses.saveOfflineTransaction")
     assert js[:save].rstrip().endswith("try {")
     catch = js.index("catch (err)", save)
-    assert "NOT saved" in js[catch:catch + 800] and "return;" in js[catch:catch + 800]
+    assert "NOT saved" in js[catch : catch + 800] and "return;" in js[catch : catch + 800]
     # success state only after the try/catch
     assert js.index("this.step = 5; // hide", catch) > catch
 
@@ -723,8 +772,12 @@ def test_stock_is_in_both_navs_and_mobile_nav_stays_at_seven():
     """The bottom bar only fits seven items; Stock replaced Settle there
     (settle up stays in the sidebar and on the My money page)."""
     base = Path("templates/base.html").read_text()
-    side = base[base.index("{% set nav = ["):base.index("] %}", base.index("{% set nav = ["))]
-    mobile = base[base.index("{% set mobile_nav = ["):base.index("] %}", base.index("{% set mobile_nav = ["))]
+    side = base[base.index("{% set nav = [") : base.index("] %}", base.index("{% set nav = ["))]
+    mobile = base[
+        base.index("{% set mobile_nav = [") : base.index(
+            "] %}", base.index("{% set mobile_nav = [")
+        )
+    ]
     assert "('/stock'" in side and "('/settlement'" in side
     assert "('/stock'" in mobile
     assert mobile.count("('/") <= 7

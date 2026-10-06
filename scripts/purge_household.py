@@ -12,6 +12,7 @@ Usage:
 
 Refuses households that are not archived. Back up the database first.
 """
+
 import os
 import sys
 from argparse import Namespace
@@ -24,7 +25,9 @@ def parse_args(argv: list[str]) -> Namespace:
     """`execute` is true only with the exact flag --yes-delete-<household_id>."""
     ids = [a for a in argv if not a.startswith("--")]
     if len(ids) != 1:
-        raise SystemExit("usage: purge_household.py <household_id> [--dry-run | --yes-delete-<household_id>]")
+        raise SystemExit(
+            "usage: purge_household.py <household_id> [--dry-run | --yes-delete-<household_id>]"
+        )
     household_id = ids[0]
     execute = f"--yes-delete-{household_id}" in argv and "--dry-run" not in argv
     return Namespace(household_id=household_id, execute=execute)
@@ -33,7 +36,9 @@ def parse_args(argv: list[str]) -> Namespace:
 def _household_tables():
     from app.core.database import Base
 
-    return [t for t in Base.metadata.sorted_tables if "household_id" in t.c and t.name != "households"]
+    return [
+        t for t in Base.metadata.sorted_tables if "household_id" in t.c and t.name != "households"
+    ]
 
 
 def purge(db, household_id: str, execute: bool, uploads_dir: str = "uploads") -> int:
@@ -47,8 +52,10 @@ def purge(db, household_id: str, execute: bool, uploads_dir: str = "uploads") ->
         print(f"No household with id {household_id}.")
         return 2
     if household.archived_at is None:
-        print(f"Refusing: household '{household.name}' is not archived. "
-              "Only households archived by their last member leaving can be purged.")
+        print(
+            f"Refusing: household '{household.name}' is not archived. "
+            "Only households archived by their last member leaving can be purged."
+        )
         return 3
 
     print(f"Household '{household.name}' ({household_id}), archived {household.archived_at}.")
@@ -60,7 +67,8 @@ def purge(db, household_id: str, execute: bool, uploads_dir: str = "uploads") ->
         if count:
             print(f"  {table.name}: {count}")
     receipts = [
-        r for (r,) in db.query(Transaction.receipt_path).filter(
+        r
+        for (r,) in db.query(Transaction.receipt_path).filter(
             Transaction.household_id == household_id, Transaction.receipt_path.isnot(None)
         )
     ]

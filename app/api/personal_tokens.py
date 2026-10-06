@@ -2,6 +2,7 @@
 
 The plaintext token appears in the create response and nowhere else.
 """
+
 from fastapi import APIRouter, Depends, Response, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -30,12 +31,16 @@ def list_tokens(auth=Depends(require_api_auth), db: Session = Depends(get_db)):
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-def create_token(body: TokenIn, response: Response, auth=Depends(require_api_auth),
-                 db: Session = Depends(get_db)):
+def create_token(
+    body: TokenIn, response: Response, auth=Depends(require_api_auth), db: Session = Depends(get_db)
+):
     user, hh_id = auth
     record, raw = issue_personal_token(
-        db, user_id=user.id, household_id=hh_id,
-        name=body.name, default_bucket_id=body.default_bucket_id,
+        db,
+        user_id=user.id,
+        household_id=hh_id,
+        name=body.name,
+        default_bucket_id=body.default_bucket_id,
     )
     db.commit()
     db.refresh(record)

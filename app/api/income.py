@@ -3,6 +3,7 @@ API income route — create income transactions.
 Income is a thin wrapper over the transactions API with type forced to 'income'.
 The bucket is optional; when given it must be active and track income.
 """
+
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, status
@@ -22,13 +23,13 @@ router = APIRouter(prefix="/income", tags=["income"])
 
 
 class IncomeIn(BaseModel):
-    bucket_id:        str | None = None
-    amount:           Decimal
-    currency:         str        = "EUR"
-    exchange_rate:    Decimal    = Decimal("1")
-    category_id:      str | None = None
-    notes:            str | None = None
-    transaction_date: str        = ""   # ISO date; defaults to today
+    bucket_id: str | None = None
+    amount: Decimal
+    currency: str = "EUR"
+    exchange_rate: Decimal = Decimal("1")
+    category_id: str | None = None
+    notes: str | None = None
+    transaction_date: str = ""  # ISO date; defaults to today
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -60,16 +61,16 @@ def create_income(
     txn = create_transaction(db, household_id=hh_id, bucket=bucket, user=user, data=data)
 
     return {
-        "id":               txn.id,
-        "bucket_id":        txn.bucket_id,
-        "household_id":     txn.household_id,
-        "amount":           quantize(txn.amount),
-        "currency":         txn.currency,
-        "exchange_rate":    float(txn.exchange_rate or 1),
-        "type":             txn.type.value,
-        "paid_by":          txn.paid_by,
-        "category_id":      txn.category_id,
-        "notes":            txn.notes,
+        "id": txn.id,
+        "bucket_id": txn.bucket_id,
+        "household_id": txn.household_id,
+        "amount": quantize(txn.amount),
+        "currency": txn.currency,
+        "exchange_rate": float(txn.exchange_rate or 1),
+        "type": txn.type.value,
+        "paid_by": txn.paid_by,
+        "category_id": txn.category_id,
+        "notes": txn.notes,
         "transaction_date": txn.transaction_date.isoformat(),
-        "created_at":       txn.created_at.isoformat() if txn.created_at else None,
+        "created_at": txn.created_at.isoformat() if txn.created_at else None,
     }

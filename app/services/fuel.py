@@ -6,6 +6,7 @@ unlocks a price per litre on an expense. The litres are always the server's
 own amount / price, rounded half up to 3 dp; amount and price are both in the
 transaction currency, so the exchange rate does not enter into it.
 """
+
 from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import HTTPException
@@ -24,8 +25,7 @@ def fuel_category_id(db: Session, household_id: str) -> str | None:
     """The id of the household's built-in Fuel category, if it has one."""
     row = (
         db.query(Category.id)
-        .filter(Category.household_id == household_id,
-                Category.system_key == FUEL_SYSTEM_KEY)
+        .filter(Category.household_id == household_id, Category.system_key == FUEL_SYSTEM_KEY)
         .first()
     )
     return row[0] if row else None

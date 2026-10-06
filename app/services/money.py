@@ -1,6 +1,7 @@
 """
 Services-level money helpers: base-currency conversion and split shares.
 """
+
 from collections import defaultdict
 from decimal import ROUND_DOWN, Decimal
 
@@ -21,6 +22,7 @@ from app.models import (
 # a EUR 50 dinner and a USD 50 dinner summed to "100" of nothing. Aggregate
 # base_amount, never amount.
 # ---------------------------------------------------------------------------
+
 
 def base_amount_expr():
     """SQL expression: transaction amount converted to the household currency."""

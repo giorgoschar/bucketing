@@ -1,6 +1,7 @@
 """
 Notification service: create DB notification rows and deliver web push messages.
 """
+
 import base64
 import json
 import logging
@@ -65,9 +66,8 @@ def _build_vapid(private_key_str: str):
             from cryptography.hazmat.primitives.serialization import (
                 load_pem_private_key,
             )
-            ec_key = load_pem_private_key(
-                private_key_str.encode("utf-8"), password=None
-            )
+
+            ec_key = load_pem_private_key(private_key_str.encode("utf-8"), password=None)
             return Vapid(private_key=ec_key)
         except Exception:
             logger.exception("_build_vapid: PEM key loading failed")
@@ -137,7 +137,9 @@ def create_notification(
     return notif
 
 
-def send_push_for_notification(db: Session, notification: Notification | None, target_subs=None) -> int:
+def send_push_for_notification(
+    db: Session, notification: Notification | None, target_subs=None
+) -> int:
     """Send a web push message to subscriptions of notification.user_id.
 
     Pass target_subs to restrict delivery to a specific list of PushSubscription
@@ -168,11 +170,13 @@ def send_push_for_notification(db: Session, notification: Notification | None, t
             .all()
         )
 
-    payload = json.dumps({
-        "title": notification.title,
-        "body":  notification.body or "",
-        "link":  notification.link or "/",
-    })
+    payload = json.dumps(
+        {
+            "title": notification.title,
+            "body": notification.body or "",
+            "link": notification.link or "/",
+        }
+    )
 
     private_key = _get_vapid(settings.vapid_private_key)
 

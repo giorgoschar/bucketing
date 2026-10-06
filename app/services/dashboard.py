@@ -1,6 +1,7 @@
 """
 Month/all-time summaries, bills and forecast for dashboards.
 """
+
 from datetime import timedelta
 
 from sqlalchemy.orm import Session, joinedload
@@ -15,8 +16,14 @@ from app.services.insights import _month_range, get_insights_summary, make_cash_
 
 
 def get_month_summary(
-    db: Session, household_id: str, year: int, month: int, bucket_type: str = "",
-    bucket_ids: list | None = None, *, include_cash: bool = False,
+    db: Session,
+    household_id: str,
+    year: int,
+    month: int,
+    bucket_type: str = "",
+    bucket_ids: list | None = None,
+    *,
+    include_cash: bool = False,
 ) -> dict:
     """
     Month total and who-paid breakdown, built from ``get_insights_summary`` so
@@ -30,13 +37,17 @@ def get_month_summary(
     start, end = _month_range(year, month)
     cash_for = (
         make_cash_lookup(db, household_id, bucket_type=bucket_type, bucket_ids=bucket_ids)
-        if include_cash else None
+        if include_cash
+        else None
     )
-    return get_insights_summary(db, household_id, start, end, bucket_type, bucket_ids,
-                                cash_for=cash_for)
+    return get_insights_summary(
+        db, household_id, start, end, bucket_type, bucket_ids, cash_for=cash_for
+    )
 
 
-def get_all_time_summary(db: Session, household_id: str, bucket_type: str = "", bucket_ids: list | None = None) -> dict:
+def get_all_time_summary(
+    db: Session, household_id: str, bucket_type: str = "", bucket_ids: list | None = None
+) -> dict:
     """Total expenses and who-paid breakdown across all time (Insights semantics)."""
     s = get_insights_summary(db, household_id, None, None, bucket_type, bucket_ids)
     return {"total_spent": s["total_spent"], "paid_by": s["paid_by"]}

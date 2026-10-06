@@ -1,6 +1,7 @@
 """
 Notification and web push routes.
 """
+
 import logging
 from urllib.parse import urlparse
 
@@ -21,6 +22,7 @@ router = APIRouter(dependencies=[Depends(require_csrf)])
 # In-app notifications (JSON — consumed by HTMX / Alpine polling)
 # ---------------------------------------------------------------------------
 
+
 @router.get("/notifications", response_class=JSONResponse)
 def list_notifications(
     request: Request,
@@ -30,21 +32,12 @@ def list_notifications(
 ):
     user, hh_id = auth
     PAGE_SIZE = 50
-    base_q = (
-        db.query(Notification)
-        .filter(
-            Notification.user_id == user.id,
-            Notification.household_id == hh_id,
-        )
+    base_q = db.query(Notification).filter(
+        Notification.user_id == user.id,
+        Notification.household_id == hh_id,
     )
     unread = base_q.filter(Notification.is_read.is_(False)).count()
-    items = (
-        base_q
-        .order_by(Notification.created_at.desc())
-        .offset(offset)
-        .limit(PAGE_SIZE)
-        .all()
-    )
+    items = base_q.order_by(Notification.created_at.desc()).offset(offset).limit(PAGE_SIZE).all()
     total = base_q.count()
     has_more = (offset + PAGE_SIZE) < total
     return {
@@ -53,12 +46,12 @@ def list_notifications(
         "offset": offset,
         "items": [
             {
-                "id":         n.id,
-                "type":       n.type.value,
-                "title":      n.title,
-                "body":       n.body,
-                "link":       n.link,
-                "is_read":    n.is_read,
+                "id": n.id,
+                "type": n.type.value,
+                "title": n.title,
+                "body": n.body,
+                "link": n.link,
+                "is_read": n.is_read,
                 "created_at": n.created_at.isoformat() if n.created_at else None,
             }
             for n in items
@@ -90,10 +83,14 @@ def mark_one_read(
     auth=Depends(require_auth),
 ):
     user, hh_id = auth
-    notif = db.query(Notification).filter(
-        Notification.id == notification_id,
-        Notification.user_id == user.id,
-    ).first()
+    notif = (
+        db.query(Notification)
+        .filter(
+            Notification.id == notification_id,
+            Notification.user_id == user.id,
+        )
+        .first()
+    )
     if not notif:
         raise HTTPException(status_code=404, detail="Notification not found")
     notif.is_read = True
@@ -105,9 +102,11 @@ def mark_one_read(
 # Web Push
 # ---------------------------------------------------------------------------
 
+
 @router.get("/push/vapid-public-key", response_class=JSONResponse)
 def vapid_public_key():
     from app.core.config import settings
+
     if not settings.vapid_public_key:
         raise HTTPException(status_code=404, detail="VAPID not configured")
     return {"public_key": settings.vapid_public_key}
@@ -141,7 +140,7 @@ async def push_subscribe(
     try:
         body = await request.json()
         endpoint = body["endpoint"]
-        p256dh   = body["keys"]["p256dh"]
+        p256dh = body["keys"]["p256dh"]
         auth_key = body["keys"]["auth"]
     except (KeyError, ValueError):
         raise HTTPException(status_code=422, detail="Invalid subscription payload") from None
@@ -155,26 +154,34 @@ async def push_subscribe(
     # Scoping by user_id matters — the previous lookup matched on endpoint
     # alone, so any authenticated user could re-point somebody else's
     # subscription at their own account and receive that person's pushes.
-    existing = db.query(PushSubscription).filter(
-        PushSubscription.endpoint == endpoint,
-        PushSubscription.user_id == user.id,
-    ).first()
+    existing = (
+        db.query(PushSubscription)
+        .filter(
+            PushSubscription.endpoint == endpoint,
+            PushSubscription.user_id == user.id,
+        )
+        .first()
+    )
     if existing:
-        existing.p256dh       = p256dh
-        existing.auth         = auth_key
+        existing.p256dh = p256dh
+        existing.auth = auth_key
         existing.household_id = hh_id
     else:
         # Endpoints are globally unique. If another account already holds this
         # one we neither take it over nor delete their row (data is kept).
         if db.query(PushSubscription.id).filter(PushSubscription.endpoint == endpoint).first():
-            raise HTTPException(status_code=409, detail="Endpoint already registered to another account")
-        db.add(PushSubscription(
-            user_id=user.id,
-            household_id=hh_id,
-            endpoint=endpoint,
-            p256dh=p256dh,
-            auth=auth_key,
-        ))
+            raise HTTPException(
+                status_code=409, detail="Endpoint already registered to another account"
+            )
+        db.add(
+            PushSubscription(
+                user_id=user.id,
+                household_id=hh_id,
+                endpoint=endpoint,
+                p256dh=p256dh,
+                auth=auth_key,
+            )
+        )
     db.commit()
     return {"ok": True}
 
@@ -230,13 +237,20 @@ async def push_test(
         logger.warning("push/test: ignoring unparseable request body (%s)", type(exc).__name__)
 
     if endpoint:
-        target_sub = db.query(PushSubscription).filter(
-            PushSubscription.endpoint == endpoint,
-            PushSubscription.user_id == user.id,
-        ).first()
+        target_sub = (
+            db.query(PushSubscription)
+            .filter(
+                PushSubscription.endpoint == endpoint,
+                PushSubscription.user_id == user.id,
+            )
+            .first()
+        )
         if not target_sub:
             return JSONResponse(
-                {"sent": False, "error": "Subscription not found for this device. Try re-enabling notifications."},
+                {
+                    "sent": False,
+                    "error": "Subscription not found for this device. Try re-enabling notifications.",
+                },
                 status_code=200,
             )
         target_subs = [target_sub]
@@ -244,7 +258,10 @@ async def push_test(
         target_subs = db.query(PushSubscription).filter(PushSubscription.user_id == user.id).all()
         if not target_subs:
             return JSONResponse(
-                {"sent": False, "error": "No push subscription found for this device. Enable notifications first."},
+                {
+                    "sent": False,
+                    "error": "No push subscription found for this device. Enable notifications first.",
+                },
                 status_code=200,
             )
 
@@ -262,7 +279,10 @@ async def push_test(
         db.commit()
         if sent_count > 0:
             return {"sent": True, "error": None}
-        return {"sent": False, "error": "Push was attempted but delivery failed. Check server logs for details."}
+        return {
+            "sent": False,
+            "error": "Push was attempted but delivery failed. Check server logs for details.",
+        }
     except Exception as exc:
         # Don't echo the raw exception — VAPID/pywebpush errors can carry key
         # material and internal endpoints. The details go to the server log.

@@ -1,4 +1,5 @@
 """The CI Postgres job only means something if tests really run on Postgres."""
+
 import os
 
 import pytest

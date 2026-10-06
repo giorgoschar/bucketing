@@ -8,14 +8,15 @@ Revises: b7c8d9e0f1a2
 Create Date: 2026-07-27
 
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
 
 from alembic import op
 
-revision: str = 'c8d9e0f1a2b3'
-down_revision: str | None = 'b7c8d9e0f1a2'
+revision: str = "c8d9e0f1a2b3"
+down_revision: str | None = "b7c8d9e0f1a2"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -38,9 +39,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["to_user_id"], ["users.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["created_by"], ["users.id"]),
     )
-    op.create_index(
-        "ix_settlements_household_bucket", "settlements", ["household_id", "bucket_id"]
-    )
+    op.create_index("ix_settlements_household_bucket", "settlements", ["household_id", "bucket_id"])
 
 
 def downgrade() -> None:

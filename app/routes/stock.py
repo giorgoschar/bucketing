@@ -5,6 +5,7 @@ Pages never depend on PosoKanei being up: the list renders from stored price
 snapshots, and lookups that fail render "prices unavailable" instead of an
 error (see docs/POSOKANEI.md).
 """
+
 import logging
 from urllib.parse import urlencode
 
@@ -48,17 +49,25 @@ def _rows(db, hh_id, items):
     prices = stock_svc.current_prices(db, pids)
     advice = stock_svc.price_advice_bulk(db, pids, today)
     runout = stock_svc.runout_bulk(db, items, today)
-    return [{"item": i, "prices": prices.get(i.product_id, []),
-             "advice": advice.get(i.product_id), "runout_days": runout.get(i.id)}
-            for i in items]
+    return [
+        {
+            "item": i,
+            "prices": prices.get(i.product_id, []),
+            "advice": advice.get(i.product_id),
+            "runout_days": runout.get(i.id),
+        }
+        for i in items
+    ]
 
 
 def _groceries_category_id(db, hh_id) -> str | None:
     """The household's groceries category, if it has one (matched by name)."""
-    cats = (db.query(Category)
-            .filter(Category.household_id == hh_id, Category.name.ilike("%grocer%"))
-            .order_by(Category.name)
-            .all())
+    cats = (
+        db.query(Category)
+        .filter(Category.household_id == hh_id, Category.name.ilike("%grocer%"))
+        .order_by(Category.name)
+        .all()
+    )
     return cats[0].id if cats else None
 
 
@@ -84,25 +93,30 @@ def stock_page(
     user, hh_id = auth
     ctx = base_ctx(db, user, hh_id)
     items = stock_svc.list_stock(db, hh_id)
-    ctx.update({
-        "request": request,
-        "user": user,
-        "rows": _rows(db, hh_id, items),
-        "notice": NOTICES.get(notice),
-        "posokanei_enabled": settings.posokanei_enabled,
-        "retailer_label": stock_svc.retailer_label,
-    })
+    ctx.update(
+        {
+            "request": request,
+            "user": user,
+            "rows": _rows(db, hh_id, items),
+            "notice": NOTICES.get(notice),
+            "posokanei_enabled": settings.posokanei_enabled,
+            "retailer_label": stock_svc.retailer_label,
+        }
+    )
     return templates.TemplateResponse("stock/list.html", ctx)
 
 
 def _lookup_response(request, results, *, error=False, empty_msg="No products found."):
-    return templates.TemplateResponse("stock/_lookup_results.html", {
-        "request": request,
-        "results": results,
-        "error": error,
-        "empty_msg": empty_msg,
-        "retailer_label": stock_svc.retailer_label,
-    })
+    return templates.TemplateResponse(
+        "stock/_lookup_results.html",
+        {
+            "request": request,
+            "results": results,
+            "error": error,
+            "empty_msg": empty_msg,
+            "retailer_label": stock_svc.retailer_label,
+        },
+    )
 
 
 @router.get("/stock/search", response_class=HTMLResponse)
@@ -130,7 +144,8 @@ def stock_barcode(request: Request, code: str = "", auth=Depends(require_auth)):
     except PosokaneiUnavailable:
         return _lookup_response(request, [], error=True)
     return _lookup_response(
-        request, [product] if product else [],
+        request,
+        [product] if product else [],
         empty_msg="No product found for this barcode — add it manually below.",
     )
 
@@ -150,11 +165,21 @@ def stock_add(
 ):
     user, hh_id = auth
     try:
-        uq = stock_svc.parse_quantity(unit_quantity, field="Size") if unit_quantity.strip() else None
+        uq = (
+            stock_svc.parse_quantity(unit_quantity, field="Size") if unit_quantity.strip() else None
+        )
         item = stock_svc.add_product(
-            db, hh_id, user.id, name=name, brand=brand, barcode=barcode,
-            posokanei_id=posokanei_id, unit=unit, unit_quantity=uq,
-            quantity=quantity or "0", min_quantity=min_quantity or "1",
+            db,
+            hh_id,
+            user.id,
+            name=name,
+            brand=brand,
+            barcode=barcode,
+            posokanei_id=posokanei_id,
+            unit=unit,
+            unit_quantity=uq,
+            quantity=quantity or "0",
+            min_quantity=min_quantity or "1",
         )
     except StockError as exc:
         raise _bad(exc) from None
@@ -185,9 +210,14 @@ def stock_adjust(
     if not request.headers.get("HX-Request"):
         return RedirectResponse("/stock", status_code=303)
     row = _rows(db, hh_id, [item])[0]
-    return templates.TemplateResponse("stock/_row.html", {
-        "request": request, "row": row, "retailer_label": stock_svc.retailer_label,
-    })
+    return templates.TemplateResponse(
+        "stock/_row.html",
+        {
+            "request": request,
+            "row": row,
+            "retailer_label": stock_svc.retailer_label,
+        },
+    )
 
 
 @router.post("/stock/{item_id}/settings")
@@ -201,7 +231,9 @@ def stock_settings(
     _user, hh_id = auth
     try:
         item = stock_svc.update_stock_settings(
-            db, hh_id, item_id,
+            db,
+            hh_id,
+            item_id,
             min_quantity=min_quantity if min_quantity.strip() else None,
             track_price=track_price in ("on", "true", "1"),
         )
@@ -221,7 +253,9 @@ def stock_refresh(item_id: str, db: Session = Depends(get_db), auth=Depends(requ
         raise HTTPException(status_code=404)
     ok = snapshot_now(db, item.product)
     db.commit()
-    return RedirectResponse(f"/stock?notice={'refreshed' if ok else 'refresh_failed'}", status_code=303)
+    return RedirectResponse(
+        f"/stock?notice={'refreshed' if ok else 'refresh_failed'}", status_code=303
+    )
 
 
 @router.post("/stock/{item_id}/archive")
@@ -237,27 +271,34 @@ def stock_archive(item_id: str, db: Session = Depends(get_db), auth=Depends(requ
 # Shopping list
 # ---------------------------------------------------------------------------
 
+
 def _shopping_ctx(request, db, user, hh_id, bought=None):
     ctx = base_ctx(db, user, hh_id)
     today = local_today()
-    ctx.update({
-        "request": request,
-        "user": user,
-        "data": stock_svc.shopping_list(db, hh_id, today),
-        "rotation": stock_svc.rotation_suggestions(db, hh_id, today),
-        "bought": bought,
-    })
+    ctx.update(
+        {
+            "request": request,
+            "user": user,
+            "data": stock_svc.shopping_list(db, hh_id, today),
+            "rotation": stock_svc.rotation_suggestions(db, hh_id, today),
+            "bought": bought,
+        }
+    )
     return ctx
 
 
 @router.get("/stock/shopping", response_class=HTMLResponse)
 def shopping_page(request: Request, db: Session = Depends(get_db), auth=Depends(require_auth)):
     user, hh_id = auth
-    return templates.TemplateResponse("stock/shopping.html", _shopping_ctx(request, db, user, hh_id))
+    return templates.TemplateResponse(
+        "stock/shopping.html", _shopping_ctx(request, db, user, hh_id)
+    )
 
 
 @router.post("/stock/shopping/bought", response_class=HTMLResponse)
-async def shopping_bought(request: Request, db: Session = Depends(get_db), auth=Depends(require_auth)):
+async def shopping_bought(
+    request: Request, db: Session = Depends(get_db), auth=Depends(require_auth)
+):
     """Add the bought quantities to stock (reason "buy") and offer a link to
     record the expense, prefilled with the basket total at that retailer."""
     user, hh_id = auth
@@ -269,8 +310,9 @@ async def shopping_bought(request: Request, db: Session = Depends(get_db), auth=
         if item is None:
             raise HTTPException(status_code=404)
         try:
-            qty = stock_svc.parse_quantity(form.get(f"qty_{item.id}") or "1",
-                                           field="Quantity", allow_zero=False)
+            qty = stock_svc.parse_quantity(
+                form.get(f"qty_{item.id}") or "1", field="Quantity", allow_zero=False
+            )
         except StockError as exc:
             raise _bad(exc) from None
         picked.append((item, qty))
@@ -285,8 +327,10 @@ async def shopping_bought(request: Request, db: Session = Depends(get_db), auth=
     retailer_name = stock_svc.retailer_label(retailer) if retailer else None
     # Always offer the expense link: with no prices (PosoKanei unavailable) the
     # amount is simply left for the user to type. Prices are EUR.
-    params = {"currency": "EUR",
-              "notes": f"Groceries at {retailer_name}" if retailer_name else "Groceries"}
+    params = {
+        "currency": "EUR",
+        "notes": f"Groceries at {retailer_name}" if retailer_name else "Groceries",
+    }
     if total > 0:
         params["amount"] = f"{total:.2f}"
     if retailer_name:
@@ -295,7 +339,12 @@ async def shopping_bought(request: Request, db: Session = Depends(get_db), auth=
     if cat_id:
         params["category_id"] = cat_id
     expense_url = "/transactions/new?" + urlencode(params)
-    bought = {"count": len(picked), "total": total, "retailer_name": retailer_name,
-              "expense_url": expense_url}
-    return templates.TemplateResponse("stock/shopping.html",
-                                      _shopping_ctx(request, db, user, hh_id, bought))
+    bought = {
+        "count": len(picked),
+        "total": total,
+        "retailer_name": retailer_name,
+        "expense_url": expense_url,
+    }
+    return templates.TemplateResponse(
+        "stock/shopping.html", _shopping_ctx(request, db, user, hh_id, bought)
+    )

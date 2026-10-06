@@ -1,6 +1,7 @@
 """
 Transactions routes: add expense wizard + CRUD.
 """
+
 import logging
 from datetime import date
 from pathlib import Path
@@ -57,6 +58,7 @@ ALLOWED_RECEIPT_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".pdf", 
 def _maybe_number(value: str):
     """Return the value as a Decimal if it looks like a number, else None."""
     from decimal import Decimal, InvalidOperation
+
     try:
         return Decimal(value.strip().replace(",", "."))
     except (InvalidOperation, ValueError, AttributeError):
@@ -67,12 +69,15 @@ def _parse_txn_date(value: str) -> date:
     try:
         return date.fromisoformat(value.strip())
     except (ValueError, AttributeError):
-        raise HTTPException(status_code=400, detail="Date must be a valid date (YYYY-MM-DD).") from None
+        raise HTTPException(
+            status_code=400, detail="Date must be a valid date (YYYY-MM-DD)."
+        ) from None
 
 
 # ---------------------------------------------------------------------------
 # Authenticated file download (replaces the old public /uploads static mount)
 # ---------------------------------------------------------------------------
+
 
 @router.get("/files/{filename}", response_class=FileResponse)
 def serve_receipt(
@@ -127,6 +132,7 @@ def _edit_context(db: Session, user, hh_id: str, txn: Transaction) -> dict:
 # Add expense wizard
 # ---------------------------------------------------------------------------
 
+
 @router.get("/new", response_class=HTMLResponse)
 def new_transaction(
     request: Request,
@@ -165,16 +171,18 @@ def new_transaction(
         if pre_bucket and pre_bucket.household_id == hh_id:
             show_income = pre_bucket.show_income
 
-    ctx.update({
-        "request": request,
-        "user": user,
-        "selected_bucket_id": bucket_id or "",
-        "prefill": prefill,
-        # Paid the way they paid last time: most expenses repeat the method.
-        "default_payment_method": last_payment_method(db, hh_id, user.id),
-        "show_income": show_income,
-        "step": 1,
-    })
+    ctx.update(
+        {
+            "request": request,
+            "user": user,
+            "selected_bucket_id": bucket_id or "",
+            "prefill": prefill,
+            # Paid the way they paid last time: most expenses repeat the method.
+            "default_payment_method": last_payment_method(db, hh_id, user.id),
+            "show_income": show_income,
+            "step": 1,
+        }
+    )
     return templates.TemplateResponse("transactions/new.html", ctx)
 
 
@@ -245,8 +253,13 @@ async def create_transaction(
         # Sync DB + upload I/O: keep it off the event loop.
         txn = await run_in_threadpool(
             create_transaction_service,
-            db, household_id=hh_id, bucket=bucket, user=user,
-            data=data, receipt=receipt, is_shared=shared,
+            db,
+            household_id=hh_id,
+            bucket=bucket,
+            user=user,
+            data=data,
+            receipt=receipt,
+            is_shared=shared,
         )
     except DeletedTransactionReplay:
         # Do not silently resurrect or duplicate a deleted expense.
@@ -268,8 +281,7 @@ async def create_transaction(
     # category once makes it stick for next time.
     if remember_rule == "on" and txn.category_id:
         try:
-            learn_rule(db, hh_id, merchant or notes, txn.category_id,
-                       created_by=user.id)
+            learn_rule(db, hh_id, merchant or notes, txn.category_id, created_by=user.id)
             db.commit()
         except Exception:
             # A convenience rule must never fail an expense that is already saved.
@@ -312,6 +324,7 @@ async def _parse_split_fields(request: Request) -> list[dict]:
 # Edit / Delete
 # ---------------------------------------------------------------------------
 
+
 @router.get("/{txn_id}/edit", response_class=HTMLResponse)
 def edit_transaction_page(
     txn_id: str,
@@ -325,11 +338,13 @@ def edit_transaction_page(
         raise HTTPException(status_code=404)
 
     ctx = _edit_context(db, user, hh_id, txn)
-    ctx.update({
-        "request": request,
-        "user": user,
-        "txn": txn,
-    })
+    ctx.update(
+        {
+            "request": request,
+            "user": user,
+            "txn": txn,
+        }
+    )
     return templates.TemplateResponse("transactions/edit.html", ctx)
 
 
@@ -400,8 +415,7 @@ async def edit_transaction(
         ctx.update({"request": request, "user": user, "txn": txn, "error": _first_error(exc)})
         return templates.TemplateResponse("transactions/edit.html", ctx, status_code=400)
 
-    update_transaction_service(db, txn, household_id=hh_id, user=user, data=data,
-                               is_shared=shared)
+    update_transaction_service(db, txn, household_id=hh_id, user=user, data=data, is_shared=shared)
     db.commit()
 
     return RedirectResponse(after_save_url(txn.bucket_id), status_code=302)
@@ -431,6 +445,7 @@ def delete_transaction(
 # ---------------------------------------------------------------------------
 # Duplicate transaction
 # ---------------------------------------------------------------------------
+
 
 @router.post("/{txn_id}/duplicate", response_class=HTMLResponse)
 def duplicate_transaction(
@@ -478,4 +493,3 @@ def duplicate_transaction(
             {"request": request, "transaction": new_txn, "bucket": bucket},
         )
     return RedirectResponse(after_save_url(src.bucket_id), status_code=302)
-

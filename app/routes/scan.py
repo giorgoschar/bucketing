@@ -1,6 +1,7 @@
 """
 Transactions: receipt scan (OCR text parsing, AADE QR lookup).
 """
+
 import asyncio
 import html as html_lib
 import ipaddress
@@ -35,6 +36,7 @@ router = APIRouter(prefix="/transactions", dependencies=[Depends(require_csrf)])
 # Receipt scan — on-device OCR (Tesseract.js), server parses raw text
 # ---------------------------------------------------------------------------
 
+
 @router.get("/scan", response_class=HTMLResponse)
 def scan_receipt_page(
     request: Request,
@@ -64,7 +66,8 @@ async def parse_scan(
 
     # Household rules take precedence over the built-in keyword guess.
     category_id = resolve_category(
-        db, hh_id,
+        db,
+        hh_id,
         merchant=parsed["merchant"],
         hint=parsed["category_hint"],
         raw_text=text,
@@ -169,7 +172,9 @@ def _parse_aade_html(html: str) -> dict:
 # The AADE link inside a provider page, after HTML unescaping. The host match
 # is exact (the path follows), so a look-alike host can't be smuggled in.
 _MYDATA_LINK_RE = re.compile(
-    r"https://" + re.escape(settings.mydata_qr_host) + re.escape(settings.mydata_qr_path)
+    r"https://"
+    + re.escape(settings.mydata_qr_host)
+    + re.escape(settings.mydata_qr_path)
     + r"\?q=[A-Za-z0-9%+/=._~-]+"
 )
 
@@ -199,7 +204,7 @@ def _parse_gr_number(raw: str) -> float | None:
     s = m.group().rstrip(".,")
     last = max(s.rfind(","), s.rfind("."))
     if last != -1 and len(s) - last - 1 in (1, 2):
-        s = re.sub(r"[.,]", "", s[:last]) + "." + s[last + 1:]
+        s = re.sub(r"[.,]", "", s[:last]) + "." + s[last + 1 :]
     else:
         s = re.sub(r"[.,]", "", s)
     try:
@@ -284,12 +289,15 @@ async def _fetch_public_page(url: str) -> str:
             timeout=settings.aade_timeout_seconds,
         ) as client:
             async with client.stream(
-                "GET", target,
+                "GET",
+                target,
                 headers={"Host": host, "Accept-Language": "el"},
                 extensions={"sni_hostname": host},
             ) as resp:
                 if resp.status_code != 200:
-                    raise HTTPException(status_code=502, detail=f"{host} returned {resp.status_code}")
+                    raise HTTPException(
+                        status_code=502, detail=f"{host} returned {resp.status_code}"
+                    )
                 body = bytearray()
                 async for chunk in resp.aiter_bytes():
                     body += chunk
@@ -363,7 +371,8 @@ async def scan_qr(
             raise HTTPException(status_code=502, detail="Could not read the receipt from AADE")
 
     category_id = resolve_category(
-        db, hh_id,
+        db,
+        hh_id,
         merchant=receipt["merchant"],
         hint=receipt["category_hint"],
     )

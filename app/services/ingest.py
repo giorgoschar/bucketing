@@ -5,6 +5,7 @@ double-fire it, so every payload maps to a deterministic ``client_id``
 (:func:`ingest_client_id`) and the existing unique
 ``(household_id, client_id)`` makes replays idempotent.
 """
+
 import hashlib
 import logging
 from datetime import UTC, datetime
@@ -55,8 +56,9 @@ def parse_occurred_at(raw: str | None) -> datetime | None:
     return moment
 
 
-def ingest_client_id(token_id: str, merchant: str, amount: Decimal,
-                     occurred_at: datetime | None) -> str:
+def ingest_client_id(
+    token_id: str, merchant: str, amount: Decimal, occurred_at: datetime | None
+) -> str:
     """Deterministic idempotency key for one Apple Pay purchase.
 
     Normalised so that equivalent replays collide: the merchant is
@@ -79,9 +81,11 @@ def resolve_ingest_bucket(db: Session, token: PersonalApiToken) -> Bucket:
     if bucket is None:
         bucket = (
             db.query(Bucket)
-            .filter(Bucket.household_id == token.household_id,
-                    Bucket.status == BucketStatus.active,
-                    Bucket.type == BucketType.day2day)
+            .filter(
+                Bucket.household_id == token.household_id,
+                Bucket.status == BucketStatus.active,
+                Bucket.type == BucketType.day2day,
+            )
             .order_by(Bucket.created_at, Bucket.id)
             .first()
         )
@@ -89,7 +93,7 @@ def resolve_ingest_bucket(db: Session, token: PersonalApiToken) -> Bucket:
         raise HTTPException(
             status_code=422,
             detail="No bucket to add this expense to: set a default bucket on the "
-                   "token or create an active day-to-day bucket.",
+            "token or create an active day-to-day bucket.",
         )
     return bucket
 
@@ -152,8 +156,9 @@ def ingest_apple_pay(
 
     user = token.user
     try:
-        txn = create_transaction(db, household_id=token.household_id, bucket=bucket,
-                                 user=user, data=data)
+        txn = create_transaction(
+            db, household_id=token.household_id, bucket=bucket, user=user, data=data
+        )
     except DuplicateTransaction as dup:
         return dup.existing, False
     return txn, True

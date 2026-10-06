@@ -4,6 +4,7 @@ Trip and savings bucket behaviour.
 BucketType.trip and BucketType.savings previously existed only as filter
 labels with no behaviour attached.
 """
+
 from datetime import date, timedelta
 
 import pytest
@@ -19,12 +20,16 @@ from app.models import (
 from app.services import get_savings_summary, get_trip_summary
 
 
-def _expense(db, bucket, household_id, amount, when=None, paid_by=None,
-             currency="EUR", rate=1):
+def _expense(db, bucket, household_id, amount, when=None, paid_by=None, currency="EUR", rate=1):
     txn = Transaction(
-        bucket_id=bucket.id, household_id=household_id, amount=amount,
-        currency=currency, exchange_rate=rate, type=TransactionType.expense,
-        transaction_date=when or local_today(), paid_by=paid_by,
+        bucket_id=bucket.id,
+        household_id=household_id,
+        amount=amount,
+        currency=currency,
+        exchange_rate=rate,
+        type=TransactionType.expense,
+        transaction_date=when or local_today(),
+        paid_by=paid_by,
     )
     db.add(txn)
     db.flush()
@@ -53,6 +58,7 @@ def savings(db, authed):
 # ---------------------------------------------------------------------------
 # Trip
 # ---------------------------------------------------------------------------
+
 
 def test_non_trip_bucket_returns_nothing(db, authed):
     assert get_trip_summary(db, db.get(Bucket, authed.bucket_id)) == {}
@@ -130,10 +136,12 @@ def test_over_budget_is_negative(db, authed, trip):
 def test_per_person_uses_splits(db, authed, trip, make_household):
     txn = _expense(db, trip, authed.household_id, 100, paid_by=authed.user_id)
     other = make_household(name="X", username="tripmate")
-    db.add_all([
-        TransactionSplit(transaction_id=txn.id, user_id=authed.user_id, amount=70),
-        TransactionSplit(transaction_id=txn.id, user_id=other.user_id, amount=30),
-    ])
+    db.add_all(
+        [
+            TransactionSplit(transaction_id=txn.id, user_id=authed.user_id, amount=70),
+            TransactionSplit(transaction_id=txn.id, user_id=other.user_id, amount=30),
+        ]
+    )
     db.commit()
 
     people = {p["user_id"]: p["amount"] for p in get_trip_summary(db, trip)["per_person"]}
@@ -158,12 +166,19 @@ def test_empty_trip_does_not_crash(db, trip):
 # Savings
 # ---------------------------------------------------------------------------
 
+
 def _income(db, bucket, household_id, amount):
-    db.add(Transaction(
-        bucket_id=bucket.id, household_id=household_id, amount=amount,
-        currency="EUR", exchange_rate=1, type=TransactionType.income,
-        transaction_date=local_today(),
-    ))
+    db.add(
+        Transaction(
+            bucket_id=bucket.id,
+            household_id=household_id,
+            amount=amount,
+            currency="EUR",
+            exchange_rate=1,
+            type=TransactionType.income,
+            transaction_date=local_today(),
+        )
+    )
 
 
 def test_non_savings_bucket_returns_nothing(db, authed):
@@ -207,7 +222,7 @@ def test_goal_reached(db, authed, savings):
 
     s = get_savings_summary(db, savings)
     assert s["reached"] is True
-    assert s["pct"] == 100          # bar is clamped
+    assert s["pct"] == 100  # bar is clamped
     assert s["pct_actual"] == 120.0  # true figure
 
 
@@ -239,6 +254,7 @@ def test_no_target_date_has_no_monthly_figure(db, authed, savings):
 # HTTP
 # ---------------------------------------------------------------------------
 
+
 def test_trip_page_renders(client, db, authed, trip):
     trip.start_date = date(2026, 5, 1)
     trip.end_date = date(2026, 5, 8)
@@ -262,10 +278,16 @@ def test_savings_page_renders(client, db, authed, savings):
 
 
 def test_editing_a_bucket_saves_trip_dates(client, db, authed, trip):
-    r = client.post(f"/buckets/{trip.id}/edit", data={
-        "name": "Florence 2026", "type": "trip",
-        "start_date": "2026-09-01", "end_date": "2026-09-09",
-    }, headers=authed.headers)
+    r = client.post(
+        f"/buckets/{trip.id}/edit",
+        data={
+            "name": "Florence 2026",
+            "type": "trip",
+            "start_date": "2026-09-01",
+            "end_date": "2026-09-09",
+        },
+        headers=authed.headers,
+    )
     assert r.status_code == 302
 
     db.expire_all()
@@ -275,10 +297,16 @@ def test_editing_a_bucket_saves_trip_dates(client, db, authed, trip):
 
 
 def test_editing_a_bucket_saves_goal(client, db, authed, savings):
-    r = client.post(f"/buckets/{savings.id}/edit", data={
-        "name": "House deposit", "type": "savings",
-        "goal_amount": "25000", "end_date": "2027-01-01",
-    }, headers=authed.headers)
+    r = client.post(
+        f"/buckets/{savings.id}/edit",
+        data={
+            "name": "House deposit",
+            "type": "savings",
+            "goal_amount": "25000",
+            "end_date": "2027-01-01",
+        },
+        headers=authed.headers,
+    )
     assert r.status_code == 302
 
     db.expire_all()
@@ -288,9 +316,15 @@ def test_editing_a_bucket_saves_goal(client, db, authed, savings):
 
 
 def test_invalid_date_is_rejected(client, authed, trip):
-    r = client.post(f"/buckets/{trip.id}/edit", data={
-        "name": "Trip", "type": "trip", "start_date": "not-a-date",
-    }, headers=authed.headers)
+    r = client.post(
+        f"/buckets/{trip.id}/edit",
+        data={
+            "name": "Trip",
+            "type": "trip",
+            "start_date": "not-a-date",
+        },
+        headers=authed.headers,
+    )
     assert r.status_code == 400
 
 
@@ -298,10 +332,16 @@ def test_trip_end_date_survives_a_save(client, db, authed, trip):
     """Regression: two inputs named end_date meant the hidden savings field
     (empty) overwrote the trip value, because FastAPI takes the last duplicate
     and x-show does not stop a field submitting."""
-    r = client.post(f"/buckets/{trip.id}/edit", data={
-        "name": "Florence 2026", "type": "trip",
-        "start_date": "2026-08-07", "end_date": "2026-08-15",
-    }, headers=authed.headers)
+    r = client.post(
+        f"/buckets/{trip.id}/edit",
+        data={
+            "name": "Florence 2026",
+            "type": "trip",
+            "start_date": "2026-08-07",
+            "end_date": "2026-08-15",
+        },
+        headers=authed.headers,
+    )
     assert r.status_code == 302
 
     db.expire_all()
@@ -316,7 +356,7 @@ def test_trip_reports_days_and_nights(db, trip):
     db.commit()
 
     s = get_trip_summary(db, trip)
-    assert s["days"] == 9      # inclusive
+    assert s["days"] == 9  # inclusive
     assert s["nights"] == 8
 
 

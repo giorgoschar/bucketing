@@ -23,25 +23,34 @@ def insights(
     request: Request,
     # Date range (default: current month)
     start_date: str = Query(default=""),
-    end_date:   str = Query(default=""),
+    end_date: str = Query(default=""),
     # Preset shortcut sent by the filter bar (this_month, last_month, last_3m, last_6m, this_year, all_time, custom)
-    preset:     str = Query(default="this_month"),
+    preset: str = Query(default="this_month"),
     # Filters
-    bucket_type:  str = Query(default=""),
-    bucket_ids:   str = Query(default=""),
+    bucket_type: str = Query(default=""),
+    bucket_ids: str = Query(default=""),
     category_ids: str = Query(default=""),
-    paid_by:      str = Query(default=""),
+    paid_by: str = Query(default=""),
     db: Session = Depends(get_db),
     auth=Depends(require_auth),
 ):
     user, hh_id = auth
     today = local_today()
 
-    data = build_insights(db, hh_id, InsightFilters(
-        preset=preset, start_date=start_date, end_date=end_date,
-        bucket_type=bucket_type, bucket_ids=bucket_ids,
-        category_ids=category_ids, paid_by=paid_by, today=today,
-    ))
+    data = build_insights(
+        db,
+        hh_id,
+        InsightFilters(
+            preset=preset,
+            start_date=start_date,
+            end_date=end_date,
+            bucket_type=bucket_type,
+            bucket_ids=bucket_ids,
+            category_ids=category_ids,
+            paid_by=paid_by,
+            today=today,
+        ),
+    )
     period, start, end = data["period"], data["start"], data["end"]
     selected_bucket_ids = data["selected_bucket_ids"]
     selected_category_ids = data["selected_category_ids"]
@@ -59,12 +68,7 @@ def insights(
         .order_by(Bucket.created_at)
         .all()
     )
-    all_categories = (
-        db.query(Category)
-        .filter_by(household_id=hh_id)
-        .order_by(Category.name)
-        .all()
-    )
+    all_categories = db.query(Category).filter_by(household_id=hh_id).order_by(Category.name).all()
     # Single join instead of one db.get() per membership.
     member_users = (
         db.query(User)
@@ -74,9 +78,9 @@ def insights(
         .all()
     )
 
-    household   = db.get(Household, hh_id)
+    household = db.get(Household, hh_id)
     memberships = db.query(HouseholdMember).filter_by(user_id=user.id).all()
-    households  = [db.get(Household, m.household_id) for m in memberships]
+    households = [db.get(Household, m.household_id) for m in memberships]
 
     is_partial = bool(request.headers.get("HX-Request")) and not request.headers.get("HX-Boosted")
     template = "insights_partial.html" if is_partial else "insights.html"
@@ -84,40 +88,40 @@ def insights(
     return templates.TemplateResponse(
         template,
         {
-            "request":              request,
-            "user":                 user,
-            "household":            household,
-            "households":           households,
-            "summary":              data["summary"],
-            "income_total":         data["income_total"],
-            "bills_due":            data["bills_due"],
-            "net":                  data["net"],
-            "in_out":               data["in_out"],
-            "categories":           data["categories"],
-            "budget_status":        data["budget_status"],
-            "bucket_breakdown":     data["bucket_breakdown"],
-            "category_trend":       category_trend,
-            "cat_trend_max":        cat_trend_max,
-            "kpis":                 data["kpis"],
-            "by_method":            data["by_method"],
-            "cash_share":           data["cash_share"],
-            "fuel":                 data["fuel"],
-            "forecast":             data["forecast"],
-            "trend":                trend,
-            "trend_max":            trend_max,
-            "buckets":              buckets,
-            "all_categories":       all_categories,
-            "member_users":         member_users,
-            "today":                today,
-            "all_time":             period["all_time"],
-            "is_current_month":     period["is_current_month"],
-            "period_label":         period["period_label"],
-            "preset":               period["preset"],
-            "start_date":           start.isoformat() if start else "",
-            "end_date":             end.isoformat() if end else "",
-            "bucket_type":          bucket_type,
-            "selected_bucket_ids":  selected_bucket_ids,
+            "request": request,
+            "user": user,
+            "household": household,
+            "households": households,
+            "summary": data["summary"],
+            "income_total": data["income_total"],
+            "bills_due": data["bills_due"],
+            "net": data["net"],
+            "in_out": data["in_out"],
+            "categories": data["categories"],
+            "budget_status": data["budget_status"],
+            "bucket_breakdown": data["bucket_breakdown"],
+            "category_trend": category_trend,
+            "cat_trend_max": cat_trend_max,
+            "kpis": data["kpis"],
+            "by_method": data["by_method"],
+            "cash_share": data["cash_share"],
+            "fuel": data["fuel"],
+            "forecast": data["forecast"],
+            "trend": trend,
+            "trend_max": trend_max,
+            "buckets": buckets,
+            "all_categories": all_categories,
+            "member_users": member_users,
+            "today": today,
+            "all_time": period["all_time"],
+            "is_current_month": period["is_current_month"],
+            "period_label": period["period_label"],
+            "preset": period["preset"],
+            "start_date": start.isoformat() if start else "",
+            "end_date": end.isoformat() if end else "",
+            "bucket_type": bucket_type,
+            "selected_bucket_ids": selected_bucket_ids,
             "selected_category_ids": selected_category_ids,
-            "paid_by":              paid_by,
+            "paid_by": paid_by,
         },
     )

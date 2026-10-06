@@ -6,6 +6,7 @@ response. Python's ``round()`` uses banker's rounding on binary floats
 (``round(0.125, 2) == 0.12``, ``round(2.675, 2) == 2.67``), which is not how
 anyone expects a currency figure to round; everything here rounds half up.
 """
+
 from decimal import ROUND_HALF_UP, Decimal
 
 ZERO = Decimal("0.00")

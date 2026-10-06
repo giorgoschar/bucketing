@@ -1,6 +1,7 @@
 """
 Income entry routes — separate from the expense wizard.
 """
+
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import ValidationError
@@ -51,7 +52,12 @@ def new_income(
     selected_bucket_id = ""
     if bucket_id:
         pre = db.get(Bucket, bucket_id)
-        if pre and pre.household_id == hh_id and pre.show_income and pre.status == BucketStatus.active:
+        if (
+            pre
+            and pre.household_id == hh_id
+            and pre.show_income
+            and pre.status == BucketStatus.active
+        ):
             selected_bucket_id = bucket_id
 
     return templates.TemplateResponse(

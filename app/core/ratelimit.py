@@ -12,6 +12,7 @@ Note on deployment: the default storage is per-process memory, and
 is really "5 per worker". Point ``RATE_LIMIT_STORAGE_URI`` at Redis
 (e.g. ``redis://localhost:6379``) to enforce limits across workers.
 """
+
 import hashlib
 
 from slowapi import Limiter

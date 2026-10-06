@@ -8,28 +8,29 @@ Revises: a2b3c4d5e6f7
 Create Date: 2026-07-28 00:00:00.000000
 
 """
+
 import sqlalchemy as sa
 
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = 'b3c4d5e6f7a8'
-down_revision = 'a2b3c4d5e6f7'
+revision = "b3c4d5e6f7a8"
+down_revision = "a2b3c4d5e6f7"
 branch_labels = None
 depends_on = None
 
 
 def upgrade() -> None:
     op.add_column(
-        'transactions',
+        "transactions",
         sa.Column(
-            'exclude_from_settlement',
+            "exclude_from_settlement",
             sa.Boolean(),
             nullable=False,
-            server_default='false',
+            server_default="false",
         ),
     )
 
 
 def downgrade() -> None:
-    op.drop_column('transactions', 'exclude_from_settlement')
+    op.drop_column("transactions", "exclude_from_settlement")

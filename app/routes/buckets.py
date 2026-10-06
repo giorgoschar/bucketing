@@ -1,6 +1,7 @@
 """
 Buckets CRUD routes.
 """
+
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import func
@@ -37,9 +38,16 @@ from app.validators import parse_amount, parse_color, parse_year_month, require_
 router = APIRouter(prefix="/buckets", dependencies=[Depends(require_csrf)])
 
 BUCKET_COLORS = [
-    "#6366f1", "#8b5cf6", "#ec4899", "#ef4444",
-    "#f97316", "#f59e0b", "#10b981", "#06b6d4",
-    "#3b82f6", "#84cc16",
+    "#6366f1",
+    "#8b5cf6",
+    "#ec4899",
+    "#ef4444",
+    "#f97316",
+    "#f59e0b",
+    "#10b981",
+    "#06b6d4",
+    "#3b82f6",
+    "#84cc16",
 ]
 
 BUCKET_ICONS = ["🪣", "🏠", "✈️", "🛒", "💡", "🎯", "🏖️", "🚗", "💰", "🎉"]
@@ -48,13 +56,16 @@ BUCKET_ICONS = ["🪣", "🏠", "✈️", "🛒", "💡", "🎯", "🏖️", "�
 def _optional_date(value: str, field: str):
     """Parse an optional ISO date from a form field, 400 rather than 500."""
     from datetime import date as _date
+
     value = (value or "").strip()
     if not value:
         return None
     try:
         return _date.fromisoformat(value)
     except ValueError:
-        raise HTTPException(status_code=400, detail=f"{field} must be a valid date (YYYY-MM-DD).") from None
+        raise HTTPException(
+            status_code=400, detail=f"{field} must be a valid date (YYYY-MM-DD)."
+        ) from None
 
 
 @router.get("", response_class=HTMLResponse)
@@ -146,6 +157,7 @@ def bucket_detail(
     auth=Depends(require_auth),
 ):
     from datetime import date, timedelta
+
     user, hh_id = auth
     bucket = db.get(Bucket, bucket_id)
     if not bucket or bucket.household_id != hh_id:
@@ -160,7 +172,7 @@ def bucket_detail(
     if month is None:
         month = today.month
 
-    is_current_month = (year == today.year and month == today.month)
+    is_current_month = year == today.year and month == today.month
 
     # Month navigation URLs
     py, pm = (year - 1, 12) if month == 1 else (year, month - 1)
@@ -199,21 +211,17 @@ def bucket_detail(
             if month == 12
             else date(year, month + 1, 1) - timedelta(days=1)
         )
-        base_q = (
-            db.query(Transaction)
-            .filter(
-                Transaction.active(),
-                Transaction.bucket_id == bucket_id,
-                Transaction.transaction_date >= start,
-                Transaction.transaction_date <= end,
-            )
+        base_q = db.query(Transaction).filter(
+            Transaction.active(),
+            Transaction.bucket_id == bucket_id,
+            Transaction.transaction_date >= start,
+            Transaction.transaction_date <= end,
         )
         total_count = base_q.count()
         total_pages = max(1, -(-total_count // PAGE_SIZE))  # ceiling division
         page = min(page, total_pages)
         transactions = (
-            base_q
-            .order_by(Transaction.transaction_date.desc(), Transaction.created_at.desc())
+            base_q.order_by(Transaction.transaction_date.desc(), Transaction.created_at.desc())
             .offset((page - 1) * PAGE_SIZE)
             .limit(PAGE_SIZE)
             .all()
@@ -300,8 +308,8 @@ def edit_bucket(
     bucket.icon = icon
     bucket.budget = parse_amount(budget, field="Budget", allow_blank=True)
     bucket.description = description.strip() or None
-    bucket.show_income = (show_income == "on")
-    bucket.enable_settlement = (enable_settlement == "on")
+    bucket.show_income = show_income == "on"
+    bucket.enable_settlement = enable_settlement == "on"
     bucket.start_date = _optional_date(start_date, "Start date")
     bucket.end_date = _optional_date(end_date, "End date")
     bucket.goal_amount = parse_amount(goal_amount, field="Goal amount", allow_blank=True)
@@ -375,7 +383,8 @@ def settle_bucket(
 
     try:
         created = record_household_settlement(
-            db, hh_id,
+            db,
+            hh_id,
             bucket_id=bucket_id,
             created_by=user.id,
             from_user_id=payer,

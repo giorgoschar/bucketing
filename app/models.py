@@ -33,6 +33,7 @@ def gen_id():
 # Enums
 # ---------------------------------------------------------------------------
 
+
 class TransactionType(str, enum.Enum):
     expense = "expense"
     income = "income"
@@ -42,6 +43,7 @@ class TransactionType(str, enum.Enum):
 class PaymentMethod(str, enum.Enum):
     """How an expense was paid. Stored as a plain VARCHAR (no DB enum type) so
     adding a member never needs ALTER TYPE; validated in app.schemas."""
+
     card = "card"
     cash = "cash"
     apple_pay = "apple_pay"
@@ -57,6 +59,7 @@ class PayerMode(str, enum.Enum):
     (rent paid 800 / 300 straight to the landlord), so ``paid_by`` is NULL and
     the splits are both what each person owes and what each person paid.
     """
+
     single = "single"
     own_share = "own_share"
 
@@ -71,6 +74,7 @@ class CashKind(str, enum.Enum):
     in their wallet on that date. ``out``: legacy, no longer offered: cash
     that left the wallet without a logged expense.
     """
+
     stash_in = "stash_in"
     take = "take"
     put_back = "put_back"
@@ -108,16 +112,16 @@ class OccurrenceStatus(str, enum.Enum):
 
 
 class NotificationType(str, enum.Enum):
-    bill_due           = "bill_due"
-    bill_overdue       = "bill_overdue"
-    bill_auto_paid     = "bill_auto_paid"
-    contract_expiring  = "contract_expiring"
-    bill_drift         = "bill_drift"       # bill cost moved vs its own history
-    budget_warning     = "budget_warning"   # bucket spend crossed a budget threshold
-    ingest_created     = "ingest_created"   # an expense arrived via the Apple Pay Shortcut
-    general            = "general"
-    stock_low          = "stock_low"        # a stock item fell to its minimum
-    price_drop         = "price_drop"       # tracked product ≥10% under its 30-day median
+    bill_due = "bill_due"
+    bill_overdue = "bill_overdue"
+    bill_auto_paid = "bill_auto_paid"
+    contract_expiring = "contract_expiring"
+    bill_drift = "bill_drift"  # bill cost moved vs its own history
+    budget_warning = "budget_warning"  # bucket spend crossed a budget threshold
+    ingest_created = "ingest_created"  # an expense arrived via the Apple Pay Shortcut
+    general = "general"
+    stock_low = "stock_low"  # a stock item fell to its minimum
+    price_drop = "price_drop"  # tracked product ≥10% under its 30-day median
     # WARNING: on PostgreSQL this is a native ENUM type (created in migration
     # 2c1adaf99fa2), so adding a member here REQUIRES a migration running
     # ALTER TYPE notificationtype ADD VALUE — otherwise inserts fail at runtime
@@ -129,6 +133,7 @@ class NotificationType(str, enum.Enum):
 # ---------------------------------------------------------------------------
 # Users & Households
 # ---------------------------------------------------------------------------
+
 
 class User(Base):
     __tablename__ = "users"
@@ -155,16 +160,20 @@ class User(Base):
 
     def get_totp_secret(self) -> str | None:
         from app.core.crypto import decrypt_str
+
         return decrypt_str(self.totp_secret) if self.totp_secret else None
 
     def set_totp_secret(self, secret: str | None) -> None:
         from app.core.crypto import encrypt_str
+
         self.totp_secret = encrypt_str(secret) if secret else None
 
     memberships = relationship("HouseholdMember", back_populates="user")
     paid_transactions = relationship("Transaction", back_populates="paid_by_user")
     splits = relationship("TransactionSplit", back_populates="user")
-    invitations_created = relationship("Invitation", foreign_keys="Invitation.created_by", back_populates="created_by_user")
+    invitations_created = relationship(
+        "Invitation", foreign_keys="Invitation.created_by", back_populates="created_by_user"
+    )
 
 
 class Household(Base):
@@ -214,7 +223,9 @@ class Invitation(Base):
     used_by = Column(String, ForeignKey("users.id"), nullable=True)
 
     household = relationship("Household", back_populates="invitations")
-    created_by_user = relationship("User", foreign_keys=[created_by], back_populates="invitations_created")
+    created_by_user = relationship(
+        "User", foreign_keys=[created_by], back_populates="invitations_created"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -234,7 +245,9 @@ class Category(Base):
     )
 
     id = Column(String, primary_key=True, default=gen_id)
-    household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=True)  # null = system default
+    household_id = Column(
+        String, ForeignKey("households.id", ondelete="CASCADE"), nullable=True
+    )  # null = system default
     name = Column(String(50), nullable=False)
     color = Column(String(7), default="#6366f1")  # hex
     icon = Column(String(10), default="📦")  # emoji
@@ -256,6 +269,7 @@ class Category(Base):
 # ---------------------------------------------------------------------------
 # Buckets
 # ---------------------------------------------------------------------------
+
 
 class Bucket(Base):
     __tablename__ = "buckets"
@@ -321,11 +335,19 @@ class Transaction(Base):
     notes = Column(Text, nullable=True)
     transaction_date = Column(Date, default=local_today, nullable=False)
     receipt_path = Column(String, nullable=True)
-    payment_method = Column(String(16), default=PaymentMethod.card.value,
-                            server_default=PaymentMethod.card.value, nullable=False)
+    payment_method = Column(
+        String(16),
+        default=PaymentMethod.card.value,
+        server_default=PaymentMethod.card.value,
+        nullable=False,
+    )
     merchant = Column(String(200), nullable=True)
-    payer_mode = Column(String(16), default=PayerMode.single.value,
-                        server_default=PayerMode.single.value, nullable=False)
+    payer_mode = Column(
+        String(16),
+        default=PayerMode.single.value,
+        server_default=PayerMode.single.value,
+        nullable=False,
+    )
     # Fuel expenses only (the household's FUEL_SYSTEM_KEY category): the price
     # per litre, in the transaction currency, and the litres the server works
     # out from it (amount / price). Both NULL for anything else.
@@ -361,7 +383,9 @@ class Transaction(Base):
     bucket = relationship("Bucket", back_populates="transactions")
     paid_by_user = relationship("User", back_populates="paid_transactions")
     category = relationship("Category", back_populates="transactions")
-    splits = relationship("TransactionSplit", back_populates="transaction", cascade="all, delete-orphan")
+    splits = relationship(
+        "TransactionSplit", back_populates="transaction", cascade="all, delete-orphan"
+    )
     bill_occurrence = relationship("BillOccurrence", back_populates="transaction", uselist=False)
 
 
@@ -375,6 +399,7 @@ class CashMovement(Base):
     taken for ("I took this from my stash"). Amounts are in the household
     currency. Soft-deleted.
     """
+
     __tablename__ = "cash_movements"
     __table_args__ = (
         Index("ix_cash_movements_hh_user_date", "household_id", "user_id", "movement_date"),
@@ -392,8 +417,9 @@ class CashMovement(Base):
     category_id = Column(String, ForeignKey("categories.id"), nullable=True)
     note = Column(String(500), nullable=True)
     movement_date = Column(Date, default=local_today, nullable=False)
-    transaction_id = Column(String, ForeignKey("transactions.id", ondelete="SET NULL"),
-                            nullable=True)
+    transaction_id = Column(
+        String, ForeignKey("transactions.id", ondelete="SET NULL"), nullable=True
+    )
     created_at = Column(DateTime, default=utcnow_naive)
     deleted_at = Column(DateTime, nullable=True)
 
@@ -410,7 +436,9 @@ class TransactionSplit(Base):
     )
 
     id = Column(String, primary_key=True, default=gen_id)
-    transaction_id = Column(String, ForeignKey("transactions.id", ondelete="CASCADE"), nullable=False)
+    transaction_id = Column(
+        String, ForeignKey("transactions.id", ondelete="CASCADE"), nullable=False
+    )
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     amount = Column(Numeric(12, 4), nullable=False)  # this person's share
     is_settled = Column(Boolean, default=False)
@@ -424,11 +452,10 @@ class TransactionSplit(Base):
 # Recurring Bills
 # ---------------------------------------------------------------------------
 
+
 class RecurringBill(Base):
     __tablename__ = "recurring_bills"
-    __table_args__ = (
-        Index("ix_recurring_bills_household_id", "household_id"),
-    )
+    __table_args__ = (Index("ix_recurring_bills_household_id", "household_id"),)
 
     id = Column(String, primary_key=True, default=gen_id)
     household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False)
@@ -446,8 +473,12 @@ class RecurringBill(Base):
     paid_by_default = Column(String, ForeignKey("users.id"), nullable=True)
     # own_share: each payment is recorded as everyone paying their default
     # split directly (see PayerMode); paid_by_default is then unused.
-    payer_mode = Column(String(16), default=PayerMode.single.value,
-                        server_default=PayerMode.single.value, nullable=False)
+    payer_mode = Column(
+        String(16),
+        default=PayerMode.single.value,
+        server_default=PayerMode.single.value,
+        nullable=False,
+    )
     notes = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True)
     is_auto_pay = Column(Boolean, default=False, nullable=False)
@@ -456,14 +487,16 @@ class RecurringBill(Base):
     household = relationship("Household", back_populates="recurring_bills")
     bucket = relationship("Bucket", back_populates="recurring_bills")
     category = relationship("Category", back_populates="recurring_bills")
-    occurrences = relationship("BillOccurrence", back_populates="bill", cascade="all, delete-orphan")
+    occurrences = relationship(
+        "BillOccurrence", back_populates="bill", cascade="all, delete-orphan"
+    )
     splits = relationship("RecurringBillSplit", back_populates="bill", cascade="all, delete-orphan")
 
 
 class BillOccurrence(Base):
     __tablename__ = "bill_occurrences"
     __table_args__ = (
-        UniqueConstraint('bill_id', 'due_date', name='uq_bill_occurrence'),
+        UniqueConstraint("bill_id", "due_date", name="uq_bill_occurrence"),
         Index("ix_bill_occurrences_bill_status", "bill_id", "due_date", "status"),
     )
 
@@ -488,23 +521,24 @@ class CategoryRule(Base):
     These rules are checked first and can be taught from a scan, so correcting
     a category once makes it stick.
     """
+
     __tablename__ = "category_rules"
     __table_args__ = (
         UniqueConstraint("household_id", "pattern", name="uq_category_rule"),
         Index("ix_category_rules_household", "household_id"),
     )
 
-    id           = Column(String, primary_key=True, default=gen_id)
+    id = Column(String, primary_key=True, default=gen_id)
     household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False)
     # Case-insensitive substring, stored lowercased.
-    pattern      = Column(String(200), nullable=False)
-    category_id  = Column(String, ForeignKey("categories.id", ondelete="CASCADE"), nullable=False)
-    match_count  = Column(Integer, default=0, nullable=False)
-    created_by   = Column(String, ForeignKey("users.id"), nullable=True)
-    created_at   = Column(DateTime, default=utcnow_naive)
+    pattern = Column(String(200), nullable=False)
+    category_id = Column(String, ForeignKey("categories.id", ondelete="CASCADE"), nullable=False)
+    match_count = Column(Integer, default=0, nullable=False)
+    created_by = Column(String, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=utcnow_naive)
 
     household = relationship("Household")
-    category  = relationship("Category")
+    category = relationship("Category")
 
 
 class Settlement(Base):
@@ -518,27 +552,26 @@ class Settlement(Base):
     Scoped to a bucket when bucket_id is set; a NULL bucket_id settles across
     the whole household.
     """
-    __tablename__ = "settlements"
-    __table_args__ = (
-        Index("ix_settlements_household_bucket", "household_id", "bucket_id"),
-    )
 
-    id           = Column(String, primary_key=True, default=gen_id)
+    __tablename__ = "settlements"
+    __table_args__ = (Index("ix_settlements_household_bucket", "household_id", "bucket_id"),)
+
+    id = Column(String, primary_key=True, default=gen_id)
     household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False)
-    bucket_id    = Column(String, ForeignKey("buckets.id", ondelete="CASCADE"), nullable=True)
+    bucket_id = Column(String, ForeignKey("buckets.id", ondelete="CASCADE"), nullable=True)
     from_user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    to_user_id   = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    to_user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     # Always stored in the household's default currency, matching the balances
     # it offsets (see services.base_amount_expr).
-    amount       = Column(Numeric(12, 4), nullable=False)
-    note         = Column(Text, nullable=True)
-    created_by   = Column(String, ForeignKey("users.id"), nullable=True)
-    created_at   = Column(DateTime, default=utcnow_naive)
+    amount = Column(Numeric(12, 4), nullable=False)
+    note = Column(Text, nullable=True)
+    created_by = Column(String, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=utcnow_naive)
 
     household = relationship("Household")
-    bucket    = relationship("Bucket")
+    bucket = relationship("Bucket")
     from_user = relationship("User", foreign_keys=[from_user_id])
-    to_user   = relationship("User", foreign_keys=[to_user_id])
+    to_user = relationship("User", foreign_keys=[to_user_id])
 
 
 class RecurringBillSplit(Base):
@@ -557,6 +590,7 @@ class RecurringBillSplit(Base):
 # Notifications & Push Subscriptions
 # ---------------------------------------------------------------------------
 
+
 class Notification(Base):
     __tablename__ = "notifications"
     __table_args__ = (
@@ -566,33 +600,35 @@ class Notification(Base):
         Index("ix_notifications_user_household_created", "user_id", "household_id", "created_at"),
     )
 
-    id           = Column(String, primary_key=True, default=gen_id)
-    household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
-    user_id      = Column(String, ForeignKey("users.id",      ondelete="CASCADE"), nullable=False, index=True)
-    type         = Column(SAEnum(NotificationType), nullable=False)
-    title        = Column(String(200), nullable=False)
-    body         = Column(Text, nullable=True)
-    link         = Column(String, nullable=True)
+    id = Column(String, primary_key=True, default=gen_id)
+    household_id = Column(
+        String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    type = Column(SAEnum(NotificationType), nullable=False)
+    title = Column(String(200), nullable=False)
+    body = Column(Text, nullable=True)
+    link = Column(String, nullable=True)
     # NULL for ad-hoc notifications (NULLs do not collide in a UNIQUE index);
     # set to a stable key for anything emitted by the scheduler.
-    dedupe_key   = Column(String(200), nullable=True)
-    is_read      = Column(Boolean, default=False, nullable=False)
-    created_at   = Column(DateTime, default=utcnow_naive)
+    dedupe_key = Column(String(200), nullable=True)
+    is_read = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=utcnow_naive)
 
     household = relationship("Household")
-    user      = relationship("User")
+    user = relationship("User")
 
 
 class PushSubscription(Base):
     __tablename__ = "push_subscriptions"
 
-    id           = Column(String, primary_key=True, default=gen_id)
-    user_id      = Column(String, ForeignKey("users.id",      ondelete="CASCADE"), nullable=False, index=True)
+    id = Column(String, primary_key=True, default=gen_id)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False)
-    endpoint     = Column(Text, nullable=False, unique=True)
-    p256dh       = Column(Text, nullable=False)
-    auth         = Column(Text, nullable=False)
-    created_at   = Column(DateTime, default=utcnow_naive)
+    endpoint = Column(Text, nullable=False, unique=True)
+    p256dh = Column(Text, nullable=False)
+    auth = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=utcnow_naive)
 
     user = relationship("User")
 
@@ -601,22 +637,21 @@ class PushSubscription(Base):
 # API Refresh Tokens (JWT — mobile / external clients)
 # ---------------------------------------------------------------------------
 
+
 class RefreshToken(Base):
     __tablename__ = "refresh_tokens"
-    __table_args__ = (
-        Index("ix_refresh_tokens_user_id", "user_id"),
-    )
+    __table_args__ = (Index("ix_refresh_tokens_user_id", "user_id"),)
 
-    id           = Column(String, primary_key=True, default=gen_id)
-    user_id      = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    id = Column(String, primary_key=True, default=gen_id)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     household_id = Column(String, nullable=False)
-    token_hash   = Column(String, nullable=False, unique=True)  # SHA-256 hex of the raw token
-    expires_at   = Column(DateTime, nullable=False)
-    revoked      = Column(Boolean, default=False, nullable=False)
+    token_hash = Column(String, nullable=False, unique=True)  # SHA-256 hex of the raw token
+    expires_at = Column(DateTime, nullable=False)
+    revoked = Column(Boolean, default=False, nullable=False)
     # User.session_version at issue; a later bump (logout, password or 2FA
     # change) makes the token unusable even if it was not revoked.
     session_version = Column(Integer, default=0, server_default="0", nullable=False)
-    created_at   = Column(DateTime, default=utcnow_naive)
+    created_at = Column(DateTime, default=utcnow_naive)
 
     user = relationship("User")
 
@@ -624,6 +659,7 @@ class RefreshToken(Base):
 # ---------------------------------------------------------------------------
 # Personal API tokens (iOS Shortcut ingest)
 # ---------------------------------------------------------------------------
+
 
 class PersonalApiToken(Base):
     """A long-lived credential one member creates for one household.
@@ -633,24 +669,23 @@ class PersonalApiToken(Base):
     characters, for recognising a token in the list. Revocation sets
     ``revoked_at`` (rows are never deleted).
     """
+
     __tablename__ = "personal_api_tokens"
-    __table_args__ = (
-        Index("ix_personal_api_tokens_user_household", "user_id", "household_id"),
-    )
+    __table_args__ = (Index("ix_personal_api_tokens_user_household", "user_id", "household_id"),)
 
-    id                = Column(String, primary_key=True, default=gen_id)
-    user_id           = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    household_id      = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False)
-    name              = Column(String(60), nullable=False)
-    token_hash        = Column(String(64), nullable=False, unique=True)
-    prefix            = Column(String(12), nullable=False)
-    scopes            = Column(String(100), nullable=False, default="ingest", server_default="ingest")
+    id = Column(String, primary_key=True, default=gen_id)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(60), nullable=False)
+    token_hash = Column(String(64), nullable=False, unique=True)
+    prefix = Column(String(12), nullable=False)
+    scopes = Column(String(100), nullable=False, default="ingest", server_default="ingest")
     default_bucket_id = Column(String, ForeignKey("buckets.id", ondelete="SET NULL"), nullable=True)
-    last_used_at      = Column(DateTime, nullable=True)
-    created_at        = Column(DateTime, default=utcnow_naive)
-    revoked_at        = Column(DateTime, nullable=True)
+    last_used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=utcnow_naive)
+    revoked_at = Column(DateTime, nullable=True)
 
-    user           = relationship("User")
+    user = relationship("User")
     default_bucket = relationship("Bucket")
 
     @property
@@ -661,6 +696,7 @@ class PersonalApiToken(Base):
 # ---------------------------------------------------------------------------
 # Stock & prices (Phase 6)
 # ---------------------------------------------------------------------------
+
 
 class StockReason(str, enum.Enum):
     buy = "buy"
@@ -674,84 +710,88 @@ class Product(Base):
     Never hard-deleted from the UI: "remove" sets archived_at so the price
     history and consumption log that hang off it are preserved.
     """
+
     __tablename__ = "products"
     __table_args__ = (
         # Unique per household only when a barcode is set: a partial index on
         # Postgres; on SQLite a plain unique index behaves the same because
         # NULLs never collide.
         Index(
-            "uq_products_household_barcode", "household_id", "barcode",
-            unique=True, postgresql_where=text("barcode IS NOT NULL"),
+            "uq_products_household_barcode",
+            "household_id",
+            "barcode",
+            unique=True,
+            postgresql_where=text("barcode IS NOT NULL"),
         ),
         Index("ix_products_household_id", "household_id"),
     )
 
-    id            = Column(String, primary_key=True, default=gen_id)
-    household_id  = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False)
-    name          = Column(String(200), nullable=False)
-    brand         = Column(String(100), nullable=True)
-    barcode       = Column(String(32), nullable=True)
-    posokanei_id  = Column(String(64), nullable=True)
-    unit          = Column(String(20), nullable=True)
+    id = Column(String, primary_key=True, default=gen_id)
+    household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(200), nullable=False)
+    brand = Column(String(100), nullable=True)
+    barcode = Column(String(32), nullable=True)
+    posokanei_id = Column(String(64), nullable=True)
+    unit = Column(String(20), nullable=True)
     unit_quantity = Column(Numeric(10, 3), nullable=True)
-    category_id   = Column(String, ForeignKey("categories.id", ondelete="SET NULL"), nullable=True)
-    image_url     = Column(String(500), nullable=True)
-    created_at    = Column(DateTime, default=utcnow_naive)
-    archived_at   = Column(DateTime, nullable=True)
+    category_id = Column(String, ForeignKey("categories.id", ondelete="SET NULL"), nullable=True)
+    image_url = Column(String(500), nullable=True)
+    created_at = Column(DateTime, default=utcnow_naive)
+    archived_at = Column(DateTime, nullable=True)
 
     stock_item = relationship("StockItem", back_populates="product", uselist=False)
-    snapshots  = relationship("PriceSnapshot", back_populates="product")
+    snapshots = relationship("PriceSnapshot", back_populates="product")
 
 
 class StockItem(Base):
     __tablename__ = "stock_items"
-    __table_args__ = (
-        Index("ix_stock_items_household_id", "household_id"),
-    )
+    __table_args__ = (Index("ix_stock_items_household_id", "household_id"),)
 
-    id           = Column(String, primary_key=True, default=gen_id)
+    id = Column(String, primary_key=True, default=gen_id)
     household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False)
-    product_id   = Column(String, ForeignKey("products.id", ondelete="CASCADE"), nullable=False, unique=True)
-    quantity     = Column(Numeric(10, 2), default=0, nullable=False)
+    product_id = Column(
+        String, ForeignKey("products.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    quantity = Column(Numeric(10, 2), default=0, nullable=False)
     min_quantity = Column(Numeric(10, 2), default=1, nullable=False)
-    track_price  = Column(Boolean, default=True, nullable=False)
-    updated_at   = Column(DateTime, default=utcnow_naive, onupdate=utcnow_naive)
+    track_price = Column(Boolean, default=True, nullable=False)
+    updated_at = Column(DateTime, default=utcnow_naive, onupdate=utcnow_naive)
 
-    product   = relationship("Product", back_populates="stock_item")
+    product = relationship("Product", back_populates="stock_item")
     movements = relationship("StockMovement", back_populates="stock_item")
 
 
 class StockMovement(Base):
     """Consumption/purchase log; drives run-out prediction."""
-    __tablename__ = "stock_movements"
-    __table_args__ = (
-        Index("ix_stock_movements_item_created", "stock_item_id", "created_at"),
-    )
 
-    id            = Column(String, primary_key=True, default=gen_id)
+    __tablename__ = "stock_movements"
+    __table_args__ = (Index("ix_stock_movements_item_created", "stock_item_id", "created_at"),)
+
+    id = Column(String, primary_key=True, default=gen_id)
     stock_item_id = Column(String, ForeignKey("stock_items.id", ondelete="CASCADE"), nullable=False)
-    delta         = Column(Numeric(10, 2), nullable=False)
-    reason        = Column(String(12), nullable=False)  # StockReason value
-    created_at    = Column(DateTime, default=utcnow_naive)
-    created_by    = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    delta = Column(Numeric(10, 2), nullable=False)
+    reason = Column(String(12), nullable=False)  # StockReason value
+    created_at = Column(DateTime, default=utcnow_naive)
+    created_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     stock_item = relationship("StockItem", back_populates="movements")
 
 
 class PriceSnapshot(Base):
     """One retailer's price for a product on a day (from PosoKanei)."""
+
     __tablename__ = "price_snapshots"
     __table_args__ = (
         UniqueConstraint("product_id", "retailer", "snapshot_date", name="uq_price_snapshot"),
         Index("ix_price_snapshots_product_date", "product_id", "snapshot_date"),
     )
 
-    id            = Column(String, primary_key=True, default=gen_id)
-    product_id    = Column(String, ForeignKey("products.id", ondelete="CASCADE"), nullable=False)
-    retailer      = Column(String(40), nullable=False)
-    price         = Column(Numeric(10, 2), nullable=False)
-    unit_price    = Column(Numeric(10, 4), nullable=True)
-    is_discount   = Column(Boolean, default=False, nullable=False)
+    id = Column(String, primary_key=True, default=gen_id)
+    product_id = Column(String, ForeignKey("products.id", ondelete="CASCADE"), nullable=False)
+    retailer = Column(String(40), nullable=False)
+    price = Column(Numeric(10, 2), nullable=False)
+    unit_price = Column(Numeric(10, 4), nullable=True)
+    is_discount = Column(Boolean, default=False, nullable=False)
     snapshot_date = Column(Date, nullable=False)
 
     product = relationship("Product", back_populates="snapshots")

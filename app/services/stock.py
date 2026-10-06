@@ -8,6 +8,7 @@ indistinguishable from a missing one.
 Products are never hard-deleted here: :func:`archive_product` hides one from
 the stock list but keeps its price history and movements.
 """
+
 from __future__ import annotations
 
 import math
@@ -35,8 +36,10 @@ class StockError(ValueError):
 # Parsing helpers
 # ---------------------------------------------------------------------------
 
-def parse_quantity(raw, *, field: str = "Quantity", allow_zero: bool = True,
-                   allow_negative: bool = False) -> Decimal:
+
+def parse_quantity(
+    raw, *, field: str = "Quantity", allow_zero: bool = True, allow_negative: bool = False
+) -> Decimal:
     try:
         value = Decimal(str(raw).strip().replace(",", "."))
     except Exception:
@@ -70,6 +73,7 @@ def _clip(raw, n: int) -> str | None:
 # Queries
 # ---------------------------------------------------------------------------
 
+
 def list_stock(db: Session, hh_id: str) -> list[StockItem]:
     return (
         db.query(StockItem)
@@ -92,17 +96,34 @@ def get_stock_item(db: Session, hh_id: str, item_id: str) -> StockItem | None:
 # Mutations (caller commits)
 # ---------------------------------------------------------------------------
 
+
 def _move(db, item: StockItem, delta: Decimal, reason: StockReason, user_id: str | None):
-    db.add(StockMovement(stock_item_id=item.id, delta=delta, reason=reason.value,
-                         created_by=user_id, created_at=utcnow_naive()))
+    db.add(
+        StockMovement(
+            stock_item_id=item.id,
+            delta=delta,
+            reason=reason.value,
+            created_by=user_id,
+            created_at=utcnow_naive(),
+        )
+    )
 
 
 def add_product(
-    db: Session, hh_id: str, user_id: str | None, *,
-    name: str, brand: str | None = None, barcode: str | None = None,
-    posokanei_id: str | None = None, unit: str | None = None,
-    unit_quantity=None, image_url: str | None = None,
-    quantity=ZERO, min_quantity=Decimal("1"), category_id: str | None = None,
+    db: Session,
+    hh_id: str,
+    user_id: str | None,
+    *,
+    name: str,
+    brand: str | None = None,
+    barcode: str | None = None,
+    posokanei_id: str | None = None,
+    unit: str | None = None,
+    unit_quantity=None,
+    image_url: str | None = None,
+    quantity=ZERO,
+    min_quantity=Decimal("1"),
+    category_id: str | None = None,
 ) -> StockItem:
     """Add a product to the household's stock (or revive the existing one
     with the same barcode)."""
@@ -120,31 +141,45 @@ def add_product(
 
     product = None
     if barcode:
-        product = (db.query(Product)
-                   .filter(Product.household_id == hh_id, Product.barcode == barcode)
-                   .first())
+        product = (
+            db.query(Product)
+            .filter(Product.household_id == hh_id, Product.barcode == barcode)
+            .first()
+        )
     if product is not None:
         product.archived_at = None
         product.posokanei_id = product.posokanei_id or _clip(posokanei_id, 64)
         item = product.stock_item
         if item is None:
-            item = StockItem(household_id=hh_id, product_id=product.id,
-                             quantity=ZERO, min_quantity=min_quantity)
+            item = StockItem(
+                household_id=hh_id, product_id=product.id, quantity=ZERO, min_quantity=min_quantity
+            )
             db.add(item)
             db.flush()
         return item
 
     product = Product(
-        household_id=hh_id, name=name, brand=_clip(brand, 100), barcode=barcode,
-        posokanei_id=_clip(posokanei_id, 64), unit=_clip(unit, 20),
+        household_id=hh_id,
+        name=name,
+        brand=_clip(brand, 100),
+        barcode=barcode,
+        posokanei_id=_clip(posokanei_id, 64),
+        unit=_clip(unit, 20),
         unit_quantity=to_decimal(unit_quantity) if unit_quantity not in (None, "") else None,
-        image_url=_clip(image_url, 500), category_id=category_id,
+        image_url=_clip(image_url, 500),
+        category_id=category_id,
         created_at=utcnow_naive(),
     )
     db.add(product)
     db.flush()
-    item = StockItem(household_id=hh_id, product_id=product.id, quantity=quantity,
-                     min_quantity=min_quantity, track_price=True, updated_at=utcnow_naive())
+    item = StockItem(
+        household_id=hh_id,
+        product_id=product.id,
+        quantity=quantity,
+        min_quantity=min_quantity,
+        track_price=True,
+        updated_at=utcnow_naive(),
+    )
     db.add(item)
     db.flush()
     if quantity > 0:
@@ -152,8 +187,14 @@ def add_product(
     return item
 
 
-def adjust_stock(db: Session, hh_id: str, item_id: str, delta, user_id: str | None,
-                 reason: StockReason | None = None) -> StockItem | None:
+def adjust_stock(
+    db: Session,
+    hh_id: str,
+    item_id: str,
+    delta,
+    user_id: str | None,
+    reason: StockReason | None = None,
+) -> StockItem | None:
     """Change a quantity by ``delta`` (never below zero) and log the movement.
 
     The logged delta is what actually changed, so using an item already at
@@ -176,8 +217,9 @@ def adjust_stock(db: Session, hh_id: str, item_id: str, delta, user_id: str | No
     return item
 
 
-def update_stock_settings(db: Session, hh_id: str, item_id: str, *,
-                          min_quantity=None, track_price: bool | None = None) -> StockItem | None:
+def update_stock_settings(
+    db: Session, hh_id: str, item_id: str, *, min_quantity=None, track_price: bool | None = None
+) -> StockItem | None:
     item = get_stock_item(db, hh_id, item_id)
     if item is None:
         return None
@@ -202,6 +244,7 @@ def archive_product(db: Session, hh_id: str, item_id: str) -> StockItem | None:
 # Price snapshots
 # ---------------------------------------------------------------------------
 
+
 def record_snapshots(db: Session, product: Product, summary, day: date) -> int:
     """Store ``summary``'s retailer prices as ``day``'s snapshots, plus any
     earlier history it carries. Existing (product, retailer, day) rows are left
@@ -221,20 +264,28 @@ def record_snapshots(db: Session, product: Product, summary, day: date) -> int:
         return 0
 
     existing = {
-        (r, d) for r, d in db.query(PriceSnapshot.retailer, PriceSnapshot.snapshot_date)
-        .filter(PriceSnapshot.product_id == product.id,
-                PriceSnapshot.snapshot_date.in_({d for _, d in rows}))
+        (r, d)
+        for r, d in db.query(PriceSnapshot.retailer, PriceSnapshot.snapshot_date).filter(
+            PriceSnapshot.product_id == product.id,
+            PriceSnapshot.snapshot_date.in_({d for _, d in rows}),
+        )
     }
     added = 0
     for (retailer, d), (price, unit_price, is_discount) in rows.items():
         if (retailer, d) in existing:
             continue
-        db.add(PriceSnapshot(
-            product_id=product.id, retailer=retailer[:40], snapshot_date=d,
-            price=to_decimal(price).quantize(Decimal("0.01")),
-            unit_price=to_decimal(unit_price).quantize(Decimal("0.0001")) if unit_price is not None else None,
-            is_discount=bool(is_discount),
-        ))
+        db.add(
+            PriceSnapshot(
+                product_id=product.id,
+                retailer=retailer[:40],
+                snapshot_date=d,
+                price=to_decimal(price).quantize(Decimal("0.01")),
+                unit_price=to_decimal(unit_price).quantize(Decimal("0.0001"))
+                if unit_price is not None
+                else None,
+                is_discount=bool(is_discount),
+            )
+        )
         added += 1
     db.flush()
     return added
@@ -260,8 +311,9 @@ _RETAILER_LABELS = {
 def retailer_label(code: str | None) -> str:
     if not code:
         return "—"
-    return _RETAILER_LABELS.get(code.lower(), code.replace("_", " ").replace("-", " ").title()
-                                if code.isascii() else code)
+    return _RETAILER_LABELS.get(
+        code.lower(), code.replace("_", " ").replace("-", " ").title() if code.isascii() else code
+    )
 
 
 def current_prices(db: Session, product_ids) -> dict[str, list[PriceSnapshot]]:
@@ -269,15 +321,23 @@ def current_prices(db: Session, product_ids) -> dict[str, list[PriceSnapshot]]:
     product_ids = list(product_ids)
     if not product_ids:
         return {}
-    latest = (db.query(PriceSnapshot.product_id.label("pid"),
-                       func.max(PriceSnapshot.snapshot_date).label("d"))
-              .filter(PriceSnapshot.product_id.in_(product_ids))
-              .group_by(PriceSnapshot.product_id)
-              .subquery())
-    snaps = (db.query(PriceSnapshot)
-             .join(latest, (latest.c.pid == PriceSnapshot.product_id)
-                   & (latest.c.d == PriceSnapshot.snapshot_date))
-             .all())
+    latest = (
+        db.query(
+            PriceSnapshot.product_id.label("pid"), func.max(PriceSnapshot.snapshot_date).label("d")
+        )
+        .filter(PriceSnapshot.product_id.in_(product_ids))
+        .group_by(PriceSnapshot.product_id)
+        .subquery()
+    )
+    snaps = (
+        db.query(PriceSnapshot)
+        .join(
+            latest,
+            (latest.c.pid == PriceSnapshot.product_id)
+            & (latest.c.d == PriceSnapshot.snapshot_date),
+        )
+        .all()
+    )
     out: dict[str, list[PriceSnapshot]] = {}
     for s in snaps:
         out.setdefault(s.product_id, []).append(s)
@@ -295,8 +355,8 @@ def _price_key(s: PriceSnapshot):
 # Price advice ("price prediction" — an estimate, labelled as such in the UI)
 # ---------------------------------------------------------------------------
 
-ADVICE_MIN_DAYS = 7               # distinct snapshot days needed before advising
-BUY_NEAR_LOW = Decimal("1.02")    # within 2% of the 90-day low
+ADVICE_MIN_DAYS = 7  # distinct snapshot days needed before advising
+BUY_NEAR_LOW = Decimal("1.02")  # within 2% of the 90-day low
 DISCOUNT_BELOW_MEDIAN = Decimal("0.9")
 WAIT_ABOVE_MEDIAN = Decimal("1.08")
 
@@ -326,9 +386,16 @@ def _trend_pct_30d(daily: dict[date, Decimal], today: date) -> Decimal | None:
 
 
 def _advice_from(snaps: list[PriceSnapshot], today: date) -> dict:
-    out = {"advice": "unknown", "reason": "Not enough price history yet",
-           "current_min": None, "median_30d": None, "min_90d": None,
-           "trend_pct_30d": None, "is_discount": False, "as_of": None}
+    out = {
+        "advice": "unknown",
+        "reason": "Not enough price history yet",
+        "current_min": None,
+        "median_30d": None,
+        "min_90d": None,
+        "trend_pct_30d": None,
+        "is_discount": False,
+        "as_of": None,
+    }
     recent = [s for s in snaps if 0 <= (today - s.snapshot_date).days < 90]
     if not recent:
         return out
@@ -340,13 +407,22 @@ def _advice_from(snaps: list[PriceSnapshot], today: date) -> dict:
             daily[s.snapshot_date] = price
     latest = max(daily)
     current = daily[latest]
-    is_discount = any(s.is_discount for s in recent
-                      if s.snapshot_date == latest and to_decimal(s.price) == current)
+    is_discount = any(
+        s.is_discount
+        for s in recent
+        if s.snapshot_date == latest and to_decimal(s.price) == current
+    )
     median_30d = _median([p for d, p in daily.items() if (today - d).days < 30])
     min_90d = min(daily.values())
     trend = _trend_pct_30d(daily, today)
-    out.update(current_min=current, median_30d=median_30d, min_90d=min_90d,
-               trend_pct_30d=trend, is_discount=is_discount, as_of=latest)
+    out.update(
+        current_min=current,
+        median_30d=median_30d,
+        min_90d=min_90d,
+        trend_pct_30d=trend,
+        is_discount=is_discount,
+        as_of=latest,
+    )
     if len(daily) < ADVICE_MIN_DAYS or median_30d is None:
         return out
 
@@ -368,11 +444,15 @@ def _snapshots_by_product(db: Session, product_ids, today: date) -> dict[str, li
     product_ids = list(product_ids)
     if not product_ids:
         return {}
-    rows = (db.query(PriceSnapshot)
-            .filter(PriceSnapshot.product_id.in_(product_ids),
-                    PriceSnapshot.snapshot_date > today - timedelta(days=90),
-                    PriceSnapshot.snapshot_date <= today)
-            .all())
+    rows = (
+        db.query(PriceSnapshot)
+        .filter(
+            PriceSnapshot.product_id.in_(product_ids),
+            PriceSnapshot.snapshot_date > today - timedelta(days=90),
+            PriceSnapshot.snapshot_date <= today,
+        )
+        .all()
+    )
     out: dict[str, list[PriceSnapshot]] = {}
     for s in rows:
         out.setdefault(s.product_id, []).append(s)
@@ -417,11 +497,15 @@ def _uses_by_item(db: Session, item_ids, today: date) -> dict[str, list[tuple[da
     if not item_ids:
         return {}
     since = datetime.combine(today - timedelta(days=RUNOUT_WINDOW_DAYS), time.min)
-    rows = (db.query(StockMovement.stock_item_id, StockMovement.created_at, StockMovement.delta)
-            .filter(StockMovement.stock_item_id.in_(item_ids),
-                    StockMovement.reason == StockReason.use.value,
-                    StockMovement.created_at >= since)
-            .all())
+    rows = (
+        db.query(StockMovement.stock_item_id, StockMovement.created_at, StockMovement.delta)
+        .filter(
+            StockMovement.stock_item_id.in_(item_ids),
+            StockMovement.reason == StockReason.use.value,
+            StockMovement.created_at >= since,
+        )
+        .all()
+    )
     out: dict[str, list[tuple[date, Decimal]]] = {}
     for item_id, created_at, delta in rows:
         if created_at.date() <= today:
@@ -429,7 +513,9 @@ def _uses_by_item(db: Session, item_ids, today: date) -> dict[str, list[tuple[da
     return out
 
 
-def predicted_runout_days(db: Session, item: StockItem, today: date | None = None) -> Decimal | None:
+def predicted_runout_days(
+    db: Session, item: StockItem, today: date | None = None
+) -> Decimal | None:
     """Days until ``item`` runs out at its recent consumption rate (estimate).
 
     rate = Σ|use deltas| over the last 60 days / days observed (at least 7);
@@ -469,7 +555,8 @@ def shopping_list(db: Session, hh_id: str, today: date | None = None) -> dict:
     items = list_stock(db, hh_id)
     runout = runout_bulk(db, items, today)
     wanted = [
-        i for i in items
+        i
+        for i in items
         if to_decimal(i.quantity) <= to_decimal(i.min_quantity)
         or (runout[i.id] is not None and runout[i.id] <= RUNOUT_SOON_DAYS)
     ]
@@ -482,33 +569,43 @@ def shopping_list(db: Session, hh_id: str, today: date | None = None) -> dict:
         need = restock_quantity(i)
         snaps = prices.get(i.product_id, [])
         best = snaps[0] if snaps else None
-        rows.append({
-            "item": i,
-            "product": i.product,
-            "need_qty": need,
-            "reason": "low" if to_decimal(i.quantity) <= to_decimal(i.min_quantity) else "runout",
-            "runout_days": runout[i.id],
-            "retailer": best.retailer if best else None,
-            "retailer_name": retailer_label(best.retailer) if best else None,
-            "price": to_decimal(best.price) if best else None,
-            "unit_price": best.unit_price if best else None,
-            "is_discount": bool(best and best.is_discount),
-            "line_total": _line(best.price, need) if best else None,
-            "advice": advice.get(i.product_id),
-            "prices": snaps,
-        })
+        rows.append(
+            {
+                "item": i,
+                "product": i.product,
+                "need_qty": need,
+                "reason": "low"
+                if to_decimal(i.quantity) <= to_decimal(i.min_quantity)
+                else "runout",
+                "runout_days": runout[i.id],
+                "retailer": best.retailer if best else None,
+                "retailer_name": retailer_label(best.retailer) if best else None,
+                "price": to_decimal(best.price) if best else None,
+                "unit_price": best.unit_price if best else None,
+                "is_discount": bool(best and best.is_discount),
+                "line_total": _line(best.price, need) if best else None,
+                "advice": advice.get(i.product_id),
+                "prices": snaps,
+            }
+        )
 
     groups: dict[str | None, dict] = {}
     for r in rows:
-        g = groups.setdefault(r["retailer"], {
-            "retailer": r["retailer"], "retailer_name": r["retailer_name"],
-            "items": [], "total": ZERO,
-        })
+        g = groups.setdefault(
+            r["retailer"],
+            {
+                "retailer": r["retailer"],
+                "retailer_name": r["retailer_name"],
+                "items": [],
+                "total": ZERO,
+            },
+        )
         g["items"].append(r)
         if r["line_total"] is not None:
             g["total"] += r["line_total"]
-    ordered = sorted(groups.values(),
-                     key=lambda g: (g["retailer"] is None, -len(g["items"]), g["total"]))
+    ordered = sorted(
+        groups.values(), key=lambda g: (g["retailer"] is None, -len(g["items"]), g["total"])
+    )
 
     # Cheapest single store for the whole list: most items covered, then total.
     priced = [r for r in rows if r["prices"]]
@@ -524,8 +621,13 @@ def shopping_list(db: Session, hh_id: str, today: date | None = None) -> dict:
     best_store = None
     if candidates:
         neg_covers, total, ret = min(candidates)
-        best_store = {"retailer": ret, "retailer_name": retailer_label(ret), "total": total,
-                      "covers": -neg_covers, "missing": len(priced) + neg_covers}
+        best_store = {
+            "retailer": ret,
+            "retailer_name": retailer_label(ret),
+            "total": total,
+            "covers": -neg_covers,
+            "missing": len(priced) + neg_covers,
+        }
 
     return {
         "items": rows,
@@ -550,7 +652,7 @@ def basket_total(db: Session, items_with_qty, retailer: str | None) -> Decimal:
 
 
 def rotation_suggestions(db: Session, hh_id: str, today: date | None = None) -> list[dict]:
-    """"Stock up now" for buy_now items below 2× minimum; "hold off" for
+    """ "Stock up now" for buy_now items below 2× minimum; "hold off" for
     wait items you still have more than the minimum of."""
     today = today or local_today()
     items = list_stock(db, hh_id)
@@ -560,9 +662,23 @@ def rotation_suggestions(db: Session, hh_id: str, today: date | None = None) -> 
         a = advice[i.product_id]
         qty, mn = to_decimal(i.quantity), to_decimal(i.min_quantity)
         if a["advice"] == "buy_now" and qty < mn * 2:
-            out.append({"item": i, "product": i.product, "kind": "stock_up", "advice": a,
-                        "message": f"Stock up on {i.product.name} now: {a['reason'].lower()}."})
+            out.append(
+                {
+                    "item": i,
+                    "product": i.product,
+                    "kind": "stock_up",
+                    "advice": a,
+                    "message": f"Stock up on {i.product.name} now: {a['reason'].lower()}.",
+                }
+            )
         elif a["advice"] == "wait" and qty > mn:
-            out.append({"item": i, "product": i.product, "kind": "hold_off", "advice": a,
-                        "message": f"Hold off on {i.product.name}: {a['reason'].lower()}."})
+            out.append(
+                {
+                    "item": i,
+                    "product": i.product,
+                    "kind": "hold_off",
+                    "advice": a,
+                    "message": f"Hold off on {i.product.name}: {a['reason'].lower()}.",
+                }
+            )
     return out

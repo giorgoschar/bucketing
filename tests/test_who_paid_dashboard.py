@@ -3,6 +3,7 @@
 Scenario (plan Review Focus 3): A pays 100, only B has a split of 50.
 Who paid must show A=100, B=0 (share 50) and the bars must sum to the total.
 """
+
 from decimal import Decimal
 
 import pyotp
@@ -81,8 +82,10 @@ def test_api_dashboard_who_paid_credits_payer(db, client, make_household):
     partner = _add_member(db, hh.household_id, "partner")
     db.commit()
     r = client.post("/api/v1/auth/login", json={"username": hh.username, "password": PASSWORD})
-    r = client.post("/api/v1/auth/totp/verify", json={
-        "pending_token": r.json()["pending_token"], "code": pyotp.TOTP(hh.secret).now()})
+    r = client.post(
+        "/api/v1/auth/totp/verify",
+        json={"pending_token": r.json()["pending_token"], "code": pyotp.TOTP(hh.secret).now()},
+    )
     headers = {"Authorization": f"Bearer {r.json()['access_token']}"}
     _paid(db, hh, 100, [(partner.id, 50)])
     body = client.get("/api/v1/dashboard", headers=headers).json()

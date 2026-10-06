@@ -1,6 +1,7 @@
 """
 API buckets routes — CRUD + balance + settle.
 """
+
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -37,31 +38,32 @@ router = APIRouter(prefix="/buckets", tags=["buckets"])
 # Schemas
 # ---------------------------------------------------------------------------
 
+
 class BucketIn(BaseModel):
-    name:              str
-    type:              str   = "custom"
-    color:             str   = "#6366f1"
-    icon:              str   = "🪣"
-    budget:            Decimal | None = None
-    description:       str   | None = None
-    show_income:       bool  = True
-    enable_settlement: bool  = False
+    name: str
+    type: str = "custom"
+    color: str = "#6366f1"
+    icon: str = "🪣"
+    budget: Decimal | None = None
+    description: str | None = None
+    show_income: bool = True
+    enable_settlement: bool = False
 
 
 def _bucket_dict(b: Bucket, balance: dict | None = None) -> dict:
     d = {
-        "id":               b.id,
-        "household_id":     b.household_id,
-        "name":             b.name,
-        "type":             b.type.value,
-        "color":            b.color,
-        "icon":             b.icon,
-        "status":           b.status.value,
-        "budget":           quantize(b.budget) if b.budget is not None else None,
-        "description":      b.description,
-        "show_income":      b.show_income,
+        "id": b.id,
+        "household_id": b.household_id,
+        "name": b.name,
+        "type": b.type.value,
+        "color": b.color,
+        "icon": b.icon,
+        "status": b.status.value,
+        "budget": quantize(b.budget) if b.budget is not None else None,
+        "description": b.description,
+        "show_income": b.show_income,
         "enable_settlement": b.enable_settlement,
-        "created_at":       b.created_at.isoformat() if b.created_at else None,
+        "created_at": b.created_at.isoformat() if b.created_at else None,
     }
     if balance is not None:
         d["balance"] = balance
@@ -71,6 +73,7 @@ def _bucket_dict(b: Bucket, balance: dict | None = None) -> dict:
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
+
 
 @router.get("")
 def list_buckets(
@@ -136,13 +139,13 @@ def update_bucket(
     if not bucket:
         raise HTTPException(status_code=404, detail="Bucket not found")
 
-    bucket.name              = body.name.strip()
-    bucket.type              = BucketType(body.type)
-    bucket.color             = parse_color(body.color)
-    bucket.icon              = body.icon
-    bucket.budget            = body.budget
-    bucket.description       = body.description
-    bucket.show_income       = body.show_income
+    bucket.name = body.name.strip()
+    bucket.type = BucketType(body.type)
+    bucket.color = parse_color(body.color)
+    bucket.icon = body.icon
+    bucket.budget = body.budget
+    bucket.description = body.description
+    bucket.show_income = body.show_income
     bucket.enable_settlement = body.enable_settlement
     db.commit()
     return _bucket_dict(bucket, get_bucket_balance(db, bucket.id))
@@ -200,22 +203,22 @@ def get_settlement(
 
     rows = get_bucket_settlement(db, bucket_id)
     return {
-        "bucket_id":   bucket_id,
+        "bucket_id": bucket_id,
         "settlements": rows,
         "fingerprint": settlement_fingerprint(rows),
-        "history":     get_bucket_settlement_history(db, bucket_id),
+        "history": get_bucket_settlement_history(db, bucket_id),
     }
 
 
 class SettleIn(BaseModel):
     from_user_id: str | None = None
-    to_user_id:   str | None = None
-    amount:       Decimal | None = None
-    note:         str | None = None
+    to_user_id: str | None = None
+    amount: Decimal | None = None
+    note: str | None = None
     # settlement_fingerprint of the transfers the client displayed (the
     # "fingerprint" from GET .../settlement). When sent, a mismatch → 409, so
     # a retried/double submit cannot record the same payment twice.
-    expected:     str | None = None
+    expected: str | None = None
 
 
 @router.post("/{bucket_id}/settle", status_code=status.HTTP_200_OK)
@@ -253,7 +256,8 @@ def settle_bucket(
 
     try:
         created = record_household_settlement(
-            db, hh_id,
+            db,
+            hh_id,
             bucket_id=bucket_id,
             created_by=user.id,
             from_user_id=body.from_user_id,
@@ -270,8 +274,11 @@ def settle_bucket(
     return {
         "bucket_id": bucket_id,
         "recorded": [
-            {"from_user_id": s.from_user_id, "to_user_id": s.to_user_id,
-             "amount": quantize(s.amount)}
+            {
+                "from_user_id": s.from_user_id,
+                "to_user_id": s.to_user_id,
+                "amount": quantize(s.amount),
+            }
             for s in created
         ],
         "settlements": get_bucket_settlement(db, bucket_id),
@@ -299,8 +306,8 @@ def household_settlement(
     return {
         "settlements": rows,
         "fingerprint": settlement_fingerprint(rows),
-        "balances":    get_member_balances(db, hh_id),
-        "history":     get_household_settlement_history(db, hh_id),
+        "balances": get_member_balances(db, hh_id),
+        "history": get_household_settlement_history(db, hh_id),
     }
 
 
@@ -325,7 +332,8 @@ def settle_household(
 
     try:
         created = record_household_settlement(
-            db, hh_id,
+            db,
+            hh_id,
             created_by=user.id,
             from_user_id=body.from_user_id,
             to_user_id=body.to_user_id,
@@ -339,8 +347,11 @@ def settle_household(
     db.commit()
     return {
         "recorded": [
-            {"from_user_id": s.from_user_id, "to_user_id": s.to_user_id,
-             "amount": quantize(s.amount)}
+            {
+                "from_user_id": s.from_user_id,
+                "to_user_id": s.to_user_id,
+                "amount": quantize(s.amount),
+            }
             for s in created
         ],
         "settlements": get_household_settlement(db, hh_id),

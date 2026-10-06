@@ -1,6 +1,7 @@
 """
 Transactions: cross-bucket search, CSV export and duplicate detection.
 """
+
 import csv
 import io
 import logging
@@ -59,6 +60,7 @@ SEARCH_PAGE_SIZE = 25
 BULK_SKIP_NO_SPLIT = "no split defined"
 BULK_SKIP_TAKE = "cash was taken for it, so it stays paid by whoever took it"
 
+
 @router.get("/search", response_class=HTMLResponse)
 def search_transactions(
     request: Request,
@@ -93,12 +95,25 @@ def search_transactions(
     # Settle-up links here to show exactly which expenses it had to skip.
     want_missing_payer = missing_payer in ("1", "on", "true")
 
-    has_filter = any([q.strip(), category_id, type, from_date, to_date, bucket_id,
-                      min_amount.strip(), max_amount.strip(), paid_by,
-                      want_missing_payer])
+    has_filter = any(
+        [
+            q.strip(),
+            category_id,
+            type,
+            from_date,
+            to_date,
+            bucket_id,
+            min_amount.strip(),
+            max_amount.strip(),
+            paid_by,
+            want_missing_payer,
+        ]
+    )
 
     if has_filter:
-        query = db.query(Transaction).filter(Transaction.active(), Transaction.household_id == hh_id)
+        query = db.query(Transaction).filter(
+            Transaction.active(), Transaction.household_id == hh_id
+        )
 
         if q.strip():
             # Free text used to match notes only, so a scanned receipt whose
@@ -108,14 +123,14 @@ def search_transactions(
             conditions = [
                 Transaction.notes.ilike(term),
                 Transaction.category_id.in_(
-                    db.query(Category.id).filter(
-                        Category.household_id == hh_id, Category.name.ilike(term)
-                    ).scalar_subquery()
+                    db.query(Category.id)
+                    .filter(Category.household_id == hh_id, Category.name.ilike(term))
+                    .scalar_subquery()
                 ),
                 Transaction.bucket_id.in_(
-                    db.query(Bucket.id).filter(
-                        Bucket.household_id == hh_id, Bucket.name.ilike(term)
-                    ).scalar_subquery()
+                    db.query(Bucket.id)
+                    .filter(Bucket.household_id == hh_id, Bucket.name.ilike(term))
+                    .scalar_subquery()
                 ),
                 Transaction.paid_by.in_(
                     db.query(User.id).filter(User.display_name.ilike(term)).scalar_subquery()
@@ -177,8 +192,7 @@ def search_transactions(
         total_pages = max(1, -(-total // SEARCH_PAGE_SIZE))
         page = min(page, total_pages)
         transactions = (
-            query
-            .order_by(Transaction.transaction_date.desc(), Transaction.created_at.desc())
+            query.order_by(Transaction.transaction_date.desc(), Transaction.created_at.desc())
             .offset((page - 1) * SEARCH_PAGE_SIZE)
             .limit(SEARCH_PAGE_SIZE)
             .all()
@@ -189,34 +203,44 @@ def search_transactions(
         total_pages = 1
         page = 1
 
-    ctx.update({
-        "request": request,
-        "user": user,
-        "transactions": transactions,
-        "q": q,
-        "category_id": category_id,
-        "selected_type": type,
-        "from_date": from_date,
-        "to_date": to_date,
-        "selected_bucket_id": bucket_id,
-        "min_amount": min_amount,
-        "max_amount": max_amount,
-        "selected_paid_by": paid_by,
-        "missing_payer": want_missing_payer,
-        "bulk_notice": bulk_notice,
-        # Query string that reproduces this search (pagination links, and the
-        # bulk form's way back here).
-        "search_query": _search_query({
-            "q": q, "category_id": category_id, "type": type, "from_date": from_date,
-            "to_date": to_date, "bucket_id": bucket_id, "min_amount": min_amount,
-            "max_amount": max_amount, "paid_by": paid_by,
-            "missing_payer": "1" if want_missing_payer else "",
-        }),
-        "page": page,
-        "total_pages": total_pages,
-        "total": total,
-        "transaction_types": [t.value for t in TransactionType],
-    })
+    ctx.update(
+        {
+            "request": request,
+            "user": user,
+            "transactions": transactions,
+            "q": q,
+            "category_id": category_id,
+            "selected_type": type,
+            "from_date": from_date,
+            "to_date": to_date,
+            "selected_bucket_id": bucket_id,
+            "min_amount": min_amount,
+            "max_amount": max_amount,
+            "selected_paid_by": paid_by,
+            "missing_payer": want_missing_payer,
+            "bulk_notice": bulk_notice,
+            # Query string that reproduces this search (pagination links, and the
+            # bulk form's way back here).
+            "search_query": _search_query(
+                {
+                    "q": q,
+                    "category_id": category_id,
+                    "type": type,
+                    "from_date": from_date,
+                    "to_date": to_date,
+                    "bucket_id": bucket_id,
+                    "min_amount": min_amount,
+                    "max_amount": max_amount,
+                    "paid_by": paid_by,
+                    "missing_payer": "1" if want_missing_payer else "",
+                }
+            ),
+            "page": page,
+            "total_pages": total_pages,
+            "total": total,
+            "transaction_types": [t.value for t in TransactionType],
+        }
+    )
 
     return templates.TemplateResponse("transactions/list.html", ctx)
 
@@ -225,8 +249,17 @@ def search_transactions(
 # user lands on the same view; anything else is dropped, so the redirect can
 # never be pointed elsewhere or carry injected parameters.
 SEARCH_QUERY_KEYS = (
-    "q", "category_id", "type", "from_date", "to_date", "bucket_id",
-    "min_amount", "max_amount", "paid_by", "missing_payer", "page",
+    "q",
+    "category_id",
+    "type",
+    "from_date",
+    "to_date",
+    "bucket_id",
+    "min_amount",
+    "max_amount",
+    "paid_by",
+    "missing_payer",
+    "page",
 )
 BULK_MAX_IDS = 200
 
@@ -314,13 +347,15 @@ def bulk_set_payer(
         counts["skipped_take"] = skipped_take
     counts = urlencode(counts)
     return RedirectResponse(
-        f"/transactions/search?{back + '&' if back else ''}{counts}", status_code=303,
+        f"/transactions/search?{back + '&' if back else ''}{counts}",
+        status_code=303,
     )
 
 
 # ---------------------------------------------------------------------------
 # CSV export
 # ---------------------------------------------------------------------------
+
 
 def _csv_safe(value) -> str:
     """Neutralise spreadsheet formula injection.
@@ -384,8 +419,11 @@ def export_transactions(
             float(txn.amount),
             txn.currency,
             _csv_safe(
-                "Each paid own share" if txn.payer_mode == PayerMode.own_share.value
-                else txn.paid_by_user.display_name if txn.paid_by_user else ""
+                "Each paid own share"
+                if txn.payer_mode == PayerMode.own_share.value
+                else txn.paid_by_user.display_name
+                if txn.paid_by_user
+                else ""
             ),
             _csv_safe(txn.notes or ""),
         ]
@@ -395,7 +433,9 @@ def export_transactions(
     def generate():
         buf = io.StringIO()
         writer = csv.writer(buf)
-        writer.writerow(["Date", "Bucket", "Category", "Type", "Amount", "Currency", "Paid By", "Notes"])
+        writer.writerow(
+            ["Date", "Bucket", "Category", "Type", "Amount", "Currency", "Paid By", "Notes"]
+        )
         yield buf.getvalue()
         for row in rows:
             buf = io.StringIO()
@@ -413,6 +453,7 @@ def export_transactions(
 # ---------------------------------------------------------------------------
 # Duplicate detection
 # ---------------------------------------------------------------------------
+
 
 @router.get("/check-duplicate", response_class=JSONResponse)
 def check_duplicate(
@@ -436,7 +477,8 @@ def check_duplicate(
         return {"duplicates": []}
 
     matches = find_duplicate_candidates(
-        db, hh_id,
+        db,
+        hh_id,
         amount=value,
         transaction_date=when,
         bucket_id=bucket_id or None,
@@ -445,13 +487,13 @@ def check_duplicate(
     return {
         "duplicates": [
             {
-                "id":       t.id,
-                "amount":   float(t.amount),
+                "id": t.id,
+                "amount": float(t.amount),
                 "currency": t.currency,
-                "date":     t.transaction_date.isoformat(),
-                "notes":    t.notes,
-                "bucket":   t.bucket.name if t.bucket else None,
-                "paid_by":  t.paid_by_user.display_name if t.paid_by_user else None,
+                "date": t.transaction_date.isoformat(),
+                "notes": t.notes,
+                "bucket": t.bucket.name if t.bucket else None,
+                "paid_by": t.paid_by_user.display_name if t.paid_by_user else None,
                 "same_bucket": bool(bucket_id) and t.bucket_id == bucket_id,
             }
             for t in matches
@@ -468,9 +510,11 @@ def duplicates_page(
     """Review possible duplicates across recent history."""
     user, hh_id = auth
     ctx = _get_context(db, user, hh_id)
-    ctx.update({
-        "request": request,
-        "user": user,
-        "groups": find_household_duplicates(db, hh_id),
-    })
+    ctx.update(
+        {
+            "request": request,
+            "user": user,
+            "groups": find_household_duplicates(db, hh_id),
+        }
+    )
     return templates.TemplateResponse("transactions/duplicates.html", ctx)

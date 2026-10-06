@@ -5,6 +5,7 @@ stored, so a database leak does not leak usable credentials; the plaintext is
 returned once by :func:`issue_personal_token` and never logged. Tokens belong
 to one member in one household and are only ever managed by that member.
 """
+
 import hashlib
 import secrets
 
@@ -36,8 +37,11 @@ def active_household_bucket(db: Session, household_id: str, bucket_id: str | Non
     if not bucket_id:
         return None
     bucket = db.get(Bucket, bucket_id)
-    if bucket is None or bucket.household_id != household_id \
-            or bucket.status != BucketStatus.active:
+    if (
+        bucket is None
+        or bucket.household_id != household_id
+        or bucket.status != BucketStatus.active
+    ):
         return None
     return bucket
 
@@ -60,12 +64,14 @@ def issue_personal_token(
     if not name:
         raise HTTPException(status_code=422, detail="Give the token a name.")
     if len(name) > MAX_NAME_LEN:
-        raise HTTPException(status_code=422,
-                            detail=f"Name must be at most {MAX_NAME_LEN} characters.")
+        raise HTTPException(
+            status_code=422, detail=f"Name must be at most {MAX_NAME_LEN} characters."
+        )
     default_bucket_id = default_bucket_id or None
     if default_bucket_id and active_household_bucket(db, household_id, default_bucket_id) is None:
-        raise HTTPException(status_code=400,
-                            detail="Default bucket must be an active bucket of this household.")
+        raise HTTPException(
+            status_code=400, detail="Default bucket must be an active bucket of this household."
+        )
 
     raw = _new_raw_token()
     record = PersonalApiToken(
@@ -86,9 +92,11 @@ def list_personal_tokens(db: Session, *, user_id: str, household_id: str) -> lis
     """This member's live (unrevoked) tokens for this household, newest first."""
     return (
         db.query(PersonalApiToken)
-        .filter(PersonalApiToken.user_id == user_id,
-                PersonalApiToken.household_id == household_id,
-                PersonalApiToken.revoked_at.is_(None))
+        .filter(
+            PersonalApiToken.user_id == user_id,
+            PersonalApiToken.household_id == household_id,
+            PersonalApiToken.revoked_at.is_(None),
+        )
         .order_by(PersonalApiToken.created_at.desc())
         .all()
     )
@@ -97,8 +105,12 @@ def list_personal_tokens(db: Session, *, user_id: str, household_id: str) -> lis
 def revoke_personal_token(db: Session, *, token_id: str, user_id: str, household_id: str) -> None:
     """Revoke one of this member's tokens; 404 for anything else. Caller commits."""
     record = db.get(PersonalApiToken, token_id)
-    if (record is None or record.user_id != user_id
-            or record.household_id != household_id or record.revoked_at is not None):
+    if (
+        record is None
+        or record.user_id != user_id
+        or record.household_id != household_id
+        or record.revoked_at is not None
+    ):
         raise HTTPException(status_code=404, detail="Token not found.")
     record.revoked_at = utcnow_naive()
 
@@ -110,8 +122,9 @@ def revoke_user_tokens(db: Session, user_id: str, household_id: str | None = Non
     when a member leaves or is removed, so a re-added member's old Shortcut
     stays dead. NOT called on plain logout. Caller commits.
     """
-    q = db.query(PersonalApiToken).filter(PersonalApiToken.user_id == user_id,
-                                          PersonalApiToken.revoked_at.is_(None))
+    q = db.query(PersonalApiToken).filter(
+        PersonalApiToken.user_id == user_id, PersonalApiToken.revoked_at.is_(None)
+    )
     if household_id is not None:
         q = q.filter(PersonalApiToken.household_id == household_id)
     return q.update({PersonalApiToken.revoked_at: utcnow_naive()}, synchronize_session=False)

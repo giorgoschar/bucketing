@@ -10,6 +10,7 @@ Responses:
                                                       (never resurrected)
   400 bad amount · 401 bad/revoked token · 422 no bucket / bad input · 429 rate limit
 """
+
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -62,9 +63,14 @@ def apple_pay(
 ):
     try:
         txn, created = ingest_apple_pay(
-            db, token,
-            merchant=body.merchant, amount=body.amount, currency=body.currency,
-            card=body.card, occurred_at=body.occurred_at, notes=body.notes,
+            db,
+            token,
+            merchant=body.merchant,
+            amount=body.amount,
+            currency=body.currency,
+            card=body.card,
+            occurred_at=body.occurred_at,
+            notes=body.notes,
             exchange_rate=body.exchange_rate,
         )
     except DeletedTransactionReplay:

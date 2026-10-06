@@ -1,6 +1,7 @@
 """
 API settings routes — profile, household, members, categories.
 """
+
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -38,40 +39,42 @@ router = APIRouter(prefix="/settings", tags=["settings"])
 # Schemas
 # ---------------------------------------------------------------------------
 
+
 class ProfileIn(BaseModel):
     display_name: str
-    email:        str | None = None
-    avatar_color: str        = "#6366f1"
+    email: str | None = None
+    avatar_color: str = "#6366f1"
 
 
 class PasswordIn(BaseModel):
     current_password: str
-    new_password:     str
+    new_password: str
 
 
 class HouseholdIn(BaseModel):
-    name:             str
+    name: str
     default_currency: str = "EUR"
 
 
 class CategoryIn(BaseModel):
-    name:  str
+    name: str
     color: str = "#6366f1"
-    icon:  str = "📦"
+    icon: str = "📦"
 
 
 # ---------------------------------------------------------------------------
 # Profile
 # ---------------------------------------------------------------------------
 
+
 @router.get("/profile")
 def get_profile(auth=Depends(require_api_auth), db: Session = Depends(get_db)):
     user, hh_id = auth
     return {
-        "id":           user.id,
-        "username":     user.username,
+        "id": user.id,
+        "username": user.username,
         "display_name": user.display_name,
-        "email":        user.email,
+        "email": user.email,
         "avatar_color": user.avatar_color,
         "totp_enabled": user.totp_enabled,
         "household_id": hh_id,
@@ -89,12 +92,19 @@ def update_profile(
     if email_clean:
         conflict = db.query(User).filter(User.email == email_clean, User.id != user.id).first()
         if conflict:
-            raise HTTPException(status_code=409, detail="Email already registered to another account")
+            raise HTTPException(
+                status_code=409, detail="Email already registered to another account"
+            )
     user.display_name = body.display_name.strip()
-    user.email        = email_clean
+    user.email = email_clean
     user.avatar_color = parse_color(body.avatar_color, field="Avatar colour")
     db.commit()
-    return {"id": user.id, "display_name": user.display_name, "email": user.email, "avatar_color": user.avatar_color}
+    return {
+        "id": user.id,
+        "display_name": user.display_name,
+        "email": user.email,
+        "avatar_color": user.avatar_color,
+    }
 
 
 @router.post("/profile/password", status_code=status.HTTP_204_NO_CONTENT)
@@ -111,9 +121,9 @@ def change_password(
         raise HTTPException(status_code=400, detail="Current password is incorrect")
     if len(body.new_password) < 12:
         raise HTTPException(status_code=400, detail="Password must be at least 12 characters")
-    user.password_hash   = hash_password(body.new_password)
+    user.password_hash = hash_password(body.new_password)
     invalidate_user_sessions(db, user)  # all cookies, access and refresh tokens
-    revoke_user_tokens(db, user.id)     # and personal Shortcut tokens
+    revoke_user_tokens(db, user.id)  # and personal Shortcut tokens
     db.commit()
     security_logger.info("API password changed for '%s'", user.username)
 
@@ -122,28 +132,29 @@ def change_password(
 # Household
 # ---------------------------------------------------------------------------
 
+
 @router.get("/household")
 def get_household(auth=Depends(require_api_auth), db: Session = Depends(get_db)):
     user, hh_id = auth
     household = db.get(Household, hh_id)
-    members   = db.query(HouseholdMember).filter_by(household_id=hh_id).all()
+    members = db.query(HouseholdMember).filter_by(household_id=hh_id).all()
 
     def _member(m: HouseholdMember):
         u = db.get(User, m.user_id)
         return {
-            "user_id":      m.user_id,
-            "role":         m.role.value,
-            "joined_at":    m.joined_at.isoformat() if m.joined_at else None,
+            "user_id": m.user_id,
+            "role": m.role.value,
+            "joined_at": m.joined_at.isoformat() if m.joined_at else None,
             "display_name": u.display_name if u else None,
-            "username":     u.username     if u else None,
+            "username": u.username if u else None,
             "avatar_color": u.avatar_color if u else None,
         }
 
     return {
-        "id":               household.id,
-        "name":             household.name,
+        "id": household.id,
+        "name": household.name,
         "default_currency": household.default_currency,
-        "members":          [_member(m) for m in members],
+        "members": [_member(m) for m in members],
     }
 
 
@@ -156,14 +167,20 @@ def update_household(
     user, hh_id = auth
     my_membership = db.query(HouseholdMember).filter_by(user_id=user.id, household_id=hh_id).first()
     if not my_membership or my_membership.role != MemberRole.owner:
-        raise HTTPException(status_code=403, detail="Only the household owner can update household settings")
+        raise HTTPException(
+            status_code=403, detail="Only the household owner can update household settings"
+        )
     if body.default_currency not in settings.currencies:
         raise HTTPException(status_code=400, detail="Unsupported currency.")
     household = db.get(Household, hh_id)
-    household.name             = body.name.strip()
+    household.name = body.name.strip()
     household.default_currency = body.default_currency
     db.commit()
-    return {"id": household.id, "name": household.name, "default_currency": household.default_currency}
+    return {
+        "id": household.id,
+        "name": household.name,
+        "default_currency": household.default_currency,
+    }
 
 
 @router.post("/household/invite")
@@ -187,7 +204,7 @@ def create_invite(
     db.add(invitation)
     db.commit()
     return {
-        "token":      invitation.token,
+        "token": invitation.token,
         "expires_at": invitation.expires_at.isoformat(),
     }
 
@@ -204,7 +221,9 @@ def remove_member(
         raise HTTPException(status_code=403, detail="Only the owner can remove members")
     if member_user_id == user.id:
         raise HTTPException(status_code=400, detail="Cannot remove yourself")
-    membership = db.query(HouseholdMember).filter_by(user_id=member_user_id, household_id=hh_id).first()
+    membership = (
+        db.query(HouseholdMember).filter_by(user_id=member_user_id, household_id=hh_id).first()
+    )
     if not membership:
         raise HTTPException(status_code=404, detail="Member not found")
     db.delete(membership)
@@ -218,11 +237,19 @@ def remove_member(
 # Categories
 # ---------------------------------------------------------------------------
 
+
 def _category_dict(c: Category) -> dict:
     # ``locked``: a built-in category (``system_key``) that cannot be
     # renamed, recoloured, re-iconed or deleted.
-    return {"id": c.id, "name": c.name, "color": c.color, "icon": c.icon,
-            "is_default": c.is_default, "system_key": c.system_key, "locked": c.is_locked}
+    return {
+        "id": c.id,
+        "name": c.name,
+        "color": c.color,
+        "icon": c.icon,
+        "is_default": c.is_default,
+        "system_key": c.system_key,
+        "locked": c.is_locked,
+    }
 
 
 @router.get("/categories")
@@ -244,7 +271,9 @@ def create_category(
     db: Session = Depends(get_db),
 ):
     user, hh_id = auth
-    cat = Category(household_id=hh_id, name=body.name.strip(), color=parse_color(body.color), icon=body.icon)
+    cat = Category(
+        household_id=hh_id, name=body.name.strip(), color=parse_color(body.color), icon=body.icon
+    )
     db.add(cat)
     db.commit()
     db.refresh(cat)
@@ -263,9 +292,9 @@ def update_category(
     if not cat:
         raise HTTPException(status_code=404, detail="Category not found")
     require_unlocked(cat)
-    cat.name  = body.name.strip()
+    cat.name = body.name.strip()
     cat.color = parse_color(body.color)
-    cat.icon  = body.icon
+    cat.icon = body.icon
     db.commit()
     return _category_dict(cat)
 
@@ -287,6 +316,7 @@ def delete_category(
     # Detach references first — category_id FKs have no ON DELETE rule, so a
     # referenced category cannot be deleted outright.
     from app.models import RecurringBill, Transaction
+
     db.query(Transaction).filter_by(category_id=category_id).update(
         {"category_id": None}, synchronize_session=False
     )

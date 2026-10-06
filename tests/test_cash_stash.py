@@ -16,6 +16,7 @@ other member and household owner), "I took this from my stash" (link, edit
 sync, delete cascade), still_have, insights' "Cash (not yet logged)" line,
 the expense wizard's payment default and the migration.
 """
+
 from datetime import date
 from decimal import Decimal
 
@@ -59,19 +60,45 @@ def duo(db, authed):
     return authed
 
 
-def _move(db, ctx, kind, amount, day, *, user=None, stash_owner=None, category_id=None,
-          note=None):
-    return add_movement(db, ctx.household_id, user or ctx.user_id, kind, D(str(amount)), "EUR",
-                        day, category_id, note, stash_owner_id=stash_owner)
+def _move(db, ctx, kind, amount, day, *, user=None, stash_owner=None, category_id=None, note=None):
+    return add_movement(
+        db,
+        ctx.household_id,
+        user or ctx.user_id,
+        kind,
+        D(str(amount)),
+        "EUR",
+        day,
+        category_id,
+        note,
+        stash_owner_id=stash_owner,
+    )
 
 
-def _cash(db, ctx, amount, day, *, payer="__me__", category_id=None, method="cash",
-          mode="single", splits=()):
+def _cash(
+    db,
+    ctx,
+    amount,
+    day,
+    *,
+    payer="__me__",
+    category_id=None,
+    method="cash",
+    mode="single",
+    splits=(),
+):
     t = Transaction(
-        bucket_id=ctx.bucket_id, household_id=ctx.household_id, amount=D(str(amount)),
-        currency="EUR", exchange_rate=1, type=TransactionType.expense, transaction_date=day,
-        paid_by=ctx.user_id if payer == "__me__" else payer, payment_method=method,
-        category_id=category_id, payer_mode=mode,
+        bucket_id=ctx.bucket_id,
+        household_id=ctx.household_id,
+        amount=D(str(amount)),
+        currency="EUR",
+        exchange_rate=1,
+        type=TransactionType.expense,
+        transaction_date=day,
+        paid_by=ctx.user_id if payer == "__me__" else payer,
+        payment_method=method,
+        category_id=category_id,
+        payer_mode=mode,
     )
     db.add(t)
     db.flush()
@@ -89,8 +116,11 @@ def _category(db, ctx, name):
 
 
 def _insights(db, ctx, start="2026-01-01", end="2026-01-31", **filters):
-    return build_insights(db, ctx.household_id, InsightFilters(
-        preset="custom", start_date=start, end_date=end, **filters))
+    return build_insights(
+        db,
+        ctx.household_id,
+        InsightFilters(preset="custom", start_date=start, end_date=end, **filters),
+    )
 
 
 def _bearer(ctx, user_id):
@@ -118,6 +148,7 @@ def _nyl(db, ctx, month=JAN, user=None):
 # The user's own scenario
 # ---------------------------------------------------------------------------
 
+
 def test_the_users_own_scenario(app, client, db, duo):
     """200 saved, 100 taken "to be safe", parking logged, 60 left; the
     flatmate borrows 50 from the stash without seeing it or owing anything."""
@@ -139,28 +170,46 @@ def test_the_users_own_scenario(app, client, db, duo):
     assert summary["total_spent"] == D("100.00") and summary["cash_not_logged"] == D("100.00")
 
     # Parking 5, paid in cash, logged as an expense.
-    r = client.post("/transactions", headers=duo.headers, data={
-        "bucket_id": duo.bucket_id, "transaction_date": "2026-01-10", "amount": "5",
-        "type": "expense", "paid_by": a, "payment_method": "cash", "category_id": parking.id})
+    r = client.post(
+        "/transactions",
+        headers=duo.headers,
+        data={
+            "bucket_id": duo.bucket_id,
+            "transaction_date": "2026-01-10",
+            "amount": "5",
+            "type": "expense",
+            "paid_by": a,
+            "payment_method": "cash",
+            "category_id": parking.id,
+        },
+    )
     assert r.status_code == 302, r.text
     data = _insights(db, duo)
     assert _cats(data) == {"Parking": D("5.00"), NOT_LOGGED: D("95.00")}
-    assert data["summary"]["total_spent"] == D("100.00")         # no double count
+    assert data["summary"]["total_spent"] == D("100.00")  # no double count
     assert data["summary"]["cash_not_logged"] == D("95.00")
     assert {r["method"]: r["amount"] for r in data["by_method"]} == {"cash": D("100.00")}
 
     # 60 still in the wallet at the end of the month.
     add({"kind": "still_have", "amount": "60", "movement_date": "2026-01-31"})
     jan = wallet_summary(db, hh, a, JAN, JAN_END, viewer_id=a)
-    assert (jan["taken"], jan["still_have"], jan["spent"], jan["logged"], jan["not_yet_logged"]) == (
-        D("100.00"), D("60.00"), D("40.00"), D("5.00"), D("35.00"))
+    assert (
+        jan["taken"],
+        jan["still_have"],
+        jan["spent"],
+        jan["logged"],
+        jan["not_yet_logged"],
+    ) == (D("100.00"), D("60.00"), D("40.00"), D("5.00"), D("35.00"))
     assert wallet_summary(db, hh, a, FEB, FEB_END, viewer_id=a)["carried"] == D("60.00")
     assert _insights(db, duo)["summary"]["total_spent"] == D("40.00")
 
     # The flatmate takes 50 from A's stash into their own wallet.
     member, mh = _member(app, duo)
-    add({"kind": "take", "amount": "50", "movement_date": "2026-01-20", "source": a},
-        c=member, headers=mh)
+    add(
+        {"kind": "take", "amount": "50", "movement_date": "2026-01-20", "source": a},
+        c=member,
+        headers=mh,
+    )
     assert stash_balance(db, hh, a) == D("50.00")
     assert _nyl(db, duo, user=b) == D("50.00")
     assert _insights(db, duo)["summary"]["total_spent"] == D("90.00")
@@ -170,17 +219,22 @@ def test_the_users_own_scenario(app, client, db, duo):
 
     # The flatmate never sees A's stash: not on the page, not in the API.
     page = member.get("/cash?month=2026-01").text
-    assert "savings" not in page and "€50.00" not in page.split("Your stash", 1)[1].split("This month")[0]
+    assert (
+        "savings" not in page
+        and "€50.00" not in page.split("Your stash", 1)[1].split("This month")[0]
+    )
     for url in (f"/me?member={a}&preset=custom&start_date=2026-01-01&end_date=2026-01-31",):
         assert "savings" not in member.get(url).text
     bh = _bearer(duo, b)
     body = client.get("/api/v1/cash/movements", headers=bh).json()
-    assert body["stash"] == 0.0                                  # their own (empty) stash
-    assert [m["kind"] for m in body["items"]] == ["take"]        # only their own take
+    assert body["stash"] == 0.0  # their own (empty) stash
+    assert [m["kind"] for m in body["items"]] == ["take"]  # only their own take
     assert body["items"][0]["stash_owner_id"] == a
     assert client.get(f"/api/v1/cash/movements?member_id={a}", headers=bh).json()["items"] == []
-    assert client.get(f"/api/v1/cash/summary?month=2026-01&member_id={a}",
-                      headers=bh).json()["stash"] == 0.0
+    assert (
+        client.get(f"/api/v1/cash/summary?month=2026-01&member_id={a}", headers=bh).json()["stash"]
+        == 0.0
+    )
     # The owner sees the take in their stash history.
     own = client.get("/cash?month=2026-01").text
     assert "Flatmate took €50.00 from your stash" in own
@@ -188,12 +242,18 @@ def test_the_users_own_scenario(app, client, db, duo):
     # Taking more than A's stash holds is never refused: a refusal would let
     # the flatmate find the balance by trying amounts. A's stash goes negative
     # and only A is told.
-    r = member.post("/cash/add", headers=mh, data={
-        "kind": "take", "amount": "500", "movement_date": "2026-01-21", "source": a})
+    r = member.post(
+        "/cash/add",
+        headers=mh,
+        data={"kind": "take", "amount": "500", "movement_date": "2026-01-21", "source": a},
+    )
     assert r.status_code in (200, 302), r.text
     assert "Not enough" not in r.text and "450" not in r.text
-    r = client.post("/api/v1/cash/movements", headers=bh, json={
-        "kind": "take", "amount": "500", "stash_owner_id": a, "movement_date": "2026-01-22"})
+    r = client.post(
+        "/api/v1/cash/movements",
+        headers=bh,
+        json={"kind": "take", "amount": "500", "stash_owner_id": a, "movement_date": "2026-01-22"},
+    )
     assert r.status_code in (200, 201), r.text
     assert "450" not in r.text and "950" not in r.text
     assert stash_balance(db, hh, a) == D("-950.00")
@@ -225,8 +285,9 @@ def test_household_owner_role_grants_no_stash_access(app, client, db, duo):
     db.refresh(mv)
     assert mv.deleted_at is None
     # The owner logs only their own cash: a user_id is not a thing any more.
-    r = client.post("/api/v1/cash/movements", headers=oh, json={
-        "kind": "stash_in", "amount": "5", "user_id": b})
+    r = client.post(
+        "/api/v1/cash/movements", headers=oh, json={"kind": "stash_in", "amount": "5", "user_id": b}
+    )
     assert r.status_code == 201 and r.json()["user_id"] == owner
     assert stash_balance(db, hh, b) == D("66.66")
 
@@ -234,6 +295,7 @@ def test_household_owner_role_grants_no_stash_access(app, client, db, duo):
 # ---------------------------------------------------------------------------
 # The formula
 # ---------------------------------------------------------------------------
+
 
 def test_lazy_take_is_all_not_yet_logged(db, authed):
     _move(db, authed, "take", 50, date(2026, 1, 3))
@@ -262,7 +324,11 @@ def test_put_back_is_not_spent(db, authed):
     _move(db, authed, "put_back", 30, date(2026, 1, 20))
     (jan,) = monthly_breakdown(db, authed.household_id, authed.user_id, JAN, JAN)
     assert (jan["taken"], jan["put_back"], jan["spent"], jan["not_yet_logged"]) == (
-        D("80.00"), D("30.00"), D("50.00"), D("50.00"))
+        D("80.00"),
+        D("30.00"),
+        D("50.00"),
+        D("50.00"),
+    )
     assert stash_balance(db, authed.household_id, authed.user_id) == D("50.00")
 
 
@@ -297,8 +363,15 @@ def test_legacy_outs_still_count(db, authed):
 def test_own_share_cash_expense_credits_each_member(db, duo):
     _move(db, duo, "take", 100, date(2026, 1, 2))
     _move(db, duo, "take", 100, date(2026, 1, 2), user=duo.partner_id)
-    _cash(db, duo, 100, date(2026, 1, 3), payer=None, mode=PayerMode.own_share.value,
-          splits=[(duo.user_id, D("70")), (duo.partner_id, D("30"))])
+    _cash(
+        db,
+        duo,
+        100,
+        date(2026, 1, 3),
+        payer=None,
+        mode=PayerMode.own_share.value,
+        splits=[(duo.user_id, D("70")), (duo.partner_id, D("30"))],
+    )
     assert _nyl(db, duo) == D("30.00")
     assert _nyl(db, duo, user=duo.partner_id) == D("70.00")
 
@@ -311,7 +384,10 @@ def test_wallet_figures_are_household_visible_but_put_backs_are_not(db, duo):
     mine = wallet_summary(db, hh, a, JAN, JAN_END, viewer_id=a)
     seen = wallet_summary(db, hh, a, JAN, JAN_END, viewer_id=b)
     assert (mine["taken"], mine["put_back"], mine["not_yet_logged"]) == (
-        D("80.00"), D("30.00"), D("50.00"))
+        D("80.00"),
+        D("30.00"),
+        D("50.00"),
+    )
     assert "put_back" not in seen
     assert (seen["taken"], seen["not_yet_logged"]) == (D("50.00"), D("50.00"))
 
@@ -320,14 +396,15 @@ def test_wallet_figures_are_household_visible_but_put_backs_are_not(db, duo):
 # The stash
 # ---------------------------------------------------------------------------
 
+
 def test_stash_balance_counts_every_take_from_it(db, duo):
     hh, a, b = duo.household_id, duo.user_id, duo.partner_id
     _move(db, duo, "stash_in", 200, date(2026, 1, 1))
     _move(db, duo, "take", 50, date(2026, 1, 2), stash_owner=a)
     _move(db, duo, "take", 30, date(2026, 1, 3), user=b, stash_owner=a)
-    _move(db, duo, "take", 999, date(2026, 1, 3), user=b)              # from the bank
+    _move(db, duo, "take", 999, date(2026, 1, 3), user=b)  # from the bank
     _move(db, duo, "put_back", 10, date(2026, 1, 4))
-    _move(db, duo, "put_back", 7, date(2026, 1, 4), user=b)            # b's own stash
+    _move(db, duo, "put_back", 7, date(2026, 1, 4), user=b)  # b's own stash
     gone = _move(db, duo, "stash_in", 1000, date(2026, 1, 5))
     gone.deleted_at = gone.created_at
     db.commit()
@@ -337,16 +414,23 @@ def test_stash_balance_counts_every_take_from_it(db, duo):
 
 def test_overdrawing_your_own_stash_is_refused(client, db, authed):
     _move(db, authed, "stash_in", 20, date(2026, 1, 1))
-    r = client.post("/cash/add", headers=authed.headers, data={
-        "kind": "take", "amount": "25", "source": authed.user_id})
+    r = client.post(
+        "/cash/add",
+        headers=authed.headers,
+        data={"kind": "take", "amount": "25", "source": authed.user_id},
+    )
     assert r.status_code == 400 and "Not enough cash in your stash" in r.text
-    r = client.post("/api/v1/cash/movements", headers=_bearer(authed, authed.user_id), json={
-        "kind": "take", "amount": "25", "stash_owner_id": authed.user_id})
+    r = client.post(
+        "/api/v1/cash/movements",
+        headers=_bearer(authed, authed.user_id),
+        json={"kind": "take", "amount": "25", "stash_owner_id": authed.user_id},
+    )
     assert r.status_code == 400
     assert db.query(CashMovement).filter_by(kind="take").count() == 0
     # The bank has no limit.
-    r = client.post("/cash/add", headers=authed.headers, data={
-        "kind": "take", "amount": "25", "source": "bank"})
+    r = client.post(
+        "/cash/add", headers=authed.headers, data={"kind": "take", "amount": "25", "source": "bank"}
+    )
     assert r.status_code in (200, 302)
     assert db.query(CashMovement).filter_by(kind="take").one().stash_owner_id is None
 
@@ -354,8 +438,11 @@ def test_overdrawing_your_own_stash_is_refused(client, db, authed):
 def test_take_from_a_stash_outside_the_household(client, db, authed, make_household):
     other = make_household(name="Other", username="stashother")
     _move(db, other, "stash_in", 100, date(2026, 1, 1))
-    r = client.post("/cash/add", headers=authed.headers, data={
-        "kind": "take", "amount": "5", "source": other.user_id})
+    r = client.post(
+        "/cash/add",
+        headers=authed.headers,
+        data={"kind": "take", "amount": "5", "source": other.user_id},
+    )
     assert r.status_code == 400
     assert stash_balance(db, other.household_id, other.user_id) == D("100.00")
 
@@ -366,8 +453,10 @@ def test_deleting_takes_and_additions(app, client, db, duo):
     theirs = _move(db, duo, "take", 60, date(2026, 1, 2), user=b, stash_owner=a)
     # The stash owner sees the flatmate's take but cannot delete it.
     assert client.post(f"/cash/{theirs.id}/delete", headers=duo.headers).status_code == 403
-    assert client.delete(f"/api/v1/cash/movements/{theirs.id}",
-                         headers=_bearer(duo, a)).status_code == 403
+    assert (
+        client.delete(f"/api/v1/cash/movements/{theirs.id}", headers=_bearer(duo, a)).status_code
+        == 403
+    )
     # Deleting the addition would leave the stash at -60.
     r = client.post(f"/cash/{added.id}/delete", headers=duo.headers)
     assert r.status_code == 400 and "below zero" in r.text
@@ -400,8 +489,10 @@ def test_cash_page_offers_every_stash_and_the_bank(client, db, duo):
 # "I took this from my stash"
 # ---------------------------------------------------------------------------
 
+
 def _user(db, ctx):
     from app.models import Bucket, User
+
     return db.get(User, ctx.user_id), db.get(Bucket, ctx.bucket_id)
 
 
@@ -410,8 +501,16 @@ def test_take_and_spend_links_and_nets_out(db, authed):
     food = _category(db, authed, "Groceries")
     _move(db, authed, "stash_in", 100, date(2026, 1, 1))
     user, bucket = _user(db, authed)
-    txn = withdraw_and_spend(db, user=user, household_id=hh, bucket=bucket, amount="40",
-                             when=date(2026, 1, 5), category_id=food.id, notes="market")
+    txn = withdraw_and_spend(
+        db,
+        user=user,
+        household_id=hh,
+        bucket=bucket,
+        amount="40",
+        when=date(2026, 1, 5),
+        category_id=food.id,
+        notes="market",
+    )
     mv = db.query(CashMovement).filter_by(transaction_id=txn.id).one()
     assert (mv.kind, mv.amount, mv.stash_owner_id, mv.user_id) == ("take", D("40"), me, me)
     assert txn.payment_method == "cash"
@@ -422,8 +521,15 @@ def test_take_and_spend_links_and_nets_out(db, authed):
 
 def test_take_and_spend_from_the_bank(db, authed):
     user, bucket = _user(db, authed)
-    txn = withdraw_and_spend(db, user=user, household_id=authed.household_id, bucket=bucket,
-                             amount="12", source="bank", when=date(2026, 1, 5))
+    txn = withdraw_and_spend(
+        db,
+        user=user,
+        household_id=authed.household_id,
+        bucket=bucket,
+        amount="12",
+        source="bank",
+        when=date(2026, 1, 5),
+    )
     mv = db.query(CashMovement).filter_by(transaction_id=txn.id).one()
     assert mv.stash_owner_id is None
     assert stash_balance(db, authed.household_id, authed.user_id) == D("0.00")
@@ -433,19 +539,27 @@ def test_take_and_spend_edit_sync_and_delete_cascade(client, db, authed):
     hh, me = authed.household_id, authed.user_id
     _move(db, authed, "stash_in", 60, date(2026, 1, 1))
     user, bucket = _user(db, authed)
-    txn = withdraw_and_spend(db, user=user, household_id=hh, bucket=bucket, amount="40",
-                             when=date(2026, 1, 5))
+    txn = withdraw_and_spend(
+        db, user=user, household_id=hh, bucket=bucket, amount="40", when=date(2026, 1, 5)
+    )
     mv = db.query(CashMovement).filter_by(transaction_id=txn.id).one()
-    form = {"bucket_id": authed.bucket_id, "transaction_date": "2026-01-06", "amount": "55",
-            "type": "expense", "paid_by": me, "payment_method": "cash"}
+    form = {
+        "bucket_id": authed.bucket_id,
+        "transaction_date": "2026-01-06",
+        "amount": "55",
+        "type": "expense",
+        "paid_by": me,
+        "payment_method": "cash",
+    }
     r = client.post(f"/transactions/{txn.id}/edit", data=form, headers=authed.headers)
     assert r.status_code == 302, r.text
     db.refresh(mv)
     assert mv.amount == D("55") and mv.movement_date == date(2026, 1, 6) and mv.deleted_at is None
     assert stash_balance(db, hh, me) == D("5.00")
     # More than the stash holds: refused, nothing changes.
-    r = client.post(f"/transactions/{txn.id}/edit", data={**form, "amount": "61"},
-                    headers=authed.headers)
+    r = client.post(
+        f"/transactions/{txn.id}/edit", data={**form, "amount": "61"}, headers=authed.headers
+    )
     assert r.status_code == 400
     db.expire_all()
     assert db.get(Transaction, txn.id).amount == D("55")
@@ -460,20 +574,42 @@ def test_take_and_spend_edit_sync_and_delete_cascade(client, db, authed):
 
 def test_switching_away_from_cash_drops_the_take(client, db, authed):
     user, bucket = _user(db, authed)
-    txn = withdraw_and_spend(db, user=user, household_id=authed.household_id, bucket=bucket,
-                             amount="12", source="bank", when=date(2026, 1, 5))
-    form = {"bucket_id": authed.bucket_id, "transaction_date": "2026-01-05", "amount": "12",
-            "type": "expense", "paid_by": authed.user_id, "payment_method": "card"}
-    assert client.post(f"/transactions/{txn.id}/edit", data=form,
-                       headers=authed.headers).status_code == 302
+    txn = withdraw_and_spend(
+        db,
+        user=user,
+        household_id=authed.household_id,
+        bucket=bucket,
+        amount="12",
+        source="bank",
+        when=date(2026, 1, 5),
+    )
+    form = {
+        "bucket_id": authed.bucket_id,
+        "transaction_date": "2026-01-05",
+        "amount": "12",
+        "type": "expense",
+        "paid_by": authed.user_id,
+        "payment_method": "card",
+    }
+    assert (
+        client.post(f"/transactions/{txn.id}/edit", data=form, headers=authed.headers).status_code
+        == 302
+    )
     assert db.query(CashMovement).filter_by(transaction_id=txn.id).one().deleted_at is not None
 
 
 def test_wizard_took_cash_checkbox(client, db, authed):
     _move(db, authed, "stash_in", 50, date(2026, 1, 1))
-    form = {"bucket_id": authed.bucket_id, "transaction_date": "2026-01-05", "amount": "18",
-            "type": "expense", "paid_by": authed.user_id, "payment_method": "cash",
-            "took_cash": "on", "take_from": "stash"}
+    form = {
+        "bucket_id": authed.bucket_id,
+        "transaction_date": "2026-01-05",
+        "amount": "18",
+        "type": "expense",
+        "paid_by": authed.user_id,
+        "payment_method": "cash",
+        "took_cash": "on",
+        "take_from": "stash",
+    }
     r = client.post("/transactions", headers=authed.headers, data=form)
     assert r.status_code == 302, r.text
     txn = db.query(Transaction).one()
@@ -492,70 +628,148 @@ def test_wizard_took_cash_checkbox(client, db, authed):
 
 
 def test_wizard_card_ignores_took_cash(client, db, authed):
-    r = client.post("/transactions", headers=authed.headers, data={
-        "bucket_id": authed.bucket_id, "transaction_date": "2026-01-05", "amount": "18",
-        "type": "expense", "paid_by": authed.user_id, "payment_method": "card",
-        "took_cash": "on", "take_from": "stash"})
+    r = client.post(
+        "/transactions",
+        headers=authed.headers,
+        data={
+            "bucket_id": authed.bucket_id,
+            "transaction_date": "2026-01-05",
+            "amount": "18",
+            "type": "expense",
+            "paid_by": authed.user_id,
+            "payment_method": "card",
+            "took_cash": "on",
+            "take_from": "stash",
+        },
+    )
     assert r.status_code == 302, r.text
     assert db.query(CashMovement).count() == 0
 
 
 def test_api_transaction_took_cash(client, db, authed):
     h = _bearer(authed, authed.user_id)
-    r = client.post("/api/v1/transactions", headers=h, json={
-        "bucket_id": authed.bucket_id, "amount": "25", "transaction_date": "2026-01-05",
-        "payment_method": "cash", "took_cash": True, "take_from": "bank"})
+    r = client.post(
+        "/api/v1/transactions",
+        headers=h,
+        json={
+            "bucket_id": authed.bucket_id,
+            "amount": "25",
+            "transaction_date": "2026-01-05",
+            "payment_method": "cash",
+            "took_cash": True,
+            "take_from": "bank",
+        },
+    )
     assert r.status_code == 201, r.text
     assert "cash_pocket" not in r.json()
     assert db.query(CashMovement).one().transaction_id == r.json()["id"]
-    r = client.post("/api/v1/transactions", headers=h, json={
-        "bucket_id": authed.bucket_id, "amount": "25", "payment_method": "card",
-        "took_cash": True})
+    r = client.post(
+        "/api/v1/transactions",
+        headers=h,
+        json={
+            "bucket_id": authed.bucket_id,
+            "amount": "25",
+            "payment_method": "card",
+            "took_cash": True,
+        },
+    )
     assert r.status_code == 422
-    r = client.post("/api/v1/transactions", headers=h, json={
-        "bucket_id": authed.bucket_id, "amount": "25", "payment_method": "cash",
-        "took_cash": True, "take_from": "sideways"})
+    r = client.post(
+        "/api/v1/transactions",
+        headers=h,
+        json={
+            "bucket_id": authed.bucket_id,
+            "amount": "25",
+            "payment_method": "cash",
+            "took_cash": True,
+            "take_from": "sideways",
+        },
+    )
     assert r.status_code == 422
 
 
 def test_took_cash_is_the_payers_own(client, db, duo):
     h = _bearer(duo, duo.user_id)
-    r = client.post("/api/v1/transactions", headers=h, json={
-        "bucket_id": duo.bucket_id, "amount": "10", "transaction_date": "2026-01-05",
-        "payment_method": "cash", "paid_by": duo.partner_id, "took_cash": True,
-        "take_from": "bank"})
+    r = client.post(
+        "/api/v1/transactions",
+        headers=h,
+        json={
+            "bucket_id": duo.bucket_id,
+            "amount": "10",
+            "transaction_date": "2026-01-05",
+            "payment_method": "cash",
+            "paid_by": duo.partner_id,
+            "took_cash": True,
+            "take_from": "bank",
+        },
+    )
     assert r.status_code == 400, r.text
     assert db.query(Transaction).count() == 0 and db.query(CashMovement).count() == 0
 
 
 def test_took_cash_needs_a_single_payer(client, db, duo):
     h = _bearer(duo, duo.user_id)
-    r = client.post("/api/v1/transactions", headers=h, json={
-        "bucket_id": duo.bucket_id, "amount": "1100", "transaction_date": "2026-01-05",
-        "payment_method": "cash", "payer_mode": "own_share", "took_cash": True,
-        "splits": [{"user_id": duo.user_id, "amount": "800"},
-                   {"user_id": duo.partner_id, "amount": "300"}]})
+    r = client.post(
+        "/api/v1/transactions",
+        headers=h,
+        json={
+            "bucket_id": duo.bucket_id,
+            "amount": "1100",
+            "transaction_date": "2026-01-05",
+            "payment_method": "cash",
+            "payer_mode": "own_share",
+            "took_cash": True,
+            "splits": [
+                {"user_id": duo.user_id, "amount": "800"},
+                {"user_id": duo.partner_id, "amount": "300"},
+            ],
+        },
+    )
     assert r.status_code == 422, r.text
     assert db.query(CashMovement).count() == 0
 
     # Nor can an existing one become own share.
     user, bucket = _user(db, duo)
-    txn = withdraw_and_spend(db, user=user, household_id=duo.household_id, bucket=bucket,
-                             amount="1100", source="bank", when=date(2026, 1, 5))
-    r = client.put(f"/api/v1/transactions/{txn.id}", headers=h, json={
-        "bucket_id": duo.bucket_id, "amount": "1100", "transaction_date": "2026-01-05",
-        "payment_method": "cash", "payer_mode": "own_share",
-        "splits": [{"user_id": duo.user_id, "amount": "800"},
-                   {"user_id": duo.partner_id, "amount": "300"}]})
+    txn = withdraw_and_spend(
+        db,
+        user=user,
+        household_id=duo.household_id,
+        bucket=bucket,
+        amount="1100",
+        source="bank",
+        when=date(2026, 1, 5),
+    )
+    r = client.put(
+        f"/api/v1/transactions/{txn.id}",
+        headers=h,
+        json={
+            "bucket_id": duo.bucket_id,
+            "amount": "1100",
+            "transaction_date": "2026-01-05",
+            "payment_method": "cash",
+            "payer_mode": "own_share",
+            "splits": [
+                {"user_id": duo.user_id, "amount": "800"},
+                {"user_id": duo.partner_id, "amount": "300"},
+            ],
+        },
+    )
     assert r.status_code in (400, 422), r.text
     db.refresh(txn)
     assert txn.payer_mode == "single"
     # Bulk "each paid their own share" skips it too, even with matching splits.
-    db.add_all([TransactionSplit(transaction_id=txn.id, user_id=duo.user_id, amount=D("800")),
-                TransactionSplit(transaction_id=txn.id, user_id=duo.partner_id, amount=D("300"))])
+    db.add_all(
+        [
+            TransactionSplit(transaction_id=txn.id, user_id=duo.user_id, amount=D("800")),
+            TransactionSplit(transaction_id=txn.id, user_id=duo.partner_id, amount=D("300")),
+        ]
+    )
     db.commit()
-    r = client.post("/transactions/bulk-payer", headers=duo.headers, data={
-        "ids": [txn.id], "payer": "__own_share__", "return_query": ""})
+    r = client.post(
+        "/transactions/bulk-payer",
+        headers=duo.headers,
+        data={"ids": [txn.id], "payer": "__own_share__", "return_query": ""},
+    )
     assert r.headers["location"].endswith("updated=0&skipped=0&skipped_take=1")
     page = client.get(r.headers["location"]).text
     assert "1 skipped: cash was taken for it, so it stays paid by whoever took it" in page
@@ -564,14 +778,27 @@ def test_took_cash_needs_a_single_payer(client, db, duo):
 def test_cash_page_take_and_spend(client, db, authed):
     food = _category(db, authed, "Market")
     _move(db, authed, "stash_in", 50, date(2026, 1, 1))
-    r = client.post("/cash/add", headers=authed.headers, data={
-        "kind": "take", "amount": "33", "movement_date": "2026-01-07",
-        "source": authed.user_id, "spend_bucket_id": authed.bucket_id,
-        "category_id": food.id, "note": "veg"})
+    r = client.post(
+        "/cash/add",
+        headers=authed.headers,
+        data={
+            "kind": "take",
+            "amount": "33",
+            "movement_date": "2026-01-07",
+            "source": authed.user_id,
+            "spend_bucket_id": authed.bucket_id,
+            "category_id": food.id,
+            "note": "veg",
+        },
+    )
     assert r.status_code in (200, 302), r.text
     txn = db.query(Transaction).one()
     assert (txn.payment_method, txn.amount, txn.category_id, txn.notes) == (
-        "cash", D("33"), food.id, "veg")
+        "cash",
+        D("33"),
+        food.id,
+        "veg",
+    )
     mv = db.query(CashMovement).filter_by(kind="take").one()
     assert mv.transaction_id == txn.id and mv.stash_owner_id == authed.user_id
     assert _nyl(db, authed) == D("0.00")
@@ -579,22 +806,44 @@ def test_cash_page_take_and_spend(client, db, authed):
 
 def test_take_and_spend_needs_your_own_stash_or_the_bank(client, db, duo):
     _move(db, duo, "stash_in", 50, date(2026, 1, 1), user=duo.partner_id)
-    r = client.post("/cash/add", headers=duo.headers, data={
-        "kind": "take", "amount": "5", "source": duo.partner_id,
-        "spend_bucket_id": duo.bucket_id})
+    r = client.post(
+        "/cash/add",
+        headers=duo.headers,
+        data={
+            "kind": "take",
+            "amount": "5",
+            "source": duo.partner_id,
+            "spend_bucket_id": duo.bucket_id,
+        },
+    )
     assert r.status_code == 400
-    r = client.post("/api/v1/cash/movements", headers=_bearer(duo, duo.user_id), json={
-        "kind": "take", "amount": "5", "stash_owner_id": duo.partner_id,
-        "spend_bucket_id": duo.bucket_id})
+    r = client.post(
+        "/api/v1/cash/movements",
+        headers=_bearer(duo, duo.user_id),
+        json={
+            "kind": "take",
+            "amount": "5",
+            "stash_owner_id": duo.partner_id,
+            "spend_bucket_id": duo.bucket_id,
+        },
+    )
     assert r.status_code == 400
     assert db.query(Transaction).count() == 0
 
 
 def test_api_movement_take_and_spend(client, db, authed):
     h = _bearer(authed, authed.user_id)
-    r = client.post("/api/v1/cash/movements", headers=h, json={
-        "kind": "take", "amount": "21", "movement_date": "2026-01-07",
-        "spend_bucket_id": authed.bucket_id, "note": "lunch"})
+    r = client.post(
+        "/api/v1/cash/movements",
+        headers=h,
+        json={
+            "kind": "take",
+            "amount": "21",
+            "movement_date": "2026-01-07",
+            "spend_bucket_id": authed.bucket_id,
+            "note": "lunch",
+        },
+    )
     assert r.status_code == 201, r.text
     txn = db.query(Transaction).one()
     assert r.json()["transaction_id"] == txn.id and txn.notes == "lunch"
@@ -604,8 +853,15 @@ def test_api_movement_take_and_spend(client, db, authed):
 def test_payerless_cash_expense_is_the_submitters(client, db, authed):
     """The form allows a blank payer; cash still has to come out of a wallet."""
     _move(db, authed, "take", 50, date(2026, 1, 2))
-    form = {"bucket_id": authed.bucket_id, "transaction_date": "2026-01-03", "amount": "20",
-            "type": "expense", "paid_by": "", "payment_method": "cash", "notes": "coffee"}
+    form = {
+        "bucket_id": authed.bucket_id,
+        "transaction_date": "2026-01-03",
+        "amount": "20",
+        "type": "expense",
+        "paid_by": "",
+        "payment_method": "cash",
+        "notes": "coffee",
+    }
     assert client.post("/transactions", headers=authed.headers, data=form).status_code == 302
     assert db.query(Transaction).filter_by(notes="coffee").one().paid_by == authed.user_id
     assert _nyl(db, authed) == D("30.00")
@@ -619,6 +875,7 @@ def test_payerless_cash_expense_is_the_submitters(client, db, authed):
 # ---------------------------------------------------------------------------
 # The wizard starts on the method you used last
 # ---------------------------------------------------------------------------
+
 
 def _init(page):
     import html
@@ -640,10 +897,14 @@ def test_wizard_defaults_to_your_last_payment_method(client, db, duo):
 # Still have
 # ---------------------------------------------------------------------------
 
+
 def test_still_have_html_and_api(client, db, authed):
     _move(db, authed, "take", 100, date(2026, 1, 2))
-    r = client.post("/cash/add", headers=authed.headers, data={
-        "kind": "still_have", "amount": "42.50", "movement_date": "2026-01-31"})
+    r = client.post(
+        "/cash/add",
+        headers=authed.headers,
+        data={"kind": "still_have", "amount": "42.50", "movement_date": "2026-01-31"},
+    )
     assert r.status_code in (200, 302), r.text
     mv = db.query(CashMovement).filter_by(kind="still_have").one()
     assert mv.amount == D("42.50") and mv.category_id is None
@@ -652,8 +913,11 @@ def test_still_have_html_and_api(client, db, authed):
     assert _nyl(db, authed) == D("57.50")
 
     h = _bearer(authed, authed.user_id)
-    r = client.post("/api/v1/cash/movements", headers=h, json={
-        "kind": "still_have", "amount": "50", "movement_date": "2026-01-31"})
+    r = client.post(
+        "/api/v1/cash/movements",
+        headers=h,
+        json={"kind": "still_have", "amount": "50", "movement_date": "2026-01-31"},
+    )
     assert r.status_code == 201 and r.json()["kind"] == "still_have"
     r = client.get("/api/v1/cash/summary?month=2026-01", headers=h)
     assert r.json()["wallet"]["still_have"] == 50.0
@@ -662,20 +926,29 @@ def test_still_have_html_and_api(client, db, authed):
 def test_still_have_zero_records_an_empty_wallet(client, db, authed):
     _move(db, authed, "take", 100, date(2026, 1, 1))
     _move(db, authed, "still_have", 100, date(2026, 1, 10))
-    r = client.post("/cash/add", headers=authed.headers, data={
-        "kind": "still_have", "amount": "0", "movement_date": "2026-01-31"})
+    r = client.post(
+        "/cash/add",
+        headers=authed.headers,
+        data={"kind": "still_have", "amount": "0", "movement_date": "2026-01-31"},
+    )
     assert r.status_code in (200, 302), r.text
     jan, feb = monthly_breakdown(db, authed.household_id, authed.user_id, JAN, FEB)
     assert jan["still_have"] == D("0.00") and jan["not_yet_logged"] == D("100.00")
     assert feb["carried"] == D("0.00")
 
     h = _bearer(authed, authed.user_id)
-    r = client.post("/api/v1/cash/movements", headers=h, json={
-        "kind": "still_have", "amount": "0", "movement_date": "2026-01-31"})
+    r = client.post(
+        "/api/v1/cash/movements",
+        headers=h,
+        json={"kind": "still_have", "amount": "0", "movement_date": "2026-01-31"},
+    )
     assert r.status_code == 201, r.text
     # Only a still_have may be zero.
-    r = client.post("/cash/add", headers=authed.headers, data={
-        "kind": "take", "amount": "0", "movement_date": "2026-01-31"})
+    r = client.post(
+        "/cash/add",
+        headers=authed.headers,
+        data={"kind": "take", "amount": "0", "movement_date": "2026-01-31"},
+    )
     assert r.status_code == 400
     r = client.post("/api/v1/cash/movements", headers=h, json={"kind": "stash_in", "amount": "0"})
     assert r.status_code == 422
@@ -686,8 +959,11 @@ def test_legacy_kinds_cannot_be_logged(client, db, authed):
     for kind in ("in", "out", "count", "sideways"):
         r = client.post("/cash/add", headers=authed.headers, data={"kind": kind, "amount": "5"})
         assert r.status_code == 400, kind
-        r = client.post("/api/v1/cash/movements", headers=_bearer(authed, authed.user_id),
-                        json={"kind": kind, "amount": "5"})
+        r = client.post(
+            "/api/v1/cash/movements",
+            headers=_bearer(authed, authed.user_id),
+            json={"kind": kind, "amount": "5"},
+        )
         assert r.status_code == 422, kind
     assert db.query(CashMovement).count() == 0
 
@@ -696,11 +972,12 @@ def test_legacy_kinds_cannot_be_logged(client, db, authed):
 # Insights: "Cash (not yet logged)", household-visible
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def cash_mix(db, duo):
-    _move(db, duo, "stash_in", 500, date(2026, 1, 1))                      # never spending
-    _move(db, duo, "take", 50, date(2026, 1, 2), stash_owner=duo.user_id)    # owner
-    _move(db, duo, "take", 30, date(2026, 1, 2), user=duo.partner_id)        # member, bank
+    _move(db, duo, "stash_in", 500, date(2026, 1, 1))  # never spending
+    _move(db, duo, "take", 50, date(2026, 1, 2), stash_owner=duo.user_id)  # owner
+    _move(db, duo, "take", 30, date(2026, 1, 2), user=duo.partner_id)  # member, bank
     return duo
 
 
@@ -721,7 +998,7 @@ def test_insights_widgets_that_include_not_logged(db, cash_mix):
     assert data["kpis"]["total"] == D("80.00")
     assert {r["method"]: r["amount"] for r in data["by_method"]} == {"cash": D("80.00")}
     assert data["cash_share"] == D("100.0")
-    assert data["bucket_breakdown"] == []      # no bucket
+    assert data["bucket_breakdown"] == []  # no bucket
     assert data["net"] == D("-80.00")
     # A bucket filter leaves it out entirely.
     filtered = _insights(db, cash_mix, bucket_ids=cash_mix.bucket_id)
@@ -740,13 +1017,18 @@ def test_insights_trend_includes_not_logged(db, authed):
 
 def test_insights_html_and_api_for_another_member(app, client, db, cash_mix):
     member, _ = _member(app, cash_mix)
-    r = member.get(f"/insights?preset=custom&start_date=2026-01-01&end_date=2026-01-31"
-                   f"&paid_by={cash_mix.user_id}")
+    r = member.get(
+        f"/insights?preset=custom&start_date=2026-01-01&end_date=2026-01-31"
+        f"&paid_by={cash_mix.user_id}"
+    )
     assert r.status_code == 200
     assert NOT_LOGGED in r.text and "500.00" not in r.text
     h = _bearer(cash_mix, cash_mix.partner_id)
-    r = client.get(f"/api/v1/insights?preset=custom&start_date=2026-01-01&end_date=2026-01-31"
-                   f"&paid_by={cash_mix.user_id}", headers=h)
+    r = client.get(
+        f"/api/v1/insights?preset=custom&start_date=2026-01-01&end_date=2026-01-31"
+        f"&paid_by={cash_mix.user_id}",
+        headers=h,
+    )
     assert r.status_code == 200
     assert r.json()["cash_not_logged"] == 50.0 and "cash_untracked" not in r.json()
 
@@ -772,7 +1054,7 @@ def test_forecast_includes_not_logged_cash(db, duo):
         while m <= 0:
             m, y = m + 12, y - 1
         _move(db, duo, "take", 300, date(y, m, 10))
-        _move(db, duo, "stash_in", 999, date(y, m, 10))    # never spending
+        _move(db, duo, "stash_in", 999, date(y, m, 10))  # never spending
     _move(db, duo, "take", 50, today)
     for paid_by in ("", duo.partner_id):
         forecast = build_insights(db, duo.household_id, InsightFilters(paid_by=paid_by))["forecast"]
@@ -783,6 +1065,7 @@ def test_forecast_includes_not_logged_cash(db, duo):
 # ---------------------------------------------------------------------------
 # Regressions carried over: carry, later logging, partial windows
 # ---------------------------------------------------------------------------
+
 
 def test_mid_month_still_have_carries_what_is_left(db, authed):
     _move(db, authed, "take", 100, date(2026, 1, 1))
@@ -858,18 +1141,21 @@ def test_partial_windows_add_up_to_the_month(db, authed):
 
 def test_carried_cash_counts_from_the_first_of_the_month(db, authed):
     _move(db, authed, "still_have", 40, date(2025, 12, 31))
-    assert _insights(db, authed, start="2026-01-01", end="2026-01-04")[
-        "summary"]["cash_not_logged"] == D("40.00")
-    assert _insights(db, authed, start="2026-01-05", end="2026-01-31")[
-        "summary"]["cash_not_logged"] == D("0.00")
+    assert _insights(db, authed, start="2026-01-01", end="2026-01-04")["summary"][
+        "cash_not_logged"
+    ] == D("40.00")
+    assert _insights(db, authed, start="2026-01-05", end="2026-01-31")["summary"][
+        "cash_not_logged"
+    ] == D("0.00")
 
 
 def test_kpi_previous_window_does_not_take_a_whole_month_of_cash(db, authed):
     """On 6 October, 1-6 Oct is compared with 25-30 Sep, not with all of September."""
     _move(db, authed, "take", 300, date(2026, 9, 3))
     _move(db, authed, "take", 50, date(2026, 10, 2))
-    data = build_insights(db, authed.household_id, InsightFilters(
-        preset="this_month", today=date(2026, 10, 6)))
+    data = build_insights(
+        db, authed.household_id, InsightFilters(preset="this_month", today=date(2026, 10, 6))
+    )
     assert data["kpis"]["total"] == D("50.00")
     assert data["kpis"]["previous_total"] == D("0.00")
 
@@ -877,6 +1163,7 @@ def test_kpi_previous_window_does_not_take_a_whole_month_of_cash(db, authed):
 # ---------------------------------------------------------------------------
 # The migration
 # ---------------------------------------------------------------------------
+
 
 def _seeded_db(tmp_path, name, revision):
     """A database migrated to ``revision`` with one household and user."""
@@ -891,21 +1178,38 @@ def _seeded_db(tmp_path, name, revision):
     engine = create_engine(url)
     ids = {k: str(uuid.uuid4()) for k in ("hh", "user")}
     with engine.begin() as conn:
-        conn.execute(text("INSERT INTO households (id, name, default_currency) "
-                          "VALUES (:i, 'H', 'EUR')"), {"i": ids["hh"]})
-        conn.execute(text(
-            "INSERT INTO users (id, username, display_name, password_hash, session_version, "
-            "totp_enabled, email_verified) VALUES (:i, 'u', 'U', 'x', 0, false, false)"
-        ), {"i": ids["user"]})
+        conn.execute(
+            text("INSERT INTO households (id, name, default_currency) VALUES (:i, 'H', 'EUR')"),
+            {"i": ids["hh"]},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO users (id, username, display_name, password_hash, session_version, "
+                "totp_enabled, email_verified) VALUES (:i, 'u', 'U', 'x', 0, false, false)"
+            ),
+            {"i": ids["user"]},
+        )
 
     def movement(kind, deleted=False, **extra):
-        cols = {"id": str(uuid.uuid4()), "household_id": ids["hh"], "user_id": ids["user"],
-                "kind": kind, "amount": 30, "currency": "EUR", "movement_date": "2026-01-05",
-                "deleted_at": "2026-01-06 00:00:00" if deleted else None, **extra}
+        cols = {
+            "id": str(uuid.uuid4()),
+            "household_id": ids["hh"],
+            "user_id": ids["user"],
+            "kind": kind,
+            "amount": 30,
+            "currency": "EUR",
+            "movement_date": "2026-01-05",
+            "deleted_at": "2026-01-06 00:00:00" if deleted else None,
+            **extra,
+        }
         with engine.begin() as conn:
-            conn.execute(text(
-                f"INSERT INTO cash_movements ({', '.join(cols)}) "
-                f"VALUES ({', '.join(':' + c for c in cols)})"), cols)
+            conn.execute(
+                text(
+                    f"INSERT INTO cash_movements ({', '.join(cols)}) "
+                    f"VALUES ({', '.join(':' + c for c in cols)})"
+                ),
+                cols,
+            )
         return cols["id"]
 
     return url, engine, movement, ids
@@ -931,20 +1235,29 @@ def test_migration_converts_legacy_rows_and_reverses(tmp_path):
     assert {"stash_owner_id", "transaction_id"} <= cols and "pocket" not in cols
     assert "cash_pocket" not in {c["name"] for c in insp.get_columns("transactions")}
     assert {"ix_cash_movements_transaction_id", "ix_cash_movements_stash_owner_id"} <= {
-        i["name"] for i in insp.get_indexes("cash_movements")}
+        i["name"] for i in insp.get_indexes("cash_movements")
+    }
     assert _kinds(engine) == {withdrawn: "take", spent: "out"}
     # A bank take is a legacy withdrawal again after a downgrade.
     down = _alembic(["downgrade", "b6c7d8e9f0a1"], url)
     assert down.returncode == 0, down.stderr
     assert _kinds(engine) == {withdrawn: "in", spent: "out"}
-    assert "stash_owner_id" not in {c["name"] for c in inspect(engine).get_columns("cash_movements")}
+    assert "stash_owner_id" not in {
+        c["name"] for c in inspect(engine).get_columns("cash_movements")
+    }
     assert _alembic(["upgrade", "head"], url).returncode == 0
     engine.dispose()
 
 
-@pytest.mark.parametrize("kind,own_stash", [
-    ("stash_in", False), ("put_back", False), ("still_have", False), ("take", True),
-])
+@pytest.mark.parametrize(
+    "kind,own_stash",
+    [
+        ("stash_in", False),
+        ("put_back", False),
+        ("still_have", False),
+        ("take", True),
+    ],
+)
 def test_downgrade_refuses_while_stash_rows_exist(tmp_path, kind, own_stash):
     from sqlalchemy import inspect
 
@@ -968,7 +1281,7 @@ def test_downgrade_ignores_deleted_stash_rows(tmp_path):
     movement("take")
     down = _alembic(["downgrade", "b6c7d8e9f0a1"], url)
     assert down.returncode == 0, down.stderr
-    assert _kinds(engine)[gone] == "count"      # fits the old VARCHAR(8)
+    assert _kinds(engine)[gone] == "count"  # fits the old VARCHAR(8)
     engine.dispose()
 
 
@@ -976,16 +1289,28 @@ def test_downgrade_ignores_deleted_stash_rows(tmp_path):
 # A linked take stays its taker's: payer, amount, privacy
 # ---------------------------------------------------------------------------
 
+
 def _linked_expense(db, ctx, amount="40", stash=100):
     _move(db, ctx, "stash_in", stash, date(2026, 1, 1))
     user, bucket = _user(db, ctx)
-    return withdraw_and_spend(db, user=user, household_id=ctx.household_id, bucket=bucket,
-                              amount=amount, when=date(2026, 1, 5))
+    return withdraw_and_spend(
+        db,
+        user=user,
+        household_id=ctx.household_id,
+        bucket=bucket,
+        amount=amount,
+        when=date(2026, 1, 5),
+    )
 
 
 def _put(ctx, txn, **fields):
-    return {"bucket_id": ctx.bucket_id, "amount": "40", "transaction_date": "2026-01-05",
-            "payment_method": "cash", **fields}
+    return {
+        "bucket_id": ctx.bucket_id,
+        "amount": "40",
+        "transaction_date": "2026-01-05",
+        "payment_method": "cash",
+        **fields,
+    }
 
 
 def test_payer_of_an_expense_cash_was_taken_for_stays_the_taker(app, client, db, duo):
@@ -996,20 +1321,34 @@ def test_payer_of_an_expense_cash_was_taken_for_stays_the_taker(app, client, db,
     for h in (_bearer(duo, a), _bearer(duo, b)):
         r = client.put(f"/api/v1/transactions/{txn.id}", headers=h, json=_put(duo, txn, paid_by=b))
         assert r.status_code == 400, r.text
-    form = {"bucket_id": duo.bucket_id, "transaction_date": "2026-01-05", "amount": "40",
-            "type": "expense", "paid_by": b, "payment_method": "cash"}
-    assert client.post(f"/transactions/{txn.id}/edit", data=form,
-                       headers=duo.headers).status_code == 400
+    form = {
+        "bucket_id": duo.bucket_id,
+        "transaction_date": "2026-01-05",
+        "amount": "40",
+        "type": "expense",
+        "paid_by": b,
+        "payment_method": "cash",
+    }
+    assert (
+        client.post(f"/transactions/{txn.id}/edit", data=form, headers=duo.headers).status_code
+        == 400
+    )
     # Bulk "who paid" skips it.
-    r = client.post("/transactions/bulk-payer", headers=duo.headers, data={
-        "ids": [txn.id], "payer": b, "return_query": ""})
+    r = client.post(
+        "/transactions/bulk-payer",
+        headers=duo.headers,
+        data={"ids": [txn.id], "payer": b, "return_query": ""},
+    )
     assert r.headers["location"].endswith("updated=0&skipped=0&skipped_take=1")
     db.expire_all()
     assert db.get(Transaction, txn.id).paid_by == a
     assert stash_balance(db, hh, a) == D("60.00")
     # No longer cash: the take goes, and so does the rule.
-    r = client.put(f"/api/v1/transactions/{txn.id}", headers=_bearer(duo, a),
-                   json=_put(duo, txn, paid_by=b, payment_method="card"))
+    r = client.put(
+        f"/api/v1/transactions/{txn.id}",
+        headers=_bearer(duo, a),
+        json=_put(duo, txn, paid_by=b, payment_method="card"),
+    )
     assert r.status_code == 200, r.text
     assert stash_balance(db, hh, a) == D("100.00")
 
@@ -1022,18 +1361,27 @@ def test_only_the_taker_changes_what_an_expense_took_from_their_stash(client, db
     h = _bearer(duo, b)
     answers = set()
     for amount in ("190", "201", "5"):
-        r = client.put(f"/api/v1/transactions/{txn.id}", headers=h,
-                       json=_put(duo, txn, amount=amount, paid_by=a))
+        r = client.put(
+            f"/api/v1/transactions/{txn.id}",
+            headers=h,
+            json=_put(duo, txn, amount=amount, paid_by=a),
+        )
         answers.add((r.status_code, r.json()["detail"]))
     assert len(answers) == 1 and answers.pop()[0] == 403
     assert stash_balance(db, hh, a) == D("190.00")
     # Anything else about the expense is still theirs to fix.
-    r = client.put(f"/api/v1/transactions/{txn.id}", headers=h,
-                   json=_put(duo, txn, amount="10", paid_by=a, notes="kiosk"))
+    r = client.put(
+        f"/api/v1/transactions/{txn.id}",
+        headers=h,
+        json=_put(duo, txn, amount="10", paid_by=a, notes="kiosk"),
+    )
     assert r.status_code == 200, r.text
     # The taker may.
-    r = client.put(f"/api/v1/transactions/{txn.id}", headers=_bearer(duo, a),
-                   json=_put(duo, txn, amount="30", paid_by=a))
+    r = client.put(
+        f"/api/v1/transactions/{txn.id}",
+        headers=_bearer(duo, a),
+        json=_put(duo, txn, amount="30", paid_by=a),
+    )
     assert r.status_code == 200, r.text
     assert stash_balance(db, hh, a) == D("170.00")
 
@@ -1065,8 +1413,9 @@ def test_others_never_see_a_negative_taken(client, db, duo):
     _move(db, duo, "put_back", 30, date(2026, 2, 3))
     assert wallet_summary(db, hh, a, FEB, FEB_END, viewer_id=b)["taken"] == D("0.00")
     assert wallet_summary(db, hh, a, FEB, FEB_END, viewer_id=a)["put_back"] == D("30.00")
-    r = client.get("/api/v1/cash/summary", headers=_bearer(duo, b),
-                   params={"month": "2026-02", "member_id": a})
+    r = client.get(
+        "/api/v1/cash/summary", headers=_bearer(duo, b), params={"month": "2026-02", "member_id": a}
+    )
     assert r.status_code == 200 and D(str(r.json()["wallet"]["taken"])) == D("0")
 
 
@@ -1077,9 +1426,17 @@ def test_wizard_default_ignores_bill_payments(client, db, duo):
     from app.services.bills import generate_occurrences, pay_occurrence
 
     _cash(db, duo, 5, date(2026, 1, 3), method="cash")
-    bill = RecurringBill(household_id=duo.household_id, bucket_id=duo.bucket_id, name="Gym",
-                         amount=30, currency="EUR", start_date=date(2026, 1, 1),
-                         interval_months=1, total_occurrences=1, paid_by_default=duo.user_id)
+    bill = RecurringBill(
+        household_id=duo.household_id,
+        bucket_id=duo.bucket_id,
+        name="Gym",
+        amount=30,
+        currency="EUR",
+        start_date=date(2026, 1, 1),
+        interval_months=1,
+        total_occurrences=1,
+        paid_by_default=duo.user_id,
+    )
     db.add(bill)
     db.flush()
     generate_occurrences(db, bill)
@@ -1097,8 +1454,11 @@ def test_cash_page_spend_needs_a_bucket(client, db, authed):
     db.get(Bucket, authed.bucket_id).status = BucketStatus.archived
     db.commit()
     assert "Spent it straight away" not in client.get("/cash").text
-    r = client.post("/cash/add", headers=authed.headers, data={
-        "kind": "take", "amount": "20", "source": authed.user_id, "spend": "on"})
+    r = client.post(
+        "/cash/add",
+        headers=authed.headers,
+        data={"kind": "take", "amount": "20", "source": authed.user_id, "spend": "on"},
+    )
     assert r.status_code == 400 and "bucket" in r.text.lower()
     assert db.query(CashMovement).filter_by(kind="take").count() == 0
 
@@ -1109,8 +1469,11 @@ def test_private_cash_page_is_never_cached(client, db, authed):
     from pathlib import Path
 
     assert "no-store" in client.get("/cash").headers["cache-control"]
-    r = client.post("/cash/add", headers={**authed.headers, "HX-Request": "true"},
-                    data={"kind": "stash_in", "amount": "5"})
+    r = client.post(
+        "/cash/add",
+        headers={**authed.headers, "HX-Request": "true"},
+        data={"kind": "stash_in", "amount": "5"},
+    )
     assert r.status_code == 200 and "no-store" in r.headers["cache-control"]
     sw = Path("static/sw.js").read_text()
     assert "no-store" in sw

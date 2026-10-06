@@ -6,7 +6,6 @@ after the original response was lost, so the server must recognise the repeat
 rather than creating a second transaction.
 """
 
-
 from app.models import Transaction
 
 
@@ -58,14 +57,31 @@ def test_client_id_is_scoped_per_household(app, client, db, authed, make_househo
     # A second browser: signing the other user in on the same client would be
     # rejected by CSRF, since that client already holds the first user's session.
     other_client = TestClient(app, follow_redirects=False)
-    other_client.post("/login", data={**form_csrf(other_client, "/login"), "username": other.username, "password": PASSWORD})
-    other_client.post("/login/verify", data={**form_csrf(other_client, "/login/verify"), "code": pyotp.TOTP(other.secret).now()})
+    other_client.post(
+        "/login",
+        data={
+            **form_csrf(other_client, "/login"),
+            "username": other.username,
+            "password": PASSWORD,
+        },
+    )
+    other_client.post(
+        "/login/verify",
+        data={**form_csrf(other_client, "/login/verify"), "code": pyotp.TOTP(other.secret).now()},
+    )
     token = other_client.cookies.get("csrf_token")
 
-    r = other_client.post("/transactions", data={
-        "bucket_id": other.bucket_id, "transaction_date": "2026-07-20",
-        "amount": "10", "type": "expense", "client_id": "collide",
-    }, headers={"X-CSRF-Token": token})
+    r = other_client.post(
+        "/transactions",
+        data={
+            "bucket_id": other.bucket_id,
+            "transaction_date": "2026-07-20",
+            "amount": "10",
+            "type": "expense",
+            "client_id": "collide",
+        },
+        headers={"X-CSRF-Token": token},
+    )
     assert r.status_code == 302
 
     assert db.query(Transaction).count() == 2
@@ -108,6 +124,7 @@ def test_blank_client_id_is_stored_as_null(client, db, authed):
 # Client-side contract
 # ---------------------------------------------------------------------------
 
+
 def test_offline_js_reads_csrf_from_cookie_not_meta():
     """The <meta> tag is frozen at page load; the cookie is refreshed
     mid-session. Reading the tag meant a queued expense flushed after a refresh
@@ -130,11 +147,14 @@ def test_offline_js_does_not_treat_a_login_redirect_as_sent():
     fetch follows to a 200 — the queued expense used to be deleted as "sent"
     and silently lost. Only a redirect to the success destination counts."""
     import re
+
     js = open("static/offline.js").read()
-    assert not re.search(r"resp\.ok\s*\|\|\s*resp\.redirected", js), "a redirect alone is not success"
+    assert not re.search(r"resp\.ok\s*\|\|\s*resp\.redirected", js), (
+        "a redirect alone is not success"
+    )
     assert "_replaySucceeded(resp)" in js
-    body = js[js.index("function _replaySucceeded"):]
-    body = body[:body.index("\n}\n")]
+    body = js[js.index("function _replaySucceeded") :]
+    body = body[: body.index("\n}\n")]
     assert "resp.redirected" in body and "resp.url" in body
     assert "/buckets/" in body and "/transactions" in body
 
@@ -144,11 +164,19 @@ def test_stale_session_replay_ends_at_login_with_no_row(app, db, authed):
     redirected to /login (or refused) and stores nothing — so the client must
     keep the record queued rather than delete it."""
     from fastapi.testclient import TestClient
+
     fresh = TestClient(app)  # no session cookie: a stale/expired session
-    r = fresh.post("/transactions", data={
-        "bucket_id": authed.bucket_id, "transaction_date": "2026-07-20",
-        "amount": "9.99", "type": "expense", "client_id": "offline-stale-1",
-    }, follow_redirects=True)
+    r = fresh.post(
+        "/transactions",
+        data={
+            "bucket_id": authed.bucket_id,
+            "transaction_date": "2026-07-20",
+            "amount": "9.99",
+            "type": "expense",
+            "client_id": "offline-stale-1",
+        },
+        follow_redirects=True,
+    )
     assert db.query(Transaction).count() == 0
     final = str(r.url)
     assert r.status_code == 403 or "/login" in final, (r.status_code, final)

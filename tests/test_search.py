@@ -5,6 +5,7 @@ Free text previously matched notes only, so a scanned receipt whose merchant
 landed in the category or bucket name was unfindable, and a bare amount could
 not be searched at all.
 """
+
 from datetime import date
 
 import pytest
@@ -36,13 +37,20 @@ def corpus(db, authed, make_household):
         (travel.id, None, 250.00, "Hotel"),
     ]
     for bucket_id, cat_id, amount, notes in rows:
-        db.add(Transaction(
-            bucket_id=bucket_id, household_id=authed.household_id,
-            amount=amount, currency="EUR", exchange_rate=1,
-            type=TransactionType.expense, category_id=cat_id,
-            transaction_date=date(2026, 6, 15), notes=notes,
-            paid_by=authed.user_id,
-        ))
+        db.add(
+            Transaction(
+                bucket_id=bucket_id,
+                household_id=authed.household_id,
+                amount=amount,
+                currency="EUR",
+                exchange_rate=1,
+                type=TransactionType.expense,
+                category_id=cat_id,
+                transaction_date=date(2026, 6, 15),
+                notes=notes,
+                paid_by=authed.user_id,
+            )
+        )
     db.commit()
 
     authed.travel_bucket_id = travel.id
@@ -129,12 +137,18 @@ def test_combined_filters_narrow(client, corpus):
 
 def test_search_is_scoped_to_household(client, db, corpus, make_household):
     victim = make_household(name="Victim", username="searchvictim")
-    db.add(Transaction(
-        bucket_id=victim.bucket_id, household_id=victim.household_id,
-        amount=42.50, currency="EUR", exchange_rate=1,
-        type=TransactionType.expense, transaction_date=date(2026, 6, 15),
-        notes="SecretDinner",
-    ))
+    db.add(
+        Transaction(
+            bucket_id=victim.bucket_id,
+            household_id=victim.household_id,
+            amount=42.50,
+            currency="EUR",
+            exchange_rate=1,
+            type=TransactionType.expense,
+            transaction_date=date(2026, 6, 15),
+            notes="SecretDinner",
+        )
+    )
     db.commit()
 
     assert "SecretDinner" not in _search(client, q="42.50")

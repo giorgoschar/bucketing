@@ -1,6 +1,7 @@
 """
 API bills routes — CRUD for recurring bills + pay/skip occurrences.
 """
+
 from datetime import date
 from decimal import Decimal
 
@@ -73,7 +74,9 @@ def _parse_bill_date(value: str | None, field: str, *, required: bool = False):
     try:
         return date.fromisoformat(value)
     except ValueError:
-        raise HTTPException(status_code=400, detail=f"{field} must be an ISO date (YYYY-MM-DD)") from None
+        raise HTTPException(
+            status_code=400, detail=f"{field} must be an ISO date (YYYY-MM-DD)"
+        ) from None
 
 
 def _parse_frequency(value: str) -> BillFrequency:
@@ -87,32 +90,33 @@ def _parse_frequency(value: str) -> BillFrequency:
 # Schemas
 # ---------------------------------------------------------------------------
 
+
 class BillSplitIn(BaseModel):
     user_id: str
-    amount:  Decimal
+    amount: Decimal
 
 
 class BillIn(BaseModel):
-    name:              str
-    amount:            Decimal | None = None
-    currency:          str          = "EUR"
-    category_id:       str | None   = None
-    bucket_id:         str | None   = None
-    frequency:         str          = "monthly"
-    interval_months:   int          = 1
-    start_date:        str                       # ISO date required
-    end_date:          str | None   = None
-    contract_end_date: str | None   = None
-    total_occurrences: int | None   = None
-    paid_by_default:   str | None   = None
-    notes:             str | None   = None
-    is_auto_pay:       bool         = False
-    splits:            list[BillSplitIn] = []
+    name: str
+    amount: Decimal | None = None
+    currency: str = "EUR"
+    category_id: str | None = None
+    bucket_id: str | None = None
+    frequency: str = "monthly"
+    interval_months: int = 1
+    start_date: str  # ISO date required
+    end_date: str | None = None
+    contract_end_date: str | None = None
+    total_occurrences: int | None = None
+    paid_by_default: str | None = None
+    notes: str | None = None
+    is_auto_pay: bool = False
+    splits: list[BillSplitIn] = []
     # "single" (paid_by_default pays) or "own_share" (each member pays their
     # split directly; needs splits).
-    payer_mode:        str          = PayerMode.single.value
+    payer_mode: str = PayerMode.single.value
     # Update only: also give past payments with no payer this bill's payer.
-    apply_to_past:     bool         = False
+    apply_to_past: bool = False
 
     @field_validator("payer_mode", mode="before")
     @classmethod
@@ -121,12 +125,12 @@ class BillIn(BaseModel):
 
 
 class PayOccurrenceIn(BaseModel):
-    amount:   Decimal | None = None
-    paid_by:  str | None   = None
+    amount: Decimal | None = None
+    paid_by: str | None = None
     # None: paid_by if given, else the bill's payer mode.
     payer_mode: str | None = None
     payment_method: str = "card"
-    splits:   list[BillSplitIn] = []
+    splits: list[BillSplitIn] = []
 
     @field_validator("payment_method", mode="before")
     @classmethod
@@ -141,39 +145,37 @@ class PayOccurrenceIn(BaseModel):
 
 def _bill_dict(b: RecurringBill) -> dict:
     return {
-        "id":               b.id,
-        "household_id":     b.household_id,
-        "name":             b.name,
-        "amount":           quantize(b.amount) if b.amount is not None else None,
-        "currency":         b.currency,
-        "category_id":      b.category_id,
-        "bucket_id":        b.bucket_id,
-        "frequency":        b.frequency.value,
-        "interval_months":  b.interval_months,
-        "start_date":       b.start_date.isoformat() if b.start_date else None,
-        "end_date":         b.end_date.isoformat() if b.end_date else None,
+        "id": b.id,
+        "household_id": b.household_id,
+        "name": b.name,
+        "amount": quantize(b.amount) if b.amount is not None else None,
+        "currency": b.currency,
+        "category_id": b.category_id,
+        "bucket_id": b.bucket_id,
+        "frequency": b.frequency.value,
+        "interval_months": b.interval_months,
+        "start_date": b.start_date.isoformat() if b.start_date else None,
+        "end_date": b.end_date.isoformat() if b.end_date else None,
         "contract_end_date": b.contract_end_date.isoformat() if b.contract_end_date else None,
         "total_occurrences": b.total_occurrences,
-        "paid_by_default":  b.paid_by_default,
-        "payer_mode":       b.payer_mode,
-        "notes":            b.notes,
-        "is_auto_pay":      b.is_auto_pay,
-        "is_active":        b.is_active,
-        "splits": [
-            {"user_id": s.user_id, "amount": quantize(s.amount)} for s in b.splits
-        ],
+        "paid_by_default": b.paid_by_default,
+        "payer_mode": b.payer_mode,
+        "notes": b.notes,
+        "is_auto_pay": b.is_auto_pay,
+        "is_active": b.is_active,
+        "splits": [{"user_id": s.user_id, "amount": quantize(s.amount)} for s in b.splits],
     }
 
 
 def _occ_dict(o: BillOccurrence) -> dict:
     return {
-        "id":             o.id,
-        "bill_id":        o.bill_id,
-        "due_date":       o.due_date.isoformat(),
-        "amount":         quantize(o.amount) if o.amount is not None else None,
-        "status":         o.status.value,
-        "paid_at":        o.paid_at.isoformat() if o.paid_at else None,
-        "paid_by":        o.paid_by,
+        "id": o.id,
+        "bill_id": o.bill_id,
+        "due_date": o.due_date.isoformat(),
+        "amount": quantize(o.amount) if o.amount is not None else None,
+        "status": o.status.value,
+        "paid_at": o.paid_at.isoformat() if o.paid_at else None,
+        "paid_by": o.paid_by,
         "transaction_id": o.transaction_id,
     }
 
@@ -187,9 +189,10 @@ def _assert_bill_in_household(bill: RecurringBill | None, hh_id: str):
 # Routes
 # ---------------------------------------------------------------------------
 
+
 @router.get("")
 def list_bills(
-    page:      int = Query(1, ge=1),
+    page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     auth=Depends(require_api_auth),
     db: Session = Depends(get_db),
@@ -199,15 +202,15 @@ def list_bills(
     total = q.count()
     bills = q.offset((page - 1) * page_size).limit(page_size).all()
 
-    overdue  = get_overdue_bills(db, hh_id)
+    overdue = get_overdue_bills(db, hh_id)
     upcoming = get_upcoming_bills(db, hh_id, days=60)
 
     return {
-        "total":     total,
-        "page":      page,
+        "total": total,
+        "page": page,
         "page_size": page_size,
-        "items":     [_bill_dict(b) for b in bills],
-        "overdue_occurrences":  [_occ_dict(o) for o in overdue],
+        "items": [_bill_dict(b) for b in bills],
+        "overdue_occurrences": [_occ_dict(o) for o in overdue],
         "upcoming_occurrences": [_occ_dict(o) for o in upcoming],
     }
 
@@ -301,21 +304,21 @@ def update_bill(
 
     delete_future_occurrences(db, bill_id)
 
-    bill.name              = body.name.strip()
-    bill.amount            = amount
-    bill.currency          = body.currency
-    bill.category_id       = body.category_id
-    bill.bucket_id         = body.bucket_id
-    bill.frequency         = _parse_frequency(body.frequency)
-    bill.interval_months   = normalise_interval_months(body.interval_months)
-    bill.start_date        = _parse_bill_date(body.start_date, "start_date", required=True)
-    bill.end_date          = _parse_bill_date(body.end_date, "end_date")
+    bill.name = body.name.strip()
+    bill.amount = amount
+    bill.currency = body.currency
+    bill.category_id = body.category_id
+    bill.bucket_id = body.bucket_id
+    bill.frequency = _parse_frequency(body.frequency)
+    bill.interval_months = normalise_interval_months(body.interval_months)
+    bill.start_date = _parse_bill_date(body.start_date, "start_date", required=True)
+    bill.end_date = _parse_bill_date(body.end_date, "end_date")
     bill.contract_end_date = _parse_bill_date(body.contract_end_date, "contract_end_date")
     bill.total_occurrences = body.total_occurrences
-    bill.paid_by_default   = body.paid_by_default
-    bill.payer_mode        = body.payer_mode
-    bill.notes             = body.notes
-    bill.is_auto_pay       = body.is_auto_pay
+    bill.paid_by_default = body.paid_by_default
+    bill.payer_mode = body.payer_mode
+    bill.notes = body.notes
+    bill.is_auto_pay = body.is_auto_pay
 
     # Replace splits
     for s in bill.splits:
@@ -385,7 +388,8 @@ def pay_occurrence(
     if body.splits:
         validate_split_users([s.user_id for s in body.splits], hh_id, db)
     payer, payer_mode = resolve_bill_payment(
-        db, bill,
+        db,
+        bill,
         paid_by=require_member(db, body.paid_by, hh_id),
         payer_mode=body.payer_mode,
         fallback_user_id=user.id,
@@ -393,13 +397,16 @@ def pay_occurrence(
 
     try:
         paid = settle_occurrence(
-            db, occ,
+            db,
+            occ,
             amount=pay_amount,
             paid_by=payer,
             payer_mode=payer_mode,
             paid_on=utcnow_naive(),
             payment_method=body.payment_method,
-            split_overrides=effective_overrides(bill, {s.user_id: Decimal(str(s.amount)) for s in body.splits}),
+            split_overrides=effective_overrides(
+                bill, {s.user_id: Decimal(str(s.amount)) for s in body.splits}
+            ),
         )
     except ValueError as exc:
         db.rollback()
@@ -423,7 +430,9 @@ def skip_occurrence(
         raise HTTPException(status_code=404, detail="Occurrence not found")
 
     if occ.status == OccurrenceStatus.paid:
-        raise HTTPException(status_code=400, detail="Cannot skip an occurrence that is already paid")
+        raise HTTPException(
+            status_code=400, detail="Cannot skip an occurrence that is already paid"
+        )
 
     occ.status = OccurrenceStatus.skipped
     db.commit()

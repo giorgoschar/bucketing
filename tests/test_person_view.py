@@ -4,6 +4,7 @@ Per-person view.
 "Paid out" is money fronted; "my share" is what that person is actually
 responsible for. The gap between them is what settlement resolves.
 """
+
 from datetime import date, timedelta
 
 import pyotp
@@ -28,14 +29,21 @@ from tests.conftest import PASSWORD
 @pytest.fixture()
 def pair(db, authed):
     partner = User(
-        username="partner", display_name="Partner", email="partner@example.com",
+        username="partner",
+        display_name="Partner",
+        email="partner@example.com",
         password_hash=hash_password(PASSWORD),
-        totp_secret=pyotp.random_base32(), totp_enabled=True, session_version=0,
+        totp_secret=pyotp.random_base32(),
+        totp_enabled=True,
+        session_version=0,
     )
     db.add(partner)
     db.flush()
-    db.add(HouseholdMember(household_id=authed.household_id, user_id=partner.id,
-                           role=MemberRole.member))
+    db.add(
+        HouseholdMember(
+            household_id=authed.household_id, user_id=partner.id, role=MemberRole.member
+        )
+    )
     db.get(Bucket, authed.bucket_id).enable_settlement = True
     db.commit()
     authed.partner_id = partner.id
@@ -44,9 +52,13 @@ def pair(db, authed):
 
 def _shared(db, authed, amount, payer, shares, when=None):
     txn = Transaction(
-        bucket_id=authed.bucket_id, household_id=authed.household_id,
-        amount=amount, currency="EUR", exchange_rate=1,
-        type=TransactionType.expense, transaction_date=when or local_today(),
+        bucket_id=authed.bucket_id,
+        household_id=authed.household_id,
+        amount=amount,
+        currency="EUR",
+        exchange_rate=1,
+        type=TransactionType.expense,
+        transaction_date=when or local_today(),
         paid_by=payer,
     )
     db.add(txn)
@@ -58,19 +70,24 @@ def _shared(db, authed, amount, payer, shares, when=None):
 
 
 def _solo(db, authed, amount, payer, when=None):
-    db.add(Transaction(
-        bucket_id=authed.bucket_id, household_id=authed.household_id,
-        amount=amount, currency="EUR", exchange_rate=1,
-        type=TransactionType.expense, transaction_date=when or local_today(),
-        paid_by=payer,
-    ))
+    db.add(
+        Transaction(
+            bucket_id=authed.bucket_id,
+            household_id=authed.household_id,
+            amount=amount,
+            currency="EUR",
+            exchange_rate=1,
+            type=TransactionType.expense,
+            transaction_date=when or local_today(),
+            paid_by=payer,
+        )
+    )
     db.commit()
 
 
 def test_paid_out_and_share_differ_on_shared_expense(db, pair):
     """The whole point: fronting 100 on a 50/50 split is 100 out, 50 owed."""
-    _shared(db, pair, 100, pair.user_id,
-            {pair.user_id: 50, pair.partner_id: 50})
+    _shared(db, pair, 100, pair.user_id, {pair.user_id: 50, pair.partner_id: 50})
 
     mine = get_person_summary(db, pair.household_id, pair.user_id)
     assert mine["paid_out"] == 100.0
@@ -93,8 +110,7 @@ def test_solo_expense_counts_fully_to_the_payer(db, pair):
 
 
 def test_net_matches_the_settlement_position(db, pair):
-    _shared(db, pair, 100, pair.user_id,
-            {pair.user_id: 50, pair.partner_id: 50})
+    _shared(db, pair, 100, pair.user_id, {pair.user_id: 50, pair.partner_id: 50})
 
     assert get_person_summary(db, pair.household_id, pair.user_id)["net"] == 50.0
     assert get_person_summary(db, pair.household_id, pair.partner_id)["net"] == -50.0
@@ -112,8 +128,9 @@ def test_period_filter_limits_the_totals(db, pair):
     _solo(db, pair, 100, pair.user_id, local_today())
     _solo(db, pair, 500, pair.user_id, local_today() - timedelta(days=400))
 
-    recent = get_person_summary(db, pair.household_id, pair.user_id,
-                                local_today() - timedelta(days=30), local_today())
+    recent = get_person_summary(
+        db, pair.household_id, pair.user_id, local_today() - timedelta(days=30), local_today()
+    )
     assert recent["my_share"] == 100.0
 
     everything = get_person_summary(db, pair.household_id, pair.user_id)
@@ -122,14 +139,20 @@ def test_period_filter_limits_the_totals(db, pair):
 
 def test_net_is_all_time_regardless_of_period(db, pair):
     """Settlement position is a running balance; a period filter must not skew it."""
-    _shared(db, pair, 100, pair.user_id,
-            {pair.user_id: 50, pair.partner_id: 50},
-            when=local_today() - timedelta(days=400))
+    _shared(
+        db,
+        pair,
+        100,
+        pair.user_id,
+        {pair.user_id: 50, pair.partner_id: 50},
+        when=local_today() - timedelta(days=400),
+    )
 
-    scoped = get_person_summary(db, pair.household_id, pair.user_id,
-                                local_today() - timedelta(days=7), local_today())
-    assert scoped["my_share"] == 0.0     # nothing in the window
-    assert scoped["net"] == 50.0         # but still owed
+    scoped = get_person_summary(
+        db, pair.household_id, pair.user_id, local_today() - timedelta(days=7), local_today()
+    )
+    assert scoped["my_share"] == 0.0  # nothing in the window
+    assert scoped["net"] == 50.0  # but still owed
 
 
 def test_breakdown_by_bucket_and_category(db, pair):
@@ -137,9 +160,14 @@ def test_breakdown_by_bucket_and_category(db, pair):
     db.add(cat)
     db.flush()
     txn = Transaction(
-        bucket_id=pair.bucket_id, household_id=pair.household_id,
-        amount=30, currency="EUR", exchange_rate=1, category_id=cat.id,
-        type=TransactionType.expense, transaction_date=local_today(),
+        bucket_id=pair.bucket_id,
+        household_id=pair.household_id,
+        amount=30,
+        currency="EUR",
+        exchange_rate=1,
+        category_id=cat.id,
+        type=TransactionType.expense,
+        transaction_date=local_today(),
         paid_by=pair.user_id,
     )
     db.add(txn)
@@ -151,12 +179,18 @@ def test_breakdown_by_bucket_and_category(db, pair):
 
 
 def test_currency_is_converted(db, pair):
-    db.add(Transaction(
-        bucket_id=pair.bucket_id, household_id=pair.household_id,
-        amount=200, currency="USD", exchange_rate=0.5,
-        type=TransactionType.expense, transaction_date=local_today(),
-        paid_by=pair.user_id,
-    ))
+    db.add(
+        Transaction(
+            bucket_id=pair.bucket_id,
+            household_id=pair.household_id,
+            amount=200,
+            currency="USD",
+            exchange_rate=0.5,
+            type=TransactionType.expense,
+            transaction_date=local_today(),
+            paid_by=pair.user_id,
+        )
+    )
     db.commit()
     assert get_person_summary(db, pair.household_id, pair.user_id)["paid_out"] == 100.0
 
@@ -170,6 +204,7 @@ def test_empty_household_does_not_crash(db, authed):
 # ---------------------------------------------------------------------------
 # HTTP
 # ---------------------------------------------------------------------------
+
 
 def test_page_renders(client, db, pair):
     _shared(db, pair, 100, pair.user_id, {pair.user_id: 50, pair.partner_id: 50})
@@ -211,10 +246,10 @@ def test_page_requires_auth(client):
 # Figures added to make "paid out" and "my share" legible
 # ---------------------------------------------------------------------------
 
+
 def test_balance_bridges_the_two_headline_figures(db, pair):
     """The number that explains the pair: fronted minus owed, for the period."""
-    _shared(db, pair, 100, pair.user_id,
-            {pair.user_id: 30, pair.partner_id: 70})
+    _shared(db, pair, 100, pair.user_id, {pair.user_id: 30, pair.partner_id: 70})
 
     mine = get_person_summary(db, pair.household_id, pair.user_id)
     assert mine["paid_out"] == 100.0
@@ -247,8 +282,7 @@ def test_share_pct_is_none_with_no_spending(db, pair):
 
 def test_biggest_single_share_is_the_share_not_the_total(db, pair):
     """A 1000 dinner split 100/900 is not this person's biggest expense."""
-    _shared(db, pair, 1000, pair.user_id,
-            {pair.user_id: 100, pair.partner_id: 900})
+    _shared(db, pair, 1000, pair.user_id, {pair.user_id: 100, pair.partner_id: 900})
     _solo(db, pair, 400, pair.user_id)
 
     largest = get_person_summary(db, pair.household_id, pair.user_id)["largest"]
@@ -259,11 +293,12 @@ def test_biggest_single_share_is_the_share_not_the_total(db, pair):
 
 def test_trend_is_one_point_per_month(db, pair):
     _solo(db, pair, 100, pair.user_id, date(2026, 1, 5))
-    _solo(db, pair, 50,  pair.user_id, date(2026, 1, 20))
-    _solo(db, pair, 70,  pair.user_id, date(2026, 2, 3))
+    _solo(db, pair, 50, pair.user_id, date(2026, 1, 20))
+    _solo(db, pair, 70, pair.user_id, date(2026, 2, 3))
 
-    trend = get_person_summary(db, pair.household_id, pair.user_id,
-                               date(2026, 1, 1), date(2026, 2, 28))["trend"]
+    trend = get_person_summary(
+        db, pair.household_id, pair.user_id, date(2026, 1, 1), date(2026, 2, 28)
+    )["trend"]
     assert [r["total"] for r in trend] == [150.0, 70.0]
 
 

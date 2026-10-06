@@ -2,6 +2,7 @@
 
 The stash/wallet model itself is covered in tests/test_cash_stash.py.
 """
+
 from datetime import date
 from decimal import Decimal
 
@@ -23,9 +24,17 @@ JULY = (date(2026, 7, 1), date(2026, 7, 31))
 
 
 def _cash_expense(db, hh, payer, amount, method="cash", day=date(2026, 7, 10)):
-    t = Transaction(bucket_id=hh.bucket_id, household_id=hh.household_id, amount=amount,
-                    currency="EUR", exchange_rate=1, type=TransactionType.expense,
-                    paid_by=payer, payment_method=method, transaction_date=day)
+    t = Transaction(
+        bucket_id=hh.bucket_id,
+        household_id=hh.household_id,
+        amount=amount,
+        currency="EUR",
+        exchange_rate=1,
+        type=TransactionType.expense,
+        paid_by=payer,
+        payment_method=method,
+        transaction_date=day,
+    )
     db.add(t)
     db.commit()
     return t
@@ -34,16 +43,21 @@ def _cash_expense(db, hh, payer, amount, method="cash", day=date(2026, 7, 10)):
 def _member_headers(db, hh, username="cashmember"):
     m = _add_member(db, hh.household_id, username)
     db.commit()
-    return m, {"Authorization": f"Bearer {create_access_token(m.id, hh.household_id, m.session_version)}"}
+    return m, {
+        "Authorization": f"Bearer {create_access_token(m.id, hh.household_id, m.session_version)}"
+    }
 
 
 # ---------------------------------------------------------------- service
+
 
 def test_wallet_per_member(db, make_household):
     hh = make_household()
     m = _add_member(db, hh.household_id, "cashb")
     db.commit()
-    add_movement(db, hh.household_id, hh.user_id, "take", D("200"), "EUR", date(2026, 7, 1), None, "ATM")
+    add_movement(
+        db, hh.household_id, hh.user_id, "take", D("200"), "EUR", date(2026, 7, 1), None, "ATM"
+    )
     add_movement(db, hh.household_id, hh.user_id, "put_back", D("50.25"), "EUR", date(2026, 7, 2))
     add_movement(db, hh.household_id, m.id, "take", D("40"), "EUR", date(2026, 7, 3))
     assert wallet_summary(db, hh.household_id, hh.user_id, *JULY)["not_yet_logged"] == D("149.75")
@@ -60,7 +74,12 @@ def test_verification_cash_expense_reduces_not_yet_logged(db, make_household):
     _cash_expense(db, hh, hh.user_id, D("99"), method="card")  # not cash: ignored
     w = wallet_summary(db, hh.household_id, hh.user_id, *JULY, viewer_id=hh.user_id)
     assert (w["taken"], w["spent"], w["logged"], w["outs"], w["not_yet_logged"]) == (
-        D("200.00"), D("200.00"), D("30.00"), D("0.00"), D("170.00"))
+        D("200.00"),
+        D("200.00"),
+        D("30.00"),
+        D("0.00"),
+        D("170.00"),
+    )
 
 
 def test_summary_math_ranges_and_deleted(db, make_household):
@@ -119,11 +138,15 @@ def test_add_movement_rejects_unknown_kind(db, make_household):
 
 # -------------------------------------------------------------------- API
 
+
 def test_api_add_list_summary_delete(client, db, api):  # noqa: F811
     headers, hh = api
     today = local_today()
-    r = client.post("/api/v1/cash/movements", headers=headers, json={
-        "kind": "take", "amount": "200", "movement_date": today.isoformat(), "note": "ATM"})
+    r = client.post(
+        "/api/v1/cash/movements",
+        headers=headers,
+        json={"kind": "take", "amount": "200", "movement_date": today.isoformat(), "note": "ATM"},
+    )
     assert r.status_code == 201, r.text
     mid = r.json()["id"]
     assert r.json()["user_id"] == hh.user_id and r.json()["currency"] == "EUR"
@@ -144,8 +167,14 @@ def test_api_add_list_summary_delete(client, db, api):  # noqa: F811
 def test_api_validation(client, db, api):  # noqa: F811
     headers, hh = api
     base = {"kind": "stash_in", "amount": "5", "movement_date": "2026-07-01"}
-    for bad in ({"kind": "sideways"}, {"amount": "0"}, {"amount": "-3"}, {"amount": "abc"},
-                {"currency": "USD"}, {"movement_date": "nope"}):
+    for bad in (
+        {"kind": "sideways"},
+        {"amount": "0"},
+        {"amount": "-3"},
+        {"amount": "abc"},
+        {"currency": "USD"},
+        {"movement_date": "nope"},
+    ):
         r = client.post("/api/v1/cash/movements", headers=headers, json={**base, **bad})
         assert r.status_code in (400, 422), (bad, r.status_code)
     r = client.get("/api/v1/cash/summary?month=13-2026", headers=headers)
@@ -156,13 +185,19 @@ def test_api_validation(client, db, api):  # noqa: F811
 def test_member_permissions(client, db, api):  # noqa: F811
     headers, hh = api  # owner
     member, mh = _member_headers(db, hh)
-    owner_mv = client.post("/api/v1/cash/movements", headers=headers, json={
-        "kind": "take", "amount": "10", "movement_date": "2026-07-01"}).json()["id"]
+    owner_mv = client.post(
+        "/api/v1/cash/movements",
+        headers=headers,
+        json={"kind": "take", "amount": "10", "movement_date": "2026-07-01"},
+    ).json()["id"]
     # A member cannot see or delete the owner's movement...
     assert client.delete(f"/api/v1/cash/movements/{owner_mv}", headers=mh).status_code == 404
     # ...nor the other way round: each member manages only their own.
-    r = client.post("/api/v1/cash/movements", headers=mh, json={
-        "kind": "take", "amount": "5", "movement_date": "2026-07-01"})
+    r = client.post(
+        "/api/v1/cash/movements",
+        headers=mh,
+        json={"kind": "take", "amount": "5", "movement_date": "2026-07-01"},
+    )
     assert r.status_code == 201 and r.json()["user_id"] == member.id
     own = r.json()["id"]
     assert client.delete(f"/api/v1/cash/movements/{own}", headers=headers).status_code == 404
@@ -175,12 +210,20 @@ def test_member_permissions(client, db, api):  # noqa: F811
 def test_other_household_isolated(client, db, api, make_household):  # noqa: F811
     headers, hh = api
     other = make_household(name="Other", username="cashother")
-    mv = add_movement(db, other.household_id, other.user_id, "stash_in", D("9"), "EUR",
-                      date(2026, 7, 1))
+    mv = add_movement(
+        db, other.household_id, other.user_id, "stash_in", D("9"), "EUR", date(2026, 7, 1)
+    )
     assert client.delete(f"/api/v1/cash/movements/{mv.id}", headers=headers).status_code == 404
-    r = client.post("/api/v1/cash/movements", headers=headers, json={
-        "kind": "take", "amount": "5", "movement_date": "2026-07-01",
-        "stash_owner_id": other.user_id})
+    r = client.post(
+        "/api/v1/cash/movements",
+        headers=headers,
+        json={
+            "kind": "take",
+            "amount": "5",
+            "movement_date": "2026-07-01",
+            "stash_owner_id": other.user_id,
+        },
+    )
     assert r.status_code == 400
     r = client.get(f"/api/v1/cash/movements?member_id={other.user_id}", headers=headers)
     assert r.status_code in (400, 404)
@@ -188,12 +231,22 @@ def test_other_household_isolated(client, db, api, make_household):  # noqa: F81
 
 # ------------------------------------------------------------------- HTML
 
+
 def test_html_page_add_delete(client, db, authed):
     r = client.get("/cash")
     assert r.status_code == 200
-    r = client.post("/cash/add", data={"kind": "take", "amount": "75.50", "source": "bank",
-                                       "movement_date": "2026-07-01", "note": "walletfill"},
-                    headers=authed.headers, follow_redirects=False)
+    r = client.post(
+        "/cash/add",
+        data={
+            "kind": "take",
+            "amount": "75.50",
+            "source": "bank",
+            "movement_date": "2026-07-01",
+            "note": "walletfill",
+        },
+        headers=authed.headers,
+        follow_redirects=False,
+    )
     assert r.status_code in (200, 302)
     mv = db.query(CashMovement).one()
     assert mv.amount == D("75.50") and mv.user_id == authed.user_id and mv.currency == "EUR"
@@ -207,17 +260,27 @@ def test_html_page_add_delete(client, db, authed):
 
 
 def test_html_invalid_rejected(client, db, authed):
-    r = client.post("/cash/add", data={"kind": "oops", "amount": "5", "movement_date": "2026-07-01"},
-                    headers=authed.headers)
+    r = client.post(
+        "/cash/add",
+        data={"kind": "oops", "amount": "5", "movement_date": "2026-07-01"},
+        headers=authed.headers,
+    )
     assert r.status_code == 400
-    r = client.post("/cash/add", data={"kind": "take", "amount": "-5", "movement_date": "2026-07-01"},
-                    headers=authed.headers)
+    r = client.post(
+        "/cash/add",
+        data={"kind": "take", "amount": "-5", "movement_date": "2026-07-01"},
+        headers=authed.headers,
+    )
     assert r.status_code == 400
-    r = client.post("/cash/add", data={"kind": "take", "amount": "5", "movement_date": "nope"},
-                    headers=authed.headers)
+    r = client.post(
+        "/cash/add",
+        data={"kind": "take", "amount": "5", "movement_date": "nope"},
+        headers=authed.headers,
+    )
     assert r.status_code == 400
-    r = client.post("/cash/add", data={"kind": "take", "amount": "5", "note": "x" * 501},
-                    headers=authed.headers)
+    r = client.post(
+        "/cash/add", data={"kind": "take", "amount": "5", "note": "x" * 501}, headers=authed.headers
+    )
     assert r.status_code == 400
     assert client.get("/cash?month=2026-13").status_code == 400
     assert db.query(CashMovement).count() == 0
@@ -225,8 +288,17 @@ def test_html_invalid_rejected(client, db, authed):
 
 def test_html_htmx_returns_list_partial(client, db, authed):
     h = {**authed.headers, "HX-Request": "true"}
-    r = client.post("/cash/add", data={"kind": "stash_in", "amount": "12", "movement_date": "2026-07-01",
-                                       "note": "partialnote", "month": "2026-07"}, headers=h)
+    r = client.post(
+        "/cash/add",
+        data={
+            "kind": "stash_in",
+            "amount": "12",
+            "movement_date": "2026-07-01",
+            "note": "partialnote",
+            "month": "2026-07",
+        },
+        headers=h,
+    )
     assert r.status_code == 200 and "partialnote" in r.text and "<html" not in r.text
     r = client.get("/cash?month=2026-07", headers={"HX-Request": "true", "HX-Target": "cash-list"})
     assert r.status_code == 200 and "<html" not in r.text

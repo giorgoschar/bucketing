@@ -4,6 +4,7 @@ Insight KPIs.
 Every figure must obey the same filters as the rest of the page — the previous
 version mixed filtered and unfiltered numbers on one screen.
 """
+
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -15,12 +16,20 @@ from app.services import get_insights_kpis
 
 
 def _expense(db, ctx, amount, when, bucket_id=None, category_id=None, notes=None):
-    db.add(Transaction(
-        bucket_id=bucket_id or ctx.bucket_id, household_id=ctx.household_id,
-        amount=amount, currency="EUR", exchange_rate=1,
-        type=TransactionType.expense, transaction_date=when,
-        category_id=category_id, notes=notes, paid_by=ctx.user_id,
-    ))
+    db.add(
+        Transaction(
+            bucket_id=bucket_id or ctx.bucket_id,
+            household_id=ctx.household_id,
+            amount=amount,
+            currency="EUR",
+            exchange_rate=1,
+            type=TransactionType.expense,
+            transaction_date=when,
+            category_id=category_id,
+            notes=notes,
+            paid_by=ctx.user_id,
+        )
+    )
     db.commit()
 
 
@@ -28,7 +37,7 @@ def _expense(db, ctx, amount, when, bucket_id=None, category_id=None, notes=None
 def spread(db, authed):
     """300 across three consecutive months: 100 / 50 / 150."""
     _expense(db, authed, 100, date(2026, 1, 10), notes="January")
-    _expense(db, authed, 50,  date(2026, 2, 10), notes="February")
+    _expense(db, authed, 50, date(2026, 2, 10), notes="February")
     _expense(db, authed, 150, date(2026, 3, 10), notes="March big one")
     return authed
 
@@ -52,7 +61,7 @@ def test_average_per_month(db, spread):
 
 def test_average_per_day(db, spread):
     k = _kpis(db, spread)
-    assert k["days"] == 90          # 1 Jan to 31 Mar inclusive
+    assert k["days"] == 90  # 1 Jan to 31 Mar inclusive
     assert k["avg_per_day"] == Decimal("3.33")
 
 
@@ -77,10 +86,10 @@ def test_largest_single_expense(db, spread):
 
 def test_change_versus_the_preceding_window(db, spread):
     """Compared against a window of the same length immediately before."""
-    _expense(db, spread, 200, date(2025, 12, 15))   # falls in Oct-Dec
+    _expense(db, spread, 200, date(2025, 12, 15))  # falls in Oct-Dec
     k = _kpis(db, spread)
     assert k["previous_total"] == 200.0
-    assert k["change_pct"] == 50.0                   # 300 vs 200
+    assert k["change_pct"] == 50.0  # 300 vs 200
 
 
 def test_no_prior_data_gives_no_percentage(db, spread):
@@ -119,6 +128,7 @@ def test_empty_range_does_not_crash(db, authed):
 # Filters
 # ---------------------------------------------------------------------------
 
+
 def test_bucket_filter_applies(db, authed):
     other = Bucket(household_id=authed.household_id, name="Other")
     db.add(other)
@@ -127,8 +137,7 @@ def test_bucket_filter_applies(db, authed):
     _expense(db, authed, 900, date(2026, 1, 6), bucket_id=other.id)
     db.commit()
 
-    k = _kpis(db, authed, date(2026, 1, 1), date(2026, 1, 31),
-              bucket_ids=[authed.bucket_id])
+    k = _kpis(db, authed, date(2026, 1, 1), date(2026, 1, 31), bucket_ids=[authed.bucket_id])
     assert k["total"] == 100.0
     assert k["count"] == 1
 
@@ -146,11 +155,17 @@ def test_category_filter_applies(db, authed):
 
 
 def test_currency_is_converted(db, authed):
-    db.add(Transaction(
-        bucket_id=authed.bucket_id, household_id=authed.household_id,
-        amount=200, currency="USD", exchange_rate=0.5,
-        type=TransactionType.expense, transaction_date=date(2026, 1, 5),
-    ))
+    db.add(
+        Transaction(
+            bucket_id=authed.bucket_id,
+            household_id=authed.household_id,
+            amount=200,
+            currency="USD",
+            exchange_rate=0.5,
+            type=TransactionType.expense,
+            transaction_date=date(2026, 1, 5),
+        )
+    )
     db.commit()
     assert _kpis(db, authed, date(2026, 1, 1), date(2026, 1, 31))["total"] == 100.0
 
@@ -161,11 +176,17 @@ def test_savings_rate_needs_income(db, spread):
 
 
 def test_savings_rate_when_income_exists(db, authed):
-    db.add(Transaction(
-        bucket_id=authed.bucket_id, household_id=authed.household_id,
-        amount=1000, currency="EUR", exchange_rate=1,
-        type=TransactionType.income, transaction_date=date(2026, 1, 5),
-    ))
+    db.add(
+        Transaction(
+            bucket_id=authed.bucket_id,
+            household_id=authed.household_id,
+            amount=1000,
+            currency="EUR",
+            exchange_rate=1,
+            type=TransactionType.income,
+            transaction_date=date(2026, 1, 5),
+        )
+    )
     db.commit()
     _expense(db, authed, 250, date(2026, 1, 6))
 
@@ -178,11 +199,11 @@ def test_savings_rate_when_income_exists(db, authed):
 # Rendering
 # ---------------------------------------------------------------------------
 
+
 def test_board_renders_on_the_page(client, db, spread):
     r = client.get("/insights?preset=all_time")
     assert r.status_code == 200
-    for label in ("Avg / month", "Avg / day", "vs previous", "Busiest month",
-                  "Largest single"):
+    for label in ("Avg / month", "Avg / day", "vs previous", "Busiest month", "Largest single"):
         assert label in r.text, label
 
 
@@ -190,8 +211,8 @@ def test_charts_are_server_rendered_svg(client, db, spread):
     """No JS charting library: the markup must arrive complete."""
     r = client.get("/insights?preset=all_time")
     assert "<svg" in r.text
-    assert "polyline" in r.text          # the trend line
-    assert "<title>" in r.text           # native hover tooltips
+    assert "polyline" in r.text  # the trend line
+    assert "<title>" in r.text  # native hover tooltips
 
 
 def test_api_exposes_kpis(client, db, spread, make_household):
@@ -201,15 +222,16 @@ def test_api_exposes_kpis(client, db, spread, make_household):
 
     from tests.conftest import PASSWORD
 
-    r = client.post("/api/v1/auth/login",
-                    json={"username": spread.username, "password": PASSWORD})
+    r = client.post("/api/v1/auth/login", json={"username": spread.username, "password": PASSWORD})
     pending = r.json()["pending_token"]
-    tok = client.post("/api/v1/auth/totp/verify",
-                      json={"pending_token": pending,
-                            "code": pyotp.TOTP(spread.secret).at(time.time() + 30)}).json()["access_token"]
+    tok = client.post(
+        "/api/v1/auth/totp/verify",
+        json={"pending_token": pending, "code": pyotp.TOTP(spread.secret).at(time.time() + 30)},
+    ).json()["access_token"]
 
-    body = client.get("/api/v1/insights?preset=all_time",
-                      headers={"Authorization": f"Bearer {tok}"}).json()
+    body = client.get(
+        "/api/v1/insights?preset=all_time", headers={"Authorization": f"Bearer {tok}"}
+    ).json()
     assert "kpis" in body
     assert body["kpis"]["avg_per_month"] == 100.0
 
@@ -217,6 +239,7 @@ def test_api_exposes_kpis(client, db, spread, make_household):
 # ---------------------------------------------------------------------------
 # Quietest month must only consider months that actually finished
 # ---------------------------------------------------------------------------
+
 
 def test_quietest_month_ignores_the_current_month(db, authed):
     """A month in progress always looks cheapest — less of it has happened."""
@@ -227,7 +250,7 @@ def test_quietest_month_ignores_the_current_month(db, authed):
 
     _expense(db, authed, 400, two_back + timedelta(days=5))
     _expense(db, authed, 300, prev_month + timedelta(days=5))
-    _expense(db, authed, 5,   this_month)          # partial month, tiny so far
+    _expense(db, authed, 5, this_month)  # partial month, tiny so far
 
     k = _kpis(db, authed, two_back, today)
     assert k["quietest_month"]["total"] == 300.0
@@ -237,7 +260,7 @@ def test_quietest_month_ignores_the_current_month(db, authed):
 
 def test_quietest_month_ignores_a_month_clipped_by_the_filter(db, authed):
     """Jan is only half covered by the range, so its total is not comparable."""
-    _expense(db, authed, 40,  date(2026, 1, 20))   # range starts 15 Jan
+    _expense(db, authed, 40, date(2026, 1, 20))  # range starts 15 Jan
     _expense(db, authed, 200, date(2026, 2, 10))
     _expense(db, authed, 300, date(2026, 3, 10))
 
@@ -251,22 +274,25 @@ def test_no_finished_month_means_no_quietest(db, authed):
 
     k = _kpis(db, authed, today.replace(day=1), today)
     assert k["quietest_month"] is None
-    assert k["busiest_month"] is not None      # busiest is still well-defined
+    assert k["busiest_month"] is not None  # busiest is still well-defined
 
 
 # ---------------------------------------------------------------------------
 # Rounding: half up, never banker's rounding
 # ---------------------------------------------------------------------------
 
+
 def test_quantize_rounds_half_up():
     from app.core.money import quantize
-    assert quantize(0.125) == Decimal("0.13")      # round(0.125, 2) == 0.12
-    assert quantize(2.675) == Decimal("2.68")      # round(2.675, 2) == 2.67
+
+    assert quantize(0.125) == Decimal("0.13")  # round(0.125, 2) == 0.12
+    assert quantize(2.675) == Decimal("2.68")  # round(2.675, 2) == 2.67
     assert quantize(Decimal("-0.125")) == Decimal("-0.13")
 
 
 def test_currency_filter_rounds_half_up():
     from app.templates import format_currency
+
     assert format_currency(0.125) == "€0.13"
     assert format_currency(Decimal("0.125"), "USD") == "$0.13"
     assert format_currency(Decimal("1234.5")) == "€1,234.50"

@@ -1,6 +1,7 @@
 """
 Dashboard route — lean daily health check.
 """
+
 from datetime import date
 
 from fastapi import APIRouter, Depends, Request
@@ -41,6 +42,7 @@ def dashboard(
     households = ctx["households"]
 
     from app.models import Bucket, BucketStatus
+
     buckets = (
         db.query(Bucket)
         .filter_by(household_id=hh_id, status=BucketStatus.active)
@@ -48,12 +50,12 @@ def dashboard(
         .all()
     )
 
-    summary        = get_month_summary(db, hh_id, year, month, include_cash=True)
-    income_total   = get_income_total(db, hh_id, year, month)
-    bills_due      = get_bills_due_month_total(db, hh_id, year, month)
-    upcoming       = get_upcoming_bills(db, hh_id, days=30)
-    overdue        = get_overdue_bills(db, hh_id)
-    bucket_spend   = get_bucket_spend_this_month(db, hh_id, year, month)
+    summary = get_month_summary(db, hh_id, year, month, include_cash=True)
+    income_total = get_income_total(db, hh_id, year, month)
+    bills_due = get_bills_due_month_total(db, hh_id, year, month)
+    upcoming = get_upcoming_bills(db, hh_id, days=30)
+    overdue = get_overdue_bills(db, hh_id)
+    bucket_spend = get_bucket_spend_this_month(db, hh_id, year, month)
 
     recent = (
         db.query(Transaction)
@@ -81,22 +83,22 @@ def dashboard(
     return templates.TemplateResponse(
         "dashboard.html",
         {
-            "request":        request,
-            "user":           user,
-            "household":      household,
-            "households":     households,
-            "summary":        summary,
-            "income_total":   income_total,
+            "request": request,
+            "user": user,
+            "household": household,
+            "households": households,
+            "summary": summary,
+            "income_total": income_total,
             # Always shown: income needs no bucket, and Out alone is useful.
-            "in_out":         in_out(income_total, summary),
-            "bills_due":      bills_due,
+            "in_out": in_out(income_total, summary),
+            "bills_due": bills_due,
             "upcoming_bills": upcoming,
-            "overdue_bills":  overdue,
-            "buckets":        buckets,
-            "bucket_spend":   bucket_spend,
+            "overdue_bills": overdue,
+            "buckets": buckets,
+            "bucket_spend": bucket_spend,
             "bucket_budget_pct": bucket_budget_pct,
-            "recent":         recent,
-            "today":          today,
-            "month_name":     date(year, month, 1).strftime("%B %Y"),
+            "recent": recent,
+            "today": today,
+            "month_name": date(year, month, 1).strftime("%B %Y"),
         },
     )

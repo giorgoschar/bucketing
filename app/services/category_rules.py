@@ -10,6 +10,7 @@ Resolution order when categorising a scanned receipt:
 Rules win because they are the household's own correction of the guess, and
 they can be learned: fixing a category once teaches the rule for next time.
 """
+
 import logging
 import unicodedata
 
@@ -61,11 +62,7 @@ def apply_rules(db: Session, household_id: str, *texts: str | None) -> str | Non
     if not haystacks:
         return None
 
-    rules = (
-        db.query(CategoryRule)
-        .filter(CategoryRule.household_id == household_id)
-        .all()
-    )
+    rules = db.query(CategoryRule).filter(CategoryRule.household_id == household_id).all()
     if not rules:
         return None
 

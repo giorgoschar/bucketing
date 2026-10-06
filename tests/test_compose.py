@@ -1,4 +1,5 @@
 """docker-compose.yml keeps existing receipts and passes every documented variable."""
+
 import re
 from pathlib import Path
 
@@ -46,14 +47,23 @@ def test_every_documented_variable_reaches_the_app():
     doc = (ROOT / "docs/DEPLOY-COOLIFY.md").read_text()
     table = doc.split("## 1. Environment variables", 1)[1].split("## 2.", 1)[0]
     documented = set(re.findall(r"^\| `([A-Z_]+)`", table, re.M))
-    documented |= set(re.findall(r"`([A-Z][A-Z_]+)`", "\n".join(
-        line for line in table.splitlines() if line.startswith("| `VAPID"))))
+    documented |= set(
+        re.findall(
+            r"`([A-Z][A-Z_]+)`",
+            "\n".join(line for line in table.splitlines() if line.startswith("| `VAPID")),
+        )
+    )
     # Only meaningful to the db / backup services.
     documented -= {"POSTGRES_PASSWORD", "BACKUP_KEEP_DAYS"}
     missing = documented - _env_names(SERVICES["app"])
     assert not missing, f"documented but not passed to the app container: {sorted(missing)}"
-    for name in ("ALLOW_REGISTRATION", "CORS_ALLOWED_ORIGINS", "POSOKANEI_BASE_URL",
-                 "JWT_SECRET_KEY", "BACKUP_BEFORE_MIGRATE"):
+    for name in (
+        "ALLOW_REGISTRATION",
+        "CORS_ALLOWED_ORIGINS",
+        "POSOKANEI_BASE_URL",
+        "JWT_SECRET_KEY",
+        "BACKUP_BEFORE_MIGRATE",
+    ):
         assert name in documented, f"{name} missing from the DEPLOY-COOLIFY.md table"
 
 

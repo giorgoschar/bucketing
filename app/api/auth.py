@@ -8,6 +8,7 @@ Flow:
   4. POST /api/v1/auth/logout        → 204
   5. GET  /api/v1/auth/me            → {user}
 """
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy import or_
@@ -41,6 +42,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 # Request / response schemas
 # ---------------------------------------------------------------------------
 
+
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -61,10 +63,10 @@ class LogoutRequest(BaseModel):
 
 def _user_dict(user: User) -> dict:
     return {
-        "id":           user.id,
-        "username":     user.username,
+        "id": user.id,
+        "username": user.username,
         "display_name": user.display_name,
-        "email":        user.email,
+        "email": user.email,
         "avatar_color": user.avatar_color,
     }
 
@@ -73,10 +75,13 @@ def _user_dict(user: User) -> dict:
 # Routes
 # ---------------------------------------------------------------------------
 
+
 def _locked_out() -> HTTPException:
     # Same wording as a bad password; 429 like the per-IP limit, so a lockout
     # does not confirm the account exists.
-    return HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Invalid credentials")
+    return HTTPException(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Invalid credentials"
+    )
 
 
 @router.post("/login")
@@ -87,9 +92,7 @@ def login(request: Request, body: LoginRequest, db: Session = Depends(get_db)):
     Returns a short-lived pending_token (5 min) that must be exchanged via /totp/verify.
     """
     identifier = body.username.strip().lower()
-    user = db.query(User).filter(
-        or_(User.username == identifier, User.email == identifier)
-    ).first()
+    user = db.query(User).filter(or_(User.username == identifier, User.email == identifier)).first()
     # Constant-time regardless of whether the account exists (see app/auth.py).
     password_ok = verify_password_constant_time(body.password, user.password_hash if user else None)
     if is_locked(user):
@@ -122,9 +125,12 @@ def totp_verify(request: Request, body: TotpVerifyRequest, db: Session = Depends
     Returns a full access_token + refresh_token pair.
     """
     from app.api_auth import _decode_token
+
     claims = _decode_token(body.pending_token)
     if claims.get("scope") != "2fa_pending":
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid pending token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid pending token"
+        )
 
     user = db.get(User, claims["sub"])
     if not user:
@@ -147,10 +153,10 @@ def totp_verify(request: Request, body: TotpVerifyRequest, db: Session = Depends
     refresh_token = create_refresh_token(user.id, hh_id, db, user.session_version)
 
     return {
-        "access_token":  access_token,
+        "access_token": access_token,
         "refresh_token": refresh_token,
-        "token_type":    "bearer",
-        "user":          _user_dict(user),
+        "token_type": "bearer",
+        "user": _user_dict(user),
     }
 
 
@@ -163,9 +169,9 @@ def token_refresh(request: Request, body: TokenRefreshRequest, db: Session = Dep
     """
     new_access, new_refresh = rotate_refresh_token(body.refresh_token, db)
     return {
-        "access_token":  new_access,
+        "access_token": new_access,
         "refresh_token": new_refresh,
-        "token_type":    "bearer",
+        "token_type": "bearer",
     }
 
 

@@ -31,23 +31,31 @@ from tests.conftest import PASSWORD
 
 def _add_member(db, household_id, username):
     user = User(
-        username=username, display_name=username.title(),
-        email=f"{username}@example.com", password_hash=hash_password(PASSWORD),
-        totp_secret=pyotp.random_base32(), totp_enabled=True, session_version=0,
+        username=username,
+        display_name=username.title(),
+        email=f"{username}@example.com",
+        password_hash=hash_password(PASSWORD),
+        totp_secret=pyotp.random_base32(),
+        totp_enabled=True,
+        session_version=0,
     )
     db.add(user)
     db.flush()
-    db.add(HouseholdMember(household_id=household_id, user_id=user.id,
-                           role=MemberRole.member))
+    db.add(HouseholdMember(household_id=household_id, user_id=user.id, role=MemberRole.member))
     return user
 
 
 def _shared_expense(db, bucket_id, household_id, payer, members, amount):
     """One expense fronted by `payer`, split evenly across `members`."""
     txn = Transaction(
-        bucket_id=bucket_id, household_id=household_id, amount=amount,
-        currency="EUR", exchange_rate=1, type=TransactionType.expense,
-        transaction_date=local_today(), paid_by=payer,
+        bucket_id=bucket_id,
+        household_id=household_id,
+        amount=amount,
+        currency="EUR",
+        exchange_rate=1,
+        type=TransactionType.expense,
+        transaction_date=local_today(),
+        paid_by=payer,
     )
     db.add(txn)
     db.flush()
@@ -69,8 +77,7 @@ def two_buckets(db, authed):
 
     a = db.get(Bucket, authed.bucket_id)
     a.enable_settlement = True
-    b = Bucket(household_id=authed.household_id, name="Bucket B",
-               enable_settlement=True)
+    b = Bucket(household_id=authed.household_id, name="Bucket B", enable_settlement=True)
     db.add(b)
     db.flush()
 
@@ -103,16 +110,21 @@ def test_member_balances_sum_to_zero(db, two_buckets):
 
 def test_buckets_without_settlement_are_excluded(db, two_buckets):
     """A private bucket must not drag solo spending into the shared balance."""
-    private = Bucket(household_id=two_buckets.household_id, name="Private",
-                     enable_settlement=False)
+    private = Bucket(household_id=two_buckets.household_id, name="Private", enable_settlement=False)
     db.add(private)
     db.flush()
-    db.add(Transaction(
-        bucket_id=private.id, household_id=two_buckets.household_id,
-        amount=500, currency="EUR", exchange_rate=1,
-        type=TransactionType.expense, transaction_date=local_today(),
-        paid_by=two_buckets.user_id,
-    ))
+    db.add(
+        Transaction(
+            bucket_id=private.id,
+            household_id=two_buckets.household_id,
+            amount=500,
+            currency="EUR",
+            exchange_rate=1,
+            type=TransactionType.expense,
+            transaction_date=local_today(),
+            paid_by=two_buckets.user_id,
+        )
+    )
     db.commit()
 
     rows = get_household_settlement(db, two_buckets.household_id)
@@ -120,16 +132,17 @@ def test_buckets_without_settlement_are_excluded(db, two_buckets):
 
 
 def test_settling_clears_the_household_balance(db, two_buckets):
-    record_household_settlement(db, two_buckets.household_id,
-                                created_by=two_buckets.user_id)
+    record_household_settlement(db, two_buckets.household_id, created_by=two_buckets.user_id)
     db.commit()
     assert get_household_settlement(db, two_buckets.household_id) == []
 
 
 def test_partial_household_settlement(db, two_buckets):
     record_household_settlement(
-        db, two_buckets.household_id,
-        from_user_id=two_buckets.partner_id, to_user_id=two_buckets.user_id,
+        db,
+        two_buckets.household_id,
+        from_user_id=two_buckets.partner_id,
+        to_user_id=two_buckets.user_id,
         amount=5,
     )
     db.commit()
@@ -148,8 +161,11 @@ def test_household_settlement_is_scoped_to_household(db, two_buckets):
 def test_bucket_and_household_settlements_compose(db, two_buckets):
     """A per-bucket payment reduces the household total, not double-counted."""
     record_household_settlement(
-        db, two_buckets.household_id, bucket_id=two_buckets.bucket_id,
-        from_user_id=two_buckets.partner_id, to_user_id=two_buckets.user_id,
+        db,
+        two_buckets.household_id,
+        bucket_id=two_buckets.bucket_id,
+        from_user_id=two_buckets.partner_id,
+        to_user_id=two_buckets.user_id,
         amount=50,
     )
     db.commit()
@@ -162,23 +178,33 @@ def test_bucket_and_household_settlements_compose(db, two_buckets):
 
 
 def test_history_includes_bucket_and_household_payments(db, two_buckets):
-    record_household_settlement(db, two_buckets.household_id, bucket_id=two_buckets.bucket_id,
-                                from_user_id=two_buckets.partner_id,
-                                to_user_id=two_buckets.user_id, amount=10)
-    record_household_settlement(db, two_buckets.household_id,
-                                from_user_id=two_buckets.partner_id,
-                                to_user_id=two_buckets.user_id, amount=5)
+    record_household_settlement(
+        db,
+        two_buckets.household_id,
+        bucket_id=two_buckets.bucket_id,
+        from_user_id=two_buckets.partner_id,
+        to_user_id=two_buckets.user_id,
+        amount=10,
+    )
+    record_household_settlement(
+        db,
+        two_buckets.household_id,
+        from_user_id=two_buckets.partner_id,
+        to_user_id=two_buckets.user_id,
+        amount=5,
+    )
     db.commit()
 
     history = get_household_settlement_history(db, two_buckets.household_id)
     assert len(history) == 2
-    assert any(h["bucket_name"] for h in history)      # the bucket-scoped one
+    assert any(h["bucket_name"] for h in history)  # the bucket-scoped one
     assert any(h["bucket_name"] is None for h in history)  # the household one
 
 
 # ---------------------------------------------------------------------------
 # HTTP
 # ---------------------------------------------------------------------------
+
 
 def test_settlement_page_renders(client, two_buckets):
     r = client.get("/settlement")
@@ -200,19 +226,29 @@ def test_settle_endpoint_clears(client, db, two_buckets):
 
 def test_settle_rejects_foreign_user(client, db, two_buckets, make_household):
     outsider = make_household(name="Other", username="outsider")
-    r = client.post("/settlement/settle", data={
-        "from_user_id": outsider.user_id, "to_user_id": two_buckets.user_id,
-        "amount": "10",
-    }, headers=two_buckets.headers)
+    r = client.post(
+        "/settlement/settle",
+        data={
+            "from_user_id": outsider.user_id,
+            "to_user_id": two_buckets.user_id,
+            "amount": "10",
+        },
+        headers=two_buckets.headers,
+    )
     assert r.status_code == 400
     assert db.query(Settlement).count() == 0
 
 
 def test_settle_rejects_same_payer_payee(client, two_buckets):
-    r = client.post("/settlement/settle", data={
-        "from_user_id": two_buckets.user_id, "to_user_id": two_buckets.user_id,
-        "amount": "10",
-    }, headers=two_buckets.headers)
+    r = client.post(
+        "/settlement/settle",
+        data={
+            "from_user_id": two_buckets.user_id,
+            "to_user_id": two_buckets.user_id,
+            "amount": "10",
+        },
+        headers=two_buckets.headers,
+    )
     assert r.status_code == 400
 
 

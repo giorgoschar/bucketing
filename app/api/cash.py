@@ -10,6 +10,7 @@ seeing either, and a take bigger than it holds is refused without saying how
 much is there. Household owners get no special access. See app.services.cash
 for the model.
 """
+
 from datetime import date
 from decimal import Decimal
 from typing import Any, Literal
@@ -48,7 +49,7 @@ class MovementIn(BaseModel):
     kind: Literal["stash_in", "take", "put_back", "still_have"]
     amount: Decimal
     movement_date: date | None = None  # blank means today
-    currency: str | None = None        # must equal the household currency if given
+    currency: str | None = None  # must equal the household currency if given
     note: str | None = None
     # A take only: whose stash it comes out of (any member's, yours
     # included); null takes it from the bank (an ATM).
@@ -62,8 +63,9 @@ class MovementIn(BaseModel):
     @classmethod
     def _amount(cls, v: Any, info: ValidationInfo) -> Decimal:
         # An empty wallet is a valid "still have".
-        return _checked(parse_amount, v, field="Amount",
-                        allow_zero=info.data.get("kind") == "still_have")
+        return _checked(
+            parse_amount, v, field="Amount", allow_zero=info.data.get("kind") == "still_have"
+        )
 
     @field_validator("note")
     @classmethod
@@ -110,8 +112,9 @@ def get_movements(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from None
     require_member(db, member_id, hh_id)
-    items = list_movements(db, hh_id, user.id, member_id=member_id, start=start, end=end,
-                           limit=limit)
+    items = list_movements(
+        db, hh_id, user.id, member_id=member_id, start=start, end=end, limit=limit
+    )
     return {
         "items": [_dict(m) for m in items],
         "stash": stash_balance(db, hh_id, user.id),
@@ -142,9 +145,15 @@ def create_movement(
         bucket = require_bucket(db, body.spend_bucket_id, hh_id)
         try:
             txn = withdraw_and_spend(
-                db, user=user, household_id=hh_id, bucket=bucket, amount=body.amount,
-                source=FROM_STASH if body.stash_owner_id else FROM_BANK, when=when,
-                category_id=require_category(db, body.category_id, hh_id), notes=body.note,
+                db,
+                user=user,
+                household_id=hh_id,
+                bucket=bucket,
+                amount=body.amount,
+                source=FROM_STASH if body.stash_owner_id else FROM_BANK,
+                when=when,
+                category_id=require_category(db, body.category_id, hh_id),
+                notes=body.note,
                 currency=currency,
             )
         except ValidationError as exc:
@@ -156,8 +165,15 @@ def create_movement(
         )
         return _dict(mv)
     mv = record_movement(
-        db, household_id=hh_id, actor_id=user.id, kind=body.kind, amount=body.amount,
-        currency=currency, when=when, note=body.note, stash_owner_id=body.stash_owner_id,
+        db,
+        household_id=hh_id,
+        actor_id=user.id,
+        kind=body.kind,
+        amount=body.amount,
+        currency=currency,
+        when=when,
+        note=body.note,
+        stash_owner_id=body.stash_owner_id,
     )
     return _dict(mv)
 
