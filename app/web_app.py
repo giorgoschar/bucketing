@@ -16,6 +16,7 @@ from app.auth import (
     clear_session,
     csrf_matches,
     decode_cookie,
+    invalidate_user_sessions,
     is_locked,
     register_failed_login,
     require_csrf,
@@ -28,6 +29,7 @@ from app.core.database import get_db
 from app.core.oidc import oidc_client
 from app.core.ratelimit import limiter
 from app.models import HouseholdMember, User
+from app.services import revoke_user_tokens
 from app.services.identity import IdentityError, link_oidc_subject, resolve_oidc_user
 
 security_logger = logging.getLogger("security")
@@ -110,9 +112,17 @@ async def unlink(request: Request, db: Session = Depends(get_db)):
     if not user:
         return _fail("link_requires_login")
     user.oidc_subject = None
+    # Sessions opened with the passkey must not outlive it: bump session_version
+    # (and revoke tokens), then re-issue THIS browser's session so the person
+    # unlinking stays signed in.
+    invalidate_user_sessions(db, user)
+    revoke_user_tokens(db, user.id)
     db.commit()
     security_logger.info("OIDC passkey unlinked")
-    return RedirectResponse("/settings?passkey=unlinked", status_code=302)
+    hh_id = decode_cookie(request.cookies.get(COOKIE_NAME, "")).get("hh_id")
+    response = RedirectResponse("/settings?passkey=unlinked", status_code=302)
+    set_session(response, user.id, hh_id, user.session_version, amr="pwd")
+    return response
 
 
 @router.get("/login", dependencies=[Depends(_enabled)])

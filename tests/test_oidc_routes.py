@@ -242,7 +242,7 @@ def test_link_without_session_requires_login(client):
     with patch("app.web_app.oidc_client", return_value=fake):
         r = client.post("/app/auth/link", follow_redirects=False)
     # No session: require_csrf demands a pre-session token, so the request never reaches the handler.
-    assert r.status_code in (403, 302)
+    assert r.status_code == 403
     fake.authorize_redirect.assert_not_called()
 
 
@@ -361,6 +361,34 @@ def test_unlink_clears_subject(client, db, make_household, login):
     assert r.headers["location"] == "/settings?passkey=unlinked"
     db.refresh(user)
     assert user.oidc_subject is None
+
+
+def test_unlink_signs_out_passkey_sessions_but_not_the_unlinker(
+    client, db, make_household, login, app
+):
+    from starlette.testclient import TestClient
+
+    from app.auth import set_session
+
+    hh = make_household()
+    headers = login(hh.username, hh.secret)
+    user = db.get(User, hh.user_id)
+    user.oidc_subject = "s1"
+    db.commit()
+    other = TestClient(app, follow_redirects=False)
+    from fastapi.responses import Response
+
+    carrier = Response()
+    set_session(carrier, user.id, hh.household_id, user.session_version, amr="oidc")
+    for cookie in carrier.headers.getlist("set-cookie"):
+        name, _, rest = cookie.partition("=")
+        other.cookies.set(name, rest.split(";")[0])
+    assert other.get("/api/v1/auth/me").status_code == 200
+
+    r = client.post("/app/auth/unlink", headers=headers, follow_redirects=False)
+    assert r.headers["location"] == "/settings?passkey=unlinked"
+    assert other.get("/api/v1/auth/me").status_code == 401
+    assert client.get("/api/v1/auth/me").status_code == 200
 
 
 def test_unlink_without_csrf_is_rejected(client, db, make_household, login):

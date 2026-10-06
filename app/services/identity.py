@@ -2,7 +2,7 @@
 
 Matching is by the OIDC `sub` only. Email is never used to link: a passkey is
 attached to an account solely from inside an already signed-in password+2FA
-session (see link_oidc_subject and GET /app/auth/link).
+session (see link_oidc_subject and POST /app/auth/link).
 """
 
 from sqlalchemy.exc import IntegrityError
