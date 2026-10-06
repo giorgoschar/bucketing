@@ -218,20 +218,27 @@ def _spa_enabled() -> None:
 
 
 def _file(rel: str) -> Path | None:
-    root = DIST_DIR.resolve()
-    target = (root / rel).resolve()
+    if "\x00" in rel:
+        return None
+    try:
+        root = DIST_DIR.resolve()
+        target = (root / rel).resolve()
+    except (ValueError, OSError):
+        return None
     if root not in target.parents and target != root:
         return None
     return target if target.is_file() else None
 
 
-@spa.get("/app", dependencies=[Depends(_spa_enabled)])
+@spa.api_route("/app", methods=["GET", "HEAD"], dependencies=[Depends(_spa_enabled)])
 def app_root():
     return RedirectResponse("/app/", status_code=308)
 
 
-@spa.get("/app/{path:path}", dependencies=[Depends(_spa_enabled)])
+@spa.api_route("/app/{path:path}", methods=["GET", "HEAD"], dependencies=[Depends(_spa_enabled)])
 def app_files(path: str):
+    if "\x00" in path:
+        raise HTTPException(status_code=404)
     if path.startswith("auth/"):
         # The real auth routes are registered first and win on a matching method;
         # a GET reaching here for a POST-only route keeps its 405, anything else is a 404.

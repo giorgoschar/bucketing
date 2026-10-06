@@ -50,3 +50,25 @@ def test_old_ui_keeps_its_csp(client):
 def test_flag_off_is_404(client, dist, monkeypatch):
     monkeypatch.setattr(settings, "new_app_enabled", False)
     assert client.get("/app/").status_code == 404
+
+
+@pytest.mark.parametrize("url", ["/app/a%00b", "/app/assets/%00"])
+def test_null_byte_is_404_with_csp(client, dist, url):
+    r = client.get(url)
+    assert r.status_code == 404
+    assert r.headers["content-security-policy"] == web_app.APP_CSP
+
+
+def test_head_is_allowed(client, dist):
+    r = client.head("/app/")
+    assert r.status_code == 200 and r.headers["cache-control"] == "no-cache"
+
+
+def test_auth_paths_are_not_shadowed(client, dist):
+    assert client.get("/app/auth/nope").status_code == 404
+    assert client.get("/app/auth/link", follow_redirects=False).status_code == 405
+
+
+def test_sw_is_no_cache(client, dist):
+    r = client.get("/app/sw.js")
+    assert r.status_code == 200 and r.headers["cache-control"] == "no-cache"
