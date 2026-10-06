@@ -20,6 +20,7 @@ export interface Session {
 
 const CHANNEL = 'tameio-session'
 const SIGNED_OUT = 'signedOut'
+const ACCOUNT_SWITCHED = 'ACCOUNT_SWITCHED'
 const ME_TIMEOUT_MS = 5000
 
 /** 5xx, 408 and 429 mean "the server can't say right now": keep the cached profile, as when offline. */
@@ -52,6 +53,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<Status>('loading')
   const [me, setMe] = useState<Me>()
   const [logoutFailed, setLogoutFailed] = useState(false)
+  // Bumped when another tab switched accounts; re-reads /me so this tab follows the cookie.
+  const [reloads, setReloads] = useState(0)
   // Bumped on every sign-out; async work started under an older epoch must not sign anyone back in.
   const epoch = useRef(0)
   const channel = useRef<BroadcastChannel | null>(null)
@@ -88,6 +91,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     channel.current = ch
     if (!ch) return
     ch.onmessage = (e: MessageEvent) => {
+      if (e.data?.type === ACCOUNT_SWITCHED) {
+        // Another tab signed in as a different account and wiped the store: drop our key and identity.
+        forgetKey()
+        queryClient.clear()
+        setReloads((n) => n + 1)
+        return
+      }
       if (e.data !== SIGNED_OUT) return
       forgetKey()
       markSignedOut()
@@ -128,6 +138,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         if (cached && (cached.id !== data.id || cached.household_id !== data.household_id)) {
           await wipe().catch(() => {}) // the key is forgotten either way; leftovers are unreadable
           if (!current()) return
+          channel.current?.postMessage({ type: ACCOUNT_SWITCHED })
         }
         setMe(data)
         setStatus('signedIn')
@@ -143,7 +154,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return () => {
       live = false
     }
-  }, [markSignedOut])
+  }, [markSignedOut, reloads])
 
   // Clearing the device wins even when the server can't be reached; the failure is surfaced for a retry.
   const signOut = useCallback(async () => {

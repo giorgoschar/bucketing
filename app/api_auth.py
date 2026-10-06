@@ -168,6 +168,11 @@ def _cookie_auth(request: Request, db: Session):
         raise HTTPException(status_code=403, detail="CSRF token missing or invalid")
     if not user.totp_enabled and session.get("amr") != "oidc":
         raise HTTPException(status_code=403, detail="TOTP enrollment required")
+    # The offline queue names the account it was saved under; the shared session cookie may have
+    # flipped to someone else since, and a queued write must never land in their household.
+    expected = request.headers.get("X-Expected-Account")
+    if expected is not None and expected != f"{user.id}:{hh_id}":
+        raise HTTPException(status_code=412, detail="Signed in as a different account")
     return user, hh_id
 
 

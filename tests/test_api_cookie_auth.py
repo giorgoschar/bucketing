@@ -141,3 +141,42 @@ def test_me_response_shape(client, db):
     body = client.get("/api/v1/auth/me").json()
     assert set(body) == {"id", "username", "display_name", "email", "avatar_color", "household_id"}
     assert body["id"] == u.id and body["household_id"] == h.id
+
+
+def test_expected_account_header_matching_passes(client, db):
+    u, h = _member(db)
+    csrf = _login(client, u, h, "pwd")
+    r = client.post(
+        "/api/v1/notifications/read-all",
+        headers={"X-CSRF-Token": csrf, "X-Expected-Account": f"{u.id}:{h.id}"},
+    )
+    assert r.status_code == 200
+
+
+def test_expected_account_header_mismatch_is_412_and_writes_nothing(client, db):
+    from app.models import Notification, NotificationType
+
+    u, h = _member(db)
+    csrf = _login(client, u, h, "pwd")
+    db.add(
+        Notification(
+            household_id=h.id, user_id=u.id, type=NotificationType.general, title="t", is_read=False
+        )
+    )
+    db.commit()
+    for expected in (f"someone-else:{h.id}", f"{u.id}:other-household", ""):
+        r = client.post(
+            "/api/v1/notifications/read-all",
+            headers={"X-CSRF-Token": csrf, "X-Expected-Account": expected},
+        )
+        assert r.status_code == 412
+        assert r.json()["detail"] == "Signed in as a different account"
+    db.expire_all()
+    assert db.query(Notification).filter_by(user_id=u.id).one().is_read is False
+
+
+def test_no_expected_account_header_is_unchanged(client, db):
+    u, h = _member(db)
+    csrf = _login(client, u, h, "pwd")
+    r = client.post("/api/v1/notifications/read-all", headers={"X-CSRF-Token": csrf})
+    assert r.status_code == 200

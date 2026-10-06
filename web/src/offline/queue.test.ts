@@ -67,15 +67,15 @@ it('stops on a 401 from /me before sending anything, and keeps everything', asyn
   expect(await db.queue.count()).toBe(1)
 })
 
-it('treats a network error on /me as offline: stops, keeps, no attempt counted', async () => {
+it('a network error on /me stops the drain and keeps the row, backed off', async () => {
   const f = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Failed to fetch'))
   await post()
   expect(await replay()).toMatchObject({ sent: 0, failed: 0, stoppedOnAuth: false })
   expect(f).toHaveBeenCalledTimes(1)
-  expect((await db.queue.toArray())[0]).toMatchObject({ status: 'pending', attempts: 0 })
+  expect((await db.queue.toArray())[0]).toMatchObject({ status: 'pending', attempts: 1 })
 })
 
-it('does not send rows queued by another account; marks them failed without user data', async () => {
+it('does not send rows queued by another account and deletes them so they are never readable here', async () => {
   const f = serve(ok)
   await post({ note: 'secret' }, '/mine')
   setIdentity({ user_id: 'someone-else', household_id: 'h1' })
@@ -84,9 +84,67 @@ it('does not send rows queued by another account; marks them failed without user
   await post({ note: 'other-hh' }, '/hh')
   expect(await replay()).toMatchObject({ sent: 1, failed: 2 })
   expect(writes(f).map((c) => String(c[0]))).toEqual(['/mine'])
-  const rows = await db.queue.toArray()
-  expect(rows).toHaveLength(2)
-  for (const r of rows) expect(r).toMatchObject({ status: 'failed', error: 'Saved while signed in as a different account' })
+  expect(await db.queue.count()).toBe(0)
+})
+
+it('every replayed write names its account; a 412 deletes that row and the next one is still tried', async () => {
+  let n = 0
+  const f = serve(() => (n++ === 0 ? new Response('{}', { status: 412 }) : ok()))
+  await post({}, '/a')
+  await post({}, '/b')
+  expect(await replay()).toMatchObject({ sent: 1, failed: 1 })
+  expect(await db.queue.count()).toBe(0)
+  const heads = writes(f).map((c) => new Headers((c[1] as RequestInit).headers).get('X-Expected-Account'))
+  expect(heads).toEqual(['u1:h1', 'u1:h1'])
+})
+
+it('does not send a row when the store was wiped while it was being decrypted', async () => {
+  const f = serve(ok)
+  await post({}, '/a')
+  const real = crypto.subtle.decrypt.bind(crypto.subtle)
+  vi.spyOn(crypto.subtle, 'decrypt').mockImplementation(async (...args: Parameters<typeof real>) => {
+    const out = await real(...args)
+    forgetKey() // an account switch in another tab lands mid-decrypt
+    return out
+  })
+  await replay()
+  expect(writes(f)).toHaveLength(0)
+})
+
+it('a forced replay that arrives during a normal drain is not lost', async () => {
+  let release!: () => void
+  const gate = new Promise<void>((r) => { release = r })
+  let calls = 0
+  const f = serve(async () => {
+    if (calls++ > 0) return ok()
+    await gate
+    return new Response('{}', { status: 503 }) // backs the head off, so only a forced run can retry it now
+  })
+  await post({}, '/slow')
+  const first = replay()
+  await vi.waitFor(() => expect(writes(f)).toHaveLength(1))
+  expect(replay({ force: true })).toBe(first) // single-flight, but remembered
+  release()
+  expect(await first).toMatchObject({ sent: 1 })
+  expect(writes(f)).toHaveLength(2)
+  expect(await db.queue.count()).toBe(0)
+})
+
+it('a 5xx on /me backs the head off and the trigger arms a retry timer', async () => {
+  const real = globalThis.setTimeout
+  const long: number[] = []
+  vi.spyOn(globalThis, 'setTimeout').mockImplementation(((cb: () => void, ms?: number) => {
+    if ((ms ?? 0) < 1000) return real(cb, ms)
+    long.push(ms!)
+    return 1 as unknown as ReturnType<typeof setTimeout>
+  }) as typeof setTimeout)
+  const f = serve(ok, () => new Response('{}', { status: 503 }))
+  await post()
+  const stop = startReplayTriggers()
+  await vi.waitFor(() => expect(long).toHaveLength(1))
+  expect(writes(f)).toHaveLength(0)
+  expect((await db.queue.toArray())[0]).toMatchObject({ status: 'pending', attempts: 1 })
+  stop()
 })
 
 it('network error backs off and keeps the item pending', async () => {

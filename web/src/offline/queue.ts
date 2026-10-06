@@ -14,8 +14,8 @@ const MAX_ERROR_CHARS = 200
 const ME_TIMEOUT_MS = 10_000
 const LOCK_NAME = 'tameio-queue'
 const CSRF_DETAIL = 'CSRF token missing or invalid'
-const OTHER_ACCOUNT = 'Saved while signed in as a different account'
 let running: Promise<Result> | null = null
+let rerunForced = false
 
 export async function enqueue(req: Req): Promise<number> {
   const owner = getIdentity()
@@ -36,7 +36,25 @@ export async function enqueue(req: Req): Promise<number> {
  * `force` ignores the head row's backoff (the browser just told us we are back online).
  */
 export function replay(opts: { force?: boolean } = {}): Promise<Result> {
-  running ??= withLock(() => drain(!!opts.force)).finally(() => { running = null })
+  if (running) {
+    // Don't lose a forced request that arrives mid-drain: run one forced drain right after.
+    if (opts.force) rerunForced = true
+    return running
+  }
+  running = (async () => {
+    try {
+      let r = await withLock(() => drain(!!opts.force))
+      while (rerunForced && !r.stoppedOnAuth) {
+        rerunForced = false
+        const next = await withLock(() => drain(true))
+        r = { sent: r.sent + next.sent, failed: r.failed + next.failed, stoppedOnAuth: next.stoppedOnAuth }
+      }
+      return r
+    } finally {
+      rerunForced = false
+      running = null
+    }
+  })()
   return running
 }
 
@@ -85,7 +103,11 @@ async function drain(force: boolean): Promise<Result> {
     if (!rows.length || (!force && rows[0].nextAttemptAt > Date.now())) return { sent, failed, stoppedOnAuth: false }
     const who = await whoAmI()
     if (who.status === 'auth') return { sent, failed, stoppedOnAuth: true }
-    if (who.status === 'offline') return { sent, failed, stoppedOnAuth: false }
+    if (who.status === 'offline') {
+      // Server down or slow while we think we're online: back the head off so a timer retries it.
+      await patch(rows[0], { attempts: rows[0].attempts + 1, nextAttemptAt: Date.now() + backoff(rows[0].attempts + 1) })
+      return { sent, failed, stoppedOnAuth: false }
+    }
     for (const [i, row] of rows.entries()) {
       if (gen !== keyGeneration()) break
       if (!(force && i === 0) && row.nextAttemptAt > Date.now()) break
@@ -99,10 +121,12 @@ async function drain(force: boolean): Promise<Result> {
         continue
       }
       if (req.owner?.user_id !== who.id || req.owner?.household_id !== who.household) {
-        await patch(row, { status: 'failed', error: OTHER_ACCOUNT })
+        // Another account's offline payloads must never stay readable here: drop, don't keep.
+        await db.queue.delete(row.id!)
         failed++
         continue
       }
+      if (gen !== keyGeneration()) break // wiped or switched while decrypting: don't send
       const retryLater = () =>
         patch(row, { attempts: row.attempts + 1, nextAttemptAt: Date.now() + backoff(row.attempts + 1) })
       let res: Response
@@ -113,6 +137,8 @@ async function drain(force: boolean): Promise<Result> {
           headers: {
             ...(req.body === undefined ? {} : { 'Content-Type': 'application/json' }),
             'X-CSRF-Token': readCsrf(),
+            // The server refuses the write if the shared session cookie has flipped to someone else.
+            'X-Expected-Account': `${req.owner.user_id}:${req.owner.household_id}`,
           },
           body: req.body === undefined ? undefined : JSON.stringify(req.body),
         })
@@ -121,6 +147,12 @@ async function drain(force: boolean): Promise<Result> {
         break // offline: stop, keep order
       }
       if (res.status === 401) return { sent, failed, stoppedOnAuth: true }
+      if (res.status === 412) {
+        // The session belongs to a different account than the row's owner: drop the row, check the next.
+        await db.queue.delete(row.id!)
+        failed++
+        continue
+      }
       // 409 = the transaction was deleted since; dropped for now (Phase 2 surfaces it).
       if (res.ok || res.status === 409) {
         await db.queue.delete(row.id!)

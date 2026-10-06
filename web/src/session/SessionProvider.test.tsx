@@ -66,6 +66,14 @@ it('the same user signing back in after a 401 finds the queue and replays it', a
   await cachePut('me', ME)
   setIdentity({ user_id: ME.id, household_id: ME.household_id })
   await enqueue({ method: 'POST', path: '/x', body: { a: 1 } })
+  // First load: the session has expired.
+  const expired = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 401 }))
+  const first = render(<SessionProvider><Probe /></SessionProvider>)
+  await waitFor(() => expect(screen.getByText('signedOut')).toBeInTheDocument())
+  expect(await db.queue.count()).toBe(1)
+  first.unmount()
+  expired.mockRestore()
+  // They sign in again as the same account.
   backend(ok())
   render(<SessionProvider><Probe /></SessionProvider>)
   await waitFor(() => expect(screen.getByText('signedIn:g')).toBeInTheDocument())
@@ -277,4 +285,24 @@ it('a /me that times out after 5 s is treated as offline', async () => {
   render(<SessionProvider><Probe /></SessionProvider>)
   await waitFor(() => expect(screen.getByText('signedIn:g')).toBeInTheDocument())
   expect(timeout).toHaveBeenCalledWith(5000)
+})
+
+it('an account switch tells other tabs, and a tab told about it forgets its key and re-reads /me', async () => {
+  await cachePut('me', { ...ME, id: '2' })
+  const other = new BroadcastChannel('tameio-session')
+  const heard = vi.fn()
+  other.onmessage = (e) => heard(e.data)
+  backend(ok())
+  render(<SessionProvider><Probe /></SessionProvider>)
+  await waitFor(() => expect(heard).toHaveBeenCalledWith({ type: 'ACCOUNT_SWITCHED' }))
+  await waitFor(() => expect(screen.getByText('signedIn:g')).toBeInTheDocument())
+
+  const gen = keyGeneration()
+  const f = vi.mocked(globalThis.fetch)
+  const meCalls = () => f.mock.calls.filter(([u]) => urlOf(u).endsWith('/api/v1/auth/me')).length
+  const before = meCalls()
+  other.postMessage({ type: 'ACCOUNT_SWITCHED' })
+  await waitFor(() => expect(meCalls()).toBe(before + 1))
+  expect(keyGeneration()).toBeGreaterThan(gen)
+  other.close()
 })
