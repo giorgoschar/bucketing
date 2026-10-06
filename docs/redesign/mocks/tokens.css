@@ -1,0 +1,184 @@
+/* ==========================================================================
+   Tameio mock design tokens
+   Three directions x two modes, applied to any element carrying
+   data-dir="calm|vault|pocket" and data-mode="light|dark".
+   Every component reads only these tokens.
+   ========================================================================== */
+
+/* ---------- Direction A: Calm editorial ("Ledger") ---------- */
+[data-dir="calm"] {
+  --bg: #F1F2EE;           /* pale sage paper */
+  --surface: #FFFFFF;
+  --surface-2: #E8EAE4;    /* wells, inputs, pressed */
+  --ink: #161A17;
+  --ink-2: #3C423D;
+  --muted: #6A716B;
+  --line: #DADDD5;
+  --accent: #24584A;       /* pine ink */
+  --accent-ink: #FFFFFF;
+  --accent-soft: #DCE8E2;
+  --pos: #2C7A4B;
+  --neg: #B0442E;
+  --warn: #A86E12;
+  --pos-soft: #DDEEE2;
+  --neg-soft: #F5E1DB;
+  --warn-soft: #F4E9D3;
+  --c1: #24584A; --c2: #C0793B; --c3: #5B6FA8; --c4: #9A5C86; --c5: #7E8F3A; --c6: #8A8F88;
+  --font-display: "Newsreader", "Iowan Old Style", Georgia, serif;
+  --font-body: "Geist", "Helvetica Neue", Arial, sans-serif;
+  --font-num: "Geist", "Helvetica Neue", Arial, sans-serif;
+  --display-weight: 500;
+  --display-style: normal;
+  --num-weight: 500;
+  --r-xs: 6px; --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-pill: 999px;
+  --shadow: 0 1px 0 rgba(22,26,23,.04);
+  --shadow-sheet: 0 -8px 30px rgba(22,26,23,.12);
+  --card-border: 1px solid var(--line);
+  --tab-active: var(--ink);
+  --hero-bg: transparent;
+  --hero-ink: var(--ink);
+  --hero-pos: var(--pos);
+}
+[data-dir="calm"][data-mode="dark"] {
+  --bg: #111311;
+  --surface: #191C1A;
+  --surface-2: #232724;
+  --ink: #EBEDE7;
+  --ink-2: #C5CAC3;
+  --muted: #959C94;
+  --line: #2B302C;
+  --accent: #8BC4AC;
+  --accent-ink: #0E1F19;
+  --accent-soft: #1F3530;
+  --pos: #7CC598;
+  --neg: #E58A73;
+  --warn: #DDB062;
+  --pos-soft: #1C3226;
+  --neg-soft: #3A221C;
+  --warn-soft: #36301F;
+  --c1: #8BC4AC; --c2: #E0A16A; --c3: #93A5DB; --c4: #CC92B8; --c5: #B5C36E; --c6: #8E958D;
+  --shadow: 0 0 0 transparent;
+  --shadow-sheet: 0 -8px 30px rgba(0,0,0,.5);
+  color-scheme: dark;
+}
+
+/* ---------- Direction B: Dark fintech ("Vault") — dark-first ---------- */
+[data-dir="vault"] {
+  --bg: #090B10;
+  --surface: #12151D;
+  --surface-2: #1B1F2B;
+  --ink: #F3F5FA;
+  --ink-2: #C9CEDB;
+  --muted: #858DA3;
+  --line: #232838;
+  --accent: #6E8BFF;       /* signal blue */
+  --accent-ink: #060814;
+  --accent-soft: #1B2347;
+  --pos: #3DD9A4;
+  --neg: #FF6B7A;
+  --warn: #FFC24B;
+  --pos-soft: #0F2D27;
+  --neg-soft: #33141C;
+  --warn-soft: #33290F;
+  --c1: #6E8BFF; --c2: #3DD9C4; --c3: #FFB547; --c4: #E77CFF; --c5: #FF7A6B; --c6: #6B7389;
+  --font-display: "Sora", "Avenir Next", "Segoe UI", sans-serif;
+  --font-body: "Plus Jakarta Sans", "Avenir Next", "Segoe UI", sans-serif;
+  --font-num: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --display-weight: 600;
+  --display-style: normal;
+  --num-weight: 500;
+  --r-xs: 8px; --r-sm: 10px; --r-md: 14px; --r-lg: 20px; --r-pill: 999px;
+  --shadow: 0 0 0 1px rgba(255,255,255,.02);
+  --shadow-sheet: 0 -10px 40px rgba(0,0,0,.6);
+  --card-border: 1px solid var(--line);
+  --tab-active: var(--accent);
+  --hero-bg: radial-gradient(120% 90% at 0% 0%, #1A2550 0%, #12151D 60%);
+  --hero-ink: #F3F5FA;
+  --hero-pos: #3DD9A4;
+  color-scheme: dark;
+}
+[data-dir="vault"][data-mode="light"] {
+  --bg: #EEF1F7;
+  --surface: #FFFFFF;
+  --surface-2: #E4E8F1;
+  --ink: #0B0E17;
+  --ink-2: #353B4D;
+  --muted: #687089;
+  --line: #D8DDE8;
+  --accent: #2F55E4;
+  --accent-ink: #FFFFFF;
+  --accent-soft: #DFE6FF;
+  --pos: #0E9466;
+  --neg: #D6334A;
+  --warn: #B07A00;
+  --pos-soft: #D9F3E9;
+  --neg-soft: #FBE0E4;
+  --warn-soft: #FBEFD2;
+  --c1: #2F55E4; --c2: #0EA597; --c3: #D98B00; --c4: #B43ED1; --c5: #E2523F; --c6: #7A8299;
+  --shadow: 0 1px 2px rgba(11,14,23,.06);
+  --shadow-sheet: 0 -10px 40px rgba(11,14,23,.18);
+  --hero-bg: radial-gradient(120% 90% at 0% 0%, #2F55E4 0%, #10183A 75%);
+  --hero-ink: #FFFFFF;
+  --hero-pos: #5BF0B8;
+  color-scheme: light;
+}
+
+/* ---------- Direction C: Playful soft ("Pocket") ---------- */
+[data-dir="pocket"] {
+  --bg: #F6F2FF;           /* lilac milk */
+  --surface: #FFFFFF;
+  --surface-2: #EEE8FB;
+  --ink: #261F3D;
+  --ink-2: #463D63;
+  --muted: #7A7196;
+  --line: #E4DCF5;
+  --accent: #F2603F;       /* tangerine */
+  --accent-ink: #FFFFFF;
+  --accent-soft: #FFE3DA;
+  --pos: #1F9D6B;
+  --neg: #D83E5A;
+  --warn: #C98400;
+  --pos-soft: #D8F5E7;
+  --neg-soft: #FFE0E6;
+  --warn-soft: #FFF0C9;
+  --c1: #F2603F; --c2: #7B61FF; --c3: #2BB3A3; --c4: #FFB020; --c5: #F27BB5; --c6: #9A93B3;
+  --font-display: "Bricolage Grotesque", "Avenir Next Rounded", "Trebuchet MS", sans-serif;
+  --font-body: "Nunito Sans", "Avenir Next", "Segoe UI", sans-serif;
+  --font-num: "Bricolage Grotesque", "Avenir Next Rounded", sans-serif;
+  --display-weight: 700;
+  --display-style: normal;
+  --num-weight: 700;
+  --r-xs: 10px; --r-sm: 14px; --r-md: 20px; --r-lg: 28px; --r-pill: 999px;
+  --shadow: 0 6px 18px rgba(80,55,160,.08);
+  --shadow-sheet: 0 -12px 40px rgba(80,55,160,.18);
+  --card-border: 0 solid transparent;
+  --tab-active: var(--accent);
+  --hero-bg: #2B2147;      /* deep plum: every category colour reads on it */
+  --hero-ink: #FFFFFF;
+  --hero-pos: #6EE7B0;
+}
+[data-dir="pocket"][data-mode="dark"] {
+  --bg: #17131F;
+  --surface: #221C2E;
+  --surface-2: #2D253D;
+  --ink: #F3EFFF;
+  --ink-2: #D4CCEA;
+  --muted: #A198BD;
+  --line: #352C47;
+  --accent: #FF8466;
+  --accent-ink: #2A0E05;
+  --accent-soft: #432622;
+  --pos: #5BD6A3;
+  --neg: #FF7C93;
+  --warn: #FFCB5C;
+  --pos-soft: #183528;
+  --neg-soft: #3E1D27;
+  --warn-soft: #3A3018;
+  --c1: #FF8466; --c2: #A08CFF; --c3: #4FD1C1; --c4: #FFC24D; --c5: #FF9DCB; --c6: #8E86A8;
+  --shadow: 0 6px 18px rgba(0,0,0,.35);
+  --shadow-sheet: 0 -12px 40px rgba(0,0,0,.55);
+  --hero-bg: #3A2D63;
+  --hero-ink: #FFFFFF;
+  --hero-pos: #6EE7B0;
+  color-scheme: dark;
+}

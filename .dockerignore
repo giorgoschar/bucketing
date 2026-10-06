@@ -51,3 +51,7 @@ package-lock.json
 tailwind.config.js
 static/src/
 .superpowers/
+
+# New React frontend (built separately until cutover) and design mocks
+web/
+docs/redesign/

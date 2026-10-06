@@ -1,0 +1,323 @@
+<meta charset="utf-8">
+<title>Tameio Redesign</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Sora:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="components.css">
+<script src="https://cdn.jsdelivr.net/npm/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<style>
+  /* Brief page chrome: a neutral working document that follows the viewer's theme.
+     The three directions live inside their own [data-dir] stages below. */
+  :root {
+    --bg: #F4F4F2; --surface: #FFFFFF; --surface-2: #EAEAE6; --ink: #18191B; --ink-2: #3D3F44; --muted: #6B6E75; --line: #DCDCD7;
+    --accent: #24584A; --accent-ink: #FFFFFF; --accent-soft: #DCE8E2;
+    --pos: #2C7A4B; --neg: #B0442E; --warn: #A86E12; --pos-soft: #DDEEE2; --neg-soft: #F5E1DB; --warn-soft: #F4E9D3;
+    --c1: #24584A; --c2: #C0793B; --c3: #5B6FA8; --c4: #9A5C86; --c5: #7E8F3A; --c6: #8A8F88;
+    --font-display: "Newsreader", "Iowan Old Style", Georgia, serif; --font-body: "Geist", "Helvetica Neue", Arial, sans-serif; --font-num: "Geist", "Helvetica Neue", Arial, sans-serif;
+    --display-weight: 500; --num-weight: 500;
+    --r-xs: 6px; --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-pill: 999px;
+    --shadow: none; --shadow-sheet: none; --card-border: 1px solid var(--line); --tab-active: var(--ink);
+    --hero-bg: transparent; --hero-ink: var(--ink); --hero-pos: var(--pos);
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg: #121315; --surface: #1A1B1E; --surface-2: #24262A; --ink: #ECECEA; --ink-2: #C6C7C9; --muted: #95979D; --line: #2D2F33;
+    --accent: #8BC4AC; --accent-ink: #0E1F19; --accent-soft: #1F3530;
+    --pos: #7CC598; --neg: #E58A73; --warn: #DDB062; --pos-soft: #1C3226; --neg-soft: #3A221C; --warn-soft: #36301F;
+    color-scheme: dark; } }
+  :root[data-theme="dark"] {
+    --bg: #121315; --surface: #1A1B1E; --surface-2: #24262A; --ink: #ECECEA; --ink-2: #C6C7C9; --muted: #95979D; --line: #2D2F33;
+    --accent: #8BC4AC; --accent-ink: #0E1F19; --accent-soft: #1F3530;
+    --pos: #7CC598; --neg: #E58A73; --warn: #DDB062; --pos-soft: #1C3226; --neg-soft: #3A221C; --warn-soft: #36301F;
+    color-scheme: dark; }
+  body { background: var(--bg); color: var(--ink); }
+
+  .intro { padding-block: 48px 8px; max-width: 820px; display: flex; flex-direction: column; gap: 14px; }
+  .intro h1 { font-family: var(--font-display); font-weight: 500; font-size: clamp(36px, 6vw, 60px); line-height: 1.02; letter-spacing: -.025em; margin: 0; text-wrap: balance; }
+  .intro p { margin: 0; font-size: 17px; color: var(--ink-2); max-width: 65ch; }
+  .lede-meta { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  .decisions { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; padding-block: 24px 0; }
+  .decision { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 18px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .decision .k { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .decision .v { font-family: var(--font-display); font-size: 24px; line-height: 1.15; letter-spacing: -.01em; }
+  .decision p { margin: 0; color: var(--ink-2); font-size: 14px; }
+  .decision ul { margin: 0; padding-left: 18px; color: var(--ink-2); font-size: 14px; display: flex; flex-direction: column; gap: 3px; }
+
+  /* IA map */
+  .ia { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; padding-block: 16px; }
+  .ia-col { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .ia-col .head { display: flex; align-items: center; gap: 10px; }
+  .ia-col .head .ico { --tint: var(--accent); }
+  .ia-col h3 { margin: 0; font-size: 17px; }
+  .ia-col .tab-note { font-size: 12px; color: var(--muted); }
+  .ia-col .from { display: flex; flex-wrap: wrap; gap: 6px; }
+  .ia-col .from span { font-size: 12px; font-family: "JetBrains Mono", ui-monospace, monospace; background: var(--surface-2); color: var(--ink-2); border-radius: 6px; padding: 3px 7px; }
+  .ia-col p { margin: 0; font-size: 13.5px; color: var(--ink-2); }
+
+  /* Design sheets */
+  .sheets { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 20px; padding-block: 20px; align-items: start; }
+  .sheetcol { background: var(--bg); color: var(--ink); border-radius: 22px; padding: 22px; display: flex; flex-direction: column; gap: 22px; min-width: 0; border: 1px solid var(--line); font-family: var(--font-body); transition: background .25s, box-shadow .25s; }
+  body[data-picked="calm"] .sheetcol[data-dir="calm"], body[data-picked="vault"] .sheetcol[data-dir="vault"], body[data-picked="pocket"] .sheetcol[data-dir="pocket"] { box-shadow: 0 0 0 3px var(--accent); }
+  .sheetcol .name { font-family: var(--font-display); font-weight: var(--display-weight); font-size: 34px; line-height: 1; letter-spacing: -.02em; }
+  .sheetcol .tagline { color: var(--ink-2); font-size: 14px; margin-top: 6px; }
+  .sheetcol .blk { display: flex; flex-direction: column; gap: 10px; }
+  .swatches { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .sw { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .sw i { display: block; height: 44px; border-radius: var(--r-sm); background: var(--v); border: 1px solid var(--line); }
+  .sw span { font-size: 11px; color: var(--muted); font-weight: 600; }
+  .chartrow { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
+  .chartrow i { height: 22px; border-radius: 4px; background: var(--v); }
+  .spec { display: flex; flex-direction: column; gap: 6px; }
+  .spec .big { font-family: var(--font-display); font-weight: var(--display-weight); font-size: 30px; line-height: 1.05; letter-spacing: -.02em; }
+  .spec .meta { font-size: 11.5px; color: var(--muted); }
+  .compgrid { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .phone-holder { display: flex; justify-content: center; }
+  .sheetcol .open { align-self: flex-start; }
+
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 640px; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; background: var(--surface-2); }
+  tr:last-child td { border-bottom: 0; }
+  td code { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12.5px; color: var(--ink-2); }
+  td a { color: var(--accent); font-weight: 600; text-decoration: none; }
+
+  .pages { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; padding-block: 16px; }
+  .pagecard { display: flex; flex-direction: column; gap: 6px; padding: 16px; border-radius: var(--r-lg); background: var(--surface); border: 1px solid var(--line); text-decoration: none; color: var(--ink); min-width: 0; }
+  .pagecard:hover { border-color: var(--accent); }
+  .pagecard .n { font-size: 12px; color: var(--muted); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+  .pagecard b { font-size: 17px; }
+  .pagecard span:last-child { font-size: 13.5px; color: var(--ink-2); }
+
+  .gaps { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; padding-block: 16px; }
+  .gap { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 16px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .gap h3 { margin: 0; font-size: 15px; }
+  .gap ul { margin: 0; padding-left: 18px; font-size: 13.5px; color: var(--ink-2); display: flex; flex-direction: column; gap: 4px; }
+  .gap code { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px; }
+</style>
+
+<div class="page">
+<header class="mock-bar"></header>
+
+<section class="intro">
+  <div class="eyebrow">Redesign brief · 6 Oct 2026</div>
+  <h1>Tameio: the household money app, rebuilt around five places.</h1>
+  <p>A from-scratch redesign based only on what the current app does. Pick a direction and light or dark at the top; every screen page follows your choice. All figures are sample data for a two-person household in Kifisia.</p>
+  <div class="lede-meta"><span class="badge acc">≈45 mobile screens</span><span class="badge">4 desktop screens</span><span class="badge">3 visual directions</span><span class="badge neg">Settle up removed</span></div>
+</section>
+
+<section>
+  <div class="decisions">
+    <div class="decision">
+      <div class="k">Platform</div>
+      <div class="v">React PWA, installed on the iPhone home screen</div>
+      <p>A native iOS build without the $99 developer account has to be re-signed every 7 days. A PWA never expires and still covers what the app uses:</p>
+      <ul><li>Face ID sign-in with passkeys (WebAuthn)</li><li>Camera QR scanning</li><li>Web push (iOS 16.4+)</li><li>Offline queue</li></ul>
+      <p>Suggested stack: Vite, React, TanStack Router and Query, with the FastAPI JSON API behind it. Types and tokens can later move to Expo unchanged.</p>
+    </div>
+    <div class="decision">
+      <div class="k">Scope</div>
+      <div class="v">Everything stays except settle up</div>
+      <ul>
+        <li>Expenses, income, budgets, bills, insights, search</li>
+        <li>Cash stash and wallets</li>
+        <li>Pantry and shopping</li>
+        <li>Receipt scanning, Apple Pay Shortcut</li>
+      </ul>
+      <p>Payer and per-person shares stay, so "paid out vs my share" still works. Balances, transfers and settlement history are gone.</p>
+    </div>
+    <div class="decision">
+      <div class="k">Navigation</div>
+      <div class="v">10 sidebar areas become 5 tabs</div>
+      <p>Home · Activity · Add · Plan · Insights. Settings sits behind your avatar. The old app hid Settle up, Cash and Search on mobile; now every feature is at most two taps away.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="section-head"><div class="eyebrow">Information architecture</div><h2>Where every old page went</h2><p>Each new area merges several old pages. The grey labels are the current routes it replaces.</p></div>
+  <div class="ia">
+    <div class="ia-col"><div class="head"><div class="ico"><i data-lucide="house"></i></div><div><h3>Home</h3><div class="tab-note">Tab 1</div></div></div><p>Month spend plus one "Needs you" inbox of things to fix.</p><div class="from"><span>/dashboard</span><span>notifications</span><span>overdue banner</span><span>duplicates</span><span>low stock</span></div></div>
+    <div class="ia-col"><div class="head"><div class="ico"><i data-lucide="list"></i></div><div><h3>Activity</h3><div class="tab-note">Tab 2</div></div></div><p>One searchable feed with problem filters and bulk edits.</p><div class="from"><span>/transactions/search</span><span>/duplicates</span><span>bulk payer</span><span>/export</span></div></div>
+    <div class="ia-col"><div class="head"><div class="ico"><i data-lucide="plus"></i></div><div><h3>Add</h3><div class="tab-note">Centre button</div></div></div><p>One composer for expense, income, scan and cash, for creating and editing.</p><div class="from"><span>/transactions/new</span><span>/edit</span><span>/income/new</span><span>/scan</span><span>cash take</span></div></div>
+    <div class="ia-col"><div class="head"><div class="ico"><i data-lucide="calendar-range"></i></div><div><h3>Plan</h3><div class="tab-note">Tab 3 · four segments</div></div></div><p>Bills · Budgets · Cash · Pantry: the things you plan ahead.</p><div class="from"><span>/bills</span><span>/buckets</span><span>/cash</span><span>/stock</span><span>/stock/shopping</span></div></div>
+    <div class="ia-col"><div class="head"><div class="ico"><i data-lucide="chart-pie"></i></div><div><h3>Insights</h3><div class="tab-note">Tab 4</div></div></div><p>One period picker and a Household / Me / Maria lens.</p><div class="from"><span>/insights</span><span>/me</span></div></div>
+    <div class="ia-col"><div class="head"><div class="ico"><i data-lucide="settings"></i></div><div><h3>Settings</h3><div class="tab-note">Avatar</div></div></div><p>A short hub with focused sub-screens.</p><div class="from"><span>/settings</span><span>/automations</span><span>2FA</span><span>push</span></div></div>
+  </div>
+</section>
+
+<section>
+  <div class="section-head"><div class="eyebrow">Design sheets</div><h2>Three directions, one system</h2><p>All three share the same components and layout and differ only in tokens: colour, type, corner radius and depth. Use the Light/Dark switch at the top to see each one in both modes. The outlined sheet is the one the screen pages currently use.</p></div>
+  <div class="sheets">
+
+    <!-- ===== CALM ===== -->
+    <div class="sheetcol" data-stage data-fixed-dir data-dir="calm" data-mode="light">
+      <div><div class="name">Calm</div><div class="tagline">Ledger paper and pine ink. A serif for figures, quiet surfaces and hairline borders. The money is the only loud thing.</div></div>
+      <div class="blk"><div class="eyebrow">Palette</div>
+        <div class="swatches">
+          <div class="sw"><i style="--v:var(--bg)"></i><span>Ground</span></div><div class="sw"><i style="--v:var(--surface)"></i><span>Surface</span></div><div class="sw"><i style="--v:var(--ink)"></i><span>Ink</span></div><div class="sw"><i style="--v:var(--accent)"></i><span>Accent</span></div>
+          <div class="sw"><i style="--v:var(--muted)"></i><span>Muted</span></div><div class="sw"><i style="--v:var(--pos)"></i><span>In / good</span></div><div class="sw"><i style="--v:var(--warn)"></i><span>Attention</span></div><div class="sw"><i style="--v:var(--neg)"></i><span>Late / over</span></div>
+        </div>
+        <div class="chartrow"><i style="--v:var(--c1)"></i><i style="--v:var(--c2)"></i><i style="--v:var(--c3)"></i><i style="--v:var(--c4)"></i><i style="--v:var(--c5)"></i><i style="--v:var(--c6)"></i></div>
+        <div class="xs muted">Category and chart colours, in order</div>
+      </div>
+      <div class="blk spec"><div class="eyebrow">Type</div>
+        <div class="amt-xl">€1,284<span class="cents">.60</span></div>
+        <div class="big">Needs you</div>
+        <div class="small ink2">Electricity needs an amount before auto-pay runs on Oct 9.</div>
+        <div class="meta">Newsreader for figures and titles · Geist for UI · tabular numerals</div>
+      </div>
+      <div class="blk"><div class="eyebrow">Components</div>
+        <div class="compgrid"><button class="btn primary">Save €4.10</button><button class="btn">Skip</button><span class="badge neg">2 days late</span><span class="badge pos">Paid</span><span class="badge warn">Varies</span></div>
+        <div class="compgrid"><span class="chip on">October</span><span class="chip">No payer <span class="count">3</span></span><div class="seg" style="flex:1;min-width:180px"><span class="on">Expense</span><span>Income</span></div></div>
+        <div class="pills"><span class="pill"><span class="ico t1"><i data-lucide="shopping-basket"></i></span>Day to day</span><span class="pill"><span class="avatar" style="--tint:var(--c3)">G</span>Giorgos</span></div>
+        <div class="list"><div class="row"><div class="ico t1"><i data-lucide="shopping-cart"></i></div><div class="main"><div class="t">Sklavenitis</div><div class="s">Groceries · Giorgos</div></div><div class="end num">−€64.20</div></div></div>
+        <div class="bar"><i style="width:56%"></i></div>
+      </div>
+      <div class="phone-holder"><div class="phone"><div class="screen">
+        <div class="appbar"><div class="left"><button class="chip" style="height:34px">Home · Kifisia <i data-lucide="chevron-down"></i></button></div><div class="right"><button class="iconbtn"><i data-lucide="bell"></i><span class="pip"></span></button><span class="avatar" style="--tint:var(--c3)">G</span></div></div>
+        <div class="scroll">
+          <div class="hero"><div class="eyebrow" style="color:inherit;opacity:.7">October so far</div><div class="amt-xl" style="margin-top:6px">€1,284<span class="cents">.60</span></div><div class="small muted" style="margin-top:6px">of €2,400 planned · 25 days left · on pace</div><div class="stack" style="margin-top:12px"><i style="width:28%;background:var(--c1)"></i><i style="width:14%;background:var(--c2)"></i><i style="width:7%;background:var(--c3)"></i><i style="width:4.5%;background:var(--c4)"></i><i style="flex:1;background:color-mix(in srgb, currentColor 14%, transparent)"></i></div><div class="grid3" style="margin-top:14px"><div class="stat"><div class="k" style="color:inherit;opacity:.7">In</div><div class="v">€3,150</div></div><div class="stat"><div class="k" style="color:inherit;opacity:.7">Out</div><div class="v">€1,285</div></div><div class="stat"><div class="k" style="color:inherit;opacity:.7">Net</div><div class="v pos">+€1,865</div></div></div></div>
+          <div><div class="sec-title"><span class="h2">Needs you <span class="badge neg" style="vertical-align:2px">6</span></span><a>See all</a></div><div class="list">
+            <div class="attn"><div class="ico tneg"><i data-lucide="circle-alert"></i></div><div class="main"><div class="t">Cosmote internet is 2 days late</div><div class="s">€32.90 · was due Oct 4</div></div><button class="btn sm primary">Pay</button></div><div class="divider"></div>
+            <div class="attn"><div class="ico twarn"><i data-lucide="zap"></i></div><div class="main"><div class="t">Electricity needs an amount</div><div class="s">ΔΕΗ · due Oct 9</div></div><button class="btn sm">Set</button></div><div class="divider"></div>
+            <div class="attn"><div class="ico t2"><i data-lucide="banknote"></i></div><div class="main"><div class="t">€45 cash not logged yet</div><div class="s">From your wallet this month</div></div><button class="btn sm">Log</button></div>
+          </div></div>
+        </div>
+        <nav class="tabbar" data-tab="home"></nav>
+      </div></div></div>
+      <a class="btn outline open" href="access-home.html#calm">Open screens in Calm</a>
+    </div>
+
+    <!-- ===== VAULT ===== -->
+    <div class="sheetcol" data-stage data-fixed-dir data-dir="vault" data-mode="dark">
+      <div><div class="name">Vault</div><div class="tagline">A banking-app feel: dark first, signal blue, monospaced figures and a glowing balance card. Dense and fast.</div></div>
+      <div class="blk"><div class="eyebrow">Palette</div>
+        <div class="swatches">
+          <div class="sw"><i style="--v:var(--bg)"></i><span>Ground</span></div><div class="sw"><i style="--v:var(--surface)"></i><span>Surface</span></div><div class="sw"><i style="--v:var(--ink)"></i><span>Ink</span></div><div class="sw"><i style="--v:var(--accent)"></i><span>Accent</span></div>
+          <div class="sw"><i style="--v:var(--muted)"></i><span>Muted</span></div><div class="sw"><i style="--v:var(--pos)"></i><span>In / good</span></div><div class="sw"><i style="--v:var(--warn)"></i><span>Attention</span></div><div class="sw"><i style="--v:var(--neg)"></i><span>Late / over</span></div>
+        </div>
+        <div class="chartrow"><i style="--v:var(--c1)"></i><i style="--v:var(--c2)"></i><i style="--v:var(--c3)"></i><i style="--v:var(--c4)"></i><i style="--v:var(--c5)"></i><i style="--v:var(--c6)"></i></div>
+        <div class="xs muted">Category and chart colours, in order</div>
+      </div>
+      <div class="blk spec"><div class="eyebrow">Type</div>
+        <div class="amt-xl">€1,284<span class="cents">.60</span></div>
+        <div class="big">Needs you</div>
+        <div class="small ink2">Electricity needs an amount before auto-pay runs on Oct 9.</div>
+        <div class="meta">Sora for titles · Plus Jakarta Sans for UI · JetBrains Mono for figures</div>
+      </div>
+      <div class="blk"><div class="eyebrow">Components</div>
+        <div class="compgrid"><button class="btn primary">Save €4.10</button><button class="btn">Skip</button><span class="badge neg">2 days late</span><span class="badge pos">Paid</span><span class="badge warn">Varies</span></div>
+        <div class="compgrid"><span class="chip on">October</span><span class="chip">No payer <span class="count">3</span></span><div class="seg" style="flex:1;min-width:180px"><span class="on">Expense</span><span>Income</span></div></div>
+        <div class="pills"><span class="pill"><span class="ico t1"><i data-lucide="shopping-basket"></i></span>Day to day</span><span class="pill"><span class="avatar" style="--tint:var(--c3)">G</span>Giorgos</span></div>
+        <div class="list"><div class="row"><div class="ico t1"><i data-lucide="shopping-cart"></i></div><div class="main"><div class="t">Sklavenitis</div><div class="s">Groceries · Giorgos</div></div><div class="end num">−€64.20</div></div></div>
+        <div class="bar"><i style="width:56%"></i></div>
+      </div>
+      <div class="phone-holder"><div class="phone"><div class="screen">
+        <div class="appbar"><div class="left"><button class="chip" style="height:34px">Home · Kifisia <i data-lucide="chevron-down"></i></button></div><div class="right"><button class="iconbtn"><i data-lucide="bell"></i><span class="pip"></span></button><span class="avatar" style="--tint:var(--c3)">G</span></div></div>
+        <div class="scroll">
+          <div class="hero"><div class="eyebrow" style="color:inherit;opacity:.7">October so far</div><div class="amt-xl" style="margin-top:6px">€1,284<span class="cents">.60</span></div><div class="small muted" style="margin-top:6px">of €2,400 planned · 25 days left · on pace</div><div class="stack" style="margin-top:12px"><i style="width:28%;background:var(--c1)"></i><i style="width:14%;background:var(--c2)"></i><i style="width:7%;background:var(--c3)"></i><i style="width:4.5%;background:var(--c4)"></i><i style="flex:1;background:color-mix(in srgb, currentColor 14%, transparent)"></i></div><div class="grid3" style="margin-top:14px"><div class="stat"><div class="k" style="color:inherit;opacity:.7">In</div><div class="v">€3,150</div></div><div class="stat"><div class="k" style="color:inherit;opacity:.7">Out</div><div class="v">€1,285</div></div><div class="stat"><div class="k" style="color:inherit;opacity:.7">Net</div><div class="v pos">+€1,865</div></div></div></div>
+          <div><div class="sec-title"><span class="h2">Needs you <span class="badge neg" style="vertical-align:2px">6</span></span><a>See all</a></div><div class="list">
+            <div class="attn"><div class="ico tneg"><i data-lucide="circle-alert"></i></div><div class="main"><div class="t">Cosmote internet is 2 days late</div><div class="s">€32.90 · was due Oct 4</div></div><button class="btn sm primary">Pay</button></div><div class="divider"></div>
+            <div class="attn"><div class="ico twarn"><i data-lucide="zap"></i></div><div class="main"><div class="t">Electricity needs an amount</div><div class="s">ΔΕΗ · due Oct 9</div></div><button class="btn sm">Set</button></div><div class="divider"></div>
+            <div class="attn"><div class="ico t2"><i data-lucide="banknote"></i></div><div class="main"><div class="t">€45 cash not logged yet</div><div class="s">From your wallet this month</div></div><button class="btn sm">Log</button></div>
+          </div></div>
+        </div>
+        <nav class="tabbar" data-tab="home"></nav>
+      </div></div></div>
+      <a class="btn outline open" href="access-home.html#vault">Open screens in Vault</a>
+    </div>
+
+    <!-- ===== POCKET ===== -->
+    <div class="sheetcol" data-stage data-fixed-dir data-dir="pocket" data-mode="light">
+      <div><div class="name">Pocket</div><div class="tagline">Soft lilac, tangerine actions, chunky rounded shapes and friendly grotesque type. Built to make logging money feel light.</div></div>
+      <div class="blk"><div class="eyebrow">Palette</div>
+        <div class="swatches">
+          <div class="sw"><i style="--v:var(--bg)"></i><span>Ground</span></div><div class="sw"><i style="--v:var(--surface)"></i><span>Surface</span></div><div class="sw"><i style="--v:var(--ink)"></i><span>Ink</span></div><div class="sw"><i style="--v:var(--accent)"></i><span>Accent</span></div>
+          <div class="sw"><i style="--v:var(--muted)"></i><span>Muted</span></div><div class="sw"><i style="--v:var(--pos)"></i><span>In / good</span></div><div class="sw"><i style="--v:var(--warn)"></i><span>Attention</span></div><div class="sw"><i style="--v:var(--neg)"></i><span>Late / over</span></div>
+        </div>
+        <div class="chartrow"><i style="--v:var(--c1)"></i><i style="--v:var(--c2)"></i><i style="--v:var(--c3)"></i><i style="--v:var(--c4)"></i><i style="--v:var(--c5)"></i><i style="--v:var(--c6)"></i></div>
+        <div class="xs muted">Category and chart colours, in order</div>
+      </div>
+      <div class="blk spec"><div class="eyebrow">Type</div>
+        <div class="amt-xl">€1,284<span class="cents">.60</span></div>
+        <div class="big">Needs you</div>
+        <div class="small ink2">Electricity needs an amount before auto-pay runs on Oct 9.</div>
+        <div class="meta">Bricolage Grotesque for titles and figures · Nunito Sans for UI</div>
+      </div>
+      <div class="blk"><div class="eyebrow">Components</div>
+        <div class="compgrid"><button class="btn primary">Save €4.10</button><button class="btn">Skip</button><span class="badge neg">2 days late</span><span class="badge pos">Paid</span><span class="badge warn">Varies</span></div>
+        <div class="compgrid"><span class="chip on">October</span><span class="chip">No payer <span class="count">3</span></span><div class="seg" style="flex:1;min-width:180px"><span class="on">Expense</span><span>Income</span></div></div>
+        <div class="pills"><span class="pill"><span class="ico t1"><i data-lucide="shopping-basket"></i></span>Day to day</span><span class="pill"><span class="avatar" style="--tint:var(--c3)">G</span>Giorgos</span></div>
+        <div class="list"><div class="row"><div class="ico t1"><i data-lucide="shopping-cart"></i></div><div class="main"><div class="t">Sklavenitis</div><div class="s">Groceries · Giorgos</div></div><div class="end num">−€64.20</div></div></div>
+        <div class="bar"><i style="width:56%"></i></div>
+      </div>
+      <div class="phone-holder"><div class="phone"><div class="screen">
+        <div class="appbar"><div class="left"><button class="chip" style="height:34px">Home · Kifisia <i data-lucide="chevron-down"></i></button></div><div class="right"><button class="iconbtn"><i data-lucide="bell"></i><span class="pip"></span></button><span class="avatar" style="--tint:var(--c3)">G</span></div></div>
+        <div class="scroll">
+          <div class="hero"><div class="eyebrow" style="color:inherit;opacity:.7">October so far</div><div class="amt-xl" style="margin-top:6px">€1,284<span class="cents">.60</span></div><div class="small muted" style="margin-top:6px">of €2,400 planned · 25 days left · on pace</div><div class="stack" style="margin-top:12px"><i style="width:28%;background:var(--c1)"></i><i style="width:14%;background:var(--c2)"></i><i style="width:7%;background:var(--c3)"></i><i style="width:4.5%;background:var(--c4)"></i><i style="flex:1;background:color-mix(in srgb, currentColor 14%, transparent)"></i></div><div class="grid3" style="margin-top:14px"><div class="stat"><div class="k" style="color:inherit;opacity:.7">In</div><div class="v">€3,150</div></div><div class="stat"><div class="k" style="color:inherit;opacity:.7">Out</div><div class="v">€1,285</div></div><div class="stat"><div class="k" style="color:inherit;opacity:.7">Net</div><div class="v pos">+€1,865</div></div></div></div>
+          <div><div class="sec-title"><span class="h2">Needs you <span class="badge neg" style="vertical-align:2px">6</span></span><a>See all</a></div><div class="list">
+            <div class="attn"><div class="ico tneg"><i data-lucide="circle-alert"></i></div><div class="main"><div class="t">Cosmote internet is 2 days late</div><div class="s">€32.90 · was due Oct 4</div></div><button class="btn sm primary">Pay</button></div><div class="divider"></div>
+            <div class="attn"><div class="ico twarn"><i data-lucide="zap"></i></div><div class="main"><div class="t">Electricity needs an amount</div><div class="s">ΔΕΗ · due Oct 9</div></div><button class="btn sm">Set</button></div><div class="divider"></div>
+            <div class="attn"><div class="ico t2"><i data-lucide="banknote"></i></div><div class="main"><div class="t">€45 cash not logged yet</div><div class="s">From your wallet this month</div></div><button class="btn sm">Log</button></div>
+          </div></div>
+        </div>
+        <nav class="tabbar" data-tab="home"></nav>
+      </div></div></div>
+      <a class="btn outline open" href="access-home.html#pocket">Open screens in Pocket</a>
+    </div>
+
+  </div>
+</section>
+
+<section>
+  <div class="section-head"><div class="eyebrow">Screens</div><h2>The mock pages</h2><p>Each page groups one area. Captions name the old pages each screen replaces.</p></div>
+  <div class="pages">
+    <a class="pagecard" href="access-home.html"><span class="n">01–03</span><b>Access, Home, Activity</b><span>Sign-in, invite, Home, Needs you, notifications, feed, detail, bulk fix, duplicates</span></a>
+    <a class="pagecard" href="composer.html"><span class="n">04</span><b>Add & Scan</b><span>One composer: amount, pickers, split, fuel, income, receipt scan, warnings</span></a>
+    <a class="pagecard" href="plan.html"><span class="n">05–06</span><b>Bills & Budgets</b><span>Bill timeline, pay, variable amounts, new bill, budget types</span></a>
+    <a class="pagecard" href="cash-pantry.html"><span class="n">07–08</span><b>Cash & Pantry</b><span>Stash and wallets, take / put back / still have, pantry, barcode, shopping</span></a>
+    <a class="pagecard" href="insights-settings.html"><span class="n">09–10</span><b>Insights & Settings</b><span>Overview, Me lens, drill-downs, fuel, settings hub and sub-screens</span></a>
+    <a class="pagecard" href="desktop.html"><span class="n">11</span><b>Desktop</b><span>Home, Activity with detail pane, Insights, Bills</span></a>
+  </div>
+</section>
+
+<section>
+  <div class="section-head"><div class="eyebrow">Coverage</div><h2>Every current feature has a home</h2><p>Each feature that stays appears in at least one mock.</p></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Current feature</th><th>Where it lives now</th><th>What changed</th></tr></thead>
+    <tbody>
+      <tr><td>Login, 2FA, backup codes, invites</td><td><a href="access-home.html">Access</a></td><td>Passkey sign-in first; the code is the fallback</td></tr>
+      <tr><td>Dashboard, overdue banner, who paid</td><td><a href="access-home.html">Home</a></td><td>One headline number plus the Needs you inbox</td></tr>
+      <tr><td>Notifications bell</td><td><a href="access-home.html">Home › sheet</a></td><td>Stays unread until you read it</td></tr>
+      <tr><td>Search, filters, export, duplicates, bulk payer</td><td><a href="access-home.html">Activity</a></td><td>One feed; problems are filter chips</td></tr>
+      <tr><td>Add wizard, edit form, income form</td><td><a href="composer.html">Add</a></td><td>One composer; saves in 2 taps</td></tr>
+      <tr><td>Receipt scan (QR / OCR / PDF), category rules</td><td><a href="composer.html">Add › Scan</a></td><td>Rules learned inline on the review screen</td></tr>
+      <tr><td>Splits, payer, "each paid own share"</td><td><a href="composer.html">Add › Split</a></td><td>Equal / amounts / percent with a live bar</td></tr>
+      <tr><td>Fuel price per litre</td><td><a href="composer.html">Add</a>, <a href="insights-settings.html">Insights › Fuel</a></td><td>Fields appear only for the Fuel category</td></tr>
+      <tr><td>Offline queue</td><td><a href="composer.html">Add</a>, <a href="access-home.html">Activity</a></td><td>Queued rows show in the feed with a badge</td></tr>
+      <tr><td>Recurring bills, pay, skip, pause, variable amounts</td><td><a href="plan.html">Plan › Bills</a></td><td>Timeline view, pay sheet, step-by-step new bill</td></tr>
+      <tr><td>Buckets: day-to-day, trip, savings, budgets</td><td><a href="plan.html">Plan › Budgets</a></td><td>Each type gets its own detail view</td></tr>
+      <tr><td>Cash stash, wallets, still have</td><td><a href="cash-pantry.html">Plan › Cash</a></td><td>One sheet with 3 modes; not-logged amount shown as a sum</td></tr>
+      <tr><td>Stock, PosoKanei prices, barcode, shopping list</td><td><a href="cash-pantry.html">Plan › Pantry</a></td><td>"Bought" leads straight to a prefilled expense</td></tr>
+      <tr><td>Insights widgets, person view (/me)</td><td><a href="insights-settings.html">Insights</a></td><td>A lens switch replaces a separate page</td></tr>
+      <tr><td>Settings, members, categories, push, Apple Pay tokens</td><td><a href="insights-settings.html">Settings</a></td><td>A hub with focused sub-screens; categories can be edited</td></tr>
+      <tr><td>Settle up, settlement history</td><td>Removed</td><td>Payer and shares stay, for the Me lens</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <div class="section-head"><div class="eyebrow">Backend work for a React client</div><h2>API gaps to close</h2><p>The JSON API under <code>/api/v1</code> covers about two thirds of this design. These endpoints are missing today.</p></div>
+  <div class="gaps">
+    <div class="gap"><h3>Activity</h3><ul><li>Full-text search with all filters</li><li>Duplicate groups and "keep both"</li><li>Bulk update (payer, category, budget)</li><li>Check for a duplicate before saving</li><li>Export</li></ul></div>
+    <div class="gap"><h3>Home & Insights</h3><ul><li>A "needs you" feed that collects every issue type</li><li>Person lens (paid out vs my share)</li><li>Category and merchant drill-down</li><li>Fuel per car</li></ul></div>
+    <div class="gap"><h3>Add & Scan</h3><ul><li>QR receipt lookup (<code>/scan/qr</code>)</li><li>Create and edit category rules</li><li>Offline <code>client_id</code> on every create</li></ul></div>
+    <div class="gap"><h3>Plan</h3><ul><li>Bill history, set amount, pause and resume</li><li>Unarchive a budget</li><li>Pantry: settings, refresh price, archive, mark bought</li></ul></div>
+    <div class="gap"><h3>Account</h3><ul><li>Passkeys (WebAuthn register and sign-in)</li><li>Listing and switching households under JWT</li><li>Invite accept, 2FA enrolment</li><li>Push subscribe with JWT</li></ul></div>
+    <div class="gap"><h3>Remove</h3><ul><li>Settlement endpoints and the <code>Settlement</code> table</li><li><code>enable_settlement</code> on buckets</li><li><code>exclude_from_settlement</code> on expenses</li></ul></div>
+  </div>
+</section>
+</div>
+<script src="mock.js"></script>

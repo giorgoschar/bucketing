@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tameio · Cash & Pantry</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Sora:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="components.css">
+<script src="https://cdn.jsdelivr.net/npm/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<style>
+  .plan-seg { padding: 0 16px 6px; flex: none; }
+  .check { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--line); flex: none; display: grid; place-items: center; }
+  .check.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .check svg { width: 14px; height: 14px; stroke-width: 3; }
+  .monthsw { display: flex; align-items: center; justify-content: space-between; }
+  .monthsw b { font-size: 15px; }
+
+  /* Cash equation: took − logged = not yet logged */
+  .eq { display: grid; grid-template-columns: 1fr auto 1fr auto 1.15fr; align-items: stretch; gap: 5px; }
+  .eq.five { grid-template-columns: 1fr auto 1fr auto 1fr auto 1.1fr; }
+  .eq .cell { background: var(--surface-2); border-radius: var(--r-sm); padding: 7px 9px; display: flex; flex-direction: column; justify-content: center; gap: 1px; min-width: 0; }
+  .eq .cell .k { font-size: 11px; font-weight: 600; color: var(--muted); line-height: 1.2; }
+  .eq .cell .v { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-weight: var(--num-weight); font-size: 17px; letter-spacing: -.02em; }
+  .eq .op { align-self: center; color: var(--muted); font-weight: 600; font-size: 16px; }
+  .eq .cell.res { background: var(--warn-soft); }
+  .eq .cell.res .k, .eq .cell.res .v { color: var(--warn); }
+  .eq .cell.ok { background: var(--pos-soft); }
+  .eq .cell.ok .k, .eq .cell.ok .v { color: var(--pos); }
+  .eq .cell.new { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .eq.compact .cell { padding: 5px 7px; }
+  .eq.compact .cell .v { font-size: 15px; }
+  .eq.compact .cell .k { font-size: 10.5px; }
+
+  .privacy { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: var(--muted); }
+  .privacy svg { width: 13px; height: 13px; }
+
+  .amt-field { display: flex; align-items: baseline; justify-content: center; gap: 2px; padding: 4px 0; }
+  .amt-field .caret { width: 2px; height: 38px; background: var(--accent); align-self: center; margin-left: 2px; }
+  .keypad.tight button { height: 46px; font-size: 24px; }
+
+  .exp { border: 1px solid var(--line); border-radius: var(--r-md); padding: 10px 12px; display: flex; flex-direction: column; gap: 10px; }
+
+  /* Pantry */
+  .step { display: flex; align-items: center; background: var(--surface-2); border-radius: var(--r-pill); flex: none; }
+  .step button { width: 36px; height: 36px; border: 0; background: transparent; display: grid; place-items: center; color: var(--ink); border-radius: 50%; cursor: pointer; }
+  .step button svg { width: 17px; height: 17px; stroke-width: 2.4; }
+  .step .n { min-width: 26px; text-align: center; font-family: var(--font-num); font-variant-numeric: tabular-nums; font-weight: 650; font-size: 17px; }
+  .step.lg button { width: 44px; height: 44px; }
+  .step.lg .n { min-width: 36px; font-size: 22px; }
+  .row.low { background: color-mix(in srgb, var(--warn-soft) 70%, var(--surface)); }
+  .row.low .s.lowtxt { color: var(--warn); font-weight: 600; }
+  .pchip { display: inline-flex; align-items: center; gap: 3px; height: 19px; padding: 0 6px; border-radius: var(--r-pill); background: var(--pos-soft); color: var(--pos); font-size: 11px; font-weight: 700; vertical-align: 1px; }
+  .pchip.plain { background: var(--surface-2); color: var(--ink-2); }
+  .pchip svg { width: 11px; height: 11px; stroke-width: 2.4; }
+  .floatbtn { position: absolute; left: 50%; transform: translateX(-50%); bottom: 96px; z-index: 5; box-shadow: 0 10px 24px rgba(0,0,0,.22); border-radius: var(--r-pill) !important; }
+
+  .cmp { display: grid; grid-template-columns: 92px 1fr 52px; gap: 8px 10px; align-items: center; font-size: 13px; }
+  .cmp .bar { height: 10px; }
+  .cmp .best { color: var(--pos); font-weight: 700; }
+
+  .storehead { display: flex; justify-content: space-between; align-items: baseline; padding: 0 2px 6px; }
+  .storehead b { font-size: 14px; }
+
+  /* Camera */
+  .screen.cam .sb { color: #fff; }
+  .camtop { position: absolute; top: 54px; left: 16px; right: 16px; display: flex; justify-content: space-between; align-items: center; z-index: 2; }
+  .camtop .cbtn { width: 40px; height: 40px; border-radius: 50%; background: rgba(255,255,255,.16); display: grid; place-items: center; color: #fff; }
+  .camtop b { font-size: 16px; }
+  .scanbox { position: absolute; left: 50%; top: 31%; width: 290px; height: 130px; transform: translate(-50%, -50%); border-radius: 18px; border: 2.5px solid rgba(255,255,255,.92); }
+  .scanbox .code { position: absolute; inset: 22px 34px; background: repeating-linear-gradient(90deg, rgba(255,255,255,.55) 0 2px, transparent 2px 5px, rgba(255,255,255,.55) 5px 6px, transparent 6px 9px, rgba(255,255,255,.55) 9px 12px, transparent 12px 14px); border-radius: 3px; opacity: .8; }
+  .scanbox .line { position: absolute; left: 10px; right: 10px; top: 50%; height: 2px; background: #fff; box-shadow: 0 0 12px 2px rgba(255,255,255,.7); }
+  .camhint { position: absolute; top: calc(31% + 82px); left: 0; right: 0; text-align: center; font-size: 13.5px; color: rgba(255,255,255,.8); }
+
+  .spark { display: block; width: 100%; height: 56px; }
+</style>
+</head>
+<body data-stage data-dir="calm" data-mode="light">
+<div class="page">
+<header class="mock-bar"></header>
+
+<!-- ============================ CASH ============================ -->
+<section>
+  <div class="section-head">
+    <div class="eyebrow">07 · Plan › Cash</div>
+    <h2>Cash counts as spent the moment you take it out.</h2>
+    <p>Each person gets a wallet per month that the household can see, and an optional stash at home that only its owner can see. The screen does one sum: what you took, minus what you logged, equals what is still unaccounted for. Taking, putting back and counting what's left all happen in one sheet.</p>
+  </div>
+  <div class="board">
+
+    <!-- 1. Cash overview -->
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="largetitle">Plan</div>
+        <div class="plan-seg"><div class="seg"><span>Bills</span><span>Budgets</span><span class="on">Cash</span><span>Pantry</span></div></div>
+        <div class="scroll">
+          <div class="monthsw"><button class="iconbtn bare"><i data-lucide="chevron-left"></i></button><b>October 2026</b><button class="iconbtn bare"><i data-lucide="chevron-right"></i></button></div>
+
+          <div class="card" style="margin-top:6px">
+            <div class="between">
+              <div class="hstack"><div class="ico t2"><i data-lucide="lock"></i></div><div><div class="small muted" style="font-weight:600">My stash</div><div class="amt-lg">€380</div></div></div>
+              <span class="badge"><i data-lucide="lock"></i>Only you see this</span>
+            </div>
+            <div class="grid2" style="margin-top:14px"><button class="btn"><i data-lucide="plus"></i>Add to stash</button><button class="btn primary"><i data-lucide="hand-coins"></i>Take</button></div>
+          </div>
+
+          <div>
+            <div class="sec-title"><span class="h2">October wallets</span><span class="privacy"><i data-lucide="eye"></i>Household sees these</span></div>
+            <div class="vstack">
+              <div class="card pad-s vstack" style="gap:10px">
+                <div class="between"><div class="hstack"><span class="avatar" style="--tint:var(--c3)">G</span><b>Giorgos</b></div><button class="btn sm primary">Log it</button></div>
+                <div class="eq">
+                  <div class="cell"><span class="k">Took</span><span class="v">€120</span></div><span class="op">−</span>
+                  <div class="cell"><span class="k">Logged</span><span class="v">€75</span></div><span class="op">=</span>
+                  <div class="cell res"><span class="k">Not yet logged</span><span class="v">€45</span></div>
+                </div>
+              </div>
+              <div class="card pad-s vstack" style="gap:10px">
+                <div class="between"><div class="hstack"><span class="avatar" style="--tint:var(--c2)">M</span><b>Maria</b></div><span class="badge pos"><i data-lucide="check"></i>All logged</span></div>
+                <div class="eq compact">
+                  <div class="cell"><span class="k">Took</span><span class="v">€60</span></div><span class="op">−</span>
+                  <div class="cell"><span class="k">Logged</span><span class="v">€60</span></div><span class="op">=</span>
+                  <div class="cell ok"><span class="k">Not yet logged</span><span class="v">€0</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div class="sec-title"><span class="h2">Movements</span><a>All</a></div>
+            <div class="list">
+              <div class="row"><div class="ico t6"><i data-lucide="landmark"></i></div><div class="main"><div class="t">Took €40 from ATM</div><div class="s">You · Sun 4 Oct</div></div><div class="end num">€40</div></div>
+              <div class="row"><span class="avatar" style="--tint:var(--c2);margin-inline:2px">M</span><div class="main"><div class="t">Maria took from your stash</div><div class="s">Sat 3 Oct · logged in her wallet</div></div><div class="end num">€60</div></div>
+              <div class="row"><div class="ico t2"><i data-lucide="lock"></i></div><div class="main"><div class="t">Took €80 from my stash</div><div class="s">You · Fri 2 Oct</div></div><div class="end num">€80</div></div>
+            </div>
+          </div>
+        </div>
+        <nav class="tabbar" data-tab="plan"></nav>
+      </div></div>
+      <figcaption><b>Cash overview</b>Your private stash sits above the shared wallets, and each wallet is written as a sum: took minus logged leaves what is still unaccounted for. "Log it" opens the expense composer with the €45 already filled in.<span class="was">/cash, cash wallet partial, the old cash comparison block</span></figcaption>
+    </figure>
+
+    <!-- 2. Take sheet -->
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="largetitle">Plan</div>
+        <div class="plan-seg"><div class="seg"><span>Bills</span><span>Budgets</span><span class="on">Cash</span><span>Pantry</span></div></div>
+        <div class="scrim"></div>
+        <div class="sheet">
+          <div class="grab"></div>
+          <div class="seg"><span class="on">Take</span><span>Put back</span><span>Still have</span></div>
+          <div class="sheet-body" style="gap:12px">
+            <div class="amt-field"><span class="amt-xl">€40</span><span class="caret"></span></div>
+            <div>
+              <div class="eyebrow" style="margin-bottom:6px">From</div>
+              <div class="list">
+                <div class="row sel"><div class="ico t2"><i data-lucide="lock"></i></div><div class="main"><div class="t">My stash</div><div class="s">€380 now · €340 after</div></div><span class="check on"><i data-lucide="check"></i></span></div>
+                <div class="row"><span class="avatar" style="--tint:var(--c2);margin-inline:2px">M</span><div class="main"><div class="t">Maria's stash</div><div class="s"><span class="privacy" style="font-size:12.5px;font-weight:500"><i data-lucide="eye-off"></i>Balance hidden · she gets notified</span></div></div><span class="check"></span></div>
+                <div class="row"><div class="ico t6"><i data-lucide="landmark"></i></div><div class="main"><div class="t">Bank or ATM</div><div class="s">Not from anyone's stash</div></div><span class="check"></span></div>
+              </div>
+            </div>
+            <div class="grid2">
+              <div class="field"><span class="lbl">Date</span><div class="input"><i data-lucide="calendar"></i>Today</div></div>
+              <div class="field"><span class="lbl">Note</span><div class="input"><span class="ph">Laiki market</span></div></div>
+            </div>
+            <div class="exp">
+              <div class="between"><div><b class="small">I spent it on…</b><div class="xs muted">Logs the expense now, so nothing is left to log</div></div><i data-lucide="chevron-up" class="muted"></i></div>
+              <div class="pills">
+                <span class="pill"><span class="ico t1"><i data-lucide="shopping-basket"></i></span>Day to day</span>
+                <span class="pill"><span class="ico t1"><i data-lucide="tag"></i></span>Groceries</span>
+              </div>
+            </div>
+          </div>
+          <button class="btn primary lg block">Take €40 and log it</button>
+        </div>
+      </div></div>
+      <figcaption><b>Cash sheet: Take</b>One sheet with three modes replaces three forms. Taking from someone else's stash never reveals their balance. If you say what you spent it on, the expense is logged at the same time and your wallet stays at zero.<span class="was">Cash withdraw form, stash take form, separate add-expense step</span></figcaption>
+    </figure>
+
+    <!-- 3. Still have sheet -->
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="largetitle">Plan</div>
+        <div class="plan-seg"><div class="seg"><span>Bills</span><span>Budgets</span><span class="on">Cash</span><span>Pantry</span></div></div>
+        <div class="scrim"></div>
+        <div class="sheet">
+          <div class="grab"></div>
+          <div class="seg"><span>Take</span><span>Put back</span><span class="on">Still have</span></div>
+          <div class="sheet-body" style="gap:10px">
+            <div class="h2" style="text-align:center">How much cash do you have left right now?</div>
+            <div class="amt-field"><span class="amt-xl">€15</span><span class="caret"></span></div>
+            <div class="card flat pad-s vstack" style="gap:8px;background:var(--surface-2);border-color:transparent">
+              <div class="eq compact">
+                <div class="cell" style="background:var(--surface)"><span class="k">Took</span><span class="v">€120</span></div><span class="op">−</span>
+                <div class="cell" style="background:var(--surface)"><span class="k">Logged</span><span class="v">€75</span></div><span class="op">=</span>
+                <div class="cell res"><span class="k">Before</span><span class="v" style="text-decoration:line-through;opacity:.7">€45</span></div>
+              </div>
+              <div class="eq five compact">
+                <div class="cell" style="background:var(--surface)"><span class="k">Took</span><span class="v">€120</span></div><span class="op">−</span>
+                <div class="cell new" style="background:var(--surface)"><span class="k">Still have</span><span class="v">€15</span></div><span class="op">−</span>
+                <div class="cell" style="background:var(--surface)"><span class="k">Logged</span><span class="v">€75</span></div><span class="op">=</span>
+                <div class="cell res"><span class="k">After</span><span class="v">€30</span></div>
+              </div>
+              <div class="small ink2 hstack" style="gap:8px;align-items:flex-start"><i data-lucide="calendar" style="width:16px;height:16px;margin-top:2px"></i><span>Carries into November. Your not-yet-logged amount drops to €30.</span></div>
+            </div>
+          </div>
+          <div class="keypad tight"><button>1</button><button>2</button><button>3</button><button>4</button><button>5</button><button>6</button><button>7</button><button>8</button><button>9</button><button>,</button><button>0</button><button><i data-lucide="delete"></i></button></div>
+          <button class="btn primary lg block">Save €15 in hand</button>
+        </div>
+      </div></div>
+      <figcaption><b>Cash sheet: Still have</b>Counting what's in your pocket is the honest way to close a month. The before and after sums show exactly what the number changes, so nobody has to invent expenses to make the wallet balance.<span class="was">Still-have form on /cash</span></figcaption>
+    </figure>
+
+    <!-- 4. Stash warning -->
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="appbar"><div class="left"><button class="iconbtn bare"><i data-lucide="chevron-left"></i></button></div><div class="title">My stash</div><div class="right"><button class="iconbtn bare"><i data-lucide="history"></i></button></div></div>
+        <div class="scroll">
+          <div class="vstack" style="align-items:center;gap:6px;padding-top:4px">
+            <span class="badge"><i data-lucide="lock"></i>Only you see this</span>
+            <div class="amt-xl neg">−€20</div>
+            <div class="small muted">Balance by the book</div>
+          </div>
+          <div class="card" style="background:var(--warn-soft);border-color:transparent">
+            <div class="hstack" style="align-items:flex-start;gap:12px">
+              <div class="ico twarn round" style="background:var(--surface)"><i data-lucide="triangle-alert"></i></div>
+              <div class="vstack" style="gap:4px">
+                <b>Your stash may be €20 short</b>
+                <span class="small ink2">Someone took more than the balance. Count it and correct.</span>
+              </div>
+            </div>
+            <button class="btn primary block" style="margin-top:14px"><i data-lucide="coins"></i>Count now</button>
+          </div>
+          <div>
+            <div class="sec-title"><span class="h2">History</span><span class="small muted">Balance after</span></div>
+            <div class="list">
+              <div class="row"><span class="avatar" style="--tint:var(--c2);margin-inline:2px">M</span><div class="main"><div class="t">Maria took €60</div><div class="s">Sat 3 Oct · balance hidden from her</div></div><div class="end num neg">−€20</div></div>
+              <div class="row"><div class="ico t2"><i data-lucide="hand-coins"></i></div><div class="main"><div class="t">You took €80</div><div class="s">Fri 2 Oct · into your wallet</div></div><div class="end num">€40</div></div>
+              <div class="row"><div class="ico tpos"><i data-lucide="plus"></i></div><div class="main"><div class="t">Added €120</div><div class="s">Mon 28 Sep</div></div><div class="end num">€120</div></div>
+            </div>
+          </div>
+          <div class="grid2"><button class="btn"><i data-lucide="plus"></i>Add to stash</button><button class="btn"><i data-lucide="hand-coins"></i>Take</button></div>
+        </div>
+        <div class="homebar"></div>
+      </div></div>
+      <figcaption><b>Stash warning (separate state)</b>A different scenario from the €380 above: the stash held €40 when Maria took €60. Others can take without seeing the balance, so the book can go below zero. The owner gets a warning and one button to count the cash and correct it.<span class="was">Stash page, negative stash balance with no warning</span></figcaption>
+    </figure>
+
+  </div>
+</section>
+
+<!-- ============================ PANTRY ============================ -->
+<section>
+  <div class="section-head">
+    <div class="eyebrow">08 · Plan › Pantry</div>
+    <h2>Know what's at home, and where it's cheapest today.</h2>
+    <p>Stock is a list of counters you tap up and down, with a minimum for each item, so running low is obvious. Prices come from the PosoKanei price observatory, found by name or barcode. The shopping list groups items by the store where each one is cheapest, and marking items bought adds them to stock and can log the expense.</p>
+  </div>
+  <div class="board">
+
+    <!-- 5. Pantry list -->
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="largetitle">Plan</div>
+        <div class="plan-seg"><div class="seg"><span>Bills</span><span>Budgets</span><span>Cash</span><span class="on">Pantry</span></div></div>
+        <div class="scroll tight">
+          <div class="hstack" style="gap:8px"><div class="input search" style="flex:1"><i data-lucide="search"></i><span class="ph">Search pantry</span></div><button class="iconbtn"><i data-lucide="plus"></i></button></div>
+          <div class="chips"><span class="chip on">All <span class="count">6</span></span><span class="chip">Running low <span class="count">2</span></span><span class="chip">Price tracked <span class="count">3</span></span></div>
+          <div class="list">
+            <div class="row low"><div class="ico t3"><i data-lucide="milk"></i></div><div class="main"><div class="t">Milk</div><div class="s lowtxt">1 L · 0 left · need 2</div></div><div class="step"><button><i data-lucide="minus"></i></button><span class="n">0</span><button><i data-lucide="plus"></i></button></div></div>
+            <div class="row low"><div class="ico t5"><i data-lucide="droplet"></i></div><div class="main"><div class="t">Olive oil</div><div class="s lowtxt">1 L · 1 left · need 2</div></div><div class="step"><button><i data-lucide="minus"></i></button><span class="n">1</span><button><i data-lucide="plus"></i></button></div></div>
+            <div class="row"><div class="ico t2"><i data-lucide="wheat"></i></div><div class="main"><div class="t">Barilla 500 g</div><div class="s"><span class="pchip"><i data-lucide="trending-down"></i>€1.19 Sklavenitis</span></div></div><div class="step"><button><i data-lucide="minus"></i></button><span class="n">3</span><button><i data-lucide="plus"></i></button></div></div>
+            <div class="row"><div class="ico t2"><i data-lucide="egg"></i></div><div class="main"><div class="t">Eggs</div><div class="s">Pack of 6</div></div><div class="step"><button><i data-lucide="minus"></i></button><span class="n">2</span><button><i data-lucide="plus"></i></button></div></div>
+            <div class="row"><div class="ico t4"><i data-lucide="coffee"></i></div><div class="main"><div class="t">Loumidis coffee</div><div class="s">194 g <span class="pchip plain">€3.05 AB</span></div></div><div class="step"><button><i data-lucide="minus"></i></button><span class="n">1</span><button><i data-lucide="plus"></i></button></div></div>
+            <div class="row"><div class="ico t6"><i data-lucide="sparkles"></i></div><div class="main"><div class="t">Dishwasher tabs</div><div class="s">Single tabs</div></div><div class="step"><button><i data-lucide="minus"></i></button><span class="n">14</span><button><i data-lucide="plus"></i></button></div></div>
+          </div>
+        </div>
+        <button class="btn primary lg floatbtn"><i data-lucide="shopping-cart"></i>Shopping list (3)</button>
+        <nav class="tabbar" data-tab="plan"></nav>
+      </div></div>
+      <figcaption><b>Pantry list</b>Big steppers make it quick to update stock while standing in the kitchen. Items below their minimum get a warm tint and say how many you need. A green price chip means the price just dropped.<span class="was">/stock</span></figcaption>
+    </figure>
+
+    <!-- 6. Lookup -->
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="appbar"><div class="left"><button class="btn ghost sm">Cancel</button></div><div class="title">Add to pantry</div><div class="right" style="width:62px"></div></div>
+        <div class="scroll tight">
+          <div class="input" style="border-color:var(--accent);border-width:2px"><i data-lucide="search"></i><span>feta</span><i data-lucide="x" style="margin-left:auto"></i></div>
+          <button class="btn outline block"><i data-lucide="scan-barcode"></i>Scan barcode</button>
+          <div class="between" style="padding-top:6px"><span class="eyebrow">Prices from PosoKanei</span><span class="xs muted">Updated today 08:00</span></div>
+          <div class="list">
+            <div class="row"><div class="ico t6"><i data-lucide="package"></i></div><div class="main"><div class="t">Dodoni Feta PDO</div><div class="s">Dodoni · 400 g</div></div><div class="end"><div class="num">€5.29</div><div class="xs muted">Lidl</div></div><button class="iconbtn"><i data-lucide="plus"></i></button></div>
+            <div class="row"><div class="ico t6"><i data-lucide="package"></i></div><div class="main"><div class="t">Kolios Feta PDO</div><div class="s">Kolios · 400 g</div></div><div class="end"><div class="num">€5.89</div><div class="xs muted">Sklavenitis</div></div><button class="iconbtn"><i data-lucide="plus"></i></button></div>
+            <div class="row"><div class="ico t6"><i data-lucide="package"></i></div><div class="main"><div class="t">Feta in brine</div><div class="s">Sklavenitis · 400 g</div></div><div class="end"><div class="num">€4.79</div><div class="xs muted">Sklavenitis</div></div><button class="iconbtn"><i data-lucide="plus"></i></button></div>
+            <div class="row"><div class="ico t6"><i data-lucide="package"></i></div><div class="main"><div class="t">Epiros Feta barrel</div><div class="s">Epiros · 200 g</div></div><div class="end"><div class="num">€3.15</div><div class="xs muted">AB</div></div><button class="iconbtn"><i data-lucide="plus"></i></button></div>
+            <div class="row"><div class="ico t6"><i data-lucide="package"></i></div><div class="main"><div class="t">Dodoni Feta light</div><div class="s">Dodoni · 200 g</div></div><div class="end"><div class="num">€2.99</div><div class="xs muted">Masoutis</div></div><button class="iconbtn"><i data-lucide="plus"></i></button></div>
+          </div>
+          <p class="small muted" style="text-align:center">Not listed? <a class="acc" style="font-weight:600">Add manually</a></p>
+        </div>
+        <div class="homebar"></div>
+      </div></div>
+      <figcaption><b>Add product: lookup</b>Searching the price observatory returns real products with brand, size and the cheapest store, so one tap adds an item that is already price tracked. Typing a product by hand is the fallback.<span class="was">/stock/search</span></figcaption>
+    </figure>
+
+    <!-- 7. Barcode -->
+    <figure class="shot">
+      <div class="phone"><div class="screen cam">
+        <div class="camera">
+          <div class="view">
+            <div class="camtop"><span class="cbtn"><i data-lucide="x"></i></span><b>Scan barcode</b><span class="cbtn"><i data-lucide="flashlight"></i></span></div>
+            <div class="scanbox"><div class="code"></div><div class="line"></div></div>
+            <div class="camhint">Hold the barcode inside the box</div>
+          </div>
+        </div>
+        <div class="sheet" style="padding-bottom:34px">
+          <div class="grab"></div>
+          <div class="hstack" style="align-items:flex-start">
+            <div class="ico lg t2"><i data-lucide="wheat"></i></div>
+            <div class="main" style="flex:1;min-width:0">
+              <div class="h3">Barilla Spaghetti No5 500g</div>
+              <div class="xs muted">Barcode 8076802085738 · in pantry: 3</div>
+            </div>
+          </div>
+          <div class="well between"><div><div class="xs muted" style="font-weight:600">Best price</div><div><span class="num" style="font-size:20px">€1.19</span> <span class="small ink2">at Sklavenitis</span></div></div><span class="badge pos"><i data-lucide="trending-down"></i>was €1.49</span></div>
+          <div class="small muted">Lidl €1.29 · My Market €1.39 · AB €1.45</div>
+          <div class="grid2"><button class="btn">Scan another</button><button class="btn primary"><i data-lucide="plus"></i>Add to pantry</button></div>
+        </div>
+      </div></div>
+      <figcaption><b>Barcode scan</b>The frame is wide and short to match the shape of a barcode. The match slides up over the camera with the best price, so you can check prices in the aisle without adding the item.<span class="was">/stock/barcode</span></figcaption>
+    </figure>
+
+    <!-- 8. Product detail -->
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="appbar"><div class="left"><button class="iconbtn bare"><i data-lucide="chevron-left"></i></button></div><div class="right"><button class="btn ghost sm">Edit</button></div></div>
+        <div class="scroll" style="padding-top:0">
+          <div class="hstack"><div class="ico lg t5"><i data-lucide="droplet"></i></div><div><div class="h2" style="font-size:20px">Olive oil</div><div class="small muted">Extra virgin · 1 L bottle</div></div></div>
+          <div class="card pad-s">
+            <div class="between"><div><b>In stock</b><div class="xs warn" style="font-weight:600">1 below your minimum</div></div><div class="step lg"><button><i data-lucide="minus"></i></button><span class="n">1</span><button><i data-lucide="plus"></i></button></div></div>
+            <div class="divider" style="margin:10px 0"></div>
+            <div class="between"><span class="small">Keep at least</span><div class="step"><button><i data-lucide="minus"></i></button><span class="n">2</span><button><i data-lucide="plus"></i></button></div></div>
+            <div class="divider" style="margin:10px 0"></div>
+            <div class="between"><span class="small">Lasts about</span><span class="small"><b>12 days</b> <span class="muted">· 1 bottle every 12 days</span></span></div>
+          </div>
+          <div class="card pad-s">
+            <div class="between" style="margin-bottom:10px"><b>Price today</b><span class="xs muted">PosoKanei · 08:00</span></div>
+            <div class="cmp">
+              <span class="best">Lidl</span><div class="bar"><i style="width:82%;--tint:var(--pos)"></i></div><span class="num best">€8.49</span>
+              <span>Sklavenitis</span><div class="bar"><i style="width:88.9%;--tint:var(--c6)"></i></div><span class="num">€9.20</span>
+              <span>My Market</span><div class="bar"><i style="width:91.3%;--tint:var(--c6)"></i></div><span class="num">€9.45</span>
+              <span>Masoutis</span><div class="bar"><i style="width:94.7%;--tint:var(--c6)"></i></div><span class="num">€9.80</span>
+              <span>AB</span><div class="bar"><i style="width:100%;--tint:var(--c6)"></i></div><span class="num">€10.35</span>
+            </div>
+          </div>
+          <div class="card pad-s">
+            <div class="between"><b>Lowest price, 6 months</b><span class="xs muted">low €8.29 in Aug</span></div>
+            <svg class="spark" viewBox="0 0 326 56" preserveAspectRatio="none" aria-label="Price history from May to October">
+              <polyline points="0,14 54,10 108,22 162,44 216,30 270,28 326,32" fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>
+              <circle cx="162" cy="44" r="3.5" fill="var(--pos)"/><circle cx="321" cy="32" r="3.5" fill="var(--accent)"/>
+            </svg>
+            <div class="between xs muted"><span>May €9.10</span><span>Oct €8.49</span></div>
+          </div>
+          <div class="list">
+            <div class="row"><div class="ico tacc"><i data-lucide="bell"></i></div><div class="main"><div class="t">Watch price</div><div class="s">Tell me when it drops below €8.49</div></div><span class="toggle on"></span></div>
+          </div>
+          <button class="btn outline block"><i data-lucide="archive"></i>Archive product</button>
+        </div>
+        <div class="homebar"></div>
+      </div></div>
+      <figcaption><b>Product detail</b>Stock, minimum and the usage estimate sit together because they decide when the item reaches the list. Price bars start at zero, so a €1.86 gap looks as small as it really is.<span class="was">/stock item edit, price lookup popup</span></figcaption>
+    </figure>
+
+    <!-- 9. Shopping list -->
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="appbar"><div class="left"><button class="iconbtn bare"><i data-lucide="chevron-left"></i></button></div><div class="title">Shopping list</div><div class="right"><button class="iconbtn bare"><i data-lucide="share"></i></button></div></div>
+        <div class="scroll">
+          <div class="card pad-s between">
+            <div><div class="xs muted" style="font-weight:600">3 items · 2 stores</div><div class="amt-lg">€13<span class="cents">.05</span></div></div>
+            <span class="badge pos"><i data-lucide="trending-down"></i>saves €2.40 vs one store</span>
+          </div>
+          <div>
+            <div class="storehead"><b class="hstack" style="gap:8px"><i data-lucide="store" style="width:16px;height:16px"></i>Lidl</b><span class="num small">€10.67</span></div>
+            <div class="list">
+              <div class="row"><span class="check on"><i data-lucide="check"></i></span><div class="main"><div class="t">Olive oil 1 L ×1</div><div class="s">Low · 1 left</div></div><div class="end num">€8.49</div></div>
+              <div class="row"><span class="check on"><i data-lucide="check"></i></span><div class="main"><div class="t">Milk 1 L ×2</div><div class="s">Low · 0 left · €1.09 each</div></div><div class="end num">€2.18</div></div>
+            </div>
+          </div>
+          <div>
+            <div class="storehead"><b class="hstack" style="gap:8px"><i data-lucide="store" style="width:16px;height:16px"></i>Sklavenitis</b><span class="num small">€2.38</span></div>
+            <div class="list">
+              <div class="row"><span class="check on"><i data-lucide="check"></i></span><div class="main"><div class="t">Barilla spaghetti 500 g ×2</div><div class="s"><span class="pchip"><i data-lucide="trending-down"></i>price drop</span> €1.19 each</div></div><div class="end num">€2.38</div></div>
+            </div>
+          </div>
+          <button class="btn ghost" style="padding:0"><i data-lucide="plus"></i>Add item</button>
+          <p class="xs muted" style="margin-top:4px">Each item sits under the store where it's cheapest today. Prices from PosoKanei, updated 08:00.</p>
+        </div>
+        <div style="padding:8px 16px 4px;flex:none"><button class="btn primary lg block"><i data-lucide="list-checks"></i>Mark 3 checked as bought</button></div>
+        <div class="homebar"></div>
+      </div></div>
+      <figcaption><b>Shopping list</b>Low items are added automatically, and the list is split by where each one is cheapest so the saving is visible. The subtotal per store is the amount you will pay at that store.<span class="was">/stock/shopping</span></figcaption>
+    </figure>
+
+    <!-- 10. Bought -> expense -->
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="appbar"><div class="left"><button class="iconbtn bare"><i data-lucide="chevron-left"></i></button></div><div class="title">Shopping list</div><div class="right"><button class="iconbtn bare"><i data-lucide="share"></i></button></div></div>
+        <div class="scroll"><div class="card pad-s"><div class="xs muted">All bought</div><div class="amt-lg">€0<span class="cents">.00</span></div></div></div>
+        <div class="scrim"></div>
+        <div class="sheet">
+          <div class="grab"></div>
+          <div class="hstack" style="align-items:flex-start">
+            <div class="ico tpos round lg"><i data-lucide="circle-check"></i></div>
+            <div><div class="h2">Added 3 items to the pantry</div><div class="small muted">Olive oil 1 → 2 · Milk 0 → 2 · Barilla 3 → 5</div></div>
+          </div>
+          <div class="divider"></div>
+          <div class="h2">Log €10.67 at Lidl as an expense?</div>
+          <div class="well vstack" style="gap:10px">
+            <div class="between"><span class="amt-lg">€10<span class="cents">.67</span></span><span class="small muted">Today · Card</span></div>
+            <div class="pills">
+              <span class="pill"><span class="ico t6"><i data-lucide="store"></i></span>Lidl</span>
+              <span class="pill"><span class="ico t1"><i data-lucide="tag"></i></span>Groceries</span>
+              <span class="pill"><span class="ico t1"><i data-lucide="shopping-basket"></i></span>Day to day</span>
+              <span class="pill"><span class="avatar" style="--tint:var(--c3)">G</span>Giorgos</span>
+            </div>
+          </div>
+          <p class="xs muted" style="margin:0">Next: Sklavenitis €2.38. Tap any pill to change it before logging.</p>
+          <div class="grid2"><button class="btn">Not now</button><button class="btn primary">Log expense</button></div>
+        </div>
+      </div></div>
+      <figcaption><b>Bought → expense</b>Stock goes up the moment you mark items bought. Logging the spend is a separate yes, filled in from the list one store at a time, because you may already have scanned the receipt.<span class="was">Mark bought on /stock/shopping, redirect to /transactions/new with prefill</span></figcaption>
+    </figure>
+
+  </div>
+</section>
+</div>
+<script src="mock.js"></script>
+</body>
+</html>

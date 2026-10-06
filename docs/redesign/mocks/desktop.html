@@ -1,0 +1,651 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tameio · Desktop</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Sora:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="components.css">
+<script src="https://cdn.jsdelivr.net/npm/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<style>
+  html, body { overflow-x: hidden; }
+  .board.desk-board { flex-direction: column; flex-wrap: nowrap; gap: 44px; }
+  .desk { font-size: 14px; }
+  .desk .content { padding: 20px 24px; gap: 16px; }
+
+  /* Sidebar */
+  .side { gap: 2px; padding: 16px 12px 14px; }
+  .side .logo { padding: 2px 10px 10px; display: flex; align-items: center; gap: 8px; }
+  .side .logo .mk { width: 26px; height: 26px; border-radius: var(--r-xs); background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; }
+  [data-dir="calm"] .side .logo .mk { background: var(--ink); color: var(--bg); }
+  .side .logo .mk svg { width: 15px; height: 15px; }
+  .side .hh { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 10px; border-radius: var(--r-sm); border: 1px solid var(--line); font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+  .side .hh svg { width: 15px; height: 15px; color: var(--muted); margin-left: auto; }
+  .side .newbtn { width: 100%; height: 40px; justify-content: flex-start; font-size: 14px; margin-bottom: 8px; padding: 0 10px 0 12px; }
+  .side .newbtn .kbd { margin-left: auto; background: color-mix(in srgb, currentColor 16%, transparent); border-color: transparent; color: inherit; }
+  .side a.sub { height: 32px; padding-left: 38px; font-size: 13.5px; font-weight: 550; }
+  .side a .n { margin-left: auto; }
+  .side .foot { margin-top: auto; display: flex; flex-direction: column; gap: 2px; border-top: 1px solid var(--line); padding-top: 8px; }
+  .side .me { display: flex; align-items: center; gap: 10px; padding: 6px 10px; font-size: 13.5px; font-weight: 600; }
+  .side .me .s { font-size: 12px; color: var(--muted); font-weight: 500; }
+
+  .kbd { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 5px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); font: 600 11px/1 var(--font-body); }
+
+  /* Top bar inside content */
+  .topbar { display: flex; align-items: center; gap: 12px; flex: none; }
+  .topbar .ttl { font-family: var(--font-display); font-weight: var(--display-weight); font-size: 26px; letter-spacing: -.02em; line-height: 1.1; margin: 0; }
+  .topbar .sub { font-size: 13px; color: var(--muted); }
+  .topbar .grow { flex: 1; }
+  .search-k { width: 300px; height: 38px; }
+  .search-k .kbd { margin-left: auto; }
+  .crumb { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 4px; }
+  .crumb svg { width: 14px; height: 14px; }
+
+  /* Tables */
+  .tbl { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+  .tbl th { text-align: left; font-size: 11.5px; font-weight: 600; color: var(--muted); padding: 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  .tbl td { padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; height: 36px; }
+  .tbl tr:last-child td { border-bottom: 0; }
+  .tbl .r { text-align: right; }
+  .tbl .amt { text-align: right; font-family: var(--font-num); font-variant-numeric: tabular-nums; font-weight: var(--num-weight); }
+  .tbl .m { font-weight: 600; color: var(--ink); }
+  .tbl td { color: var(--ink-2); }
+  .tbl tr.grp td { background: var(--surface-2); height: 28px; font-size: 12px; font-weight: 650; color: var(--muted); padding-block: 4px; }
+  .tbl tr.sel td { background: var(--accent-soft); }
+  .tbl tr.focus td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+  .tbl .cell { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .tbl .cell span { overflow: hidden; text-overflow: ellipsis; }
+  .tbl .dot { width: 7px; height: 7px; }
+  .tbl .avatar.sm { width: 22px; height: 22px; }
+  .cb { width: 16px; height: 16px; border-radius: 4px; border: 1.5px solid var(--muted); display: inline-grid; place-items: center; vertical-align: middle; }
+  .cb.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .cb svg { width: 12px; height: 12px; stroke-width: 3; }
+  .nopayer { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: var(--r-pill); border: 1px dashed var(--warn); color: var(--warn); font-size: 11px; font-weight: 700; }
+
+  /* Home */
+  .home-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 20px; }
+  .col { display: flex; flex-direction: column; gap: 16px; min-width: 0; min-height: 0; }
+  .hero-d { display: grid; grid-template-columns: 1fr auto; gap: 8px 24px; align-items: end; }
+  [data-dir="calm"] .hero.hero-d { background: var(--surface); border: var(--card-border); padding: 18px; }
+  .hero-d .amt-xl { font-size: 44px; }
+  [data-dir="calm"] .hero-d .amt-xl { font-size: 48px; }
+  .hero-d .legend { color: inherit; font-size: 12px; }
+  .hero-d .legend span { opacity: .85; }
+  .hero-d .kpis { display: flex; gap: 22px; }
+  .hero-d .kpis .k { color: inherit; opacity: .7; }
+  .stack.plan { height: 12px; }
+  .bud { display: flex; flex-direction: column; gap: 8px; padding: 14px; }
+  .card-h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+  .card-h a { font-size: 13px; font-weight: 600; color: var(--accent); text-decoration: none; }
+  .list .attn { padding: 9px 12px; gap: 10px; }
+  .list .attn .ico { width: 32px; height: 32px; }
+  .list .attn .ico svg { width: 17px; height: 17px; }
+  .list .attn .t { font-size: 13.5px; }
+  .list .attn .s { font-size: 12px; }
+  .list .attn .btn.sm { height: 28px; padding: 0 10px; font-size: 12.5px; }
+  .mini-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; font-size: 13px; }
+  .mini-row + .mini-row { border-top: 1px solid var(--line); }
+  .mini-row .date { width: 38px; flex: none; text-align: center; line-height: 1.05; }
+  .mini-row .date b { display: block; font-family: var(--font-num); font-size: 16px; font-weight: var(--num-weight); }
+  .mini-row .date span { font-size: 10.5px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+  .mini-row .main { flex: 1; min-width: 0; }
+  .mini-row .main .t { font-weight: 600; }
+  .mini-row .main .s { font-size: 12px; color: var(--muted); }
+
+  /* Activity */
+  .content.split { padding: 0; display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 0; }
+  .split .mainpane { padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; min-width: 0; overflow: hidden; }
+  .split .detail { border-left: 1px solid var(--line); background: var(--surface); padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; overflow: hidden; }
+  .chips.wrap { margin: 0; padding: 0; flex-wrap: wrap; overflow: visible; }
+  .chips.wrap .chip { height: 30px; }
+  .selbar { display: flex; align-items: center; gap: 6px; padding: 6px 6px 6px 12px; border-radius: var(--r-md); background: var(--ink); color: var(--bg); font-size: 13px; }
+  .selbar b { margin-right: 6px; }
+  .selbar .btn { height: 30px; padding: 0 10px; font-size: 12.5px; background: color-mix(in srgb, var(--bg) 16%, transparent); color: var(--bg); }
+  .selbar .btn.del { margin-left: auto; }
+  .selbar .x { margin-left: 4px; background: transparent; }
+  .tbl-wrap { background: var(--surface); border: var(--card-border); border-radius: var(--r-md); box-shadow: var(--shadow); overflow: hidden; }
+  .receipt-thumb { width: 64px; height: 84px; border-radius: var(--r-xs); background: #fbfbf8; border: 1px solid var(--line); padding: 8px 7px; display: flex; flex-direction: column; gap: 4px; flex: none; }
+  .receipt-thumb i { display: block; height: 3px; border-radius: 2px; background: #c9c9c2; }
+  .kv { display: grid; grid-template-columns: 82px 1fr auto; align-items: center; gap: 4px 10px; font-size: 13px; }
+  .kv > * { min-height: 34px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); }
+  .kv .k { color: var(--muted); font-weight: 600; font-size: 12.5px; }
+  .kv .v { font-weight: 600; }
+  .kv .e svg { width: 15px; height: 15px; color: var(--muted); }
+  .pane-head { display: flex; align-items: center; gap: 6px; }
+  .pane-head .iconbtn { width: 30px; height: 30px; }
+  .pane-head .iconbtn svg { width: 16px; height: 16px; }
+
+  /* Insights */
+  .ins-grid { flex: 1; min-height: 0; display: grid; gap: 14px; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-template-rows: auto minmax(0, 1.25fr) minmax(0, 1fr); }
+  .kpi { grid-column: span 3; padding: 12px 14px; }
+  .kpi .k { font-size: 12px; font-weight: 600; color: var(--muted); }
+  .kpi .v { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-weight: var(--num-weight); font-size: 24px; letter-spacing: -.02em; line-height: 1.2; }
+  .kpi .d { font-size: 12px; color: var(--muted); }
+  .chart-card { padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+  .chart-card .h3 { font-size: 14px; }
+  .chart-card .chart { flex: 1; min-height: 0; }
+  .chart .ax, .chart .ax text { fill: var(--muted); font-size: 11px; }
+  .chart .lab, .chart .lab text { fill: var(--ink-2); font-size: 11.5px; font-weight: 600; }
+  .chart .val, .chart .val text { fill: var(--ink); font-size: 11.5px; font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+  .chart.big .ax, .chart.big .ax text, .chart.big .lab, .chart.big .lab text, .chart.big .val, .chart.big .val text { font-size: 13px; }
+  .chart .base { stroke: var(--line); stroke-width: 1; }
+  .key { display: inline-block; width: 14px; height: 0; border-top: 2px solid var(--tint, var(--accent)); vertical-align: middle; }
+  .key.dash { border-top-style: dashed; }
+  .key.sw { width: 10px; height: 10px; border: 0; border-radius: 3px; background: var(--tint, var(--accent)); }
+  .key.ghost { width: 10px; height: 10px; border: 1.5px dashed var(--c1); border-radius: 3px; background: transparent; }
+
+  /* Bills */
+  .bills-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: 380px minmax(0, 1fr); gap: 0; margin: 0 -24px -20px; border-top: 1px solid var(--line); }
+  .bill-list { padding: 14px 16px 14px 24px; display: flex; flex-direction: column; gap: 12px; overflow: hidden; border-right: 1px solid var(--line); }
+  .bill-list .daygroup { display: flex; justify-content: space-between; font-size: 12px; font-weight: 650; color: var(--muted); padding: 0 2px 6px; }
+  .bill-list .row { min-height: 50px; padding: 8px 12px; gap: 10px; }
+  .bill-list .row .ico { width: 32px; height: 32px; }
+  .bill-list .row .ico svg { width: 17px; height: 17px; }
+  .bill-list .row .t { font-size: 14px; }
+  .bill-list .list .row + .row::before { left: 54px; }
+  .bill-detail { padding: 16px 24px 20px; display: flex; flex-direction: column; gap: 14px; overflow: hidden; background: var(--surface); }
+  [data-dir="pocket"] .bill-detail { background: transparent; }
+  .bd-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; min-height: 0; }
+  .paybox { border: 2px solid var(--accent); border-radius: var(--r-lg); padding: 14px; display: flex; flex-direction: column; gap: 10px; background: var(--surface); }
+  .paybox .input { height: 42px; }
+  .paybox .seg button, .paybox .seg span { height: 30px; padding: 0 8px; font-size: 12.5px; }
+  .hist .row { min-height: 40px; padding: 6px 0; font-size: 13px; }
+  .hist .row .t { font-size: 13px; }
+</style>
+</head>
+<body data-stage data-dir="calm" data-mode="light">
+<div class="page">
+<header class="mock-bar"></header>
+
+<section>
+  <div class="section-head">
+    <div class="eyebrow">11 · Desktop</div>
+    <h2>Same app on a wide screen: the tabs become a sidebar, and lists open a detail pane.</h2>
+    <p>The sidebar has the same places as the phone tabs: Home, Activity, Plan (Bills, Budgets, Cash, Pantry) and Insights. "New expense" stays on screen as a button, and you can press N from anywhere. ⌘K searches everything. On list screens, the item you pick opens in a pane on the right, so the list keeps your scroll position, filters and selection.</p>
+  </div>
+  <div class="board desk-board">
+
+    <!-- ============ 1. HOME ============ -->
+    <figure class="shot" style="width:100%">
+      <div class="desk-wrap"><div class="desk">
+        <div class="chrome"><i></i><i></i><i></i><span class="url">tameio.app/home</span></div>
+        <div class="app">
+          <aside class="side" data-on="home"></aside>
+          <main class="content">
+            <div class="topbar">
+              <div><h1 class="ttl">Home</h1><div class="sub">Tuesday 6 October · 25 days left in the month</div></div>
+              <span class="grow"></span>
+              <div class="input search search-k"><i data-lucide="search"></i><span class="ph">Search expenses, bills, items</span><span class="kbd">⌘K</span></div>
+              <button class="iconbtn"><i data-lucide="bell"></i><span class="pip"></span></button>
+            </div>
+            <div class="home-grid">
+              <div class="col">
+                <div class="hero hero-d">
+                  <div>
+                    <div class="eyebrow" style="color:inherit;opacity:.7">October so far</div>
+                    <div class="amt-xl" style="margin-top:6px">€1,284<span class="cents">.60</span></div>
+                    <div class="small muted" style="margin-top:6px">of €2,400 planned · 54% used with 81% of the month left · on pace</div>
+                  </div>
+                  <div class="kpis">
+                    <div class="stat"><div class="k">In</div><div class="v">€3,150</div></div>
+                    <div class="stat"><div class="k">Out</div><div class="v">€1,284.60</div></div>
+                    <div class="stat"><div class="k">Net</div><div class="v pos">+€1,865.40</div></div>
+                  </div>
+                  <div style="grid-column:1 / -1">
+                    <div class="stack plan" role="img" aria-label="October spend by category against the €2,400 plan">
+                      <i style="width:15.1%;background:var(--c1)" title="Groceries €362.40"></i><i style="width:12.7%;background:var(--c3)" title="Naxos trip €304.51"></i><i style="width:7.25%;background:var(--c2)" title="Fuel €174.00"></i><i style="width:5.9%;background:var(--c4)" title="Eating out €141.30"></i><i style="width:4%;background:var(--c5)" title="Utilities &amp; subscriptions €96.89"></i><i style="width:8.6%;background:var(--c6)" title="Other €205.50"></i><i style="flex:1;background:color-mix(in srgb, currentColor 14%, transparent)" title="Left of plan €1,115.40"></i>
+                    </div>
+                    <div class="legend" style="margin-top:10px">
+                      <span><i class="dot" style="--tint:var(--c1)"></i>Groceries €362</span>
+                      <span><i class="dot" style="--tint:var(--c3)"></i>Naxos trip €305</span>
+                      <span><i class="dot" style="--tint:var(--c2)"></i>Fuel €174</span>
+                      <span><i class="dot" style="--tint:var(--c4)"></i>Eating out €141</span>
+                      <span><i class="dot" style="--tint:var(--c5)"></i>Utilities €97</span>
+                      <span><i class="dot" style="--tint:var(--c6)"></i>Other €206</span>
+                      <span style="margin-left:auto"><i class="dot" style="--tint:currentColor;opacity:.3"></i>Left €1,115</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <div class="card-h"><span class="h2">Budgets</span><a>All budgets</a></div>
+                  <div class="grid3" style="gap:12px">
+                    <div class="card bud"><div class="hstack"><div class="ico t1"><i data-lucide="shopping-basket"></i></div><div><div class="small" style="font-weight:650">Day to day</div><div class="xs muted">Resets Nov 1</div></div></div><div class="between"><span class="num" style="font-size:18px">€842</span><span class="xs muted">of €1,500 · 56%</span></div><div class="bar thin"><i style="width:56%;--tint:var(--c1)"></i></div></div>
+                    <div class="card bud"><div class="hstack"><div class="ico t3"><i data-lucide="plane"></i></div><div><div class="small" style="font-weight:650">Naxos trip</div><div class="xs muted">2–12 Oct · 6 days left</div></div></div><div class="between"><span class="num" style="font-size:18px">€610</span><span class="xs muted">of €900 · 68%</span></div><div class="bar thin"><i style="width:68%;--tint:var(--c3)"></i></div></div>
+                    <div class="card bud"><div class="hstack"><div class="ico t5"><i data-lucide="piggy-bank"></i></div><div><div class="small" style="font-weight:650">New car</div><div class="xs muted">Goal by Jun 2027</div></div></div><div class="between"><span class="num" style="font-size:18px">€4,200</span><span class="xs muted">of €12,000 · 35%</span></div><div class="bar thin"><i style="width:35%;--tint:var(--c5)"></i></div></div>
+                  </div>
+                </div>
+
+                <div style="min-height:0">
+                  <div class="card-h"><span class="h2">Recent activity</span><a>Open Activity</a></div>
+                  <div class="tbl-wrap">
+                    <table class="tbl">
+                      <colgroup><col style="width:62px"><col><col style="width:116px"><col style="width:100px"><col style="width:64px"><col style="width:96px"></colgroup>
+                      <thead><tr><th>Date</th><th>Merchant</th><th>Category</th><th>Budget</th><th>Paid by</th><th class="r">Amount</th></tr></thead>
+                      <tbody>
+                        <tr><td>Oct 6</td><td class="m">Sklavenitis</td><td><span class="cell"><i class="dot" style="--tint:var(--c1)"></i><span>Groceries</span></span></td><td>Day to day</td><td><span class="avatar sm" style="--tint:var(--c3)">G</span></td><td class="amt">−€64.20</td></tr>
+                        <tr><td>Oct 6</td><td class="m">Coffee Island</td><td><span class="cell"><i class="dot" style="--tint:var(--c4)"></i><span>Eating out</span></span></td><td>Day to day</td><td><span class="nopayer">None</span></td><td class="amt">−€4.10</td></tr>
+                        <tr><td>Oct 5</td><td class="m">Shell Kifisias</td><td><span class="cell"><i class="dot" style="--tint:var(--c2)"></i><span>Fuel</span></span></td><td>Yaris</td><td><span class="avatar sm" style="--tint:var(--c3)">G</span></td><td class="amt">−€58.00</td></tr>
+                        <tr><td>Oct 5</td><td class="m">Wolt · Pita Pan</td><td><span class="cell"><i class="dot" style="--tint:var(--c4)"></i><span>Eating out</span></span></td><td>Day to day</td><td><span class="avatar sm" style="--tint:var(--c2)">M</span></td><td class="amt">−€22.40</td></tr>
+                        <tr><td>Oct 1</td><td class="m">Salary</td><td><span class="cell"><i class="dot" style="--tint:var(--pos)"></i><span>Income</span></span></td><td class="muted">–</td><td><span class="avatar sm" style="--tint:var(--c2)">M</span></td><td class="amt pos">+€2,450.00</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              <div class="col">
+                <div>
+                  <div class="card-h"><span class="h2">Needs you <span class="badge neg" style="vertical-align:2px">6</span></span><a>See all</a></div>
+                  <div class="list">
+                    <div class="attn"><div class="ico tneg"><i data-lucide="circle-alert"></i></div><div class="main"><div class="t">Cosmote is 2 days late</div><div class="s">€32.90 · was due Oct 4</div></div><button class="btn sm primary">Pay</button></div>
+                    <div class="divider"></div>
+                    <div class="attn"><div class="ico twarn"><i data-lucide="zap"></i></div><div class="main"><div class="t">Electricity needs an amount</div><div class="s">ΔΕΗ · due Oct 9 · usually €70–95</div></div><button class="btn sm">Set</button></div>
+                    <div class="divider"></div>
+                    <div class="attn"><div class="ico t2"><i data-lucide="banknote"></i></div><div class="main"><div class="t">€45 cash not logged</div><div class="s">You took €120, logged €75</div></div><button class="btn sm">Log</button></div>
+                    <div class="divider"></div>
+                    <div class="attn"><div class="ico t3"><i data-lucide="user-round-x"></i></div><div class="main"><div class="t">3 expenses have no payer</div><div class="s">€41.30 · from Apple Pay</div></div><button class="btn sm">Review</button></div>
+                    <div class="divider"></div>
+                    <div class="attn"><div class="ico t4"><i data-lucide="copy"></i></div><div class="main"><div class="t">Lidl €23.40 logged twice?</div><div class="s">Oct 3, 2 minutes apart</div></div><button class="btn sm">Check</button></div>
+                    <div class="divider"></div>
+                    <div class="attn"><div class="ico t5"><i data-lucide="package"></i></div><div class="main"><div class="t">Olive oil is running low</div><div class="s">1 left · Lidl €8.49</div></div><button class="btn sm">List</button></div>
+                  </div>
+                </div>
+                <div>
+                  <div class="card-h"><span class="h2">Coming up</span><a>Bills</a></div>
+                  <div class="list">
+                    <div class="mini-row"><div class="date"><b>9</b><span>Oct</span></div><div class="main"><div class="t">Electricity ΔΕΗ</div><div class="s">Auto-pay · needs amount</div></div><span class="badge warn">Set amount</span></div>
+                    <div class="mini-row"><div class="date"><b>10</b><span>Oct</span></div><div class="main"><div class="t">Rent</div><div class="s">Each pays own share · €375</div></div><span class="num">€750.00</span></div>
+                    <div class="mini-row"><div class="date"><b>5</b><span>Nov</span></div><div class="main"><div class="t">Netflix</div><div class="s">Auto-pay · Maria</div></div><span class="num">€13.99</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </main>
+        </div>
+      </div></div>
+      <figcaption><b>Home (desktop)</b>The phone's single column splits in two. The month and budgets sit on the left, and the things to act on (Needs you, Coming up) stay in a fixed column on the right, so you can clear the inbox while you look at the numbers.<span class="was">/dashboard</span></figcaption>
+    </figure>
+
+    <!-- ============ 2. ACTIVITY ============ -->
+    <figure class="shot" style="width:100%">
+      <div class="desk-wrap"><div class="desk">
+        <div class="chrome"><i></i><i></i><i></i><span class="url">tameio.app/activity?month=2026-10</span></div>
+        <div class="app">
+          <aside class="side" data-on="activity"></aside>
+          <main class="content split">
+            <div class="mainpane">
+              <div class="topbar">
+                <h1 class="ttl">Activity</h1>
+                <span class="grow"></span>
+                <div class="input search search-k" style="width:340px"><i data-lucide="search"></i><span class="ph">Merchant, note, amount…</span><span class="kbd">⌘K</span></div>
+              </div>
+              <div class="chips wrap">
+                <span class="chip on"><i data-lucide="calendar"></i>October</span>
+                <span class="chip">No payer <span class="count">3</span></span>
+                <span class="chip">Duplicates? <span class="count">1</span></span>
+                <span class="chip">Income</span>
+                <span class="chip">Cash</span>
+                <span class="chip"><i data-lucide="sliders-horizontal"></i>More filters</span>
+                <span class="small muted" style="margin-left:auto;align-self:center">14 items · −€1,284.60 · +€3,150</span>
+              </div>
+              <div class="selbar">
+                <b>2 selected</b>
+                <button class="btn"><i data-lucide="user-round"></i>Set payer</button>
+                <button class="btn"><i data-lucide="tag"></i>Category</button>
+                <button class="btn"><i data-lucide="shopping-basket"></i>Budget</button>
+                <button class="btn del"><i data-lucide="trash-2"></i>Delete</button>
+                <button class="btn x" aria-label="Clear selection"><i data-lucide="x"></i></button>
+              </div>
+              <div class="tbl-wrap">
+                <table class="tbl">
+                  <colgroup><col style="width:34px"><col style="width:54px"><col><col style="width:128px"><col style="width:94px"><col style="width:60px"><col style="width:84px"><col style="width:84px"></colgroup>
+                  <thead><tr><th><span class="cb"></span></th><th>Date</th><th>Merchant</th><th>Category</th><th>Budget</th><th>Paid by</th><th>Method</th><th class="r">Amount</th></tr></thead>
+                  <tbody>
+                    <tr class="grp"><td colspan="7">Today · Tue 6 Oct</td><td class="amt">−€68.30</td></tr>
+                    <tr class="sel focus"><td><span class="cb on"><i data-lucide="check"></i></span></td><td>Oct 6</td><td class="m">Sklavenitis</td><td><span class="cell"><i class="dot" style="--tint:var(--c1)"></i><span>Groceries</span></span></td><td>Day to day</td><td><span class="avatar sm" style="--tint:var(--c3)">G</span></td><td>Card</td><td class="amt">−€64.20</td></tr>
+                    <tr class="sel"><td><span class="cb on"><i data-lucide="check"></i></span></td><td>Oct 6</td><td class="m">Coffee Island</td><td><span class="cell"><i class="dot" style="--tint:var(--c4)"></i><span>Eating out</span></span></td><td>Day to day</td><td><span class="nopayer">None</span></td><td>Apple Pay</td><td class="amt">−€4.10</td></tr>
+                    <tr class="grp"><td colspan="7">Mon 5 Oct</td><td class="amt">−€98.49</td></tr>
+                    <tr><td><span class="cb"></span></td><td>Oct 5</td><td class="m">Shell Kifisias</td><td><span class="cell"><i class="dot" style="--tint:var(--c2)"></i><span>Fuel</span></span></td><td>Yaris</td><td><span class="avatar sm" style="--tint:var(--c3)">G</span></td><td>Card</td><td class="amt">−€58.00</td></tr>
+                    <tr><td><span class="cb"></span></td><td>Oct 5</td><td class="m">Wolt · Pita Pan</td><td><span class="cell"><i class="dot" style="--tint:var(--c4)"></i><span>Eating out</span></span></td><td>Day to day</td><td><span class="avatar sm" style="--tint:var(--c2)">M</span></td><td>Apple Pay</td><td class="amt">−€22.40</td></tr>
+                    <tr><td><span class="cb"></span></td><td>Oct 5</td><td class="m">Netflix</td><td><span class="cell"><i class="dot" style="--tint:var(--c5)"></i><span>Utilities &amp; subs.</span></span></td><td>Bills</td><td><span class="avatar sm" style="--tint:var(--c2)">M</span></td><td>Card · auto</td><td class="amt">−€13.99</td></tr>
+                    <tr><td><span class="cb"></span></td><td>Oct 5</td><td class="m">Kiosk</td><td><span class="cell"><i class="dot" style="--tint:var(--c6)"></i><span>Personal</span></span></td><td>Day to day</td><td><span class="avatar sm" style="--tint:var(--c3)">G</span></td><td>Cash</td><td class="amt">−€4.10</td></tr>
+                    <tr class="grp"><td colspan="7">Sat 3 Oct</td><td class="amt pos">+€628.30</td></tr>
+                    <tr><td><span class="cb"></span></td><td>Oct 3</td><td class="m">Freelance</td><td><span class="cell"><i class="dot" style="--tint:var(--pos)"></i><span>Income</span></span></td><td class="muted">–</td><td><span class="avatar sm" style="--tint:var(--c3)">G</span></td><td>Bank</td><td class="amt pos">+€700.00</td></tr>
+                    <tr><td><span class="cb"></span></td><td>Oct 3</td><td class="m">Public · cables</td><td><span class="cell"><i class="dot" style="--tint:var(--c6)"></i><span>Home</span></span></td><td>Day to day</td><td><span class="nopayer">None</span></td><td>Apple Pay</td><td class="amt">−€24.90</td></tr>
+                    <tr><td><span class="cb"></span></td><td>Oct 3</td><td class="m"><span class="cell">Lidl<span class="badge warn" style="height:18px;flex:none">Duplicate?</span></span></td><td><span class="cell"><i class="dot" style="--tint:var(--c1)"></i><span>Groceries</span></span></td><td>Day to day</td><td><span class="nopayer">None</span></td><td>Apple Pay</td><td class="amt">−€23.40</td></tr>
+                    <tr><td><span class="cb"></span></td><td>Oct 3</td><td class="m">Lidl</td><td><span class="cell"><i class="dot" style="--tint:var(--c1)"></i><span>Groceries</span></span></td><td>Day to day</td><td><span class="avatar sm" style="--tint:var(--c3)">G</span></td><td>Card</td><td class="amt">−€23.40</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <aside class="detail">
+              <div class="pane-head">
+                <span class="xs muted" style="font-weight:600">1 of 14</span>
+                <span style="flex:1"></span>
+                <button class="iconbtn bare" aria-label="Previous"><i data-lucide="chevron-up"></i></button>
+                <button class="iconbtn bare" aria-label="Next"><i data-lucide="chevron-down"></i></button>
+                <button class="iconbtn bare" aria-label="Close pane"><i data-lucide="x"></i></button>
+              </div>
+              <div class="hstack" style="align-items:flex-start;gap:14px">
+                <div style="flex:1;min-width:0">
+                  <div class="hstack" style="gap:8px"><div class="ico t1"><i data-lucide="shopping-cart"></i></div><span class="h2">Sklavenitis</span></div>
+                  <div class="amt-lg" style="margin-top:10px;font-size:32px">€64<span class="cents">.20</span></div>
+                  <div class="small muted" style="margin-top:4px">Tue 6 Oct · 18:42 · Card</div>
+                  <span class="badge pos" style="margin-top:8px"><i data-lucide="qr-code"></i>Read from myDATA QR</span>
+                </div>
+                <div class="vstack" style="gap:4px;align-items:center">
+                  <div class="receipt-thumb"><i style="width:60%"></i><i></i><i style="width:80%"></i><i></i><i style="width:40%"></i><i style="width:70%"></i><i style="width:50%;margin-top:auto;background:#999"></i></div>
+                  <a class="xs acc" style="font-weight:600">14 items</a>
+                </div>
+              </div>
+              <div class="kv">
+                <span class="k">Category</span><span class="v"><i class="dot" style="--tint:var(--c1)"></i>Groceries</span><span class="e"><i data-lucide="pencil"></i></span>
+                <span class="k">Budget</span><span class="v">Day to day</span><span class="e"><i data-lucide="pencil"></i></span>
+                <span class="k">Paid by</span><span class="v"><span class="avatar sm" style="--tint:var(--c3)">G</span>Giorgos</span><span class="e"><i data-lucide="pencil"></i></span>
+              </div>
+              <div>
+                <div class="between small"><span style="font-weight:650">Shares</span><span class="muted">Split equally</span></div>
+                <div class="stack" style="margin:8px 0"><i style="width:50%;background:var(--c3)"></i><i style="width:50%;background:var(--c2)"></i></div>
+                <div class="between small"><span class="hstack" style="gap:6px"><span class="avatar sm" style="--tint:var(--c3)">G</span>Giorgos</span><span class="num">€32.10</span></div>
+                <div class="between small" style="margin-top:6px"><span class="hstack" style="gap:6px"><span class="avatar sm" style="--tint:var(--c2)">M</span>Maria</span><span class="num">€32.10</span></div>
+              </div>
+              <div class="between" style="border-top:1px solid var(--line);padding-top:10px">
+                <div><div class="small" style="font-weight:650">Count in forecast</div><div class="xs muted">Turn off for one-offs</div></div><span class="toggle on"></span>
+              </div>
+              <p class="xs muted" style="margin:0">Category set by your rule "sklaven → Groceries". Added by Giorgos.</p>
+              <div class="grid2" style="margin-top:auto"><button class="btn sm" style="height:38px"><i data-lucide="copy-plus"></i>Copy as new</button><button class="btn sm danger" style="height:38px"><i data-lucide="trash-2"></i>Delete</button></div>
+            </aside>
+          </main>
+        </div>
+      </div></div>
+      <figcaption><b>Activity (table + detail pane)</b>A dense table with day totals and a selection bar for bulk edits. Clicking a row opens it in the right pane, and the arrow keys move through the list without closing it. Every field in the pane can be edited in place.<span class="was">/transactions/search, bulk "Set payer", /transactions/{id}/edit</span></figcaption>
+    </figure>
+
+    <!-- ============ 3. INSIGHTS ============ -->
+    <figure class="shot" style="width:100%">
+      <div class="desk-wrap"><div class="desk">
+        <div class="chrome"><i></i><i></i><i></i><span class="url">tameio.app/insights?period=month&amp;lens=household</span></div>
+        <div class="app">
+          <aside class="side" data-on="insights"></aside>
+          <main class="content">
+            <div class="topbar">
+              <h1 class="ttl">Insights</h1>
+              <div class="chips wrap" style="margin-left:12px">
+                <span class="chip on">This month</span><span class="chip">Last month</span><span class="chip">6 months</span><span class="chip">Year</span><span class="chip"><i data-lucide="calendar"></i>Custom</span>
+              </div>
+              <span class="grow"></span>
+              <div class="seg" role="group" aria-label="Lens"><button class="on">Household</button><button>Me</button><button>Maria</button></div>
+              <button class="btn outline sm" style="height:38px"><i data-lucide="download"></i>Export</button>
+            </div>
+
+            <div class="ins-grid">
+              <div class="card kpi"><div class="k">Spent</div><div class="v">€1,284.60</div><div class="d">54% of €2,400 plan</div></div>
+              <div class="card kpi"><div class="k">Income</div><div class="v">€3,150.00</div><div class="d">Maria €2,450 · Giorgos €700</div></div>
+              <div class="card kpi"><div class="k">Net</div><div class="v pos">+€1,865.40</div><div class="d">Income minus spending</div></div>
+              <div class="card kpi"><div class="k">Savings rate</div><div class="v">59%</div><div class="d">About 27% by Oct 31 if the forecast holds</div></div>
+
+              <div class="card chart-card" style="grid-column:span 8">
+                <div class="between"><span class="h3">Spending so far vs forecast</span>
+                  <div class="legend"><span><i class="key" style="--tint:var(--accent)"></i>October</span><span><i class="key dash" style="--tint:var(--accent)"></i>Forecast</span><span><i class="key" style="--tint:var(--c6)"></i>September</span></div>
+                </div>
+                <svg class="chart big" viewBox="0 0 726 226" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Cumulative spend in October against forecast and September">
+                  <g class="grid">
+                    <line x1="48" x2="600" y1="200" y2="200"/><line x1="48" x2="600" y1="163.2" y2="163.2"/><line x1="48" x2="600" y1="126.4" y2="126.4"/><line x1="48" x2="600" y1="89.6" y2="89.6"/><line x1="48" x2="600" y1="52.8" y2="52.8"/><line x1="48" x2="600" y1="16" y2="16"/>
+                  </g>
+                  <g class="ax" text-anchor="end">
+                    <text x="40" y="203">€0</text><text x="40" y="166">€500</text><text x="40" y="130">€1,000</text><text x="40" y="93">€1,500</text><text x="40" y="56">€2,000</text><text x="40" y="19">€2,500</text>
+                  </g>
+                  <g class="ax" text-anchor="middle">
+                    <text x="48" y="218">Oct 1</text><text x="140" y="218">6</text><text x="215" y="218">10</text><text x="307" y="218">15</text><text x="400" y="218">20</text><text x="493" y="218">25</text><text x="600" y="218">31</text>
+                  </g>
+                  <!-- plan reference -->
+                  <line x1="48" x2="600" y1="23.4" y2="23.4" stroke="var(--muted)" stroke-width="1" stroke-dasharray="2 4"/>
+                  <!-- today -->
+                  <line x1="140.6" x2="140.6" y1="72" y2="200" stroke="var(--ink-2)" stroke-width="1" opacity=".35"/>
+                  <!-- September -->
+                  <polyline fill="none" stroke="var(--c6)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="48,191.2 66.4,186 85,180 103.4,175 121.8,169.1 140.6,161.7 159,158 177.4,154 196,150 214.4,105.1 307,88.1 400,71.9 493,54.3 600,35.1"><title>September: €2,240 for the month</title></polyline>
+                  <!-- Forecast -->
+                  <polyline fill="none" stroke="var(--accent)" stroke-width="2" stroke-dasharray="5 5" stroke-linejoin="round" stroke-linecap="round" points="140.6,105.5 214.4,85.2 307,69 400,56.5 493,43.2 600,30"><title>Forecast: €2,310 by Oct 31</title></polyline>
+                  <!-- October actual -->
+                  <polyline fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" points="48,188.2 66.4,169.1 85,155.1 103.4,139.6 121.8,115.2 140.6,105.5"><title>October so far: €1,284.60</title></polyline>
+                  <circle cx="140.6" cy="105.5" r="5" fill="var(--accent)" stroke="var(--surface)" stroke-width="2"/>
+                  <circle cx="140.6" cy="161.7" r="4" fill="var(--c6)" stroke="var(--surface)" stroke-width="2"/>
+                  <!-- direct labels -->
+                  <text class="val" x="56" y="44" font-weight="600">€1,284.60 by today, Oct 6</text>
+                  <text class="ax" x="56" y="60">€305 of it is the Naxos trip</text>
+                  <text class="ax" x="150" y="180">September by day 6: €520</text>
+                  <text class="lab" x="608" y="19">Plan €2,400</text>
+                  <text class="lab" x="608" y="34">Forecast €2,310</text>
+                  <text class="lab" x="608" y="49">September €2,240</text>
+                </svg>
+              </div>
+
+              <div class="card chart-card" style="grid-column:span 4">
+                <div class="between"><span class="h3">By category</span><span class="xs muted">October</span></div>
+                <svg class="chart big" viewBox="0 0 320 216" preserveAspectRatio="xMidYMid meet" role="img" aria-label="October spending by category">
+                  <g class="lab" text-anchor="end">
+                    <text x="104" y="17">Groceries</text><text x="104" y="44">Naxos trip</text><text x="104" y="71">Fuel</text><text x="104" y="98">Eating out</text><text x="104" y="125">Utilities &amp; subs</text><text x="104" y="152">Home</text><text x="104" y="179">Personal</text><text x="104" y="206">Cash not logged</text>
+                  </g>
+                  <line class="base" x1="112" x2="112" y1="2" y2="214"/>
+                  <g fill="var(--c1)">
+                    <path d="M112 8H244.0Q248.0 8 248.0 12V14Q248.0 18 244.0 18H112Z"><title>Groceries €362.40</title></path>
+                    <path d="M112 35H222.3Q226.3 35 226.3 39V41Q226.3 45 222.3 45H112Z"><title>Naxos trip €304.51</title></path>
+                    <path d="M112 62H173.3Q177.3 62 177.3 66V68Q177.3 72 173.3 72H112Z"><title>Fuel €174.00</title></path>
+                    <path d="M112 89H161.0Q165.0 89 165.0 93V95Q165.0 99 161.0 99H112Z"><title>Eating out €141.30</title></path>
+                    <path d="M112 116H144.4Q148.4 116 148.4 120V122Q148.4 126 144.4 126H112Z"><title>Utilities &amp; subscriptions €96.89</title></path>
+                    <path d="M112 143H141.0Q145.0 143 145.0 147V149Q145.0 153 141.0 153H112Z"><title>Home €88.00</title></path>
+                    <path d="M112 170H135.2Q139.2 170 139.2 174V176Q139.2 180 135.2 180H112Z"><title>Personal €72.50</title></path>
+                  </g>
+                  <path d="M112 197H124.9Q128.9 197 128.9 201V203Q128.9 207 124.9 207H112Z" fill="none" stroke="var(--c1)" stroke-width="1.5" stroke-dasharray="3 2"><title>Cash not logged €45.00</title></path>
+                  <g class="val">
+                    <text x="254" y="17">€362.40</text><text x="232.3" y="44">€304.51</text><text x="183.3" y="71">€174.00</text><text x="171" y="98">€141.30</text><text x="154.4" y="125">€96.89</text><text x="151" y="152">€88.00</text><text x="145.2" y="179">€72.50</text><text x="134.9" y="206">€45.00</text>
+                  </g>
+                </svg>
+              </div>
+
+              <div class="card chart-card" style="grid-column:span 5">
+                <div class="between"><span class="h3">Last 6 months</span>
+                  <div class="legend" style="font-size:11.5px"><span><i class="key sw" style="--tint:var(--c1)"></i>Spent</span><span><i class="key ghost"></i>October forecast</span></div>
+                </div>
+                <svg class="chart" viewBox="0 0 310 160" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Monthly spending May to October">
+                  <g class="grid"><line x1="44" x2="300" y1="100" y2="100"/><line x1="44" x2="300" y1="60" y2="60"/><line x1="44" x2="300" y1="20" y2="20"/></g>
+                  <g class="ax" text-anchor="end"><text x="38" y="143">€0</text><text x="38" y="103">€1k</text><text x="38" y="63">€2k</text><text x="38" y="23">€3k</text></g>
+                  <path d="M263 140V51.6Q263 47.6 267 47.6H283Q287 47.6 287 51.6V140Z" fill="none" stroke="var(--c1)" stroke-width="1.5" stroke-dasharray="3 3"><title>October forecast €2,310</title></path>
+                  <g fill="var(--c1)">
+                    <path d="M53 140V56.8Q53 52.8 57 52.8H73Q77 52.8 77 56.8V140Z"><title>May €2,180</title></path>
+                    <path d="M95 140V47.6Q95 43.6 99 43.6H115Q119 43.6 119 47.6V140Z"><title>June €2,410</title></path>
+                    <path d="M137 140V62.0Q137 58.0 141 58.0H157Q161 58.0 161 62.0V140Z"><title>July €2,050</title></path>
+                    <path d="M179 140V25.6Q179 21.6 183 21.6H199Q203 21.6 203 25.6V140Z"><title>August €2,960</title></path>
+                    <path d="M221 140V54.4Q221 50.4 225 50.4H241Q245 50.4 245 54.4V140Z"><title>September €2,240</title></path>
+                    <path d="M263 140V92.6Q263 88.6 267 88.6H283Q287 88.6 287 92.6V140Z"><title>October so far €1,284.60</title></path>
+                  </g>
+                  <line class="base" x1="44" x2="300" y1="140" y2="140"/>
+                  <g class="val" text-anchor="middle"><text x="191" y="15">€2,960</text><text x="275" y="41">€2,310</text></g>
+                  <g class="ax" text-anchor="middle"><text x="65" y="154">May</text><text x="107" y="154">Jun</text><text x="149" y="154">Jul</text><text x="191" y="154">Aug</text><text x="233" y="154">Sep</text><text x="275" y="154">Oct</text></g>
+                </svg>
+              </div>
+
+              <div class="card chart-card" style="grid-column:span 4">
+                <div class="between"><span class="h3">How you paid</span><span class="xs muted">€1,284.60</span></div>
+                <div class="stack" style="height:12px;margin:6px 0 8px" role="img" aria-label="Payment method split">
+                  <i style="width:49.8%;background:var(--c1)" title="Card €640.20"></i><i style="width:29.7%;background:var(--c3)" title="Apple Pay €382.10"></i><i style="width:14%;background:var(--c2)" title="Cash €180.00"></i><i style="flex:1;background:var(--c6)" title="Bank transfer €82.30"></i>
+                </div>
+                <div class="vstack" style="gap:7px">
+                  <div class="between small"><span class="hstack" style="gap:8px"><i class="key sw" style="--tint:var(--c1)"></i>Card</span><span><span class="num">€640.20</span> <span class="muted xs">50%</span></span></div>
+                  <div class="between small"><span class="hstack" style="gap:8px"><i class="key sw" style="--tint:var(--c3)"></i>Apple Pay</span><span><span class="num">€382.10</span> <span class="muted xs">30%</span></span></div>
+                  <div class="between small"><span class="hstack" style="gap:8px"><i class="key sw" style="--tint:var(--c2)"></i>Cash <span class="xs muted">incl. €45 not logged</span></span><span><span class="num">€180.00</span> <span class="muted xs">14%</span></span></div>
+                  <div class="between small"><span class="hstack" style="gap:8px"><i class="key sw" style="--tint:var(--c6)"></i>Bank transfer</span><span><span class="num">€82.30</span> <span class="muted xs">6%</span></span></div>
+                </div>
+              </div>
+
+              <div class="card chart-card" style="grid-column:span 3">
+                <div class="between"><span class="h3">Fuel per car</span><div class="ico t2" style="width:28px;height:28px"><i data-lucide="car"></i></div></div>
+                <div class="small" style="font-weight:650">Yaris</div>
+                <div class="num" style="font-size:22px">€174.00</div>
+                <div class="xs muted">3 fill-ups · 93.6 L · avg €1.859/L</div>
+                <div class="vstack" style="margin-top:auto;gap:6px">
+                  <div><div class="between xs"><span class="ink2">October</span><span class="num">€174.00</span></div><div class="bar thin" style="margin-top:3px"><i style="width:100%;--tint:var(--c2)"></i></div></div>
+                  <div><div class="between xs"><span class="ink2">September</span><span class="num">€162.40</span></div><div class="bar thin" style="margin-top:3px"><i style="width:93%;--tint:var(--c6)"></i></div></div>
+                </div>
+              </div>
+            </div>
+          </main>
+        </div>
+      </div></div>
+      <figcaption><b>Insights (desktop)</b>One page with the period chips and the Household / Me / Maria lens in the header, and every chart responds to both. The large chart compares this month's running total with the forecast and with last month on a single euro axis.<span class="was">/insights</span></figcaption>
+    </figure>
+
+    <!-- ============ 4. BILLS ============ -->
+    <figure class="shot" style="width:100%">
+      <div class="desk-wrap"><div class="desk">
+        <div class="chrome"><i></i><i></i><i></i><span class="url">tameio.app/plan/bills/cosmote-internet</span></div>
+        <div class="app">
+          <aside class="side" data-on="bills"></aside>
+          <main class="content">
+            <div class="topbar">
+              <div><div class="crumb">Plan<i data-lucide="chevron-right"></i>Bills</div><h1 class="ttl">Bills</h1></div>
+              <span class="grow"></span>
+              <span class="small muted">October: <b class="num" style="color:var(--ink)">€893.79</b> in bills · <b class="num" style="color:var(--ink)">2</b> paid · 4 to go</span>
+              <div class="seg"><button class="on">Timeline</button><button>All bills</button></div>
+              <button class="btn sm" style="height:38px"><i data-lucide="plus"></i>Add bill</button>
+            </div>
+            <div class="bills-grid">
+              <div class="bill-list">
+                <div>
+                  <div class="daygroup"><span>Needs you</span><span>2</span></div>
+                  <div class="list">
+                    <div class="row sel"><div class="ico tneg"><i data-lucide="wifi"></i></div><div class="main"><div class="t">Cosmote internet</div><div class="s">Was due Oct 4 · 2 days late</div></div><div class="end"><div class="num">€32.90</div><span class="badge neg" style="height:18px">Overdue</span></div></div>
+                    <div class="row"><div class="ico twarn"><i data-lucide="zap"></i></div><div class="main"><div class="t">Electricity ΔΕΗ</div><div class="s">Due Oct 9 · auto-pay waits</div></div><div class="end"><div class="small muted">€70–95</div><span class="badge warn" style="height:18px">Needs amount</span></div></div>
+                  </div>
+                </div>
+                <div>
+                  <div class="daygroup"><span>Next 30 days</span><span class="num">€750.00</span></div>
+                  <div class="list">
+                    <div class="row"><div class="ico t1"><i data-lucide="house"></i></div><div class="main"><div class="t">Rent</div><div class="s">Oct 10 · each pays own share €375</div></div><div class="end num">€750.00</div></div>
+                  </div>
+                </div>
+                <div>
+                  <div class="daygroup"><span>Paid this month</span><span class="num">€13.99</span></div>
+                  <div class="list">
+                    <div class="row"><div class="ico tpos"><i data-lucide="check"></i></div><div class="main"><div class="t">Netflix</div><div class="s">Auto-paid Oct 5 · Maria</div></div><div class="end num">€13.99</div></div>
+                  </div>
+                </div>
+                <div>
+                  <div class="daygroup"><span>Later</span></div>
+                  <div class="list">
+                    <div class="row"><div class="ico t3"><i data-lucide="droplets"></i></div><div class="main"><div class="t">EYDAP water</div><div class="s">Every 4 months · last €41.20 (+18%)</div></div><div class="end small muted">Jan</div></div>
+                    <div class="row"><div class="ico t6"><i data-lucide="car"></i></div><div class="main"><div class="t">Car insurance</div><div class="s">Yearly · Yaris</div></div><div class="end"><div class="num">€312.00</div><div class="xs muted">Mar 2027</div></div></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="bill-detail">
+                <div class="between" style="align-items:flex-start">
+                  <div class="hstack" style="gap:12px">
+                    <div class="ico lg tneg"><i data-lucide="wifi"></i></div>
+                    <div>
+                      <div class="hstack" style="gap:8px"><span class="h2" style="font-size:20px">Cosmote internet</span><span class="badge neg"><i data-lucide="circle-alert"></i>2 days late</span></div>
+                      <div class="small muted">€32.90 monthly · due the 4th · Bills budget · Giorgos usually pays</div>
+                    </div>
+                  </div>
+                  <div class="hstack" style="gap:4px"><button class="btn sm outline"><i data-lucide="pencil"></i>Edit</button><button class="iconbtn bare" aria-label="More"><i data-lucide="ellipsis"></i></button></div>
+                </div>
+
+                <div class="bd-cols">
+                  <div class="vstack" style="gap:12px;min-width:0">
+                    <div class="paybox">
+                      <div class="between"><span class="h3">Pay October</span><span class="xs muted">Was due Sun 4 Oct</span></div>
+                      <div class="field"><span class="lbl">Amount</span><div class="input"><span class="num" style="font-size:17px">€32.90</span><span class="xs muted" style="margin-left:auto">same as last month</span></div></div>
+                      <div class="field"><span class="lbl">Paid by</span><div class="seg"><button class="on">Giorgos</button><button>Maria</button><button>Each own share</button></div></div>
+                      <div class="field"><span class="lbl">Method</span><div class="seg"><button class="on">Card</button><button>Bank</button><button>Cash</button></div></div>
+                      <div class="grid2" style="margin-top:2px"><button class="btn primary">Pay €32.90</button><button class="btn">Skip this month</button></div>
+                    </div>
+                    <div class="card flat hstack" style="padding:12px;align-items:flex-start">
+                      <div class="ico t6"><i data-lucide="file-clock"></i></div>
+                      <div class="small" style="flex:1"><b>Contract ends Nov 5</b><div class="muted">30 days left. Check for a better plan before it renews.</div></div>
+                      <button class="btn sm">Remind me</button>
+                    </div>
+                  </div>
+
+                  <div class="vstack" style="gap:12px;min-width:0">
+                    <div class="card" style="padding:12px 14px">
+                      <div class="between"><span class="h3">Last 6 payments</span><span class="xs muted">Up €3 since June</span></div>
+                      <svg class="chart" viewBox="0 0 300 118" style="margin-top:6px" role="img" aria-label="Cosmote payments May to October">
+                        <g class="grid"><line x1="34" x2="296" y1="56" y2="56"/><line x1="34" x2="296" y1="16" y2="16"/></g>
+                        <g class="ax" text-anchor="end"><text x="28" y="99">€0</text><text x="28" y="59">€20</text><text x="28" y="19">€40</text></g>
+                        <g fill="var(--c3)">
+                          <path d="M40 96V40.2Q40 36.2 44 36.2H60Q64 36.2 64 40.2V96Z"><title>May €29.90</title></path>
+                          <path d="M84 96V34.2Q84 30.2 88 30.2H104Q108 30.2 108 34.2V96Z"><title>June €32.90</title></path>
+                          <path d="M128 96V34.2Q128 30.2 132 30.2H148Q152 30.2 152 34.2V96Z"><title>July €32.90</title></path>
+                          <path d="M172 96V34.2Q172 30.2 176 30.2H192Q196 30.2 196 34.2V96Z"><title>August €32.90</title></path>
+                          <path d="M216 96V34.2Q216 30.2 220 30.2H236Q240 30.2 240 34.2V96Z"><title>September €32.90</title></path>
+                        </g>
+                        <path d="M260 96V34.2Q260 30.2 264 30.2H280Q284 30.2 284 34.2V96Z" fill="none" stroke="var(--neg)" stroke-width="1.5" stroke-dasharray="3 3"><title>October not paid yet</title></path>
+                        <line class="base" x1="34" x2="296" y1="96" y2="96"/>
+                        <g class="val" text-anchor="middle"><text x="52" y="31">€29.90</text><text x="228" y="25">€32.90</text></g>
+                        <g class="ax" text-anchor="middle"><text x="52" y="111">May</text><text x="96" y="111">Jun</text><text x="140" y="111">Jul</text><text x="184" y="111">Aug</text><text x="228" y="111">Sep</text><text x="272" y="111">Oct · due</text></g>
+                      </svg>
+                    </div>
+                    <div>
+                      <div class="card-h" style="margin-bottom:2px"><span class="h3">History</span><a>All 18</a></div>
+                      <div class="list plain hist">
+                        <div class="row"><span class="avatar sm" style="--tint:var(--c3)">G</span><div class="main"><div class="t">Sep 4 · Card</div></div><span class="num">€32.90</span></div>
+                        <div class="row"><span class="avatar sm" style="--tint:var(--c3)">G</span><div class="main"><div class="t">Aug 4 · Card</div></div><span class="num">€32.90</span></div>
+                        <div class="row"><span class="avatar sm" style="--tint:var(--c2)">M</span><div class="main"><div class="t">Jul 6 · Bank · 2 days late</div></div><span class="num">€32.90</span></div>
+                        <div class="row"><span class="avatar sm" style="--tint:var(--c3)">G</span><div class="main"><div class="t">Jun 4 · Card · new price</div></div><span class="num">€32.90</span></div>
+                        <div class="row"><span class="avatar sm" style="--tint:var(--c3)">G</span><div class="main"><div class="t">May 4 · Card</div></div><span class="num">€29.90</span></div>
+                        <div class="row"><span class="avatar sm" style="--tint:var(--c3)">G</span><div class="main"><div class="t">Apr 4 · Card</div></div><span class="num">€29.90</span></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </main>
+        </div>
+      </div></div>
+      <figcaption><b>Bills (desktop)</b>The timeline stays on the left, with problems at the top. The selected bill opens on the right with a Pay panel already filled in from last month, so paying an overdue bill takes one click and the list never reloads.<span class="was">/bills, /bills/{id}/edit, bill history partial</span></figcaption>
+    </figure>
+
+  </div>
+</section>
+</div>
+<script>
+  (function () {
+    var NAV = [
+      ["home", "Home", "house"],
+      ["activity", "Activity", "list"],
+      ["plan", "Plan", "calendar-range"],
+      ["bills", "Bills", null, 2],
+      ["budgets", "Budgets", null],
+      ["cash", "Cash", null],
+      ["pantry", "Pantry", null, 1],
+      ["insights", "Insights", "chart-pie"]
+    ];
+    document.querySelectorAll("aside.side[data-on]").forEach(function (s) {
+      var on = s.getAttribute("data-on");
+      var links = NAV.map(function (n) {
+        var cls = (n[2] ? "" : "sub ") + (n[0] === on ? "on" : "");
+        var badge = n[3] ? '<span class="badge ' + (n[0] === "bills" ? "neg" : "") + ' n">' + n[3] + "</span>" : "";
+        var ico = n[2] ? '<i data-lucide="' + n[2] + '"></i>' : "";
+        if (n[0] === "plan") badge = '<i data-lucide="chevron-down" class="n" style="width:15px;height:15px;color:var(--muted)"></i>';
+        return '<a class="' + cls.trim() + '">' + ico + n[1] + badge + "</a>";
+      }).join("");
+      s.innerHTML =
+        '<div class="logo"><span class="mk"><i data-lucide="wallet"></i></span>Tameio</div>' +
+        '<div class="hh"><span class="avatars"><span class="avatar sm" style="--tint:var(--c3)">G</span><span class="avatar sm" style="--tint:var(--c2)">M</span></span>Home · Kifisia<i data-lucide="chevrons-up-down"></i></div>' +
+        '<button class="btn primary newbtn"><i data-lucide="plus"></i>New expense<span class="kbd">N</span></button>' +
+        links +
+        '<div class="foot"><a><i data-lucide="settings"></i>Settings</a>' +
+        '<div class="me"><span class="avatar" style="--tint:var(--c3)">G</span><div>Giorgos<div class="s">Owner</div></div></div></div>';
+    });
+  })();
+</script>
+<script src="mock.js"></script>
+</body>
+</html>

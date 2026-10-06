@@ -1,0 +1,568 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tameio · Bills & Budgets</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Sora:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="components.css">
+<script src="https://cdn.jsdelivr.net/npm/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<style>
+  .plan-top { flex: none; padding: 0 16px 10px; display: flex; flex-direction: column; gap: 10px; }
+  .plan-top .largetitle { padding: 0; }
+  .daygroup { display: flex; justify-content: space-between; font-size: 12.5px; font-weight: 600; color: var(--muted); padding: 0 2px 6px; }
+  .badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+  .badge.line { background: transparent; border: 1px solid var(--line); color: var(--muted); }
+
+  /* Summary strip */
+  .strip { display: flex; align-items: center; gap: 12px; }
+  .strip .seg-bar { display: flex; gap: 3px; height: 6px; margin-top: 10px; }
+  .strip .seg-bar i { flex: 1; border-radius: 3px; background: var(--surface-2); }
+  .strip .seg-bar i.done { background: var(--pos); }
+
+  /* Inline amount row */
+  .inline-amt { display: flex; gap: 8px; align-items: center; padding: 0 14px 12px 62px; }
+  .inline-amt .input { height: 38px; flex: 1; min-width: 0; padding: 0 12px; }
+  .inline-amt .input .num { font-size: 15px; }
+
+  /* Date-led timeline */
+  .tl { position: relative; }
+  .tl-item { display: grid; grid-template-columns: 44px 1fr; gap: 12px; padding: 8px 0; position: relative; }
+  .tl-item::before { content: ""; position: absolute; left: 21px; top: 52px; bottom: -8px; width: 2px; background: var(--line); }
+  .tl-item:last-child::before { display: none; }
+  .tl-date { width: 44px; height: 44px; border-radius: var(--r-md); background: var(--surface); border: 1px solid var(--line); display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1; position: relative; z-index: 1; }
+  .tl-date small { font-size: 9.5px; font-weight: 700; letter-spacing: .08em; color: var(--muted); text-transform: uppercase; }
+  .tl-date b { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: 18px; font-weight: 600; margin-top: 3px; }
+  .tl-date.soon { border-color: var(--warn); }
+  .tl-date.soon small { color: var(--warn); }
+  .tl-body { background: var(--surface); border: var(--card-border); border-radius: var(--r-md); box-shadow: var(--shadow); padding: 10px 12px; display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .tl-body .main { flex: 1; min-width: 0; }
+  .tl-body .t { font-weight: 600; font-size: 14.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tl-body .s { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tl-body.marker { background: transparent; border: 1px dashed var(--line); box-shadow: none; }
+  .tl-body .ico { width: 30px; height: 30px; }
+  .tl-body .ico svg { width: 16px; height: 16px; }
+
+  /* Detail header */
+  .detail-head { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+  .kv { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); border-radius: var(--r-lg); overflow: hidden; border: var(--card-border); }
+  .kv > div { background: var(--surface); padding: 10px 12px; min-width: 0; }
+  .kv .k { font-size: 11.5px; font-weight: 600; color: var(--muted); }
+  .kv .v { font-size: 14px; font-weight: 600; margin-top: 2px; display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .kv .v .avatar.sm { width: 18px; height: 18px; font-size: 9px; }
+  .actions3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .actions3 .btn { flex-direction: column; height: 62px; gap: 4px; font-size: 12.5px; }
+
+  /* Amount display for keypad */
+  .amt-display { text-align: center; padding: 6px 0 2px; }
+  .amt-display .amt-xl { display: inline-flex; align-items: baseline; }
+  .caret { display: inline-block; width: 2px; height: 40px; background: var(--accent); margin-left: 3px; align-self: center; }
+
+  /* Stepper */
+  .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+  .steps i { height: 4px; border-radius: 2px; background: var(--surface-2); }
+  .steps i.done, .steps i.cur { background: var(--accent); }
+  [data-dir="calm"] .steps i.done, [data-dir="calm"] .steps i.cur { background: var(--ink); }
+  .steps i.cur { opacity: .5; }
+  .done-step { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: var(--r-md); background: var(--surface-2); }
+  .done-step .check { width: 22px; height: 22px; border-radius: 50%; background: var(--pos); color: #fff; display: grid; place-items: center; flex: none; }
+  .done-step .check svg { width: 13px; height: 13px; stroke-width: 3; }
+  .future-step { display: flex; align-items: center; gap: 10px; padding: 12px; border-radius: var(--r-md); border: 1px dashed var(--line); color: var(--muted); font-size: 14px; font-weight: 600; }
+  .future-step .n { width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--line); display: grid; place-items: center; font-size: 11.5px; flex: none; }
+  .radio-list .row { min-height: 50px; }
+  .radio { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--line); flex: none; }
+  .radio.on { border: 7px solid var(--accent); }
+  [data-dir="calm"] .radio.on { border-color: var(--ink); }
+  .stepper-inline { display: inline-flex; align-items: center; gap: 0; border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; height: 32px; background: var(--surface); }
+  .stepper-inline span { width: 30px; display: grid; place-items: center; color: var(--muted); }
+  .stepper-inline span svg { width: 14px; height: 14px; }
+  .stepper-inline b { min-width: 28px; text-align: center; font-family: var(--font-num); font-variant-numeric: tabular-nums; border-inline: 1px solid var(--line); height: 100%; display: grid; place-items: center; }
+
+  /* Budget rows */
+  .bud { display: flex; flex-direction: column; gap: 10px; padding: 14px; }
+  .bud + .bud { border-top: 1px solid var(--line); }
+  .bud .top { display: flex; align-items: center; gap: 12px; }
+  .bud .top .main { flex: 1; min-width: 0; }
+  .bud .top .t { font-weight: 650; font-size: 15px; }
+  .bud .top .s { font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pacebar { position: relative; }
+  .pacebar .tick { position: absolute; top: -4px; bottom: -4px; width: 2px; border-radius: 1px; background: var(--ink); }
+  .pacebar .bar { height: 8px; }
+  .bud .foot { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+
+  /* Trip day strip */
+  .days { display: grid; grid-template-columns: repeat(11, 1fr); gap: 3px; }
+  .days i { height: 26px; border-radius: 6px; background: var(--surface-2); display: grid; place-items: center; font-style: normal; font-size: 10.5px; font-weight: 600; color: var(--muted); font-family: var(--font-num); }
+  .days i.past { background: color-mix(in srgb, var(--c3) 30%, var(--surface)); color: var(--ink-2); }
+  .days i.today { background: var(--c3); color: #fff; }
+
+  /* Ring */
+  .ring-wrap { display: flex; align-items: center; gap: 18px; }
+  .ring { width: 128px; height: 128px; flex: none; position: relative; }
+  .ring svg { width: 128px; height: 128px; transform: rotate(-90deg); }
+  .ring .lbl { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; }
+
+  /* Type tiles */
+  .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .tile { border: 1px solid var(--line); border-radius: var(--r-md); padding: 8px 10px; display: flex; flex-direction: column; gap: 3px; background: var(--surface); min-width: 0; }
+  .tile .ico { width: 26px; height: 26px; margin-bottom: 2px; }
+  .tile .ico svg { width: 16px; height: 16px; }
+  .tile b { font-size: 14px; }
+  .tile span { font-size: 11.5px; color: var(--muted); line-height: 1.3; }
+  .tile.on { border: 2px solid var(--accent); padding: 7px 9px; background: var(--accent-soft); }
+  [data-dir="calm"] .tile.on { border-color: var(--ink); }
+  .sheet-body > * { flex-shrink: 0; }
+  .swatches { display: flex; gap: 10px; align-items: center; }
+  .swatches i { width: 28px; height: 28px; border-radius: 50%; background: var(--tint); flex: none; }
+  .swatches i.on { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--tint); }
+  .iconpick { display: flex; gap: 6px; }
+  .iconpick span { width: 36px; height: 36px; border-radius: var(--r-sm); display: grid; place-items: center; background: var(--surface-2); color: var(--ink-2); flex: none; }
+  .iconpick span.on { background: color-mix(in srgb, var(--c3) 18%, var(--surface)); color: var(--c3); box-shadow: inset 0 0 0 2px var(--c3); }
+  .iconpick span svg { width: 18px; height: 18px; }
+  .monthsw { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .monthsw b { font-size: 15px; }
+</style>
+</head>
+<body data-stage data-dir="calm" data-mode="light">
+<div class="page">
+<header class="mock-bar"></header>
+
+<!-- ============================ BILLS ============================ -->
+<section>
+  <div class="section-head">
+    <div class="eyebrow">05 · Plan › Bills</div>
+    <h2>Bills read as a timeline of what's due. Paying one takes a single sheet.</h2>
+    <p>The old bills page was a table of templates with a modal for every action. Bills now sort by what needs you, then by date, so the next 30 days read like a calendar. Paying, skipping and entering a variable amount each happen in one sheet, and a new bill asks its questions in four short steps.</p>
+  </div>
+  <div class="board">
+
+    <!-- 1. Bills timeline -->
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="plan-top">
+          <div class="between"><div class="largetitle">Plan</div><button class="iconbtn"><i data-lucide="plus"></i></button></div>
+          <div class="seg"><span class="on">Bills</span><span>Budgets</span><span>Cash</span><span>Pantry</span></div>
+        </div>
+        <div class="scroll">
+          <div class="card pad-s">
+            <div class="strip">
+              <div class="ico tacc"><i data-lucide="receipt-text"></i></div>
+              <div style="flex:1;min-width:0">
+                <div class="small muted">This month</div>
+                <div><span class="num" style="font-size:18px">€893.79</span> <span class="small ink2">in bills · 2 paid · 4 to go</span></div>
+              </div>
+            </div>
+            <div class="strip"><div class="seg-bar" style="flex:1"><i class="done"></i><i class="done"></i><i></i><i></i><i></i><i></i></div></div>
+          </div>
+
+          <div>
+            <div class="daygroup"><span>Needs you</span><span>2</span></div>
+            <div class="list">
+              <div class="attn"><div class="ico tneg"><i data-lucide="wifi"></i></div><div class="main"><div class="t">Cosmote internet</div><div class="s">€32.90 · 2 days late</div></div><button class="btn sm primary">Pay</button></div>
+              <div class="divider"></div>
+              <div class="attn" style="padding-bottom:8px"><div class="ico twarn"><i data-lucide="zap"></i></div><div class="main"><div class="t">Electricity ΔΕΗ</div><div class="s">Due Oct 9 · auto-pay waits for the amount</div></div></div>
+              <div class="inline-amt"><div class="input"><span class="muted">€</span><span class="ph">Usually 70–95</span></div><button class="btn sm">Save</button></div>
+            </div>
+          </div>
+
+          <div>
+            <div class="daygroup"><span>Next 30 days</span><span>4 bills</span></div>
+            <div class="tl">
+              <div class="tl-item"><div class="tl-date soon"><small>Oct</small><b>9</b></div><div class="tl-body"><div class="ico twarn"><i data-lucide="zap"></i></div><div class="main"><div class="t">Electricity ΔΕΗ</div><div class="badges"><span class="badge warn">Variable</span><span class="badge line">Auto-pay</span></div></div><div class="num small muted">≈ €84</div></div></div>
+              <div class="tl-item"><div class="tl-date soon"><small>Oct</small><b>10</b></div><div class="tl-body"><div class="ico t1"><i data-lucide="house"></i></div><div class="main"><div class="t">Rent</div><div class="badges"><span class="badge acc">Own share</span></div></div><div class="end"><div class="num">€375</div><div class="xs muted">of €750</div></div></div></div>
+              <div class="tl-item"><div class="tl-date"><small>Oct</small><b>21</b></div><div class="tl-body"><div class="ico t4"><i data-lucide="music"></i></div><div class="main"><div class="t">Spotify</div><div class="s">Maria · card</div></div><div class="num">€9.99</div></div></div>
+              <div class="tl-item"><div class="tl-date"><small>Nov</small><b>4</b></div><div class="tl-body"><div class="ico t3"><i data-lucide="wifi"></i></div><div class="main"><div class="t">Cosmote internet</div><div class="s">Giorgos · last at this price</div></div><div class="num">€32.90</div></div></div>
+              <div class="tl-item"><div class="tl-date"><small>Nov</small><b>5</b></div><div class="tl-body marker"><i data-lucide="calendar-x" style="color:var(--warn)"></i><div class="main"><div class="t" style="font-size:13.5px">Cosmote contract ends</div><div class="s">Compare offers before it renews</div></div></div></div>
+            </div>
+          </div>
+
+          <div>
+            <div class="daygroup"><span>Paid this month</span><span>€16.98</span></div>
+            <div class="list">
+              <div class="row"><div class="ico tpos"><i data-lucide="tv"></i></div><div class="main"><div class="t">Netflix</div><div class="s">Oct 5 · Maria · paid automatically</div></div><div class="end"><div class="num">€13.99</div></div></div>
+              <div class="row"><div class="ico tpos"><i data-lucide="cloud"></i></div><div class="main"><div class="t">iCloud+</div><div class="s">Oct 2 · Giorgos · paid automatically</div></div><div class="end"><div class="num">€2.99</div></div></div>
+            </div>
+          </div>
+        </div>
+        <nav class="tabbar" data-tab="plan"></nav>
+      </div></div>
+      <figcaption><b>Bills timeline</b>Late and incomplete bills sit on top with their fix in the row, including an inline amount field. Everything else is laid out by due date, so a contract ending shows up as a dated marker. The month total counts Electricity at its recent average until the real amount is in.<span class="was">/bills table, overdue banner, "needs amount" list, history_partial</span></figcaption>
+    </figure>
+
+    <!-- 2. Bill detail -->
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="appbar"><div class="left"><button class="iconbtn bare"><i data-lucide="chevron-left"></i></button></div><div class="title">Bill</div><div class="right"><button class="iconbtn bare"><i data-lucide="ellipsis"></i></button></div></div>
+        <div class="scroll">
+          <div class="detail-head">
+            <div class="hstack"><div class="ico lg t3"><i data-lucide="wifi"></i></div><div><div class="h2">Cosmote internet</div><div class="small muted">Fiber 200 · account 2109…41</div></div></div>
+            <div class="hstack" style="align-items:baseline;gap:10px"><div class="amt-lg">€32<span class="cents">.90</span></div><span class="badge neg"><i data-lucide="circle-alert"></i>2 days late</span></div>
+            <button class="btn primary block">Pay €32.90</button>
+          </div>
+          <div class="kv">
+            <div><div class="k">Repeats</div><div class="v"><i data-lucide="repeat" style="width:15px;height:15px"></i>Monthly on the 4th</div></div>
+            <div><div class="k">Budget</div><div class="v"><span class="dot" style="--tint:var(--c6)"></span>Bills</div></div>
+            <div><div class="k">Paid by</div><div class="v"><span class="avatar sm" style="--tint:var(--c3)">G</span>Giorgos</div></div>
+            <div><div class="k">Category</div><div class="v">Utilities</div></div>
+          </div>
+          <div class="list">
+            <div class="row"><div class="ico twarn"><i data-lucide="calendar-x"></i></div><div class="main"><div class="t">Contract ends Nov 5</div><div class="s">30 days from today</div></div></div>
+            <div class="row" style="min-height:48px"><div class="ico t6"><i data-lucide="bell-ring"></i></div><div class="main"><div class="t" style="font-weight:500">Remind me 30 days before</div></div><span class="toggle on"></span></div>
+          </div>
+          <div class="card">
+            <div class="between"><span class="h3">Last 6 payments</span><span class="xs muted">avg €31.70</span></div>
+            <svg class="chart" viewBox="0 0 306 118" style="margin-top:10px" role="img" aria-label="Payments April to September">
+              <g class="grid"><line x1="0" x2="306" y1="12" y2="12"/><line x1="0" x2="306" y1="96" y2="96"/></g>
+              <text x="306" y="9" text-anchor="end">€35</text>
+              <!-- scale: 84px = €35 → 2.4px per € -->
+              <rect x="8"   y="24.2" width="34" height="71.8" rx="4" fill="var(--c6)" opacity=".55"/>
+              <rect x="59"  y="24.2" width="34" height="71.8" rx="4" fill="var(--c6)" opacity=".55"/>
+              <rect x="110" y="92"   width="34" height="4"    rx="2" fill="var(--line)"/>
+              <rect x="161" y="17"   width="34" height="79"   rx="4" fill="var(--c3)"/>
+              <rect x="212" y="17"   width="34" height="79"   rx="4" fill="var(--c3)"/>
+              <rect x="263" y="17"   width="34" height="79"   rx="4" fill="var(--c3)"/>
+              <text x="25" y="111" text-anchor="middle">Apr</text><text x="76" y="111" text-anchor="middle">May</text><text x="127" y="111" text-anchor="middle">Jun</text><text x="178" y="111" text-anchor="middle">Jul</text><text x="229" y="111" text-anchor="middle">Aug</text><text x="280" y="111" text-anchor="middle">Sep</text>
+            </svg>
+            <div class="xs muted" style="margin-top:6px">Price went from €29.90 to €32.90 in July. June was skipped.</div>
+          </div>
+          <div>
+            <div class="daygroup"><span>History</span></div>
+            <div class="list">
+              <div class="row"><div class="ico tpos round"><i data-lucide="check"></i></div><div class="main"><div class="t">Sep 4</div><div class="s">Paid · Giorgos · card</div></div><div class="end num">€32.90</div></div>
+              <div class="row"><div class="ico tpos round"><i data-lucide="check"></i></div><div class="main"><div class="t">Aug 5</div><div class="s">Paid a day late · Giorgos</div></div><div class="end num">€32.90</div></div>
+              <div class="row"><div class="ico tpos round"><i data-lucide="check"></i></div><div class="main"><div class="t">Jul 4</div><div class="s">Paid · new price</div></div><div class="end num">€32.90</div></div>
+              <div class="row"><div class="ico t6 round"><i data-lucide="skip-forward"></i></div><div class="main"><div class="t">Jun 4</div><div class="s">Skipped · free month offer</div></div><div class="end small muted">€0</div></div>
+            </div>
+          </div>
+          <div class="actions3">
+            <button class="btn"><i data-lucide="pause"></i>Pause</button>
+            <button class="btn"><i data-lucide="pencil"></i>Edit</button>
+            <button class="btn danger"><i data-lucide="trash-2"></i>Delete</button>
+          </div>
+        </div>
+        <div class="homebar"></div>
+      </div></div>
+      <figcaption><b>Bill detail</b>Everything about one bill on one page. The contract end and its reminder sit next to each other. The bar chart is drawn to scale, so the July price rise and the skipped June stand out.<span class="was">bills/edit.html, history_partial, contract-end fields</span></figcaption>
+    </figure>
+
+    <!-- 3. Pay sheet -->
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="appbar"><div class="left"><button class="iconbtn bare"><i data-lucide="chevron-left"></i></button></div><div class="title">Bill</div><div class="right"><button class="iconbtn bare"><i data-lucide="ellipsis"></i></button></div></div>
+        <div class="scroll">
+          <div class="hstack"><div class="ico lg t3"><i data-lucide="wifi"></i></div><div><div class="h2">Cosmote internet</div><div class="small muted">Fiber 200</div></div></div>
+          <div class="amt-lg">€32<span class="cents">.90</span></div>
+        </div>
+        <div class="scrim"></div>
+        <div class="sheet" style="height:84%">
+          <div class="grab"></div>
+          <div class="sheet-head"><div><span class="h2" style="font-size:20px">Pay Cosmote internet</span><div class="small muted">October · was due Oct 4</div></div><button class="iconbtn"><i data-lucide="x"></i></button></div>
+          <div class="sheet-body">
+            <div class="field"><label>Amount</label><div class="input" style="height:54px"><span class="num" style="font-size:24px">€32.90</span><i data-lucide="pencil" style="margin-left:auto"></i></div></div>
+            <div class="field"><span class="lbl">Paid by</span>
+              <div class="pills">
+                <span class="pill" style="border:2px solid var(--accent)"><span class="avatar" style="--tint:var(--c3)">G</span>Giorgos</span>
+                <span class="pill"><span class="avatar" style="--tint:var(--c2)">M</span>Maria</span>
+                <span class="pill"><span class="ico t6"><i data-lucide="users"></i></span>Each own share</span>
+              </div>
+            </div>
+            <div class="field"><span class="lbl">Method</span><div class="seg"><span class="on">Card</span><span>Bank</span><span>Cash</span></div></div>
+            <div class="field"><span class="lbl">Date</span><div class="input"><i data-lucide="calendar"></i>Today, Tue 6 Oct</div></div>
+            <div class="well">
+              <div class="between small"><span class="muted">Giorgos pays out</span><span class="num">€32.90</span></div>
+              <div class="stack" style="margin:8px 0"><i style="width:50%;background:var(--c3)"></i><i style="flex:1;background:var(--c2)"></i></div>
+              <div class="between xs"><span class="hstack" style="gap:6px"><span class="dot" style="--tint:var(--c3)"></span>Giorgos's share €16.45</span><span class="hstack" style="gap:6px"><span class="dot" style="--tint:var(--c2)"></span>Maria's share €16.45</span></div>
+            </div>
+          </div>
+          <button class="btn primary lg block">Pay €32.90</button>
+          <button class="btn ghost block" style="margin-top:-6px">Skip this month</button>
+        </div>
+      </div></div>
+      <figcaption><b>Pay sheet</b>Opens with the usual amount, payer and method already filled, so most bills take one tap. The share preview shows what each person's part of the bill is. Skipping is the quieter button right under Pay.<span class="was">Pay modal, skip button, /bills/{id}/pay</span></figcaption>
+    </figure>
+
+    <!-- 4. Variable bill -->
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="appbar"><div class="left"><button class="iconbtn bare"><i data-lucide="x"></i></button></div><div class="title">Electricity amount</div><div class="right" style="width:38px"></div></div>
+        <div class="scroll" style="display:flex;flex-direction:column">
+          <div class="hstack"><div class="ico twarn"><i data-lucide="zap"></i></div><div class="main"><div class="h3">Electricity ΔΕΗ</div><div class="small muted">October bill · due Fri, Oct 9</div></div></div>
+          <div class="amt-display"><span class="amt-xl">€86<span class="cents">.4</span><span class="caret"></span></span></div>
+          <div class="card pad-s">
+            <div class="between small"><span class="muted">Last 6</span><span class="num xs muted">€88 · €94 · €71 · €76 · €82 · €90</span></div>
+            <svg class="chart" viewBox="0 0 306 54" style="margin-top:8px" role="img" aria-label="Last six electricity bills, with this amount">
+              <!-- y: €70 → 48, €95 → 6 ; 1.68 px per € -->
+              <line x1="0" x2="306" y1="25.3" y2="25.3" stroke="var(--line)" stroke-dasharray="3 3"/>
+              <polyline points="0,17.8 51,7.7 102,46.3 153,37.9 204,27.8 255,14.4" fill="none" stroke="var(--c6)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+              <polyline points="255,14.4 306,20.4" fill="none" stroke="var(--warn)" stroke-width="2" stroke-dasharray="4 3" stroke-linecap="round"/>
+              <circle cx="255" cy="14.4" r="3" fill="var(--c6)"/>
+              <circle cx="306" cy="20.4" r="4" fill="var(--warn)"/>
+            </svg>
+            <div class="between xs muted" style="margin-top:4px"><span>Apr</span><span>Average €83.50</span><span>Oct</span></div>
+          </div>
+          <div class="hstack small" style="align-items:flex-start"><i data-lucide="info" style="color:var(--muted);width:18px;height:18px"></i><span class="ink2">Auto-pay runs on Oct 9 once you enter the amount. Maria's card is charged, as usual.</span></div>
+          <div style="flex:1"></div>
+        </div>
+        <div style="padding:0 16px 10px"><button class="btn primary lg block">Save €86.40</button></div>
+        <div class="keypad" style="padding:0 16px 4px"><button>1</button><button>2</button><button>3</button><button>4</button><button>5</button><button>6</button><button>7</button><button>8</button><button>9</button><button>.</button><button>0</button><button><i data-lucide="delete"></i></button></div>
+        <div class="homebar"></div>
+      </div></div>
+      <figcaption><b>Variable bill: set amount</b>A big keypad and the last six bills to compare against. The sparkline puts the new amount next to them, so a typo like €864 would stand out. Saving it lets auto-pay go ahead.<span class="was">Set-amount modal, "needs amount" flag</span></figcaption>
+    </figure>
+
+    <!-- 5. New bill stepped form -->
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="appbar"><div class="left"><button class="iconbtn bare"><i data-lucide="chevron-left"></i></button></div><div class="title">New bill</div><div class="right"><button class="btn ghost sm">Cancel</button></div></div>
+        <div class="scroll">
+          <div>
+            <div class="steps"><i class="done"></i><i class="cur"></i><i></i><i></i></div>
+            <div class="xs muted" style="margin-top:6px">Step 2 of 4</div>
+          </div>
+          <div class="done-step"><span class="check"><i data-lucide="check"></i></span><div class="main" style="flex:1;min-width:0"><div class="small" style="font-weight:600">Water · EYDAP · varies</div><div class="xs muted">What & how much</div></div><button class="btn ghost sm">Edit</button></div>
+          <div><h1 class="h1" style="font-size:24px">When is it due?</h1></div>
+          <div class="field"><span class="lbl">Repeats</span>
+            <div class="list radio-list">
+              <div class="row"><span class="radio"></span><div class="main"><div class="t" style="font-weight:500">Every month</div></div></div>
+              <div class="row"><span class="radio on"></span><div class="main"><div class="t">Every few months</div></div><span class="stepper-inline"><span><i data-lucide="minus"></i></span><b>4</b><span><i data-lucide="plus"></i></span></span></div>
+              <div class="row"><span class="radio"></span><div class="main"><div class="t" style="font-weight:500">Every year</div></div></div>
+            </div>
+          </div>
+          <div class="field"><label>First due date</label><div class="input"><i data-lucide="calendar"></i>Thu, 3 Dec 2026</div></div>
+          <div class="field"><span class="lbl">Ends</span><div class="seg"><span class="on">Never</span><span>After N times</span><span>On a date</span></div></div>
+          <div class="well small ink2">Next dates: Dec 3 · Apr 3 · Aug 3</div>
+          <div class="vstack" style="gap:8px">
+            <div class="future-step"><span class="n">3</span>Who pays</div>
+            <div class="future-step"><span class="n">4</span>Extras <span class="xs" style="font-weight:500;margin-left:auto">auto-pay, contract, budget, notes</span></div>
+          </div>
+          <button class="btn primary lg block">Continue</button>
+        </div>
+        <div class="homebar"></div>
+      </div></div>
+      <figcaption><b>New bill, step 2 of 4</b>Fifteen fields became four short steps, and each finished step shrinks to a one-line summary you can tap to edit. Extras is optional and can be skipped, and the preview of the next dates checks the schedule before you save.<span class="was">"New bill" modal, bills/edit.html form</span></figcaption>
+    </figure>
+
+  </div>
+</section>
+
+<!-- ============================ BUDGETS ============================ -->
+<section>
+  <div class="section-head">
+    <div class="eyebrow">06 · Plan › Budgets</div>
+    <h2>A budget is a place money goes. Each type shows what that type needs.</h2>
+    <p>Buckets were one generic page with optional cards bolted on. Now a spending budget shows its pace through the month, a trip shows its days and daily spend, and a savings budget shows its goal and the monthly amount needed to reach it on time. Creating one starts by picking the type, and the form adapts.</p>
+  </div>
+  <div class="board">
+
+    <!-- 6. Budgets list -->
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="plan-top">
+          <div class="between"><div class="largetitle">Plan</div><button class="iconbtn"><i data-lucide="plus"></i></button></div>
+          <div class="seg"><span>Bills</span><span class="on">Budgets</span><span>Cash</span><span>Pantry</span></div>
+        </div>
+        <div class="scroll">
+          <div class="between small"><span class="muted">October · day 6 of 31</span><span class="hstack xs muted" style="gap:6px"><span style="width:2px;height:12px;background:var(--ink);border-radius:1px"></span>where you'd be on pace</span></div>
+          <div class="list">
+            <div class="bud">
+              <div class="top"><div class="ico t1"><i data-lucide="shopping-basket"></i></div><div class="main"><div class="t">Day to day</div><div class="s">Everyday · resets monthly</div></div><div class="end"><div class="num">€842</div><div class="xs muted">of €1,500</div></div></div>
+              <div class="pacebar"><div class="bar"><i style="width:56.1%;--tint:var(--warn)"></i></div><span class="tick" style="left:19.4%"></span></div>
+              <div class="foot"><span class="warn" style="font-weight:600">€552 ahead of pace</span><span>€658 left</span></div>
+            </div>
+            <div class="bud">
+              <div class="top"><div class="ico t3"><i data-lucide="plane"></i></div><div class="main"><div class="t">Naxos trip</div><div class="s">Trip · 2–12 Oct · day 5 of 11</div></div><div class="end"><div class="num">€610</div><div class="xs muted">of €900</div></div></div>
+              <div class="pacebar"><div class="bar"><i style="width:67.8%;--tint:var(--c3)"></i></div><span class="tick" style="left:45.5%"></span></div>
+              <div class="foot"><span>€122 a day so far</span><span>€290 left</span></div>
+            </div>
+            <div class="bud">
+              <div class="top"><div class="ico t5"><i data-lucide="piggy-bank"></i></div><div class="main"><div class="t">New car</div><div class="s">Savings · goal by Jun 2027</div></div><div class="end"><div class="num">€4,200</div><div class="xs muted">35% of €12,000</div></div></div>
+              <div class="bar"><i style="width:35%;--tint:var(--c5)"></i></div>
+              <div class="foot"><span>€975 a month to make it</span><span>8 months left</span></div>
+            </div>
+            <div class="bud">
+              <div class="top"><div class="ico t6"><i data-lucide="receipt-text"></i></div><div class="main"><div class="t">Bills</div><div class="s">Bills · 2 of 6 paid</div></div><div class="end"><div class="num">€16.98</div><div class="xs muted">of €893.79</div></div></div>
+            </div>
+            <div class="bud">
+              <div class="top"><div class="ico t2"><i data-lucide="car"></i></div><div class="main"><div class="t">Yaris</div><div class="s">Custom · fuel and service</div></div><div class="end"><div class="num">€174</div><div class="xs muted">3 fill-ups</div></div></div>
+            </div>
+          </div>
+          <div class="list"><div class="row" style="min-height:48px"><div class="ico t6"><i data-lucide="archive"></i></div><div class="main"><div class="t" style="font-weight:500">Archived</div></div><span class="small muted">2</span><i data-lucide="chevron-right" class="chev"></i></div></div>
+          <button class="btn outline block"><i data-lucide="plus"></i>New budget</button>
+        </div>
+        <nav class="tabbar" data-tab="plan"></nav>
+      </div></div>
+      <figcaption><b>Budgets list</b>Each budget shows the one number its type cares about. The tick on a spending bar marks where you'd be if you spent evenly, so "ahead of pace" needs no maths. Archived budgets fold into one row.<span class="was">/buckets grid, bucket cards on the dashboard</span></figcaption>
+    </figure>
+
+    <!-- 7. Day to day detail -->
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="appbar"><div class="left"><button class="iconbtn bare"><i data-lucide="chevron-left"></i></button></div><div class="title">Day to day</div><div class="right"><button class="iconbtn bare"><i data-lucide="download"></i></button></div></div>
+        <div class="scroll">
+          <div class="monthsw"><button class="iconbtn"><i data-lucide="chevron-left"></i></button><b>October 2026</b><button class="iconbtn" style="opacity:.4"><i data-lucide="chevron-right"></i></button></div>
+          <div>
+            <div class="hstack" style="align-items:baseline;gap:8px"><span class="amt-lg">€842</span><span class="muted">of €1,500</span></div>
+            <div class="small warn" style="margin-top:2px;font-weight:600">€552 ahead of an even pace · day 6</div>
+          </div>
+          <div class="card">
+            <!-- x: 31 days over 300px (9.68/day); y: €1,500 over 120px (0.08 px per €), baseline y=130 -->
+            <svg class="chart" viewBox="0 0 320 146" role="img" aria-label="Cumulative spend versus even pace">
+              <g class="grid"><line x1="0" x2="306" y1="10" y2="10"/><line x1="0" x2="306" y1="70" y2="70"/><line x1="0" x2="306" y1="130" y2="130"/></g>
+              <text x="310" y="13">1.5k</text><text x="310" y="73">750</text><text x="310" y="133">0</text>
+              <line x1="0" y1="130" x2="300" y2="10" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 4"/>
+              <polyline points="0,130 9.7,120.4 19.4,109.2 29,97.2 38.7,88.4 48.4,74.8 58.1,62.6" fill="none" stroke="var(--warn)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+              <circle cx="58.1" cy="62.6" r="4" fill="var(--warn)"/>
+              <line x1="58.1" x2="58.1" y1="62.6" y2="130" stroke="var(--warn)" stroke-opacity=".35"/>
+              <text x="58" y="143" text-anchor="middle">Oct 6</text><text x="300" y="143" text-anchor="end">Oct 31</text>
+            </svg>
+            <div class="legend" style="margin-top:6px"><span><span class="dot" style="--tint:var(--warn)"></span>Spent</span><span><span style="width:14px;border-top:2px dashed var(--muted)"></span>Even pace</span></div>
+          </div>
+          <div class="card">
+            <div class="between"><span class="h3">By category</span></div>
+            <div class="vstack" style="gap:9px;margin-top:10px">
+              <div><div class="between small"><span>Groceries</span><span class="num">€362.40</span></div><div class="bar thin" style="margin-top:4px"><i style="width:100%;--tint:var(--c1)"></i></div></div>
+              <div><div class="between small"><span>Fuel</span><span class="num">€174.00</span></div><div class="bar thin" style="margin-top:4px"><i style="width:48%;--tint:var(--c2)"></i></div></div>
+              <div><div class="between small"><span>Eating out</span><span class="num">€141.30</span></div><div class="bar thin" style="margin-top:4px"><i style="width:39%;--tint:var(--c4)"></i></div></div>
+              <div><div class="between small"><span>Home · Personal · other</span><span class="num">€164.30</span></div><div class="bar thin" style="margin-top:4px"><i style="width:45.3%;--tint:var(--c6)"></i></div></div>
+            </div>
+          </div>
+          <div class="card pad-s">
+            <div class="between small"><span class="muted">Who paid</span></div>
+            <div class="stack" style="margin:8px 0"><i style="width:60.8%;background:var(--c3)"></i><i style="flex:1;background:var(--c2)"></i></div>
+            <div class="between small"><span class="hstack" style="gap:6px"><span class="avatar sm" style="--tint:var(--c3)">G</span>Giorgos <span class="num">€512</span></span><span class="hstack" style="gap:6px"><span class="avatar sm" style="--tint:var(--c2)">M</span>Maria <span class="num">€330</span></span></div>
+          </div>
+          <div>
+            <div class="sec-title"><span class="h2">Transactions</span><a>All 38</a></div>
+            <div class="list">
+              <div class="row"><div class="ico t1"><i data-lucide="shopping-cart"></i></div><div class="main"><div class="t">Sklavenitis</div><div class="s">Groceries · Giorgos · today</div></div><div class="end num">−€64.20</div></div>
+              <div class="row"><div class="ico t2"><i data-lucide="fuel"></i></div><div class="main"><div class="t">Shell Kifisias</div><div class="s">Fuel · Giorgos · yesterday</div></div><div class="end num">−€58.00</div></div>
+              <div class="row"><div class="ico t4"><i data-lucide="coffee"></i></div><div class="main"><div class="t">Coffee Island</div><div class="s">Eating out · Apple Pay · Oct 4</div></div><div class="end num">−€4.10</div></div>
+            </div>
+          </div>
+          <button class="btn outline block"><i data-lucide="download"></i>Export October as CSV</button>
+        </div>
+        <div class="homebar"></div>
+      </div></div>
+      <figcaption><b>Budget detail: Day to day</b>The month switcher works like the period picker everywhere else in the app. The chart puts real spend against an even line on the same scale, so a big shop early in the month shows as the gap it is.<span class="was">/buckets/{id}, bucket export, category breakdown</span></figcaption>
+    </figure>
+
+    <!-- 8. Naxos trip -->
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="appbar"><div class="left"><button class="iconbtn bare"><i data-lucide="chevron-left"></i></button></div><div class="title">Naxos trip</div><div class="right"><button class="iconbtn bare"><i data-lucide="ellipsis"></i></button></div></div>
+        <div class="scroll">
+          <div class="card">
+            <div class="hstack"><div class="ico lg t3"><i data-lucide="plane"></i></div><div class="main" style="flex:1"><div class="h2">Naxos</div><div class="small muted">Fri 2 Oct – Mon 12 Oct</div></div><span class="badge acc">Day 5 of 11</span></div>
+            <div class="days" style="margin-top:14px"><i class="past">2</i><i class="past">3</i><i class="past">4</i><i class="past">5</i><i class="today">6</i><i>7</i><i>8</i><i>9</i><i>10</i><i>11</i><i>12</i></div>
+          </div>
+          <div class="grid3">
+            <div class="card pad-s stat"><div class="k">Spent</div><div class="v">€610</div><div class="xs muted">of €900</div></div>
+            <div class="card pad-s stat"><div class="k">Per day</div><div class="v">€122</div><div class="xs muted">average</div></div>
+            <div class="card pad-s stat"><div class="k">Left</div><div class="v">€290</div><div class="xs muted">€48 a day</div></div>
+          </div>
+          <div class="card">
+            <div class="h3">By category</div>
+            <div class="stack" style="margin:12px 0 10px"><i style="width:52.5%;background:var(--c3)"></i><i style="width:30.5%;background:var(--c1)"></i><i style="flex:1;background:var(--c2)"></i></div>
+            <div class="list plain">
+              <div class="row" style="min-height:44px;padding-block:6px"><div class="ico t3"><i data-lucide="bed-double"></i></div><div class="main"><div class="t">Hotel</div><div class="s">Booked Sep 12 · 10 nights</div></div><div class="end num">€320.00</div></div>
+              <div class="row" style="min-height:44px;padding-block:6px"><div class="ico t1"><i data-lucide="ship"></i></div><div class="main"><div class="t">Ferry</div><div class="s">Blue Star Ferries · return</div></div><div class="end num">€186.00</div></div>
+              <div class="row" style="min-height:44px;padding-block:6px"><div class="ico t2"><i data-lucide="utensils"></i></div><div class="main"><div class="t">Food</div><div class="s">9 tavernas and shops</div></div><div class="end num">€104.00</div></div>
+            </div>
+          </div>
+          <div class="card pad-s">
+            <div class="small muted">Who paid</div>
+            <div class="stack" style="margin:8px 0"><i style="width:63.9%;background:var(--c3)"></i><i style="flex:1;background:var(--c2)"></i></div>
+            <div class="between small"><span class="hstack" style="gap:6px"><span class="avatar sm" style="--tint:var(--c3)">G</span>Giorgos <span class="num">€390</span></span><span class="hstack" style="gap:6px"><span class="avatar sm" style="--tint:var(--c2)">M</span>Maria <span class="num">€220</span></span></div>
+          </div>
+          <button class="btn primary lg block"><i data-lucide="plus"></i>Add expense to Naxos trip</button>
+        </div>
+        <div class="homebar"></div>
+      </div></div>
+      <figcaption><b>Budget detail: Naxos trip</b>A trip is measured in days, so the header is the trip calendar and the key figures are per day. "Add expense" opens the composer with this trip already chosen.<span class="was">Trip summary card, /buckets/{id} for trips</span></figcaption>
+    </figure>
+
+    <!-- 9. New car savings -->
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="appbar"><div class="left"><button class="iconbtn bare"><i data-lucide="chevron-left"></i></button></div><div class="title">New car</div><div class="right"><button class="iconbtn bare"><i data-lucide="ellipsis"></i></button></div></div>
+        <div class="scroll">
+          <div class="card">
+            <div class="ring-wrap">
+              <div class="ring">
+                <!-- r=54, circumference 339.3; 35% = 118.8 -->
+                <svg viewBox="0 0 128 128" aria-hidden="true"><circle cx="64" cy="64" r="54" fill="none" stroke="var(--surface-2)" stroke-width="12"/><circle cx="64" cy="64" r="54" fill="none" stroke="var(--c5)" stroke-width="12" stroke-linecap="round" stroke-dasharray="118.8 339.3"/></svg>
+                <div class="lbl"><div><div class="num" style="font-size:24px">35%</div><div class="xs muted">saved</div></div></div>
+              </div>
+              <div class="vstack" style="gap:8px;min-width:0">
+                <div><div class="amt-lg" style="font-size:24px">€4,200</div><div class="small muted">of €12,000</div></div>
+                <div class="small"><span class="muted">Target</span> <b>June 2027</b></div>
+                <div class="small"><span class="muted">Still to save</span> <span class="num">€7,800</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="card flat hstack" style="background:var(--warn-soft);border-color:transparent;align-items:flex-start">
+            <div class="ico twarn round"><i data-lucide="target"></i></div>
+            <div class="small"><b>€975 a month to reach it on time</b><div class="ink2">You've put in €700 a month on average. At that rate you'd get there in Oct 2027.</div></div>
+          </div>
+          <div>
+            <div class="daygroup"><span>Contributions</span><span>6 since May</span></div>
+            <div class="list">
+              <div class="row"><div class="ico tpos round"><i data-lucide="arrow-up-right"></i></div><div class="main"><div class="t">October</div><div class="s">Oct 1 · Giorgos</div></div><div class="end num pos">+€500</div></div>
+              <div class="row"><div class="ico tpos round"><i data-lucide="arrow-up-right"></i></div><div class="main"><div class="t">September</div><div class="s">Sep 1 · Maria</div></div><div class="end num pos">+€800</div></div>
+              <div class="row"><div class="ico tpos round"><i data-lucide="arrow-up-right"></i></div><div class="main"><div class="t">August</div><div class="s">Aug 1 · Giorgos</div></div><div class="end num pos">+€400</div></div>
+              <div class="row"><div class="ico tpos round"><i data-lucide="arrow-up-right"></i></div><div class="main"><div class="t">July</div><div class="s">Jul 1 · Maria</div></div><div class="end num pos">+€700</div></div>
+            </div>
+          </div>
+          <button class="btn primary lg block"><i data-lucide="plus"></i>Add to savings</button>
+        </div>
+        <div class="homebar"></div>
+      </div></div>
+      <figcaption><b>Budget detail: New car</b>Savings budgets lead with progress toward the goal and turn the deadline into a monthly amount. The note compares that amount with what you have actually been putting in.<span class="was">Savings goal card, /buckets/{id} for savings</span></figcaption>
+    </figure>
+
+    <!-- 10. New budget sheet -->
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="plan-top">
+          <div class="between"><div class="largetitle">Plan</div></div>
+          <div class="seg"><span>Bills</span><span class="on">Budgets</span><span>Cash</span><span>Pantry</span></div>
+        </div>
+        <div class="scroll"></div>
+        <div class="scrim"></div>
+        <div class="sheet full">
+          <div class="grab"></div>
+          <div class="sheet-head"><span class="h2" style="font-size:20px">New budget</span><button class="iconbtn"><i data-lucide="x"></i></button></div>
+          <div class="sheet-body" style="gap:12px">
+            <div class="tiles">
+              <div class="tile"><div class="ico t1"><i data-lucide="shopping-basket"></i></div><b>Everyday</b><span>Monthly spending limit with pace</span></div>
+              <div class="tile on"><div class="ico t3"><i data-lucide="plane"></i></div><b>Trip</b><span>Fixed dates, daily spend</span></div>
+              <div class="tile"><div class="ico t6"><i data-lucide="receipt-text"></i></div><b>Bills</b><span>Where recurring bills land</span></div>
+              <div class="tile"><div class="ico t5"><i data-lucide="piggy-bank"></i></div><b>Savings</b><span>A goal and a target date</span></div>
+              <div class="tile" style="grid-column:1 / -1;flex-direction:row;align-items:center;gap:10px"><div class="ico t2" style="margin:0"><i data-lucide="shapes"></i></div><b>Custom</b><span>Anything else, like a car or a pet</span></div>
+            </div>
+            <div class="field"><label>Name</label><div class="input">Christmas in Thessaloniki</div></div>
+            <div class="grid2">
+              <div class="field"><label>Dates</label><div class="input" style="padding-inline:12px"><i data-lucide="calendar"></i>23–28 Dec</div></div>
+              <div class="field"><label>Budget</label><div class="input" style="padding-inline:12px"><span class="num">€700</span><span class="xs muted" style="margin-left:auto">€117/day</span></div></div>
+            </div>
+            <div class="list"><div class="row" style="min-height:50px;padding-block:8px"><div class="main"><div class="t" style="font-weight:500">Show income here</div><div class="s">Count money in, like refunds</div></div><span class="toggle"></span></div></div>
+            <div class="field"><span class="lbl">Colour and icon</span>
+              <div class="swatches" style="justify-content:space-between"><i style="--tint:var(--c1)"></i><i style="--tint:var(--c2)"></i><i class="on" style="--tint:var(--c3)"></i><i style="--tint:var(--c4)"></i><i style="--tint:var(--c5)"></i><i style="--tint:var(--c6)"></i></div>
+              <div class="iconpick" style="margin-top:4px"><span class="on"><i data-lucide="plane"></i></span><span><i data-lucide="ship"></i></span><span><i data-lucide="car"></i></span><span><i data-lucide="bed-double"></i></span><span><i data-lucide="gift"></i></span></div>
+            </div>
+          </div>
+          <button class="btn primary lg block">Create Trip budget</button>
+        </div>
+      </div></div>
+      <figcaption><b>New budget</b>Pick the type first and the form adapts: a trip asks for dates and shows the daily amount, and a savings budget would ask for a goal and a target date. Colour and icon are picked from a row of options.<span class="was">Bucket create and edit modals, bucket type select</span></figcaption>
+    </figure>
+
+  </div>
+</section>
+</div>
+<script src="mock.js"></script>
+</body>
+</html>

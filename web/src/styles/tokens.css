@@ -1,0 +1,89 @@
+/* Vault design tokens, ported from docs/redesign/mocks/tokens.css.
+   Dark first. Light applies when the OS prefers light (unless the user chose
+   dark) or when the user explicitly picks light via data-theme. */
+:root {
+  --bg: #090B10;
+  --surface: #12151D;
+  --surface-2: #1B1F2B;
+  --ink: #F3F5FA;
+  --ink-2: #C9CEDB;
+  --muted: #858DA3;
+  --line: #232838;
+  --accent: #6E8BFF;       /* signal blue */
+  --accent-ink: #060814;
+  --accent-soft: #1B2347;
+  --pos: #3DD9A4;
+  --neg: #FF6B7A;
+  --warn: #FFC24B;
+  --pos-soft: #0F2D27;
+  --neg-soft: #33141C;
+  --warn-soft: #33290F;
+  --c1: #6E8BFF; --c2: #3DD9C4; --c3: #FFB547; --c4: #E77CFF; --c5: #FF7A6B; --c6: #6B7389;
+  --font-display: "Sora Variable", "Avenir Next", "Segoe UI", sans-serif;
+  --font-body: "Plus Jakarta Sans Variable", "Avenir Next", "Segoe UI", sans-serif;
+  --font-num: "JetBrains Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
+  --display-weight: 600;
+  --display-style: normal;
+  --num-weight: 500;
+  --r-xs: 8px; --r-sm: 10px; --r-md: 14px; --r-lg: 20px; --r-pill: 999px;
+  --shadow: 0 0 0 1px rgba(255,255,255,.02);
+  --shadow-sheet: 0 -10px 40px rgba(0,0,0,.6);
+  --card-border: 1px solid var(--line);
+  --tab-active: var(--accent);
+  --hero-bg: radial-gradient(120% 90% at 0% 0%, #1A2550 0%, #12151D 60%);
+  --hero-ink: #F3F5FA;
+  --hero-pos: #3DD9A4;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+  --bg: #EEF1F7;
+  --surface: #FFFFFF;
+  --surface-2: #E4E8F1;
+  --ink: #0B0E17;
+  --ink-2: #353B4D;
+  --muted: #687089;
+  --line: #D8DDE8;
+  --accent: #2F55E4;
+  --accent-ink: #FFFFFF;
+  --accent-soft: #DFE6FF;
+  --pos: #0E9466;
+  --neg: #D6334A;
+  --warn: #B07A00;
+  --pos-soft: #D9F3E9;
+  --neg-soft: #FBE0E4;
+  --warn-soft: #FBEFD2;
+  --c1: #2F55E4; --c2: #0EA597; --c3: #D98B00; --c4: #B43ED1; --c5: #E2523F; --c6: #7A8299;
+  --shadow: 0 1px 2px rgba(11,14,23,.06);
+  --shadow-sheet: 0 -10px 40px rgba(11,14,23,.18);
+  --hero-bg: radial-gradient(120% 90% at 0% 0%, #2F55E4 0%, #10183A 75%);
+  --hero-ink: #FFFFFF;
+  --hero-pos: #5BF0B8;
+  color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #EEF1F7;
+  --surface: #FFFFFF;
+  --surface-2: #E4E8F1;
+  --ink: #0B0E17;
+  --ink-2: #353B4D;
+  --muted: #687089;
+  --line: #D8DDE8;
+  --accent: #2F55E4;
+  --accent-ink: #FFFFFF;
+  --accent-soft: #DFE6FF;
+  --pos: #0E9466;
+  --neg: #D6334A;
+  --warn: #B07A00;
+  --pos-soft: #D9F3E9;
+  --neg-soft: #FBE0E4;
+  --warn-soft: #FBEFD2;
+  --c1: #2F55E4; --c2: #0EA597; --c3: #D98B00; --c4: #B43ED1; --c5: #E2523F; --c6: #7A8299;
+  --shadow: 0 1px 2px rgba(11,14,23,.06);
+  --shadow-sheet: 0 -10px 40px rgba(11,14,23,.18);
+  --hero-bg: radial-gradient(120% 90% at 0% 0%, #2F55E4 0%, #10183A 75%);
+  --hero-ink: #FFFFFF;
+  --hero-pos: #5BF0B8;
+  color-scheme: light;
+}

@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tameio · Add & Scan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Sora:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="components.css">
+<script src="https://cdn.jsdelivr.net/npm/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<style>
+  /* Composer layout: a fixed column, keypad pinned to the bottom */
+  .comp { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; padding: 0 16px 8px; overflow: hidden; }
+  .comp .push { margin-top: auto; }
+  .comp-bar { display: grid; grid-template-columns: 38px 1fr 38px; align-items: center; gap: 10px; padding: 4px 16px 8px; flex: none; }
+  .comp-bar .seg { max-width: 220px; justify-self: center; width: 100%; }
+  .seg .on.inc { color: var(--pos); }
+  .modes { display: flex; justify-content: center; gap: 8px; }
+  .modes .chip { height: 30px; font-size: 12.5px; }
+  .amt-entry { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; padding-top: 2px; }
+  .big { display: inline-flex; align-items: center; font-family: var(--font-num); font-weight: var(--num-weight); font-variant-numeric: tabular-nums; font-size: 62px; line-height: 1; letter-spacing: -.03em; }
+  [data-dir="calm"] .big { font-family: var(--font-display); font-weight: 400; font-size: 68px; }
+  .big.mid { font-size: 44px; }
+  [data-dir="calm"] .big.mid { font-size: 48px; }
+  .caret { display: inline-block; width: 3px; height: .78em; margin-left: 4px; border-radius: 2px; background: var(--accent); animation: blink 1.1s steps(1) infinite; }
+  .caret.sm { height: 1em; width: 2px; margin-left: 2px; }
+  .inc .caret, .caret.inc { background: var(--pos); }
+  @keyframes blink { 50% { opacity: 0; } }
+  .cur { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 10px; border-radius: var(--r-pill); background: var(--surface-2); font-size: 12px; font-weight: 700; color: var(--ink-2); }
+  .cur svg { width: 12px; height: 12px; }
+  .pills { justify-content: center; }
+  .pill .chev-s { width: 14px; height: 14px; color: var(--muted); margin-left: -2px; }
+  .pill.on { border-color: var(--accent); background: var(--accent-soft); }
+  .pill.ghosty { border-style: dashed; color: var(--muted); background: transparent; }
+  .pills.left { justify-content: flex-start; }
+  .morelink { display: flex; justify-content: center; align-items: center; gap: 4px; font-size: 13px; font-weight: 650; color: var(--accent); }
+  .morelink svg { width: 15px; height: 15px; }
+  .keypad.tight button { height: 48px; font-size: 24px; }
+  .savebar { flex: none; padding: 6px 16px 0; }
+  .btn.income { background: var(--pos); color: var(--bg); }
+  .seg.five span { padding: 0 2px; font-size: 12px; }
+  .focus { border: 2px solid var(--accent); }
+  .ftag { display: inline-flex; align-items: center; gap: 3px; flex: none; font-size: 10.5px; font-weight: 700; color: var(--accent); background: var(--accent-soft); border-radius: var(--r-pill); padding: 3px 8px; white-space: nowrap; }
+  .ftag svg { width: 11px; height: 11px; }
+  .row.lowconf { background: var(--warn-soft); }
+  .row.lowconf .s.w { color: var(--warn); white-space: normal; }
+  .warncard { background: var(--warn-soft); border-radius: var(--r-lg); padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+  .member { display: flex; align-items: center; gap: 12px; padding: 10px 14px; }
+  .member .amtbox { width: 112px; height: 42px; border-radius: var(--r-md); border: 1px solid var(--line); background: var(--surface); display: flex; align-items: center; justify-content: flex-end; padding: 0 12px; font-family: var(--font-num); font-variant-numeric: tabular-nums; font-weight: var(--num-weight); font-size: 17px; }
+  .member .amtbox.focus { border: 2px solid var(--accent); }
+  .receipt-thumb { width: 74px; height: 96px; border-radius: var(--r-sm); background: #fbfbf8; border: 1px solid var(--line); padding: 8px 7px; display: flex; flex-direction: column; gap: 4px; flex: none; }
+  .receipt-thumb i { display: block; height: 3px; border-radius: 2px; background: #c9c9c2; }
+  .bg-dim { opacity: .55; }
+  /* Camera */
+  .screen.cam .sb { color: #fff; }
+  .cam-top { position: absolute; top: 54px; left: 16px; right: 16px; z-index: 2; display: flex; justify-content: space-between; align-items: center; }
+  .cam-top b { font-size: 16px; }
+  .cam-btn { width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgba(255,255,255,.16); color: #fff; display: grid; place-items: center; }
+  .cam-btn svg { width: 20px; height: 20px; }
+  .paper { position: absolute; left: 50%; top: 112px; width: 196px; height: 330px; transform: translateX(-50%) rotate(-2deg); background: #eeece4; border-radius: 3px; padding: 18px 16px; display: flex; flex-direction: column; gap: 7px; box-shadow: 0 20px 40px rgba(0,0,0,.5); }
+  .paper i { display: block; height: 4px; border-radius: 2px; background: #b9b7ae; }
+  .qr { position: relative; width: 92px; height: 92px; margin: auto auto 6px; background: repeating-conic-gradient(#1a1a1a 0 25%, #eeece4 0 50%) 0 0 / 11px 11px; }
+  .qr span { position: absolute; width: 28px; height: 28px; border: 6px solid #1a1a1a; background: #eeece4; box-shadow: inset 0 0 0 4px #eeece4, inset 0 0 0 20px #1a1a1a; }
+  .qr span:nth-child(1) { top: 0; left: 0; } .qr span:nth-child(2) { top: 0; right: 0; } .qr span:nth-child(3) { bottom: 0; left: 0; }
+  .found { position: absolute; left: 50%; top: 456px; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 6px; background: #fff; color: #000; font-size: 13px; font-weight: 700; padding: 7px 14px; border-radius: 999px; white-space: nowrap; }
+  .found svg { width: 15px; height: 15px; }
+  .cam-note { position: absolute; left: 16px; right: 16px; bottom: 14px; background: rgba(0,0,0,.55); color: rgba(255,255,255,.88); font-size: 12.5px; line-height: 1.4; border-radius: 14px; padding: 10px 12px; display: flex; gap: 10px; align-items: flex-start; }
+  .cam-note svg { width: 16px; height: 16px; flex: none; margin-top: 1px; }
+  .cam-ctrl { flex: none; padding: 14px 16px 30px; display: flex; flex-direction: column; gap: 16px; align-items: center; }
+  .cam-seg { display: flex; gap: 2px; background: rgba(255,255,255,.12); border-radius: 999px; padding: 3px; }
+  .cam-seg span { padding: 6px 16px; border-radius: 999px; font-size: 13px; font-weight: 650; color: rgba(255,255,255,.72); }
+  .cam-seg .on { background: #fff; color: #000; }
+  .cam-row { width: 100%; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; }
+  .cam-row a { font-size: 13px; font-weight: 650; color: #fff; display: inline-flex; align-items: center; gap: 6px; }
+  .cam-row a svg { width: 16px; height: 16px; }
+  .shutter { width: 72px; height: 72px; border-radius: 50%; border: 4px solid #fff; display: grid; place-items: center; }
+  .shutter::after { content: ""; width: 56px; height: 56px; border-radius: 50%; background: #fff; }
+  .opt { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px 0 6px; border-radius: var(--r-pill); border: 1px solid var(--line); background: var(--surface); font-size: 13.5px; font-weight: 600; }
+  .opt.on { border-color: var(--accent); background: var(--accent-soft); }
+  .opt .ico { width: 28px; height: 28px; border-radius: 50%; }
+  .opt .ico svg { width: 15px; height: 15px; }
+</style>
+</head>
+<body data-stage data-dir="calm" data-mode="light">
+<div class="page">
+<header class="mock-bar"></header>
+
+<!-- ============================ ADD & SCAN ============================ -->
+<section>
+  <div class="section-head">
+    <div class="eyebrow">04 · Add & Scan</div>
+    <h2>One composer. A €3 coffee takes two taps.</h2>
+    <p>Type the amount and tap Save. Budget, category, payer and payment method are already filled from your last entry and your merchant rules, shown as pills you can tap to change. This one screen replaces the 4-step expense wizard, the long edit form, the separate income page, the scan confirmation form and the cash "take and spend" form. Everything else waits under "More".</p>
+  </div>
+  <div class="board">
+
+    <!-- 1 Composer: amount -->
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="comp-bar">
+          <button class="iconbtn"><i data-lucide="x"></i></button>
+          <div class="seg"><span class="on">Expense</span><span>Income</span></div>
+          <span></span>
+        </div>
+        <div class="comp">
+          <div class="modes"><span class="chip"><i data-lucide="scan-line"></i>Scan receipt</span><span class="chip"><i data-lucide="banknote"></i>Cash from wallet</span></div>
+          <div class="amt-entry">
+            <div class="big">€4.10<span class="caret"></span></div>
+            <span class="cur">EUR <i data-lucide="chevron-down"></i></span>
+          </div>
+          <div class="input"><i data-lucide="store"></i><span>Coffee Island</span></div>
+          <div class="pills">
+            <span class="pill"><span class="ico t1"><i data-lucide="shopping-basket"></i></span>Day to day<i data-lucide="chevron-down" class="chev-s"></i></span>
+            <span class="pill"><span class="ico t4"><i data-lucide="coffee"></i></span>Eating out<i data-lucide="chevron-down" class="chev-s"></i></span>
+            <span class="pill"><span class="avatar" style="--tint:var(--c3)">G</span>Giorgos<i data-lucide="chevron-down" class="chev-s"></i></span>
+            <span class="pill"><span class="ico t6"><i data-lucide="nfc"></i></span>Apple Pay<i data-lucide="chevron-down" class="chev-s"></i></span>
+          </div>
+          <div class="morelink">More: date, split, notes, receipt<i data-lucide="chevron-down"></i></div>
+          <div class="keypad tight push"><button>1</button><button>2</button><button>3</button><button>4</button><button>5</button><button>6</button><button>7</button><button>8</button><button>9</button><button>.</button><button>0</button><button><i data-lucide="delete"></i></button></div>
+          <button class="btn primary lg block">Save €4.10</button>
+        </div>
+        <div class="homebar"></div>
+      </div></div>
+      <figcaption><b>Composer</b>Opens from the + button with the keypad already up. Every pill shows a default: the last budget used, a category from the "coffee island" rule, you as payer, and your last payment method. Typing the amount and tapping Save is enough.<span class="was">/transactions/new (4-step wizard), /transactions/{id}/edit</span></figcaption>
+    </figure>
+
+    <!-- 2 Category picker -->
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="comp-bar bg-dim">
+          <button class="iconbtn"><i data-lucide="x"></i></button>
+          <div class="seg"><span class="on">Expense</span><span>Income</span></div>
+          <span></span>
+        </div>
+        <div class="comp bg-dim"><div class="amt-entry"><div class="big">€4.10</div></div></div>
+        <div class="scrim"></div>
+        <div class="sheet" style="height:86%">
+          <div class="grab"></div>
+          <div class="sheet-head"><span class="h2" style="font-size:20px">Category</span><button class="iconbtn"><i data-lucide="x"></i></button></div>
+          <div class="input search"><i data-lucide="search"></i><span class="ph">Search categories</span></div>
+          <div class="sheet-body" style="flex:1">
+            <div>
+              <div class="eyebrow" style="margin-bottom:6px">Suggested</div>
+              <div class="list">
+                <div class="row sel"><div class="ico t4"><i data-lucide="coffee"></i></div><div class="main"><div class="t">Eating out</div><div class="s">Matches your rule "coffee island"</div></div><i data-lucide="check" class="acc"></i></div>
+              </div>
+            </div>
+            <div>
+              <div class="eyebrow" style="margin-bottom:8px">Recent</div>
+              <div class="chips"><span class="chip"><i data-lucide="shopping-cart"></i>Groceries</span><span class="chip"><i data-lucide="fuel"></i>Fuel</span><span class="chip"><i data-lucide="house"></i>Home</span><span class="chip"><i data-lucide="shirt"></i>Personal</span></div>
+            </div>
+            <div>
+              <div class="eyebrow" style="margin-bottom:6px">All categories</div>
+              <div class="list">
+                <div class="row"><div class="ico t1"><i data-lucide="shopping-cart"></i></div><div class="main"><div class="t">Groceries</div></div></div>
+                <div class="row"><div class="ico t4"><i data-lucide="utensils"></i></div><div class="main"><div class="t">Eating out</div></div></div>
+                <div class="row"><div class="ico t2"><i data-lucide="fuel"></i></div><div class="main"><div class="t">Fuel</div><div class="s">Asks for price per litre</div></div></div>
+                <div class="row"><div class="ico t5"><i data-lucide="house"></i></div><div class="main"><div class="t">Home</div></div></div>
+                <div class="row"><div class="ico t6"><i data-lucide="zap"></i></div><div class="main"><div class="t">Utilities & subscriptions</div></div></div>
+                <div class="row"><div class="ico t3"><i data-lucide="shirt"></i></div><div class="main"><div class="t">Personal</div></div></div>
+                <div class="row"><div class="ico t3"><i data-lucide="plane"></i></div><div class="main"><div class="t">Travel</div></div></div>
+              </div>
+            </div>
+          </div>
+          <div class="between small" style="flex:none"><span class="muted">Tap once to pick and close</span><a class="acc" style="font-weight:650">Edit categories</a></div>
+        </div>
+      </div></div>
+      <figcaption><b>Category picker</b>The suggestion comes first and says which rule matched, so a wrong guess is easy to spot and fix. Categories that need extra fields, like Fuel, say so before you pick them.<span class="was">Category step of the wizard, category dropdown on the edit form</span></figcaption>
+    </figure>
+
+    <!-- 3 More expanded -->
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="comp-bar">
+          <button class="iconbtn"><i data-lucide="x"></i></button>
+          <div class="seg"><span class="on">Expense</span><span>Income</span></div>
+          <span></span>
+        </div>
+        <div class="scroll" style="padding-top:0">
+          <div class="between">
+            <div class="hstack" style="gap:8px"><span class="big mid">£20.00</span><span class="cur">GBP <i data-lucide="chevron-down"></i></span></div>
+            <span class="num muted">≈ €23.06</span>
+          </div>
+          <div class="input"><i data-lucide="store"></i><span>Etsy · UK seller</span></div>
+          <div class="field"><span class="lbl">Date</span>
+            <div class="chips"><span class="chip on">Today</span><span class="chip">Yesterday</span><span class="chip">Sun 4 Oct</span><span class="chip"><i data-lucide="calendar"></i>Pick a date</span></div>
+          </div>
+          <div class="field"><span class="lbl">Budget</span>
+            <div class="pills left">
+              <span class="pill on"><span class="ico t1"><i data-lucide="shopping-basket"></i></span>Day to day</span>
+              <span class="pill"><span class="ico t3"><i data-lucide="plane"></i></span>Naxos trip</span>
+              <span class="pill"><span class="ico t6"><i data-lucide="receipt"></i></span>Bills</span>
+            </div>
+          </div>
+          <div class="field"><span class="lbl">Paid by</span>
+            <div class="pills left">
+              <span class="pill on"><span class="avatar" style="--tint:var(--c3)">G</span>Giorgos</span>
+              <span class="pill"><span class="avatar" style="--tint:var(--c2)">M</span>Maria</span>
+              <span class="pill"><span class="ico t6"><i data-lucide="users"></i></span>Each paid own share</span>
+            </div>
+          </div>
+          <div class="field"><span class="lbl">Paid with</span>
+            <div class="seg five"><span class="on">Card</span><span>Cash</span><span>Apple Pay</span><span>Transfer</span><span>Other</span></div>
+          </div>
+          <div class="well hstack" style="align-items:flex-start">
+            <div class="ico tacc round"><i data-lucide="arrow-left-right"></i></div>
+            <div class="small" style="flex:1;min-width:0">
+              <div class="between"><b class="num">£20.00 → €23.06</b><a class="acc" style="font-weight:650">Edit</a></div>
+              <div class="muted">At 1.153, today's ECB rate. Change it to match your card statement.</div>
+            </div>
+          </div>
+          <div class="input"><i data-lucide="sticky-note"></i><span class="ph">Add a note</span></div>
+          <div class="list">
+            <div class="row"><div class="ico t6"><i data-lucide="paperclip"></i></div><div class="main"><div class="t">Attach receipt</div><div class="s">Photo or PDF</div></div><i data-lucide="chevron-right" class="chev"></i></div>
+            <div class="row"><div class="ico t2"><i data-lucide="users"></i></div><div class="main"><div class="t">Split with Maria</div><div class="s">Off · all of it is your share</div></div><i data-lucide="chevron-right" class="chev"></i></div>
+            <div class="row"><div class="main"><div class="t">Count in forecast</div><div class="s">Turn off for one-offs</div></div><span class="toggle on"></span></div>
+          </div>
+        </div>
+        <div class="savebar"><button class="btn primary lg block">Save €23.06</button></div>
+        <div class="homebar"></div>
+      </div></div>
+      <figcaption><b>More, opened</b>The rest of the old edit form sits in this one scroll, in the same composer. Paying in another currency shows the converted amount and the rate used, and you can edit the rate to match your bank.<span class="was">Wizard steps 2–4, edit form fields, currency and rate inputs</span></figcaption>
+    </figure>
+
+    <!-- 4 Split editor -->
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="appbar"><div class="left"><button class="iconbtn bare"><i data-lucide="chevron-left"></i></button></div><div class="title">Split</div><div class="right"><button class="btn ghost sm">Done</button></div></div>
+        <div class="scroll">
+          <div class="between"><div><div class="h2">Sklavenitis</div><div class="small muted">Paid by Giorgos · Card</div></div><span class="amt-lg">€64<span class="cents">.20</span></span></div>
+          <div class="list"><div class="row"><div class="ico t2"><i data-lucide="users"></i></div><div class="main"><div class="t">Shared</div><div class="s">Part of this is Maria's share</div></div><span class="toggle on"></span></div></div>
+          <div class="seg"><span>Equal</span><span class="on">Amounts</span><span>Percent</span></div>
+          <div class="card" style="padding:14px 0 6px">
+            <div class="stack" style="margin:0 14px 8px"><i style="width:62.3%;background:var(--c3)"></i><i style="flex:1;background:var(--c2)"></i></div>
+            <div class="member"><span class="avatar" style="--tint:var(--c3)">G</span><div style="flex:1;min-width:0"><div class="h3">Giorgos</div><div class="xs muted">62% · gets the rest</div></div><span class="amtbox">€40.00</span></div>
+            <div class="divider" style="margin-left:58px"></div>
+            <div class="member"><span class="avatar" style="--tint:var(--c2)">M</span><div style="flex:1;min-width:0"><div class="h3">Maria</div><div class="xs muted">38%</div></div><span class="amtbox focus">€24.20<span class="caret sm"></span></span></div>
+          </div>
+          <div class="well hstack small"><i data-lucide="circle-check" class="pos"></i><span>Giorgos covers the remaining <b class="num">€0.00</b>. The shares add up to €64.20.</span></div>
+          <div class="card flat hstack" style="align-items:flex-start">
+            <div class="ico t6 round"><i data-lucide="info"></i></div>
+            <div class="small"><b>Each paid their own share?</b><div class="muted">Choose "Each paid own share" as the payer instead, like rent at €375 each. Both shares then count as paid by their owner.</div></div>
+          </div>
+        </div>
+        <div class="savebar"><button class="btn primary lg block">Use this split</button></div>
+        <div class="homebar"></div>
+      </div></div>
+      <figcaption><b>Split editor</b>Equal, fixed amounts or percent, with a bar that updates as you type. The payer takes whatever is left, so the total always adds up and the form can't be saved with a gap.<span class="was">Split section of the wizard and edit form, payer mode</span></figcaption>
+    </figure>
+
+    <!-- 5 Fuel -->
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="comp-bar">
+          <button class="iconbtn"><i data-lucide="x"></i></button>
+          <div class="seg"><span class="on">Expense</span><span>Income</span></div>
+          <span></span>
+        </div>
+        <div class="comp">
+          <div class="amt-entry"><div class="big mid">€58.00</div></div>
+          <div class="input"><i data-lucide="store"></i><span>Shell Kifisias</span></div>
+          <div class="pills">
+            <span class="pill"><span class="ico t2"><i data-lucide="car"></i></span>Yaris<i data-lucide="chevron-down" class="chev-s"></i></span>
+            <span class="pill"><span class="ico t2"><i data-lucide="fuel"></i></span>Fuel<i data-lucide="chevron-down" class="chev-s"></i></span>
+            <span class="pill"><span class="avatar" style="--tint:var(--c3)">G</span>Giorgos<i data-lucide="chevron-down" class="chev-s"></i></span>
+            <span class="pill"><span class="ico t6"><i data-lucide="credit-card"></i></span>Card<i data-lucide="chevron-down" class="chev-s"></i></span>
+          </div>
+          <div class="card vstack" style="gap:10px">
+            <div class="between"><span class="h3">Fuel for Yaris</span><span class="xs muted">Last fill: €1.889/L</span></div>
+            <div class="grid2">
+              <div class="field"><span class="lbl">Price per litre</span><div class="input focus num"><span>€1.859<span class="caret sm"></span></span></div></div>
+              <div class="field"><span class="lbl">Litres</span><div class="input num" style="background:var(--surface-2);border-color:transparent">31.2 L</div></div>
+            </div>
+            <div class="xs muted">Litres are worked out from the amount and price.</div>
+          </div>
+          <div class="keypad tight push"><button>1</button><button>2</button><button>3</button><button>4</button><button>5</button><button>6</button><button>7</button><button>8</button><button>9</button><button>.</button><button>0</button><button><i data-lucide="delete"></i></button></div>
+          <button class="btn primary lg block">Save €58.00</button>
+        </div>
+        <div class="homebar"></div>
+      </div></div>
+      <figcaption><b>Fuel</b>Picking Fuel adds one field, price per litre, and works out the litres. The budget pill switches to the car (Yaris), so each car keeps its own fuel history.<span class="was">Fuel litres/price fields on the wizard and edit form</span></figcaption>
+    </figure>
+
+    <!-- 6 Income -->
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="comp-bar">
+          <button class="iconbtn"><i data-lucide="x"></i></button>
+          <div class="seg"><span>Expense</span><span class="on inc">Income</span></div>
+          <span></span>
+        </div>
+        <div class="comp">
+          <div class="amt-entry inc">
+            <div class="big pos">+€700.00<span class="caret"></span></div>
+            <span class="cur">EUR <i data-lucide="chevron-down"></i></span>
+          </div>
+          <div class="input"><i data-lucide="briefcase"></i><span>Studio Nera · invoice 14</span></div>
+          <div class="pills">
+            <span class="pill"><span class="avatar" style="--tint:var(--c3)">G</span>Received by Giorgos<i data-lucide="chevron-down" class="chev-s"></i></span>
+            <span class="pill"><span class="ico tpos"><i data-lucide="laptop"></i></span>Freelance<i data-lucide="chevron-down" class="chev-s"></i></span>
+            <span class="pill"><span class="ico t6"><i data-lucide="calendar"></i></span>Sat 3 Oct<i data-lucide="chevron-down" class="chev-s"></i></span>
+            <span class="pill ghosty"><span class="ico t6"><i data-lucide="link"></i></span>Not linked to a budget</span>
+          </div>
+          <p class="xs muted" style="margin:0;text-align:center">Link a budget only when this money pays for it.</p>
+          <div class="keypad tight push"><button>1</button><button>2</button><button>3</button><button>4</button><button>5</button><button>6</button><button>7</button><button>8</button><button>9</button><button>.</button><button>0</button><button><i data-lucide="delete"></i></button></div>
+          <button class="btn income lg block">Save income €700.00</button>
+        </div>
+        <div class="homebar"></div>
+      </div></div>
+      <figcaption><b>Income</b>Same composer with the switch flipped. Payer becomes "Received by", the amount turns green, and the budget is optional and empty by default.<span class="was">/income/new</span></figcaption>
+    </figure>
+
+    <!-- 7 Scan camera -->
+    <figure class="shot">
+      <div class="phone"><div class="screen cam">
+        <div class="camera">
+          <div class="view">
+            <div class="cam-top"><button class="cam-btn"><i data-lucide="x"></i></button><b>Scan receipt</b><button class="cam-btn"><i data-lucide="flashlight"></i></button></div>
+            <div class="paper">
+              <i style="width:55%;margin:0 auto;height:6px;background:#8f8d86"></i><i style="width:70%;margin:0 auto 6px"></i>
+              <i></i><i style="width:80%"></i><i></i><i style="width:65%"></i><i></i><i style="width:75%"></i>
+              <i style="width:50%;margin-left:auto;height:6px;background:#8f8d86"></i>
+              <div class="qr"><span></span><span></span><span></span></div>
+            </div>
+            <div class="viewfinder" style="top:auto;bottom:auto;transform:translateX(-50%);top:302px;width:150px;height:150px"></div>
+            <div class="found"><i data-lucide="qr-code"></i>Point at the QR on your receipt</div>
+            <div class="cam-note"><i data-lucide="info"></i><span>Greek receipts carry a myDATA QR. Tameio looks it up with AADE and gets the shop, total, VAT and items, so nothing is guessed. No QR? Switch to Photo.</span></div>
+          </div>
+          <div class="cam-ctrl">
+            <div class="cam-seg"><span class="on">QR</span><span>Photo</span><span>PDF</span></div>
+            <div class="cam-row">
+              <a><i data-lucide="upload"></i>Upload file</a>
+              <span class="shutter"></span>
+              <a style="justify-self:end"><i data-lucide="keyboard"></i>Type it instead</a>
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <figcaption><b>Scan</b>QR mode reads the receipt as soon as the code is in the frame, no shutter needed. Photo and PDF use text recognition, and "Type it instead" goes back to the composer with nothing lost.<span class="was">/transactions/scan, receipt-scanner upload</span></figcaption>
+    </figure>
+
+    <!-- 8 Scan review -->
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="appbar"><div class="left"><button class="iconbtn bare"><i data-lucide="chevron-left"></i></button></div><div class="title">Check receipt</div><div class="right" style="width:38px"></div></div>
+        <div class="scroll tight" style="padding-top:0">
+          <div class="card hstack" style="align-items:stretch">
+            <div class="receipt-thumb"><i style="width:60%"></i><i></i><i style="width:80%"></i><i></i><i style="width:40%"></i><i style="width:70%"></i><i></i><i style="width:50%;margin-top:auto;background:#999"></i></div>
+            <div class="vstack" style="gap:6px;justify-content:center;min-width:0">
+              <span class="badge warn" style="align-self:flex-start"><i data-lucide="scan-line"></i>Read with OCR · check the amount</span>
+              <span class="small muted">No QR on this one, so the photo was read. 14 items · VAT €7.12.</span>
+              <a class="small acc" style="font-weight:650">Retake photo</a>
+            </div>
+          </div>
+          <div class="list">
+            <div class="row lowconf"><div class="ico twarn"><i data-lucide="triangle-alert"></i></div><div class="main"><div class="s">Total</div><div class="t num">€64.20</div><div class="s w">Faint print. Could also be €84.20.</div></div><span class="ftag"><i data-lucide="receipt"></i>from receipt</span></div>
+            <div class="row"><div class="ico t1"><i data-lucide="store"></i></div><div class="main"><div class="s">Shop</div><div class="t">Sklavenitis</div></div><span class="ftag"><i data-lucide="receipt"></i>from receipt</span></div>
+            <div class="row"><div class="ico t6"><i data-lucide="calendar"></i></div><div class="main"><div class="s">Date</div><div class="t">Tue 6 Oct · 18:42</div></div><span class="ftag"><i data-lucide="receipt"></i>from receipt</span></div>
+          </div>
+          <div class="list">
+            <div class="row"><div class="ico t1"><i data-lucide="shopping-cart"></i></div><div class="main"><div class="s">Category</div><div class="t">Groceries</div></div><i data-lucide="chevron-right" class="chev"></i></div>
+            <div class="row"><div class="ico tacc"><i data-lucide="wand-sparkles"></i></div><div class="main"><div class="t" style="white-space:normal">Remember: Sklavenitis → Groceries</div><div class="s">Fill this in next time</div></div><span class="toggle on"></span></div>
+          </div>
+          <div class="pills left"><span class="pill"><span class="ico t1"><i data-lucide="shopping-basket"></i></span>Day to day<i data-lucide="chevron-down" class="chev-s"></i></span><span class="pill"><span class="avatar" style="--tint:var(--c3)">G</span>Giorgos<i data-lucide="chevron-down" class="chev-s"></i></span><span class="pill"><span class="ico t6"><i data-lucide="credit-card"></i></span>Card<i data-lucide="chevron-down" class="chev-s"></i></span></div>
+        </div>
+        <div class="savebar"><button class="btn primary lg block">Save €64.20</button></div>
+        <div class="homebar"></div>
+      </div></div>
+      <figcaption><b>Review a scan</b>Fields read from the receipt are tagged, and the one the reader is unsure about is highlighted. Saving with "Remember" on creates the category rule here, with no trip to Settings. A QR read gets a green "Read from myDATA QR" badge instead.<span class="was">Scan confirmation form, category rules page</span></figcaption>
+    </figure>
+
+    <!-- 9 Duplicate warning -->
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="comp-bar">
+          <button class="iconbtn"><i data-lucide="x"></i></button>
+          <div class="seg"><span class="on">Expense</span><span>Income</span></div>
+          <span></span>
+        </div>
+        <div class="comp">
+          <div class="amt-entry"><div class="big">€23.40</div></div>
+          <div class="input"><i data-lucide="store"></i><span>Lidl</span></div>
+          <div class="pills">
+            <span class="pill"><span class="ico t1"><i data-lucide="shopping-basket"></i></span>Day to day<i data-lucide="chevron-down" class="chev-s"></i></span>
+            <span class="pill"><span class="ico t1"><i data-lucide="shopping-cart"></i></span>Groceries<i data-lucide="chevron-down" class="chev-s"></i></span>
+            <span class="pill"><span class="avatar" style="--tint:var(--c3)">G</span>Giorgos<i data-lucide="chevron-down" class="chev-s"></i></span>
+            <span class="pill"><span class="ico t6"><i data-lucide="credit-card"></i></span>Card<i data-lucide="chevron-down" class="chev-s"></i></span>
+          </div>
+          <div class="warncard">
+            <div class="hstack" style="align-items:flex-start">
+              <div class="ico twarn"><i data-lucide="copy"></i></div>
+              <div style="min-width:0"><div class="h3">Looks like Lidl €23.40 from Sat 3 Oct. Save anyway?</div><div class="small muted" style="margin-top:2px">Same shop and amount, 3 days ago. Card · Giorgos · Groceries.</div></div>
+            </div>
+            <div class="grid2"><button class="btn outline">Open that one</button><button class="btn primary">Save anyway</button></div>
+          </div>
+          <p class="xs muted" style="margin:0;text-align:center">Shown after you tap Save. Nothing is saved until you choose.</p>
+          <div class="keypad tight push"><button>1</button><button>2</button><button>3</button><button>4</button><button>5</button><button>6</button><button>7</button><button>8</button><button>9</button><button>.</button><button>0</button><button><i data-lucide="delete"></i></button></div>
+        </div>
+        <div class="homebar"></div>
+      </div></div>
+      <figcaption><b>Duplicate check</b>The check runs when you tap Save and shows the earlier entry right in the composer. You don't land on a separate page or lose what you typed.<span class="was">/transactions/check-duplicate</span></figcaption>
+    </figure>
+
+    <!-- 10 Success toast -->
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="appbar">
+          <div class="left"><button class="chip" style="height:34px">Home · Kifisia <i data-lucide="chevron-down"></i></button></div>
+          <div class="right"><button class="iconbtn"><i data-lucide="bell"></i></button><span class="avatar" style="--tint:var(--c3)">G</span></div>
+        </div>
+        <div class="scroll">
+          <div class="hero">
+            <div class="eyebrow" style="color:inherit;opacity:.7">October so far</div>
+            <div class="amt-xl" style="margin-top:6px">€1,284<span class="cents">.60</span></div>
+            <div class="small muted" style="margin-top:6px">of €2,400 planned · 25 days left · on pace</div>
+          </div>
+          <div>
+            <div class="sec-title"><span class="h2">Recent</span><a>Activity</a></div>
+            <div class="list">
+              <div class="row sel"><div class="ico t1"><i data-lucide="shopping-cart"></i></div><div class="main"><div class="t">Sklavenitis</div><div class="s">Groceries · Giorgos · just now</div></div><div class="end num">−€64.20</div></div>
+              <div class="row"><div class="ico t4"><i data-lucide="coffee"></i></div><div class="main"><div class="t">Coffee Island</div><div class="s">Eating out · Giorgos · 09:12</div></div><div class="end num">−€4.10</div></div>
+              <div class="row"><div class="ico t2"><i data-lucide="fuel"></i></div><div class="main"><div class="t">Shell Kifisias</div><div class="s">Fuel · 31.2 L · yesterday</div></div><div class="end num">−€58.00</div></div>
+              <div class="row"><div class="ico tpos"><i data-lucide="arrow-down-left"></i></div><div class="main"><div class="t">Studio Nera</div><div class="s">Freelance · Giorgos · Oct 3</div></div><div class="end num pos">+€700.00</div></div>
+            </div>
+          </div>
+          <div class="card pad-s vstack" style="gap:8px"><div class="between small"><span class="hstack" style="gap:8px"><span class="ico t1" style="width:28px;height:28px"><i data-lucide="shopping-basket"></i></span><b>Day to day</b></span><span class="num">€842 of €1,500</span></div><div class="bar thin"><i style="width:56%;--tint:var(--c1)"></i></div></div>
+        </div>
+        <div class="toast"><i data-lucide="circle-check"></i><span>Saved €64.20 to Day to day</span><span class="act">Undo</span></div>
+        <nav class="tabbar" data-tab="home"></nav>
+      </div></div>
+      <figcaption><b>Saved</b>The composer closes and you're back where you started. The new row is highlighted, and Undo stays up for 5 seconds.<span class="was">"Transaction added" partial page</span></figcaption>
+    </figure>
+
+    <!-- 11 Offline -->
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="appbar">
+          <div class="left"><button class="chip" style="height:34px">Home · Kifisia <i data-lucide="chevron-down"></i></button></div>
+          <div class="right"><span class="badge warn"><i data-lucide="cloud-off"></i>Offline</span><span class="avatar" style="--tint:var(--c3)">G</span></div>
+        </div>
+        <div class="scroll">
+          <div class="hero">
+            <div class="eyebrow" style="color:inherit;opacity:.7">October so far</div>
+            <div class="amt-xl" style="margin-top:6px">€1,288<span class="cents">.70</span></div>
+            <div class="small muted" style="margin-top:6px">Includes 1 entry waiting to sync</div>
+          </div>
+          <div>
+            <div class="sec-title"><span class="h2">Recent</span><a>Activity</a></div>
+            <div class="list">
+              <div class="row sel"><div class="ico t6"><i data-lucide="cloud-off"></i></div><div class="main"><div class="t">Kiosk</div><div class="s"><span class="badge warn" style="height:18px">Waiting to sync</span></div></div><div class="end num">−€4.10</div></div>
+              <div class="row"><div class="ico t1"><i data-lucide="shopping-cart"></i></div><div class="main"><div class="t">Sklavenitis</div><div class="s">Groceries · Giorgos · 18:42</div></div><div class="end num">−€64.20</div></div>
+              <div class="row"><div class="ico t4"><i data-lucide="coffee"></i></div><div class="main"><div class="t">Coffee Island</div><div class="s">Eating out · Giorgos · 09:12</div></div><div class="end num">−€4.10</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="toast"><i data-lucide="cloud-off"></i><span>Saved on this phone. It will sync when you're back online.</span></div>
+        <nav class="tabbar" data-tab="home"></nav>
+      </div></div>
+      <figcaption><b>Saved offline</b>With no signal the composer still saves. The entry shows up in the list right away with a "Waiting to sync" badge and is sent when the connection returns.<span class="was">Offline queue in sw.js, floating sync pill</span></figcaption>
+    </figure>
+
+  </div>
+</section>
+</div>
+<script src="mock.js"></script>
+</body>
+</html>

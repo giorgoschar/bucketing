@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tameio · Home & Activity</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Sora:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="components.css">
+<script src="https://cdn.jsdelivr.net/npm/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<style>
+  .code-boxes { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+  .code-boxes span { height: 56px; border-radius: var(--r-md); background: var(--surface); border: 1px solid var(--line); display: grid; place-items: center; font-family: var(--font-num); font-size: 26px; font-variant-numeric: tabular-nums; }
+  .code-boxes span.cur { border: 2px solid var(--accent); }
+  .mark { width: 56px; height: 56px; border-radius: var(--r-lg); background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; }
+  [data-dir="calm"] .mark { background: var(--ink); color: var(--bg); }
+  .mark svg { width: 28px; height: 28px; }
+  .or { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12.5px; }
+  .or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+  .bucket-card { width: 168px; display: flex; flex-direction: column; gap: 10px; }
+  .daygroup { display: flex; justify-content: space-between; font-size: 12.5px; font-weight: 600; color: var(--muted); padding: 0 2px 6px; }
+  .check { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--line); flex: none; display: grid; place-items: center; }
+  .check.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .check svg { width: 14px; height: 14px; stroke-width: 3; }
+  .receipt-thumb { width: 74px; height: 96px; border-radius: var(--r-sm); background: #fbfbf8; border: 1px solid var(--line); padding: 8px 7px; display: flex; flex-direction: column; gap: 4px; flex: none; }
+  .receipt-thumb i { display: block; height: 3px; border-radius: 2px; background: #c9c9c2; }
+  .bulkbar { position: absolute; left: 12px; right: 12px; bottom: 30px; z-index: 6; background: var(--ink); color: var(--bg); border-radius: var(--r-lg); padding: 10px 10px 10px 16px; display: flex; align-items: center; gap: 6px; box-shadow: 0 12px 30px rgba(0,0,0,.3); }
+  .bulkbar .btn { background: color-mix(in srgb, var(--bg) 16%, transparent); color: var(--bg); height: 38px; padding: 0 12px; font-size: 13.5px; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .pair .well { display: flex; flex-direction: column; gap: 2px; }
+</style>
+</head>
+<body data-stage data-dir="calm" data-mode="light">
+<div class="page">
+<header class="mock-bar"></header>
+
+<!-- ============================ ACCESS ============================ -->
+<section>
+  <div class="section-head">
+    <div class="eyebrow">01 · Access</div>
+    <h2>Sign in with Face ID. The 6-digit code becomes the fallback.</h2>
+    <p>Passkeys (WebAuthn) work in an installed iPhone PWA and already count as two factors, so the authenticator code is only needed on a new device without a passkey. Joining by invite folds account creation and security setup into one short path.</p>
+  </div>
+  <div class="board">
+
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="scroll" style="display:flex;flex-direction:column;justify-content:space-between;padding-top:60px">
+          <div class="vstack" style="gap:18px">
+            <div class="mark"><i data-lucide="wallet"></i></div>
+            <div>
+              <h1 class="h1" style="font-size:34px">Tameio</h1>
+              <p class="muted" style="margin:6px 0 0">Your household's money in one place.</p>
+            </div>
+          </div>
+          <div class="vstack" style="gap:12px">
+            <button class="btn primary lg block"><i data-lucide="scan-face"></i>Sign in with Face ID</button>
+            <div class="or">or use your password</div>
+            <div class="field"><label>Username or email</label><div class="input">giorgos</div></div>
+            <div class="field"><label>Password</label><div class="input"><span>••••••••••••</span><i data-lucide="eye" style="margin-left:auto"></i></div></div>
+            <button class="btn outline block">Continue</button>
+            <p class="xs muted" style="text-align:center;margin:4px 0 0">No account? Ask a household member for an invite link.</p>
+          </div>
+        </div>
+        <div class="homebar"></div>
+      </div></div>
+      <figcaption><b>Sign in</b>The passkey button comes first. Password sign-in goes on to the code step.<span class="was">/login, /setup</span></figcaption>
+    </figure>
+
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="appbar"><div class="left"><button class="iconbtn bare"><i data-lucide="chevron-left"></i></button></div></div>
+        <div class="scroll" style="display:flex;flex-direction:column;gap:20px">
+          <div>
+            <h1 class="h1">Enter your code</h1>
+            <p class="muted" style="margin:8px 0 0">Open your authenticator app and type the 6-digit code for Tameio.</p>
+          </div>
+          <div class="code-boxes" style="margin-top:0"><span>4</span><span>1</span><span>8</span><span class="cur"></span><span></span><span></span></div>
+          <div class="between small"><span class="muted">Code refreshes every 30s</span><a class="acc" style="font-weight:600">Use a backup code</a></div>
+          <div class="card flat hstack" style="align-items:flex-start;margin-top:0">
+            <div class="ico tacc round"><i data-lucide="scan-face"></i></div>
+            <div class="small"><b>Skip this next time</b><div class="muted">After signing in, save a passkey on this iPhone and sign in with Face ID only.</div></div>
+          </div>
+        </div>
+        <div class="keypad" style="padding:0 16px 8px"><button>1</button><button>2</button><button>3</button><button>4</button><button>5</button><button>6</button><button>7</button><button>8</button><button>9</button><button></button><button>0</button><button><i data-lucide="delete"></i></button></div>
+        <div class="homebar"></div>
+      </div></div>
+      <figcaption><b>Two-factor code</b>Uses a numeric keypad, submits itself on the 6th digit and offers backup codes inline. It then prompts the user to save a passkey.<span class="was">/login/verify, /login/verify/backup</span></figcaption>
+    </figure>
+
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="scroll" style="padding-top:28px">
+          <div class="card" style="text-align:center;display:flex;flex-direction:column;align-items:center;gap:10px">
+            <div class="avatars"><span class="avatar lg" style="--tint:var(--c3)">G</span><span class="avatar lg" style="--tint:var(--c2)">+</span></div>
+            <div><div class="eyebrow">Invitation</div><div class="h2" style="font-size:20px;margin-top:4px">Giorgos invited you to <br>Home · Kifisia</div></div>
+            <div class="small muted">Expires in 6 days · single use</div>
+          </div>
+          <div class="field"><label>Your name</label><div class="input">Maria</div></div>
+          <div class="field"><label>Email</label><div class="input">maria@example.com</div></div>
+          <div class="field"><label>Password</label><div class="input"><span>••••••••••</span><span class="badge pos" style="margin-left:auto">Strong</span></div></div>
+          <div class="list">
+            <div class="row"><div class="ico tacc"><i data-lucide="scan-face"></i></div><div class="main"><div class="t">Face ID passkey</div><div class="s">Set up right after joining</div></div><span class="badge acc">Step 2</span></div>
+            <div class="row"><div class="ico t6"><i data-lucide="key-round"></i></div><div class="main"><div class="t">Authenticator app</div><div class="s">Backup for new devices</div></div><span class="badge">Step 3</span></div>
+          </div>
+          <button class="btn primary lg block">Join household</button>
+        </div>
+        <div class="homebar"></div>
+      </div></div>
+      <figcaption><b>Join by invite</b>Shows who invited you and to which household, then the security steps that follow. These steps are still required, but you can see them up front.<span class="was">/join/{token}, /settings/2fa/enroll, backup codes</span></figcaption>
+    </figure>
+
+  </div>
+</section>
+
+<!-- ============================ HOME ============================ -->
+<section>
+  <div class="section-head">
+    <div class="eyebrow">02 · Home</div>
+    <h2>One number, then only what needs you.</h2>
+    <p>The dashboard used to show nine blocks. Home now answers two questions: how much has gone out this month, and what needs fixing. Overdue bills, bills that need an amount, unlogged cash, expenses with no payer, possible duplicates and low pantry stock all go into one attention inbox.</p>
+  </div>
+  <div class="board">
+
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="appbar">
+          <div class="left"><button class="chip" style="height:34px">Home · Kifisia <i data-lucide="chevron-down"></i></button></div>
+          <div class="right"><button class="iconbtn"><i data-lucide="bell"></i><span class="pip"></span></button><span class="avatar" style="--tint:var(--c3)">G</span></div>
+        </div>
+        <div class="scroll">
+          <div class="hero">
+            <div class="eyebrow" style="color:inherit;opacity:.7">October so far</div>
+            <div class="amt-xl" style="margin-top:6px">€1,284<span class="cents">.60</span></div>
+            <div class="small muted" style="margin-top:6px">of €2,400 planned · 25 days left · on pace</div>
+            <div class="stack" style="margin-top:12px"><i style="width:28%;background:var(--c1)"></i><i style="width:14%;background:var(--c2)"></i><i style="width:7%;background:var(--c3)"></i><i style="width:4.5%;background:var(--c4)"></i><i style="flex:1;background:color-mix(in srgb, currentColor 14%, transparent)"></i></div>
+            <div class="grid3" style="margin-top:14px">
+              <div class="stat"><div class="k" style="color:inherit;opacity:.7">In</div><div class="v">€3,150</div></div>
+              <div class="stat"><div class="k" style="color:inherit;opacity:.7">Out</div><div class="v">€1,285</div></div>
+              <div class="stat"><div class="k" style="color:inherit;opacity:.7">Net</div><div class="v pos">+€1,865</div></div>
+            </div>
+          </div>
+
+          <div>
+            <div class="sec-title"><span class="h2">Needs you <span class="badge neg" style="vertical-align:2px">6</span></span><a>See all</a></div>
+            <div class="list">
+              <div class="attn"><div class="ico tneg"><i data-lucide="circle-alert"></i></div><div class="main"><div class="t">Cosmote internet is 2 days late</div><div class="s">€32.90 · was due Oct 4</div></div><button class="btn sm primary">Pay</button></div>
+              <div class="divider"></div>
+              <div class="attn"><div class="ico twarn"><i data-lucide="zap"></i></div><div class="main"><div class="t">Electricity needs an amount</div><div class="s">ΔΕΗ · due Oct 9 · usually €70–95</div></div><button class="btn sm">Set</button></div>
+              <div class="divider"></div>
+              <div class="attn"><div class="ico t2"><i data-lucide="banknote"></i></div><div class="main"><div class="t">€45 cash not logged yet</div><div class="s">From your wallet this month</div></div><button class="btn sm">Log</button></div>
+              <div class="divider"></div>
+              <div class="attn"><div class="ico t3"><i data-lucide="user-round-x"></i></div><div class="main"><div class="t">3 Apple Pay buys have no payer</div><div class="s">Added by the Shortcut</div></div><button class="btn sm">Review</button></div>
+            </div>
+          </div>
+
+          <div>
+            <div class="sec-title"><span class="h2">Budgets</span><a>Plan</a></div>
+            <div class="hscroll">
+              <div class="card bucket-card"><div class="hstack"><div class="ico t1"><i data-lucide="shopping-basket"></i></div><span class="small" style="font-weight:600">Day to day</span></div><div><div class="num" style="font-size:18px">€842</div><div class="xs muted">of €1,500 · 56%</div></div><div class="bar thin"><i style="width:56%;--tint:var(--c1)"></i></div></div>
+              <div class="card bucket-card"><div class="hstack"><div class="ico t3"><i data-lucide="plane"></i></div><span class="small" style="font-weight:600">Naxos trip</span></div><div><div class="num" style="font-size:18px">€610</div><div class="xs muted">of €900 · ends Oct 12</div></div><div class="bar thin"><i style="width:68%;--tint:var(--c3)"></i></div></div>
+              <div class="card bucket-card"><div class="hstack"><div class="ico t5"><i data-lucide="piggy-bank"></i></div><span class="small" style="font-weight:600">New car</span></div><div><div class="num" style="font-size:18px">€4,200</div><div class="xs muted">of €12,000 goal</div></div><div class="bar thin"><i style="width:35%;--tint:var(--c5)"></i></div></div>
+            </div>
+          </div>
+
+          <div>
+            <div class="sec-title"><span class="h2">Recent</span><a>Activity</a></div>
+            <div class="list">
+              <div class="row"><div class="ico t1"><i data-lucide="shopping-cart"></i></div><div class="main"><div class="t">Sklavenitis</div><div class="s">Groceries · Giorgos · today</div></div><div class="end num">−€64.20</div></div>
+              <div class="row"><div class="ico t2"><i data-lucide="fuel"></i></div><div class="main"><div class="t">Shell Kifisias</div><div class="s">Fuel · 31.2 L · yesterday</div></div><div class="end num">−€58.00</div></div>
+              <div class="row"><div class="ico tpos"><i data-lucide="arrow-down-left"></i></div><div class="main"><div class="t">Salary</div><div class="s">Income · Maria · Oct 1</div></div><div class="end num pos">+€2,450.00</div></div>
+            </div>
+          </div>
+        </div>
+        <nav class="tabbar" data-tab="home"></nav>
+      </div></div>
+      <figcaption><b>Home</b>The month's spend is the headline. The colour bar under it splits that spend by category, and the grey remainder is what's left of the plan. The attention list puts the action button on each row.<span class="was">/dashboard: overdue banner, who paid, bills due, bucket cards, last 10</span></figcaption>
+    </figure>
+
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="appbar"><div class="left"><button class="iconbtn bare"><i data-lucide="chevron-left"></i></button></div><div class="title">Needs you</div><div class="right"><button class="iconbtn bare"><i data-lucide="sliders-horizontal"></i></button></div></div>
+        <div class="scroll">
+          <div class="chips"><span class="chip on">All <span class="count">6</span></span><span class="chip">Bills <span class="count">2</span></span><span class="chip">Money gaps <span class="count">2</span></span><span class="chip">Tidy up <span class="count">1</span></span><span class="chip">Pantry <span class="count">1</span></span></div>
+          <div>
+            <div class="daygroup"><span>Urgent</span></div>
+            <div class="list">
+              <div class="attn"><div class="ico tneg"><i data-lucide="circle-alert"></i></div><div class="main"><div class="t">Cosmote internet is 2 days late</div><div class="s">€32.90 · Bills bucket · Giorgos pays</div></div><button class="btn sm primary">Pay</button></div>
+              <div class="divider"></div>
+              <div class="attn"><div class="ico twarn"><i data-lucide="zap"></i></div><div class="main"><div class="t">Electricity needs an amount</div><div class="s">Auto-pay waits until you enter it</div></div><button class="btn sm">Set</button></div>
+            </div>
+          </div>
+          <div>
+            <div class="daygroup"><span>Money gaps</span></div>
+            <div class="list">
+              <div class="attn"><div class="ico t2"><i data-lucide="banknote"></i></div><div class="main"><div class="t">€45 cash not logged</div><div class="s">You took €120, logged €75</div></div><button class="btn sm">Log</button></div>
+              <div class="divider"></div>
+              <div class="attn"><div class="ico t3"><i data-lucide="user-round-x"></i></div><div class="main"><div class="t">3 expenses have no payer</div><div class="s">€41.30 total · from Apple Pay</div></div><button class="btn sm">Review</button></div>
+            </div>
+          </div>
+          <div>
+            <div class="daygroup"><span>Tidy up</span></div>
+            <div class="list">
+              <div class="attn"><div class="ico t4"><i data-lucide="copy"></i></div><div class="main"><div class="t">Lidl €23.40 logged twice?</div><div class="s">Oct 3, 2 minutes apart</div></div><button class="btn sm">Check</button></div>
+            </div>
+          </div>
+          <div>
+            <div class="daygroup"><span>Pantry</span></div>
+            <div class="list">
+              <div class="attn"><div class="ico t5"><i data-lucide="package"></i></div><div class="main"><div class="t">Olive oil is running low</div><div class="s">1 left · cheapest at Lidl €8.49</div></div><button class="btn sm">List</button></div>
+            </div>
+          </div>
+          <div class="list">
+            <div class="attn"><div class="ico t6"><i data-lucide="file-clock"></i></div><div class="main"><div class="t">Cosmote contract ends in 30 days</div><div class="s">Snoozed until Oct 20</div></div><span class="badge">Snoozed</span></div>
+          </div>
+        </div>
+        <nav class="tabbar" data-tab="home"></nav>
+      </div></div>
+      <figcaption><b>Needs you (full list)</b>Every problem has one fix, one tap away. Swipe to snooze an item. Contract and price-change warnings land here too, so they aren't lost in notifications.<span class="was">Unassigned links, duplicates page, low-stock alerts, cash "not yet logged"</span></figcaption>
+    </figure>
+
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="appbar"><div class="left"><button class="chip" style="height:34px">Home · Kifisia <i data-lucide="chevron-down"></i></button></div><div class="right"><button class="iconbtn"><i data-lucide="bell"></i></button><span class="avatar" style="--tint:var(--c3)">G</span></div></div>
+        <div class="scroll"><div class="hero"><div class="eyebrow">October so far</div><div class="amt-xl" style="margin-top:6px">€1,284<span class="cents">.60</span></div></div></div>
+        <div class="scrim"></div>
+        <div class="sheet" style="height:78%">
+          <div class="grab"></div>
+          <div class="sheet-head"><span class="h2" style="font-size:20px">Notifications</span><button class="btn ghost sm">Mark all read</button></div>
+          <div class="sheet-body">
+            <div class="eyebrow">Today</div>
+            <div class="list plain">
+              <div class="row"><div class="ico tneg round"><i data-lucide="circle-alert"></i></div><div class="main"><div class="t">Cosmote is overdue</div><div class="s">€32.90 · 2 days late · 08:00</div></div><span class="dot" style="--tint:var(--accent)"></span></div>
+              <div class="row"><div class="ico t3 round"><i data-lucide="nfc"></i></div><div class="main"><div class="t">Apple Pay: Coffee Island €4.10</div><div class="s">Added to Day to day · no payer</div></div><span class="dot" style="--tint:var(--accent)"></span></div>
+              <div class="row"><div class="ico tpos round"><i data-lucide="check"></i></div><div class="main"><div class="t">Netflix paid automatically</div><div class="s">€13.99 · Maria</div></div></div>
+            </div>
+            <div class="eyebrow">Yesterday</div>
+            <div class="list plain">
+              <div class="row"><div class="ico twarn round"><i data-lucide="gauge"></i></div><div class="main"><div class="t">Day to day hit 50%</div><div class="s">€842 of €1,500, a week earlier than usual</div></div></div>
+              <div class="row"><div class="ico t5 round"><i data-lucide="tag"></i></div><div class="main"><div class="t">Price drop: Barilla 500g</div><div class="s">€1.19 at Sklavenitis (was €1.49)</div></div></div>
+              <div class="row"><div class="ico t2 round"><i data-lucide="trending-up"></i></div><div class="main"><div class="t">Water bill is 18% higher</div><div class="s">EYDAP €41.20 vs €35 average</div></div></div>
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <figcaption><b>Notifications</b>A sheet over the current screen. Opening it no longer marks everything as read: unread items keep their dot until you tap them or tap "Mark all read". Each row opens the exact item.<span class="was">Bell dropdown that cleared all on open</span></figcaption>
+    </figure>
+
+  </div>
+</section>
+
+<!-- ============================ ACTIVITY ============================ -->
+<section>
+  <div class="section-head">
+    <div class="eyebrow">03 · Activity</div>
+    <h2>Search, list, fix: one screen.</h2>
+    <p>Search, the transaction list, duplicates and bulk "set payer" used to be three pages. They are now one feed. Filters are chips, and problem filters ("No payer", "Possible duplicates") show their count, so cleanup starts from the same place you browse.</p>
+  </div>
+  <div class="board">
+
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="largetitle">Activity</div>
+        <div class="scroll tight">
+          <div class="input search"><i data-lucide="search"></i><span class="ph">Merchant, note, amount…</span></div>
+          <div class="chips"><span class="chip"><i data-lucide="sliders-horizontal"></i>Filters</span><span class="chip on">October</span><span class="chip">No payer <span class="count">3</span></span><span class="chip">Duplicates? <span class="count">1</span></span><span class="chip">Income</span><span class="chip">Cash</span></div>
+          <div>
+            <div class="daygroup"><span>Today · Tue 6 Oct</span><span class="num">−€68.30</span></div>
+            <div class="list">
+              <div class="row"><div class="ico t1"><i data-lucide="shopping-cart"></i></div><div class="main"><div class="t">Sklavenitis</div><div class="s">Groceries · Giorgos · split</div></div><div class="end num">−€64.20</div></div>
+              <div class="row"><div class="ico t4"><i data-lucide="coffee"></i></div><div class="main"><div class="t">Coffee Island</div><div class="s"><span class="badge" style="height:18px">Apple Pay</span> no payer</div></div><div class="end num">−€4.10</div></div>
+            </div>
+          </div>
+          <div>
+            <div class="daygroup"><span>Yesterday</span><span class="num">−€84.50</span></div>
+            <div class="list">
+              <div class="row"><div class="ico t2"><i data-lucide="fuel"></i></div><div class="main"><div class="t">Shell Kifisias</div><div class="s">Fuel · Yaris · 31.2 L</div></div><div class="end num">−€58.00</div></div>
+              <div class="row"><div class="ico t3"><i data-lucide="utensils"></i></div><div class="main"><div class="t">Wolt · Pita Pan</div><div class="s">Eating out · Maria</div></div><div class="end num">−€22.40</div></div>
+              <div class="row"><div class="ico t6"><i data-lucide="cloud-off"></i></div><div class="main"><div class="t">Kiosk</div><div class="s"><span class="badge warn" style="height:18px">Waiting to sync</span></div></div><div class="end num">−€4.10</div></div>
+            </div>
+          </div>
+          <div>
+            <div class="daygroup"><span>Thu 1 Oct</span><span class="num pos">+€2,450.00</span></div>
+            <div class="list">
+              <div class="row"><div class="ico tpos"><i data-lucide="arrow-down-left"></i></div><div class="main"><div class="t">Salary</div><div class="s">Income · Maria</div></div><div class="end num pos">+€2,450.00</div></div>
+            </div>
+          </div>
+        </div>
+        <nav class="tabbar" data-tab="activity"></nav>
+      </div></div>
+      <figcaption><b>Activity feed</b>Grouped by day with a net total per day. An offline entry shows in the list with a "Waiting to sync" badge, so it isn't hidden in a floating pill. Swipe left to delete, right to copy as a new expense.<span class="was">/transactions/search, offline sync pill</span></figcaption>
+    </figure>
+
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="appbar"><div class="left"><button class="iconbtn bare"><i data-lucide="chevron-left"></i></button></div><div class="right"><button class="btn ghost sm">Edit</button></div></div>
+        <div class="scroll">
+          <div class="vstack" style="align-items:flex-start;gap:6px">
+            <div class="ico lg t1"><i data-lucide="shopping-cart"></i></div>
+            <div class="h2" style="font-size:20px;margin-top:6px">Sklavenitis</div>
+            <div class="amt-xl">€64<span class="cents">.20</span></div>
+            <div class="small muted">Tue 6 Oct · 18:42 · Card</div>
+          </div>
+          <div class="card hstack" style="align-items:stretch">
+            <div class="receipt-thumb"><i style="width:60%"></i><i></i><i style="width:80%"></i><i></i><i style="width:40%"></i><i style="width:70%"></i><i></i><i style="width:50%;margin-top:auto;background:#999"></i></div>
+            <div class="vstack" style="gap:4px;justify-content:center">
+              <span class="badge pos"><i data-lucide="qr-code"></i>Read from myDATA QR</span>
+              <span class="small">14 items · VAT €7.12</span>
+              <a class="small acc" style="font-weight:600">View receipt</a>
+            </div>
+          </div>
+          <div class="list">
+            <div class="row"><div class="ico t1"><i data-lucide="tag"></i></div><div class="main"><div class="s">Category</div><div class="t">Groceries</div></div><i data-lucide="chevron-right" class="chev"></i></div>
+            <div class="row"><div class="ico t1"><i data-lucide="shopping-basket"></i></div><div class="main"><div class="s">Budget</div><div class="t">Day to day</div></div><i data-lucide="chevron-right" class="chev"></i></div>
+            <div class="row"><span class="avatar" style="--tint:var(--c3);margin-inline:2px">G</span><div class="main"><div class="s">Paid by</div><div class="t">Giorgos</div></div><i data-lucide="chevron-right" class="chev"></i></div>
+          </div>
+          <div class="card">
+            <div class="between"><span class="h3">Shares</span><span class="small muted">50 / 50</span></div>
+            <div class="stack" style="margin:10px 0"><i style="width:50%;background:var(--c3)"></i><i style="width:50%;background:var(--c2)"></i></div>
+            <div class="between small"><span class="hstack" style="gap:6px"><span class="dot" style="--tint:var(--c3)"></span>Giorgos</span><span class="num">€32.10</span></div>
+            <div class="between small" style="margin-top:6px"><span class="hstack" style="gap:6px"><span class="dot" style="--tint:var(--c2)"></span>Maria</span><span class="num">€32.10</span></div>
+          </div>
+          <div class="list">
+            <div class="row"><div class="main"><div class="t">Count in forecast</div><div class="s">Turn off for one-offs like a new fridge</div></div><span class="toggle on"></span></div>
+          </div>
+          <p class="xs muted" style="margin-top:4px">Category set by your rule "sklaven → Groceries". Added by Giorgos.</p>
+          <div class="grid2"><button class="btn"><i data-lucide="copy-plus"></i>Copy as new</button><button class="btn danger"><i data-lucide="trash-2"></i>Delete</button></div>
+        </div>
+        <div class="homebar"></div>
+      </div></div>
+      <figcaption><b>Expense detail</b>A read-first view. Each row opens a picker to edit just that field, with no separate long form. It also shows why the category was chosen.<span class="was">/transactions/{id}/edit long form</span></figcaption>
+    </figure>
+
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="appbar"><div class="left"><button class="btn ghost sm">Cancel</button></div><div class="title">3 selected</div><div class="right"><button class="btn ghost sm">All</button></div></div>
+        <div class="scroll tight">
+          <div class="chips"><span class="chip"><i data-lucide="sliders-horizontal"></i>Filters</span><span class="chip on">No payer <span class="count">3</span></span><span class="chip">October</span></div>
+          <div class="list">
+            <div class="row sel"><span class="check on"><i data-lucide="check"></i></span><div class="main"><div class="t">Coffee Island</div><div class="s">Today · Apple Pay</div></div><div class="end num">−€4.10</div></div>
+            <div class="row sel"><span class="check on"><i data-lucide="check"></i></span><div class="main"><div class="t">Public · cables</div><div class="s">Sat 3 Oct · Apple Pay</div></div><div class="end num">−€24.90</div></div>
+            <div class="row sel"><span class="check on"><i data-lucide="check"></i></span><div class="main"><div class="t">Vodafone top-up</div><div class="s">Fri 2 Oct · Apple Pay</div></div><div class="end num">−€12.30</div></div>
+          </div>
+          <p class="xs muted">These expenses don't count towards anyone's "paid out" total until they have a payer.</p>
+        </div>
+        <div class="scrim" style="background:rgba(0,0,0,.2)"></div>
+        <div class="sheet" style="bottom:0">
+          <div class="grab"></div>
+          <div class="h2">Who paid for these 3?</div>
+          <div class="list plain">
+            <div class="row"><span class="avatar" style="--tint:var(--c3)">G</span><div class="main"><div class="t">Giorgos</div></div><span class="check on"><i data-lucide="check"></i></span></div>
+            <div class="row"><span class="avatar" style="--tint:var(--c2)">M</span><div class="main"><div class="t">Maria</div></div><span class="check"></span></div>
+            <div class="row"><div class="ico t6 round" style="width:32px;height:32px"><i data-lucide="users"></i></div><div class="main"><div class="t">Each paid their own share</div></div><span class="check"></span></div>
+          </div>
+          <button class="btn primary lg block">Set payer for 3</button>
+        </div>
+      </div></div>
+      <figcaption><b>Bulk fix</b>Long-press to enter selection mode, or open it straight from the "No payer" chip. The bottom sheet edits payer, category or budget for every selected row at once.<span class="was">Sticky bulk "Set payer" bar on Search</span></figcaption>
+    </figure>
+
+    <figure class="shot">
+      <div class="phone"><div class="screen">
+        <div class="appbar"><div class="left"><button class="iconbtn bare"><i data-lucide="chevron-left"></i></button></div><div class="title">Possible duplicates</div><div class="right"></div></div>
+        <div class="scroll">
+          <p class="small muted" style="margin:0">Same amount within 3 days. Pick the one to keep, or keep both if they were really two buys.</p>
+          <div class="card vstack" style="gap:12px">
+            <div class="between"><span class="h3">Lidl · €23.40</span><span class="badge warn">2 min apart</span></div>
+            <div class="pair">
+              <div class="well"><span class="xs muted">Kept</span><b class="small">Sat 3 Oct 18:02</b><span class="xs">Card · Giorgos</span><span class="xs">Groceries · receipt</span></div>
+              <div class="well" style="outline:2px solid var(--neg);outline-offset:-2px"><span class="xs neg">Will be deleted</span><b class="small">Sat 3 Oct 18:04</b><span class="xs">Apple Pay · no payer</span><span class="xs">Groceries</span></div>
+            </div>
+            <div class="grid2"><button class="btn">Keep both</button><button class="btn danger">Delete one</button></div>
+          </div>
+          <div class="card vstack" style="gap:12px">
+            <div class="between"><span class="h3">Wolt · €18.90</span><span class="badge">2 days apart</span></div>
+            <div class="pair">
+              <div class="well"><span class="xs muted">First</span><b class="small">Wed 30 Sep</b><span class="xs">Apple Pay · Maria</span></div>
+              <div class="well"><span class="xs muted">Second</span><b class="small">Fri 2 Oct</b><span class="xs">Apple Pay · Maria</span></div>
+            </div>
+            <div class="grid2"><button class="btn">Keep both</button><button class="btn danger">Delete one</button></div>
+          </div>
+          <p class="xs muted" style="text-align:center">"Keep both" hides a pair from this list for good.</p>
+        </div>
+        <nav class="tabbar" data-tab="activity"></nav>
+      </div></div>
+      <figcaption><b>Duplicates review</b>Opened from the "Duplicates?" chip or from Needs you. Each possible duplicate is shown side by side with the other entry, so you can tell which one to keep.<span class="was">/transactions/duplicates, only reachable from Search</span></figcaption>
+    </figure>
+
+  </div>
+</section>
+</div>
+<script src="mock.js"></script>
+</body>
+</html>
