@@ -136,15 +136,17 @@
             {% endif %}
           </div>
           {% if request.query_params.get('passkey_error') %}
-          <div class="mb-3 px-4 py-2 bg-red-50 border border-red-100 rounded-xl text-sm text-red-600">Could not start passkey linking. Check your password and authenticator code.</div>
+          <div class="mb-3 px-4 py-2 bg-red-50 border border-red-100 rounded-xl text-sm text-red-600">Could not update the passkey. Check your password and authenticator code, and that you signed in with your password.</div>
           {% elif request.query_params.get('passkey') == 'unlinked' %}
           <div class="mb-3 px-4 py-2 bg-green-50 border border-green-100 rounded-xl text-sm text-green-700">Passkey unlinked.</div>
           {% endif %}
-          {% if user.oidc_subject %}
-          <form method="POST" action="/app/auth/unlink">
+          {% if user.oidc_subject and password_session %}
+          <form method="POST" action="/app/auth/unlink" hx-boost="false">
             <input type="hidden" name="_csrf_token" value="{{ request.state.csrf_token }}" />
             <button type="submit" class="text-sm text-red-500 hover:text-red-700 font-medium transition-colors">Unlink passkey</button>
           </form>
+          {% elif user.oidc_subject %}
+          <p class="text-sm text-gray-500 dark:text-gray-400">Sign in with your password to unlink.</p>
           {% elif user.totp_enabled %}
           <form method="POST" action="/app/auth/link" class="space-y-3" hx-boost="false">
             <input type="hidden" name="_csrf_token" value="{{ request.state.csrf_token }}" />

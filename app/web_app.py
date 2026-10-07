@@ -29,7 +29,12 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.oidc import oidc_client
 from app.core.ratelimit import limiter
-from app.login_alerts import alert_sign_in
+from app.login_alerts import (
+    UNLINK_PASSKEY,
+    alert_failed_second_factor,
+    alert_passkey_linked,
+    alert_sign_in,
+)
 from app.models import HouseholdMember, User
 from app.services.identity import IdentityError, link_oidc_subject, resolve_oidc_user
 
@@ -52,22 +57,27 @@ def _callback_url(request: Request) -> str:
     return f"{base}/app/auth/callback"
 
 
-def _password_session_user(request: Request, db: Session) -> User | None:
-    """The user behind a currently valid full password+2FA session cookie, else None."""
+def _password_session_user(request: Request, db: Session) -> tuple[User, str] | None:
+    """(user, household_id) behind a currently valid full password+2FA session cookie, else None.
+
+    Cookies issued before passkeys existed carry no "amr"; they were all password+2FA.
+    """
     raw = request.cookies.get(COOKIE_NAME)
     session = decode_cookie(raw) if raw else None
-    if not session or session.get("state") != "authenticated" or session.get("amr") != "pwd":
+    if not session or session.get("state") != "authenticated" or session.get("amr", "pwd") != "pwd":
         return None
     user = db.get(User, session.get("user_id"))
     if not user or not user.totp_enabled or session.get("sv", -1) != user.session_version:
         return None
-    if (
-        not db.query(HouseholdMember)
-        .filter_by(household_id=session.get("hh_id"), user_id=user.id)
-        .first()
-    ):
+    hh_id = session.get("hh_id")
+    if not db.query(HouseholdMember).filter_by(household_id=hh_id, user_id=user.id).first():
         return None
-    return user
+    return user, hh_id
+
+
+# Discovery (load_server_metadata) can fail with a transport error, a bad status
+# (httpx), a non-JSON body (ValueError) or metadata without an authorize endpoint.
+_PROVIDER_ERRORS = (httpx.HTTPError, OAuthError, OSError, ValueError, RuntimeError)
 
 
 LINK_MAX_AGE_SECONDS = 600
@@ -86,9 +96,10 @@ async def link(
     totp_code: str = Form(""),
     db: Session = Depends(get_db),
 ):
-    user = _password_session_user(request, db)
-    if not user:
+    found = _password_session_user(request, db)
+    if not found:
         return _fail("link_requires_login")
+    user, hh_id = found
     _clear_link_state(request)
     if is_locked(user):
         return RedirectResponse("/settings?passkey_error=1", status_code=302)
@@ -98,20 +109,32 @@ async def link(
     if not (password_ok and totp_ok):
         register_failed_login(db, user)
         security_logger.warning("OIDC link refused: bad credentials")
+        if password_ok:
+            # Same signal as the login path: someone knows the password.
+            alert_failed_second_factor(db, request, user, hh_id)
         return RedirectResponse("/settings?passkey_error=1", status_code=302)
     clear_failed_logins(db, user)
     request.session["link_user_id"] = user.id
     request.session["link_started_at"] = int(time.time())
     # prompt=login makes Pocket ID run a fresh passkey ceremony.
-    return await oidc_client().authorize_redirect(request, _callback_url(request), prompt="login")
+    try:
+        return await oidc_client().authorize_redirect(
+            request, _callback_url(request), prompt="login"
+        )
+    except _PROVIDER_ERRORS as exc:
+        security_logger.warning("OIDC provider unreachable: %s", type(exc).__name__)
+        _clear_link_state(request)
+        return RedirectResponse("/settings?passkey_error=1", status_code=302)
 
 
 @router.post("/unlink", dependencies=[Depends(_enabled), Depends(require_csrf)])
 @limiter.limit("20/minute")
 async def unlink(request: Request, db: Session = Depends(get_db)):
-    user = _password_session_user(request, db)
-    if not user:
-        return _fail("link_requires_login")
+    found = _password_session_user(request, db)
+    if not found:
+        # Back to Settings (where the form lives), not into the new app.
+        return RedirectResponse("/settings?passkey_error=1", status_code=302)
+    user, hh_id = found
     user.oidc_subject = None
     # Sessions opened with the passkey must not outlive it: bump session_version
     # (which also revokes API refresh tokens), then re-issue THIS browser's
@@ -120,7 +143,6 @@ async def unlink(request: Request, db: Session = Depends(get_db)):
     invalidate_user_sessions(db, user)
     db.commit()
     security_logger.info("OIDC passkey unlinked")
-    hh_id = decode_cookie(request.cookies.get(COOKIE_NAME, "")).get("hh_id")
     response = RedirectResponse("/settings?passkey=unlinked", status_code=302)
     set_session(response, user.id, hh_id, user.session_version, amr="pwd")
     return response
@@ -130,7 +152,15 @@ async def unlink(request: Request, db: Session = Depends(get_db)):
 @limiter.limit("20/minute")
 async def login(request: Request):
     _clear_link_state(request)
-    return await oidc_client().authorize_redirect(request, _callback_url(request))
+    # prompt=login: a sign-out on a shared device must not be undone by Pocket ID's
+    # own session silently signing the next person straight back in.
+    try:
+        return await oidc_client().authorize_redirect(
+            request, _callback_url(request), prompt="login"
+        )
+    except _PROVIDER_ERRORS as exc:
+        security_logger.warning("OIDC provider unreachable: %s", type(exc).__name__)
+        return _fail("provider")
 
 
 @router.get("/callback", dependencies=[Depends(_enabled)])
@@ -156,7 +186,8 @@ async def callback(request: Request, db: Session = Depends(get_db)):
     claims = token.get("userinfo") or {}
 
     if link_user_id:
-        user = _password_session_user(request, db)
+        found = _password_session_user(request, db)
+        user, hh_id = found if found else (None, None)
         fresh = (
             isinstance(link_started_at, int)
             and 0 <= time.time() - link_started_at <= LINK_MAX_AGE_SECONDS
@@ -169,6 +200,7 @@ async def callback(request: Request, db: Session = Depends(get_db)):
             security_logger.warning("OIDC link refused: %s", exc.code)
             return _fail(exc.code)
         security_logger.info("OIDC passkey linked")
+        alert_passkey_linked(db, request, user, hh_id)
         return RedirectResponse("/app/?linked=1", status_code=302)
 
     try:
@@ -187,7 +219,7 @@ async def callback(request: Request, db: Session = Depends(get_db)):
         return _fail("no_household")
     response = RedirectResponse("/app/", status_code=302)
     set_session(response, user.id, member.household_id, user.session_version, amr="oidc")
-    alert_sign_in(db, request, user, member.household_id, method="a passkey")
+    alert_sign_in(db, request, user, member.household_id, method="a passkey", remedy=UNLINK_PASSKEY)
     return response
 
 

@@ -59,6 +59,9 @@ def test_passkey_sign_in_alerts_every_member(client, db):
     for uid in (u.id, other.id):
         [alert] = db.query(Notification).filter_by(user_id=uid).all()
         assert alert.title == "New sign-in: G" and "using a passkey" in alert.body
+        # The password was never used: the fix is unlinking the passkey.
+        assert "unlink the passkey in Settings" in alert.body
+        assert "change the password" not in alert.body
 
 
 def test_callback_unknown_sub_with_matching_verified_email_is_not_linked(client, db):
@@ -115,6 +118,8 @@ def test_login_redirects_to_provider(client):
     assert r.headers["location"].startswith("https://id.example.test/")
     redirect_uri = fake.authorize_redirect.call_args.args[1]
     assert str(redirect_uri).endswith("/app/auth/callback")
+    # Sign-out on a shared device sticks: Pocket ID must not silently sign back in.
+    assert fake.authorize_redirect.call_args.kwargs["prompt"] == "login"
 
 
 def test_logout_clears_session(client, db):
@@ -197,11 +202,20 @@ def test_link_flow_links_subject_and_keeps_session(client, db, make_household, l
     with patch("app.web_app.oidc_client", return_value=fake):
         r = client.get("/app/auth/callback?code=c&state=s", follow_redirects=False)
     assert r.headers["location"] == "/app/?linked=1"
-    # Linking is not a sign-in: no "new sign-in" alert for the passkey step.
+    # Linking is not a sign-in, but a new way into the account: the household hears of it.
     from app.models import Notification
 
+    db.expire_all()
+    [alert] = [
+        n
+        for n in db.query(Notification).filter_by(user_id=hh.user_id)
+        if n.title.startswith("Passkey linked")
+    ]
+    assert alert.body.startswith(f"A passkey was linked to {hh.username.title()}'s account · ")
+    assert alert.body.endswith("If this wasn't them, unlink it in Settings.")
     assert not any(
-        "passkey" in n.body for n in db.query(Notification).filter_by(user_id=hh.user_id)
+        n.title.startswith("New sign-in") and "passkey" in n.body
+        for n in db.query(Notification).filter_by(user_id=hh.user_id)
     )
     user = db.get(User, hh.user_id)
     db.refresh(user)
@@ -461,7 +475,10 @@ def test_unlink_with_oidc_session_requires_login(client, db):
         client.get("/app/auth/callback?code=c&state=s", follow_redirects=False)
     headers = {"X-CSRF-Token": client.cookies.get("csrf_token")}
     r = client.post("/app/auth/unlink", headers=headers, follow_redirects=False)
-    assert r.headers["location"] == "/app/?auth_error=link_requires_login"
+    # Back to Settings, where the unlink form lives, not into the new app.
+    assert r.headers["location"] == "/settings?passkey_error=1"
+    user = db.query(User).filter_by(oidc_subject="s1").first()
+    assert user is not None
 
 
 def test_settings_page_shows_link_then_linked(client, db, make_household, login):
@@ -554,3 +571,187 @@ def test_production_refuses_a_malformed_issuer(issuer):
     with pytest.raises(RuntimeError, match="OIDC_ISSUER"):
         Settings(**base, oidc_issuer=issuer)
     assert Settings(**base, oidc_issuer="https://id.example.test").oidc_issuer_origin
+
+
+# --- final-review fixes ------------------------------------------------------
+
+
+def _set_cookies(target, response):
+    for raw in response.headers.getlist("set-cookie"):
+        name, _, rest = raw.partition("=")
+        target.cookies.set(name, rest.split(";")[0])
+
+
+def test_pre_passkey_cookie_without_amr_can_start_a_link(client, db, make_household, login):
+    """Cookies issued before this deploy carry no "amr"; they were all password+2FA."""
+    from fastapi.responses import Response
+
+    from app.auth import COOKIE_NAME, _cookie_kwargs, _serializer
+
+    hh = make_household()
+    headers = login(hh.username, hh.secret)
+    user = db.get(User, hh.user_id)
+    legacy = _serializer.dumps(
+        {
+            "user_id": user.id,
+            "hh_id": hh.household_id,
+            "sv": user.session_version,
+            "state": "authenticated",
+        }
+    )
+    carrier = Response()
+    carrier.set_cookie(COOKIE_NAME, legacy, **_cookie_kwargs(3600))
+    _set_cookies(client, carrier)
+    fake = _redirecting_client()
+    r = _start_link(client, hh, headers, fake)
+    assert r.headers["location"].startswith("https://id.example.test/")
+    fake.authorize_redirect.assert_called_once()
+
+
+def test_link_wrong_totp_alerts_the_household(client, db, make_household, login):
+    from app.models import Notification
+
+    hh = make_household()
+    headers = login(hh.username, hh.secret)
+    _start_link(client, hh, headers, _redirecting_client(), code="000000")
+    db.expire_all()
+    titles = [n.title for n in db.query(Notification).filter_by(user_id=hh.user_id)]
+    assert f"Wrong 2FA code for {hh.username.title()}" in titles
+
+
+def test_link_wrong_password_sends_no_second_factor_alert(client, db, make_household, login):
+    from app.models import Notification
+
+    hh = make_household()
+    headers = login(hh.username, hh.secret)
+    _start_link(client, hh, headers, _redirecting_client(), password="nope")
+    db.expire_all()
+    assert not any(
+        n.title.startswith("Wrong 2FA")
+        for n in db.query(Notification).filter_by(user_id=hh.user_id)
+    )
+
+
+@pytest.mark.parametrize(
+    "exc",
+    ["connect", "status", "oauth", "bad_json"],
+)
+def test_login_provider_discovery_failure_is_handled(client, exc):
+    import httpx
+    from authlib.integrations.base_client.errors import OAuthError
+
+    errors = {
+        "connect": httpx.ConnectError("down"),
+        "status": httpx.HTTPStatusError(
+            "500", request=httpx.Request("GET", "https://x"), response=httpx.Response(500)
+        ),
+        "oauth": OAuthError("bad"),
+        "bad_json": ValueError("Expecting value"),
+    }
+    fake = AsyncMock()
+    fake.authorize_redirect.side_effect = errors[exc]
+    with patch("app.web_app.oidc_client", return_value=fake):
+        r = client.get("/app/auth/login", follow_redirects=False)
+    assert r.status_code == 302 and r.headers["location"] == "/app/?auth_error=provider"
+
+
+def test_link_start_provider_failure_returns_to_settings(client, db, make_household, login):
+    import httpx
+
+    hh = make_household()
+    headers = login(hh.username, hh.secret)
+    fake = _redirecting_client({"sub": "new-sub"})
+    fake.authorize_redirect.side_effect = httpx.ConnectError("down")
+    r = _start_link(client, hh, headers, fake)
+    assert r.headers["location"] == "/settings?passkey_error=1"
+    # The half-started link must not turn a later callback in this browser into a link.
+    fake.authorize_redirect.side_effect = None
+    with patch("app.web_app.oidc_client", return_value=fake):
+        r = client.get("/app/auth/callback?code=c&state=s", follow_redirects=False)
+    assert r.headers["location"] == "/app/?auth_error=not_linked"
+    user = db.get(User, hh.user_id)
+    db.refresh(user)
+    assert user.oidc_subject is None
+
+
+def test_owner_totp_reset_unlinks_the_members_passkey(client, db, make_household, login):
+    import time
+
+    import pyotp
+
+    from tests.test_household_settlement import _add_member
+
+    hh = make_household()
+    headers = login(hh.username, hh.secret)
+    bob = _add_member(db, hh.household_id, "bob")
+    bob.oidc_subject = "bob-sub"
+    db.commit()
+    r = client.post(
+        f"/settings/2fa/reset/{bob.id}",
+        headers=headers,
+        data={"owner_code": pyotp.TOTP(hh.secret).at(time.time() + 30)},
+    )
+    assert r.status_code == 302, r.text
+    db.expire_all()
+    assert db.get(User, bob.id).oidc_subject is None
+
+
+def test_html_password_change_unlinks_the_passkey(client, db, make_household, login):
+    from tests.conftest import PASSWORD
+
+    hh = make_household()
+    headers = login(hh.username, hh.secret)
+    user = db.get(User, hh.user_id)
+    user.oidc_subject = "s1"
+    db.commit()
+    r = client.post(
+        "/settings/profile/password",
+        headers=headers,
+        data={"current_password": PASSWORD, "new_password": "another-long-password"},
+    )
+    assert r.headers["location"] == "/settings?pw_changed=1"
+    db.expire_all()
+    assert db.get(User, hh.user_id).oidc_subject is None
+
+
+def test_api_password_change_unlinks_the_passkey(client, db, make_household, login):
+    from tests.conftest import PASSWORD
+
+    hh = make_household()
+    headers = login(hh.username, hh.secret)
+    user = db.get(User, hh.user_id)
+    user.oidc_subject = "s1"
+    db.commit()
+    r = client.post(
+        "/api/v1/settings/profile/password",
+        headers=headers,
+        json={"current_password": PASSWORD, "new_password": "another-long-password"},
+    )
+    assert r.status_code == 204, r.text
+    db.expire_all()
+    assert db.get(User, hh.user_id).oidc_subject is None
+
+
+def test_settings_unlink_form_is_a_real_navigation(client, db, make_household, login):
+    import re
+
+    hh = make_household()
+    login(hh.username, hh.secret)
+    user = db.get(User, hh.user_id)
+    user.oidc_subject = "s1"
+    db.commit()
+    page = client.get("/settings").text
+    form = re.search(r'<form[^>]*action="/app/auth/unlink"[^>]*>', page).group(0)
+    assert 'hx-boost="false"' in form
+    assert "Sign in with your password to unlink" not in page
+
+
+def test_settings_hides_unlink_from_a_passkey_session(client, db):
+    _member(db)
+    fake = _fake_client({"sub": "s1", "email": "g@x.t", "email_verified": True})
+    with patch("app.web_app.oidc_client", return_value=fake):
+        client.get("/app/auth/callback?code=c&state=s", follow_redirects=False)
+    page = client.get("/settings").text
+    assert "Passkey linked" in page
+    assert "/app/auth/unlink" not in page
+    assert "Sign in with your password to unlink" in page

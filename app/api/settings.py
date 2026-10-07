@@ -122,6 +122,7 @@ def change_password(
     if len(body.new_password) < 12:
         raise HTTPException(status_code=400, detail="Password must be at least 12 characters")
     user.password_hash = hash_password(body.new_password)
+    user.oidc_subject = None  # account recovery: unlink the passkey too
     invalidate_user_sessions(db, user)  # all cookies, access and refresh tokens
     revoke_user_tokens(db, user.id)  # and personal Shortcut tokens
     db.commit()

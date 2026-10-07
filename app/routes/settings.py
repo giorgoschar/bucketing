@@ -115,6 +115,8 @@ def settings_page(
             "currencies": settings.currencies,
             "category_rules": list_rules(db, hh_id),
             "passkey_link_available": bool(settings.new_app_enabled and settings.oidc_enabled),
+            # Unlinking needs a password+2FA session; cookies from before passkeys have no amr.
+            "password_session": (get_current_session(request) or {}).get("amr", "pwd") == "pwd",
         }
     )
     return templates.TemplateResponse("settings/index.html", ctx)
@@ -279,6 +281,8 @@ def change_password(
         return templates.TemplateResponse("settings/index.html", ctx)
 
     user.password_hash = hash_password(new_password)
+    # Account recovery: a passkey someone else linked must not survive it.
+    user.oidc_subject = None
     invalidate_user_sessions(db, user)
     revoke_user_tokens(db, user.id)  # account recovery: Shortcut tokens too
     db.commit()
@@ -660,6 +664,9 @@ def admin_reset_member_totp(
     target_user.totp_enabled = False
     target_user.totp_backup_codes = None
     target_user.last_totp_step = None
+    # A reset is account recovery: the passkey goes too, and is re-linked after
+    # the member re-enrolls 2FA.
+    target_user.oidc_subject = None
     invalidate_user_sessions(db, target_user)
     revoke_user_tokens(db, target_user.id)
     db.commit()

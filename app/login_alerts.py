@@ -87,21 +87,42 @@ def _notify_household(
         logger.exception("Sign-in alert for household %s failed", household_id)
 
 
-def alert_sign_in(
-    db: Session, request: Request, user: User, household_id: str, *, method: str | None = None
-) -> None:
-    """Someone completed password + second factor for `user`.
+CHANGE_PASSWORD = "change the password in Settings"
+UNLINK_PASSKEY = "unlink the passkey in Settings"
 
-    `method` names an unusual second factor, e.g. "a backup code (5 left)".
+
+def alert_sign_in(
+    db: Session,
+    request: Request,
+    user: User,
+    household_id: str,
+    *,
+    method: str | None = None,
+    remedy: str = CHANGE_PASSWORD,
+) -> None:
+    """Someone signed in as `user` (password + second factor, or a passkey).
+
+    `method` names an unusual factor, e.g. "a backup code (5 left)"; `remedy`
+    is what to do if it wasn't them (a passkey sign-in never used the password).
     """
     via = f" using {method}" if method else ""
     _notify_household(
         db,
         household_id,
         title=f"New sign-in: {user.display_name}",
+        body=(f"Signed in{via} · {_where(request)}. If this wasn't {user.display_name}, {remedy}."),
+    )
+
+
+def alert_passkey_linked(db: Session, request: Request, user: User, household_id: str) -> None:
+    """A passkey was linked to `user`: from now on it signs in without the password."""
+    _notify_household(
+        db,
+        household_id,
+        title=f"Passkey linked: {user.display_name}",
         body=(
-            f"Signed in{via} · {_where(request)}. "
-            f"If this wasn't {user.display_name}, change the password in Settings."
+            f"A passkey was linked to {user.display_name}'s account · {_where(request)}. "
+            f"If this wasn't them, unlink it in Settings."
         ),
     )
 

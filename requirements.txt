@@ -21,5 +21,6 @@ qrcode[pil]==8.2
 pywebpush==2.3.0
 PyJWT[crypto]==2.15.1
 Authlib==1.8.0
+joserfc==1.7.5  # Authlib's JOSE backend; app/web_app.py imports joserfc.errors
 cryptography==50.0.2
 redis==5.2.1
