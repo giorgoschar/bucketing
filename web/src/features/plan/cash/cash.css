@@ -1,0 +1,82 @@
+/* Plan › Cash (cash spec §4.2; mock docs/redesign/mocks/cash-pantry.html, Cash). Kit classes come from ui/ui.css. */
+.cash { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.cash .ui-banner { margin: 0; }
+.cash-sec { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.cash-sec .ui-sec { margin: 6px 0 0; }
+.cash-sec__head { flex-wrap: wrap; }
+
+/* Privacy captions: who can see what (never colour alone: an icon and words). */
+.cash-private, .cash-shared {
+  display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap;
+}
+.cash-private .ui-icon, .cash-shared .ui-icon { width: 13px; height: 13px; }
+.cash-offline-hint { margin: 0; font-size: 12.5px; font-weight: 600; color: var(--muted); }
+
+/* My stash */
+.cash-stash { display: flex; flex-direction: column; gap: 14px; }
+.cash-stash__top { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 4px 12px; }
+.cash-stash__top .cash-private { grid-column: 1 / -1; justify-self: start; }
+.cash-stash__fig { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cash-stash__label { margin: 0; font-size: 13px; font-weight: 600; color: var(--muted); }
+.cash-stash__amount { font-size: 32px; overflow-wrap: anywhere; white-space: normal; }
+.cash-stash__book { margin: 0; font-size: 12.5px; color: var(--muted); }
+.cash-stash__acts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.cash-stash__acts .btn { min-width: 0; padding-inline: 8px; }
+@media (min-width: 360px) { .cash-stash__top { grid-template-columns: auto minmax(0, 1fr) auto; } .cash-stash__top .cash-private { grid-column: auto; align-self: start; } }
+
+/* Short stash: a warning with one way out (count it). */
+.cash-short {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; padding: 14px; border-radius: var(--r-md);
+  background: var(--warn-soft);
+}
+.cash-short__ico { background: var(--surface); }
+.cash-short__text { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.cash-short__title { margin: 0; font-weight: 650; color: var(--ink); overflow-wrap: anywhere; }
+.cash-short__body { margin: 0; font-size: 13.5px; color: var(--ink-2); }
+.cash-short__btn { grid-column: 1 / -1; }
+
+/* Wallets */
+.cash-wallets { display: flex; flex-direction: column; gap: 10px; }
+.cash-wallet { display: flex; flex-direction: column; gap: 12px; padding: 14px; }
+.cash-wallet__head { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+.cash-wallet__name { flex: 1; min-width: 0; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cash-wallet__you { font-weight: 500; color: var(--muted); }
+.cash-wallet__foot { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
+.cash-avatar {
+  --tint: var(--accent);
+  flex: none; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center;
+  background: color-mix(in srgb, var(--tint) 22%, transparent); color: var(--ink); font-size: 13px; font-weight: 700;
+}
+
+/* The wallet sum: Took − [In hand] − Logged = Not yet logged, as cells. Values may wrap at 390 px. */
+.cash-eq { display: flex; flex-wrap: wrap; align-items: stretch; gap: 5px; }
+.cash-eq__cell {
+  flex: 1 1 64px; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 1px;
+  padding: 7px 9px; border-radius: var(--r-sm); background: var(--surface-2);
+}
+.cash-eq__k { font-size: 11px; font-weight: 600; line-height: 1.2; color: var(--muted); }
+.cash-eq__v { font-size: 16px; letter-spacing: -.02em; white-space: normal; overflow-wrap: anywhere; }
+.cash-eq__op { align-self: center; flex: none; font-weight: 600; color: var(--muted); }
+.cash-eq__cell--res { background: var(--warn-soft); }
+.cash-eq__cell--res .cash-eq__k, .cash-eq__cell--res .cash-eq__v { color: var(--warn); }
+.cash-eq__cell--ok { background: var(--pos-soft); }
+.cash-eq__cell--ok .cash-eq__k, .cash-eq__cell--ok .cash-eq__v { color: var(--pos); }
+.cash-eq--four .cash-eq__cell { flex-basis: 56px; padding-inline: 7px; }
+.cash-eq--four .cash-eq__v { font-size: 14.5px; }
+
+/* Movements */
+.cash-moves { list-style: none; margin: 0; padding: 0; }
+.cash-move { position: relative; }
+.cash-moves > .cash-move + .cash-move::before { content: ""; position: absolute; top: 0; left: 14px; right: 0; height: 1px; background: var(--line); }
+.cash-move .ui-row:disabled { cursor: default; color: inherit; }
+.cash-move .ui-row__end { white-space: nowrap; }
+.cash-move__link {
+  display: flex; align-items: center; min-height: 44px; margin-top: -10px; padding: 0 14px 0 62px;
+  font-size: 13px; font-weight: 600; color: var(--accent); text-decoration: none;
+}
+.cash-empty { margin: 0; padding: 18px 4px; font-size: 14px; color: var(--muted); text-align: center; }
+
+/* Delete sheet */
+.cash-del { display: flex; flex-direction: column; gap: 8px; }
+.cash-del__what { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.cash-del__ask { margin: 0; color: var(--ink-2); }

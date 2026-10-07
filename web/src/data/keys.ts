@@ -60,6 +60,12 @@ export const keys = {
   bucketsFull: () => ['buckets', 'full'] as const,
   categoryRules: () => ['category-rules'] as const,
   cashStash: () => ['cash-stash'] as const,
+  /** The prefix of every Plan › Cash read below (one invalidation covers them). cashStash is separate. */
+  cashAll: () => ['cash'] as const,
+  /** CashWalletsOut: GET /cash/wallets?month=YYYY-MM (Plan › Cash, Home's cash row) */
+  cashWallets: (month: string) => ['cash', 'wallets', month] as const,
+  /** CashMovementsOut: GET /cash/movements?month=YYYY-MM */
+  cashMovements: (month: string) => ['cash', 'movements', month] as const,
 }
 
 /** What each kind of change makes stale (useAction `invalidates`; the queue bridge uses `sync`). */
