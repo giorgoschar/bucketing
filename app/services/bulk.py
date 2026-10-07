@@ -438,6 +438,9 @@ def run_bulk(
         },
         "undo_until": None,
     }
+    # A bill-only move (move_bill with 0 changed rows) still makes a batch on
+    # purpose: it holds bill_bucket_old/new, which undo needs to put the item
+    # back (U7).
     if dry_run or not (plans or bill_moves):
         db.rollback()  # R21: nothing was written; release any locks
         return result
