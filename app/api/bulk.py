@@ -192,6 +192,8 @@ def undo_bulk(
 
 
 class DismissIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     ids: list[str] = Field(min_length=2, max_length=20)
 
 

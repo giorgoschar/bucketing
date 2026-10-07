@@ -184,3 +184,10 @@ def test_dismiss_that_keeps_failing_is_409_not_a_silent_204(env, db, monkeypatch
     assert exc.value.detail == "Couldn't save that; try again."
     monkeypatch.undo()
     assert db.query(DuplicateDismissal).count() == 0
+
+
+def test_dismiss_refuses_unknown_keys(env, db):  # noqa: F811
+    a, b = env.add("9.99"), env.add("9.99")
+    r = env.client.post(DISMISS, headers=env.headers, json={"ids": [a, b], "all": True})
+    assert r.status_code == 422
+    assert db.query(DuplicateDismissal).count() == 0
