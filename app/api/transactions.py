@@ -21,7 +21,7 @@ from app.models import (
 )
 from app.routes.scan import lookup_qr_receipt
 from app.schemas import TransactionCreate, TransactionUpdate
-from app.services import DeletedTransactionReplay, DuplicateTransaction
+from app.services import DeletedTransactionReplay, DuplicateTransaction, duplicate_check
 from app.services import create_transaction as create_transaction_service
 from app.services import delete_transaction as delete_transaction_soft
 from app.services import update_transaction as update_transaction_service
@@ -85,6 +85,22 @@ class QrReceiptOut(BaseModel):
     merchant: str | None
     category_hint: str | None
     category_id: str | None
+
+
+class DuplicateOut(BaseModel):
+    id: str
+    amount: float
+    currency: str
+    date: str
+    notes: str | None
+    merchant: str | None
+    bucket: str | None
+    paid_by: str | None
+    same_bucket: bool
+
+
+class DuplicateCheckOut(BaseModel):
+    duplicates: list[DuplicateOut]
 
 
 # ---------------------------------------------------------------------------
@@ -169,6 +185,30 @@ async def scan_qr(
     messages and result as the web route ``POST /transactions/scan/qr``."""
     user, hh_id = auth
     return await lookup_qr_receipt(db, hh_id, body.url)
+
+
+@router.get("/check-duplicate", response_model=DuplicateCheckOut)
+def check_duplicate(
+    amount: str = Query(default=""),
+    transaction_date: str = Query(default=""),
+    bucket_id: str = Query(default=""),
+    exclude_id: str = Query(default=""),
+    auth=Depends(require_api_auth),
+    db: Session = Depends(get_db),
+):
+    """Expenses that look like the one being entered (same amount ±0.01,
+    within 3 days), at most 5. Advisory only: never blocks a save."""
+    user, hh_id = auth
+    return {
+        "duplicates": duplicate_check(
+            db,
+            hh_id,
+            amount=amount,
+            transaction_date=transaction_date,
+            bucket_id=bucket_id,
+            exclude_id=exclude_id,
+        )
+    }
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

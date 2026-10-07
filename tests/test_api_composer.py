@@ -1,12 +1,14 @@
 """Phase 2b composer APIs: POST /api/v1/transactions/scan/qr (B1) and
 GET /api/v1/transactions/check-duplicate (B2)."""
 
+from datetime import timedelta
 from unittest.mock import patch
 
 import httpx
 import pyotp
 import pytest
 
+from app.core.clock import local_today
 from tests.conftest import PASSWORD
 from tests.test_api import api  # noqa: F401  (fixture)
 
@@ -104,3 +106,104 @@ def test_api_scan_qr_upstream_failure_is_a_502_with_the_message(client, api):  #
         r = client.post("/api/v1/transactions/scan/qr", headers=headers, json={"url": AADE_URL})
     assert r.status_code == 502
     assert r.json()["detail"] == "Could not reach AADE portal"
+
+
+# ---------------------------------------------------------------- B2 /check-duplicate
+
+
+def _expense(client, headers, hh, amount="42.50", when=None, merchant="Taverna"):
+    r = client.post(
+        "/api/v1/transactions",
+        headers=headers,
+        json={
+            "amount": amount,
+            "bucket_id": hh.bucket_id,
+            "merchant": merchant,
+            "transaction_date": (when or local_today()).isoformat(),
+        },
+    )
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def _check(client, headers, **params):
+    return client.get("/api/v1/transactions/check-duplicate", headers=headers, params=params)
+
+
+def test_check_duplicate_finds_a_same_amount_expense_within_three_days(client, api):  # noqa: F811
+    headers, hh = api
+    txn = _expense(client, headers, hh, when=local_today() - timedelta(days=3))
+    r = _check(
+        client,
+        headers,
+        amount="42.50",
+        transaction_date=local_today().isoformat(),
+        bucket_id=hh.bucket_id,
+    )
+    assert r.status_code == 200, r.text  # not a 404 from GET /{txn_id}
+    [d] = r.json()["duplicates"]
+    assert d["id"] == txn["id"] and d["amount"] == 42.5 and d["merchant"] == "Taverna"
+    assert d["same_bucket"] is True and d["date"] == (local_today() - timedelta(days=3)).isoformat()
+    assert set(d) == {
+        "id",
+        "amount",
+        "currency",
+        "date",
+        "notes",
+        "merchant",
+        "bucket",
+        "paid_by",
+        "same_bucket",
+    }
+
+
+def test_check_duplicate_ignores_four_days_away_and_the_excluded_id(client, api):  # noqa: F811
+    headers, hh = api
+    _expense(client, headers, hh, when=local_today() - timedelta(days=4))
+    near = _expense(client, headers, hh)
+    today = local_today().isoformat()
+    assert [
+        d["id"]
+        for d in _check(client, headers, amount="42.50", transaction_date=today).json()[
+            "duplicates"
+        ]
+    ] == [near["id"]]
+    assert _check(
+        client, headers, amount="42.50", transaction_date=today, exclude_id=near["id"]
+    ).json() == {"duplicates": []}
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"amount": "", "transaction_date": ""},
+        {"amount": "abc", "transaction_date": "2026-10-07"},
+        {"amount": "10", "transaction_date": "nonsense"},
+        {},
+    ],
+)
+def test_check_duplicate_blank_or_invalid_input_is_an_empty_list(client, api, params):  # noqa: F811
+    headers, _ = api
+    r = _check(client, headers, **params)
+    assert r.status_code == 200 and r.json() == {"duplicates": []}
+
+
+def test_check_duplicate_is_household_scoped(client, api, make_household):  # noqa: F811
+    headers, hh = api
+    other = make_household(name="Other", username="other")
+    _expense(client, _bearer(client, other), other)
+    r = _check(client, headers, amount="42.50", transaction_date=local_today().isoformat())
+    assert r.json() == {"duplicates": []}
+
+
+def test_check_duplicate_needs_auth(client):
+    r = client.get(
+        "/api/v1/transactions/check-duplicate",
+        params={"amount": "1", "transaction_date": "2026-10-07"},
+    )
+    assert r.status_code == 401
+
+
+def test_html_check_duplicate_also_returns_empty_for_a_malformed_amount(client, authed):
+    r = client.get("/transactions/check-duplicate?amount=abc&transaction_date=2026-10-07")
+    assert r.status_code == 200 and r.json() == {"duplicates": []}
