@@ -13,7 +13,7 @@ import { CountSheet } from './CountSheet'
 import { useCashMovements, useCashWallets } from './hooks'
 import { Movements } from './Movements'
 import { StashCard } from './StashCard'
-import { type CashWalletsOut, num } from './types'
+import { type CashWalletMemberOut, type CashWalletsOut, num } from './types'
 import { WalletCard } from './WalletCard'
 import './cash.css'
 
@@ -25,19 +25,22 @@ export function Cash() {
   const { month, go } = useShownMonth()
   const wallets = useCashWallets(month)
   const online = useOnline()
-  // Stepping to a month not loaded yet keeps the screen (and the stepper under the finger): the stash is
-  // all-time, so the last one shown stays true while the new month's wallets load.
+  // Stepping to a month not loaded (yet, or at all: offline or failing) keeps the screen and the stepper under
+  // the finger: the stash and the members are not per month, so the last ones shown stay true. Only the
+  // wallets area says the month is loading, not saved or failed.
   const [last, setLast] = useState<CashWalletsOut | undefined>(undefined)
   if (wallets.data && wallets.data !== last) setLast(wallets.data)
-  const shown = wallets.data ?? (wallets.isLoading ? last : undefined)
+  const shown = wallets.data ?? last
   return (
     <div className="cash">
       {shown ? (
         <>
           {wallets.stale && (
-            <p className="ui-banner" role="status"><CloudOffIcon />Offline · showing saved cash</p>
+            <p className="ui-banner" role="status">
+              <CloudOffIcon />{online ? 'Couldn’t refresh · showing saved cash' : 'Offline · showing saved cash'}
+            </p>
           )}
-          <CashBody stash={num(shown.stash)} wallets={wallets} month={month} go={go} canWrite={online} />
+          <CashBody stash={num(shown.stash)} members={shown.members} wallets={wallets} month={month} go={go} canWrite={online} />
         </>
       ) : (
         <QueryView result={wallets} showBanner={false} noDataText="No saved cash yet. Connect once to load Cash.">
@@ -50,18 +53,19 @@ export function Cash() {
 
 interface BodyProps {
   stash: number
+  /** Every member, the viewer first: from the shown month or, while another loads, the last one shown. */
+  members: CashWalletMemberOut[]
   wallets: CachedQuery<CashWalletsOut>
   month: string
   go: (by: number) => void
   canWrite: boolean
 }
 
-function CashBody({ stash, wallets, month, go, canWrite }: BodyProps) {
+function CashBody({ stash, members, wallets, month, go, canWrite }: BodyProps) {
   const navigate = useNavigate()
   const currency = useHousehold().data?.default_currency ?? 'EUR'
   const movements = useCashMovements(month)
   const [open, setOpen] = useState<Open>(null)
-  const members = wallets.data?.members ?? []
   const me = members.find((m) => m.is_me)
   const names = new Map(members.map((m) => [m.member_id, m.name]))
   const order = new Map(members.map((m, i) => [m.member_id, i]))

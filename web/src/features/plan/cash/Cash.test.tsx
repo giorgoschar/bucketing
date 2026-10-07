@@ -1,7 +1,7 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { fakeApi, reply } from '../../../test/fakeApi'
-import { cashMovement, cashRoutes, cashWallets, wallet, walletMember } from '../../../test/fixtures'
+import { fakeApi, hang, reply } from '../../../test/fakeApi'
+import { cashMovement, cashRoutes, cashWallets, readRoutes, wallet, walletMember } from '../../../test/fixtures'
 import { renderWithProviders, resetTestEnv, setOnline } from '../../../test/render'
 import { formatMonthLabel } from '../../../ui/format'
 import { Cash } from './Cash'
@@ -205,4 +205,62 @@ it('offline with nothing saved: an empty state, not a spinner', async () => {
   renderWithProviders(<Cash />)
   expect(await screen.findByText('No saved cash yet. Connect once to load Cash.')).toBeInTheDocument()
   expect(screen.queryByRole('status', { name: 'Loading' })).not.toBeInTheDocument()
+})
+
+// ---- Fix round 1 ----
+
+it('I1: offline, stepping to a month not saved keeps the stash and the stepper; only the wallets say so', async () => {
+  const fake = fakeApi(cashRoutes({ movements: MOVES }))
+  const { unmount, client } = renderWithProviders(<Cash />, { route: '/plan?view=cash' })
+  await screen.findByRole('list', { name: 'Movements' })
+  unmount()
+  setOnline(false)
+  fake.down()
+  renderWithProviders(<Cash />, { client, route: '/plan?view=cash' })
+  await screen.findByText('€380.00')
+  fireEvent.click(screen.getByRole('button', { name: 'Previous month' }))
+  expect(await screen.findByText('No saved wallets for this month yet.')).toBeInTheDocument()
+  expect(screen.getByRole('heading', { level: 3, name: formatMonthLabel('2026-09') })).toBeInTheDocument()
+  expect(stashCard()).toHaveTextContent('€380.00')
+  expect(screen.queryByText('No saved cash yet. Connect once to load Cash.')).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Next month' }))
+  expect(await screen.findByRole('article', { name: "Giorgos's wallet" })).toBeInTheDocument()
+})
+
+it('I1: online, a month that fails to load keeps the stash and the stepper', async () => {
+  const fake = fakeApi(cashRoutes())
+  renderWithProviders(<Cash />, { route: '/plan?view=cash' })
+  await screen.findByText('€380.00')
+  fake.on('GET /api/v1/cash/wallets' as never, (() => reply(500, { detail: 'boom' })) as never)
+  fireEvent.click(screen.getByRole('button', { name: 'Previous month' }))
+  expect(await screen.findByText('Couldn’t load this.')).toBeInTheDocument()
+  expect(stashCard()).toHaveTextContent('€380.00')
+  expect(screen.getByRole('button', { name: 'Next month' })).toBeEnabled()
+})
+
+it('M3: Take while the next month loads still knows the members (no empty stash_owner_id)', async () => {
+  const fake = fakeApi({ ...readRoutes(), ...cashRoutes() })
+  renderWithProviders(<Cash />, { route: '/plan?view=cash' })
+  await screen.findByText('€380.00')
+  fake.on('GET /api/v1/cash/wallets' as never, (() => hang()) as never)
+  fireEvent.click(screen.getByRole('button', { name: 'Previous month' }))
+  fireEvent.click(within(stashCard()).getByRole('button', { name: 'Take' }))
+  const sheet = await screen.findByRole('dialog', { name: 'Take cash' })
+  expect(within(sheet).getByRole('radio', { name: /My stash/ })).toBeChecked()
+  expect(within(sheet).getByRole('radio', { name: /Maria's stash/ })).toBeInTheDocument()
+  fireEvent.change(within(sheet).getByLabelText('Amount'), { target: { value: '5' } })
+  fireEvent.click(within(sheet).getByRole('button', { name: 'Take €5.00' }))
+  await waitFor(() => expect(fake.callsTo('POST /api/v1/cash/movements')).toHaveLength(1))
+  expect(fake.callsTo('POST /api/v1/cash/movements')[0].body).toMatchObject({ stash_owner_id: 'u1' })
+})
+
+it('M5: online, a failed refresh says so (not "Offline") and writes stay enabled', async () => {
+  const fake = fakeApi(cashRoutes())
+  const { client } = renderWithProviders(<Cash />)
+  await screen.findByText('€380.00')
+  fake.on('GET /api/v1/cash/wallets' as never, (() => reply(500, { detail: 'boom' })) as never)
+  await act(() => client.invalidateQueries({ queryKey: ['cash'] }))
+  expect(await screen.findByText('Couldn’t refresh · showing saved cash')).toBeInTheDocument()
+  expect(screen.queryByText(/Offline/)).not.toBeInTheDocument()
+  expect(within(stashCard()).getByRole('button', { name: 'Take' })).toBeEnabled()
 })
