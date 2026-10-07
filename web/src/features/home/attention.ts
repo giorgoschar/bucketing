@@ -1,0 +1,60 @@
+import type { BudgetRowOut, CategoryUsualOut, EntryOut, MatchOut, UpcomingDayOut } from '../../data/types'
+import type { FailedQueueRow } from '../../offline/useQueue'
+import { addDays, shiftMonth } from '../../ui/format'
+
+export type AttentionItem =
+  | { kind: 'match'; key: string; match: MatchOut }
+  | { kind: 'overdue'; key: string; entry: EntryOut }
+  | { kind: 'missingAmount'; key: string; entry: EntryOut }
+  | { kind: 'budget'; key: string; row: BudgetRowOut }
+  | { kind: 'category'; key: string; row: CategoryUsualOut }
+  | { kind: 'failed'; key: string; change: FailedQueueRow }
+
+/** undefined = not loaded (no cache, no answer yet). */
+export interface AttentionInput {
+  today: string
+  matches?: MatchOut[]
+  overdue?: EntryOut[]
+  upcoming?: UpcomingDayOut[]
+  budgets?: BudgetRowOut[]
+  categories?: CategoryUsualOut[]
+  failed: FailedQueueRow[]
+}
+
+export const BUDGET_WARN_PCT = 80
+export const MAX_CATEGORIES = 3
+export const MISSING_AMOUNT_DAYS = 7
+
+/** Spec §5.2: from the first of last month to yesterday. */
+export function overdueWindow(today: string): { from: string; to: string } {
+  return { from: `${shiftMonth(today.slice(0, 7), -1)}-01`, to: addDays(today, -1) }
+}
+
+/** Home › Needs attention, in the spec's order. */
+export function buildAttention(i: AttentionInput): AttentionItem[] {
+  const horizon = addDays(i.today, MISSING_AMOUNT_DAYS)
+  const overdue = (i.overdue ?? [])
+    .filter((e) => e.overdue && e.status === 'expected')
+    .sort((a, b) => a.due_date.localeCompare(b.due_date))
+  const missing = (i.upcoming ?? [])
+    .flatMap((d) => d.entries)
+    .filter((e) => e.status === 'expected' && (e.estimated || e.amount === null) && e.due_date <= horizon)
+  return [
+    ...(i.matches ?? []).map((match): AttentionItem => ({ kind: 'match', key: `match:${match.id}`, match })),
+    ...overdue.map((entry): AttentionItem => ({ kind: 'overdue', key: `overdue:${entry.id}`, entry })),
+    ...missing.map((entry): AttentionItem => ({ kind: 'missingAmount', key: `amount:${entry.id}`, entry })),
+    ...(i.budgets ?? [])
+      .filter((b) => b.pct !== null && b.pct >= BUDGET_WARN_PCT)
+      .map((row): AttentionItem => ({ kind: 'budget', key: `budget:${row.bucket_id}`, row })),
+    ...(i.categories ?? [])
+      .filter((c) => c.flagged)
+      .slice(0, MAX_CATEGORIES)
+      .map((row): AttentionItem => ({ kind: 'category', key: `category:${row.category_id ?? row.name}`, row })),
+    ...i.failed.map((change): AttentionItem => ({ kind: 'failed', key: `failed:${change.id}`, change })),
+  ]
+}
+
+/** True once every server source has data: only then does an empty list mean "All clear". */
+export function attentionReady(i: AttentionInput): boolean {
+  return [i.matches, i.overdue, i.upcoming, i.budgets, i.categories].every((x) => x !== undefined)
+}
