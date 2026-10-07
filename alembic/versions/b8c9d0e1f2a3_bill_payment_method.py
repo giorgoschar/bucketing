@@ -31,17 +31,20 @@ branch_labels = None
 depends_on = None
 
 BACKFILL_IN = "UPDATE recurring_bills SET payment_method = 'transfer' WHERE direction = 'in'"
+# Only known methods are copied, so a stray legacy value never becomes a bill's default.
 # (created_at IS NULL) sorts false before true on both dialects, so rows with a
 # created_at come first whatever the dialect does with NULLs in DESC.
 BACKFILL_OUT = (
     "UPDATE recurring_bills SET payment_method = ("
     "  SELECT t.payment_method FROM transactions t"
     "  WHERE t.recurring_bill_id = recurring_bills.id AND t.deleted_at IS NULL"
+    "  AND t.payment_method IN ('card', 'cash', 'apple_pay', 'transfer', 'other')"
     "  ORDER BY t.transaction_date DESC, (t.created_at IS NULL), t.created_at DESC, t.id DESC"
     "  LIMIT 1"
     ") WHERE direction <> 'in' AND EXISTS ("
     "  SELECT 1 FROM transactions t"
     "  WHERE t.recurring_bill_id = recurring_bills.id AND t.deleted_at IS NULL"
+    "  AND t.payment_method IN ('card', 'cash', 'apple_pay', 'transfer', 'other')"
     ")"
 )
 
