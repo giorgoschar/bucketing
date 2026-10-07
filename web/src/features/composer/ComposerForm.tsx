@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useReducer, useRef, useState } from 'react'
 import { useBlocker, useNavigate, useSearchParams } from 'react-router'
 import { CloseIcon } from '../../shell/icons'
 import { AmountDisplay } from '../../ui/AmountDisplay'
@@ -57,6 +57,10 @@ export function ComposerForm({ initial, data, defaults }: { initial: ComposerSta
   const [sheet, setSheet] = useState<SheetName | null>(null)
   const [dup, setDup] = useState<Duplicate | null>(null)
   const [typing, setTyping] = useState(false)
+  // Merchant combobox: the highlighted suggestion (-1 none) and whether Escape closed the list.
+  const [active, setActive] = useState(-1)
+  const [listClosed, setListClosed] = useState(false)
+  const listId = useId()
   const [stashCents, setStashCents] = useState<number | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const splitTyped = useRef<Record<string, string>>({})
@@ -184,7 +188,33 @@ export function ComposerForm({ initial, data, defaults }: { initial: ComposerSta
     dispatch({ type: 'setCashMode', on: !s.cashMode, meId: data.meId, defaultMethod: remembered(defaults.last).payment_method ?? 'card' })
 
   const rule = matchRule(s.merchant, data.rules)
-  const suggestions = typing ? suggestMerchants(s.merchant, data.merchants) : []
+  const suggestions = typing && !listClosed ? suggestMerchants(s.merchant, data.merchants) : []
+  const setMerchant = (value: string) => {
+    setActive(-1)
+    setListClosed(false)
+    dispatch({ type: 'setMerchant', value, rule: matchRule(value, data.rules) })
+  }
+  const onMerchantKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    const n = suggestions.length
+    if (e.key === 'ArrowDown' && n) {
+      e.preventDefault()
+      setActive((a) => (a + 1) % n)
+    } else if (e.key === 'ArrowUp' && n) {
+      e.preventDefault()
+      setActive((a) => (a <= 0 ? n - 1 : a - 1))
+    } else if (e.key === 'Escape' && n) {
+      e.preventDefault()
+      setListClosed(true)
+      setActive(-1)
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      if (active >= 0 && active < n) {
+        const pick = suggestions[active]
+        setMerchant(pick)
+        setListClosed(true)
+      } else (e.target as HTMLInputElement).blur()
+    }
+  }
   const rate = parseRate(s.rate)
   const converted = s.currency !== data.householdCurrency && rate !== null
     ? `≈ ${formatCents(convertCents(cents, rate), data.householdCurrency)}`
@@ -248,17 +278,22 @@ export function ComposerForm({ initial, data, defaults }: { initial: ComposerSta
 
         <div className="composer__merchant-wrap">
           <input className="composer__merchant" aria-label="Merchant" placeholder="Where? (optional)" maxLength={100}
+            role="combobox" aria-autocomplete="list" aria-expanded={suggestions.length > 0}
+            aria-controls={suggestions.length > 0 ? listId : undefined}
+            aria-activedescendant={active >= 0 && active < suggestions.length ? `${listId}-${active}` : undefined}
             autoComplete="off" autoCorrect="off" enterKeyHint="done" value={s.merchant}
-            onChange={(e) => dispatch({ type: 'setMerchant', value: e.target.value, rule: matchRule(e.target.value, data.rules) })}
-            onFocus={() => setTyping(true)} onBlur={() => setTyping(false)}
-            onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }} />
+            onChange={(e) => setMerchant(e.target.value)}
+            onFocus={() => setTyping(true)}
+            onBlur={() => { setTyping(false); setActive(-1); setListClosed(false) }}
+            onKeyDown={onMerchantKey} />
           {suggestions.length > 0 && (
-            <ul className="composer__suggest" role="listbox" aria-label="Recent places">
-              {suggestions.map((m) => (
-                <li key={m} role="option" aria-selected={false} className="composer__suggest-item"
+            <ul id={listId} className="composer__suggest" role="listbox" aria-label="Recent places">
+              {suggestions.map((m, i) => (
+                <li key={m} id={`${listId}-${i}`} role="option" aria-selected={i === active}
+                  className={i === active ? 'composer__suggest-item is-active' : 'composer__suggest-item'}
                   // mousedown keeps the input focused so the pick lands before blur hides the list.
                   onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => dispatch({ type: 'setMerchant', value: m, rule: matchRule(m, data.rules) })}>
+                  onClick={() => setMerchant(m)}>
                   {m}
                 </li>
               ))}

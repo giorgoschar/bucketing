@@ -36,7 +36,7 @@
   min-height: 44px; display: flex; align-items: center; padding: 0 10px; border-radius: var(--r-sm);
   font-size: 15px; cursor: pointer; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none;
 }
-.composer__suggest-item:active { background: var(--surface-2); }
+.composer__suggest-item:active, .composer__suggest-item.is-active { background: var(--surface-2); }
 
 .composer__pills { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
 .ck-pill__glyph { font-size: 14px; line-height: 1; }
