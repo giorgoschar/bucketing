@@ -13,6 +13,7 @@ from app.services.bills import (
     complete_entry,
     undo_occurrence,
 )
+from tests.test_api import api  # noqa: F401  (fixture)
 
 
 def _fixed(db, hh, make_bill, **kw):
@@ -155,3 +156,19 @@ def test_pay_links_the_item_and_undo_keeping_the_expense_unlinks(db, make_househ
     db.expire_all()
     assert db.get(Transaction, txn.id).recurring_bill_id is None
     assert db.get(Transaction, txn.id).deleted_at is None
+
+
+def test_a_bill_payment_with_a_bucket_cannot_lose_it(client, db, api, make_bill):  # noqa: F811
+    from app.schemas import BUCKET_REQUIRED
+
+    headers, hh = api
+    _, occ = make_bill(hh.household_id, hh.bucket_id, amount=10, auto_pay=False)
+    txn = complete_entry(db, occ, user_id=hh.user_id)
+    db.commit()
+    r = client.put(
+        f"/api/v1/transactions/{txn.id}", headers=headers, json={"bucket_id": None, "amount": "10"}
+    )
+    assert r.status_code == 400, r.text
+    assert r.json()["detail"] == BUCKET_REQUIRED
+    db.expire_all()
+    assert db.get(Transaction, txn.id).bucket_id == hh.bucket_id
