@@ -58,7 +58,7 @@ it('409: rolls back, toasts the server detail, invalidates and resolves rejected
   const spy = vi.spyOn(client, 'invalidateQueries')
   expect(await run()).toEqual({ status: 'rejected', code: 409, detail: 'This entry is already done.' })
   expect(status()).toBe('expected')
-  expect(screen.getByRole('status')).toHaveTextContent('This entry is already done.')
+  expect(screen.getByRole('alert')).toHaveTextContent('This entry is already done.')
   expect(spy).toHaveBeenCalledWith({ queryKey: ['plan'] })
 })
 
@@ -66,8 +66,8 @@ it('422 with a list detail toasts a readable message', async () => {
   fakeApi({ [SKIP]: () => reply(422, { detail: [{ loc: ['body'], msg: 'Field required', type: 'missing' }] }) })
   const { run } = setup()
   await run()
-  expect(screen.getByRole('status')).toHaveTextContent('Some values aren’t valid. Check them and try again.')
-  expect(screen.getByRole('status')).not.toHaveTextContent('[object Object]')
+  expect(screen.getByRole('alert')).toHaveTextContent('Some values aren’t valid. Check them and try again.')
+  expect(document.body).not.toHaveTextContent('[object Object]')
 })
 
 it('toastRejections false: no toast, but the detail is returned for the caller to show', async () => {
@@ -75,6 +75,7 @@ it('toastRejections false: no toast, but the detail is returned for the caller t
   const { run } = setup(spec({ toastRejections: false }))
   expect(await run()).toEqual({ status: 'rejected', code: 409, detail: 'Delete it too.' })
   expect(screen.getByRole('status')).toBeEmptyDOMElement()
+  expect(screen.queryByRole('alert')).toBeNull()
 })
 
 it('offline: queues without sending, keeps the patch and marks the row pending', async () => {
@@ -104,6 +105,7 @@ it('401: rolls back, no toast and nothing queued', async () => {
   expect(status()).toBe('expected')
   expect(await db.queue.count()).toBe(0)
   expect(screen.getByRole('status')).toBeEmptyDOMElement()
+  expect(screen.queryByRole('alert')).toBeNull()
 })
 
 it('a 503 while online is replayed shortly after, without an online or visibility event', async () => {
@@ -130,7 +132,7 @@ it("queue 'offline-only': a 503 while online rolls back, says so and queues noth
   expect(status()).toBe('expected')
   expect(await db.queue.count()).toBe(0)
   expect(isPending('e1')).toBe(false)
-  expect(document.body).toHaveTextContent(UNCONFIRMED_DETAIL)
+  expect(screen.getByRole('alert')).toHaveTextContent(UNCONFIRMED_DETAIL)
   expect(spy).toHaveBeenCalledWith({ queryKey: ['plan'] })
 })
 
