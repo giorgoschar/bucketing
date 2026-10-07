@@ -1,5 +1,6 @@
 import { waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { db, wipe } from '../offline/db'
 import { setIdentity } from '../offline/identity'
 import { enqueue, replay } from '../offline/queue'
 import { fakeApi, reply } from '../test/fakeApi'
@@ -44,4 +45,21 @@ it('a row that is still pending (backed off) keeps the markers', async () => {
   await new Promise((r) => setTimeout(r, 30))
   expect(isPending('e2')).toBe(true)
   stop()
+})
+
+it('clears the markers when the pending count reaches 0 without a drain here (another tab sent them)', async () => {
+  const stop = installQueueBridge(testQueryClient())
+  await enqueue({ method: 'POST', path: '/api/v1/recurring/entries/e1/skip' })
+  markPending('e1')
+  await new Promise((r) => setTimeout(r, 30))
+  expect(isPending('e1')).toBe(true)
+  await db.queue.clear()
+  await waitFor(() => expect(isPending('e1')).toBe(false))
+  stop()
+})
+
+it('wipe (sign-out, account switch) clears the markers', async () => {
+  markPending('e1')
+  await wipe()
+  expect(isPending('e1')).toBe(false)
 })

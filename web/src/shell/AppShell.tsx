@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router'
+import { clearPending } from '../data/pending'
 import { installQueueBridge } from '../data/queueBridge'
 import { startReplayTriggers } from '../offline/queue'
 import { queryClient } from '../queryClient'
@@ -38,6 +39,7 @@ export function AppShell() {
     return () => {
       stopReplay()
       stopBridge()
+      clearPending() // signed out or switched: this account's markers must not outlive it
     }
   }, [status])
 

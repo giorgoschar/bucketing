@@ -1,4 +1,5 @@
 import Dexie, { type Table } from 'dexie'
+import { clearPending } from '../data/pending'
 
 // NOTE: cache keys and queue `error` are stored in plaintext; never put sensitive values in them.
 export interface Sealed { iv: Uint8Array<ArrayBuffer>; data: ArrayBuffer }
@@ -28,6 +29,7 @@ export const db = new LocalDB()
 export async function wipe(): Promise<void> {
   const { forgetKey } = await import('./crypto')
   forgetKey()
+  clearPending() // the queued rows go with the store, so their "Waiting to sync" markers must too
   await db.transaction('rw', db.keys, db.cache, db.queue, async () => {
     await Promise.all([db.keys.clear(), db.cache.clear(), db.queue.clear()])
   })

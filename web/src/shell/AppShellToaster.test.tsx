@@ -2,6 +2,7 @@ import { act, cleanup, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import type { Session } from '../session/SessionProvider'
+import { isPending, markPending } from '../data/pending'
 import { dismissToast, toast } from '../ui/Toast'
 import { AppShell } from './AppShell'
 
@@ -43,4 +44,11 @@ it('the toast region sits outside <main>, so it never mixes with the page banner
   const regions = screen.getAllByRole('status')
   expect(regions).toHaveLength(2)
   expect(screen.getByRole('main')).not.toContainElement(screen.getByText('Saved'))
+})
+
+it('leaving the signed-in shell clears the pending markers', () => {
+  at('/', 'signedIn')
+  markPending('e1')
+  cleanup()
+  expect(isPending('e1')).toBe(false)
 })
