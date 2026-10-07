@@ -2,12 +2,16 @@ import { readCsrf } from '../api/client'
 import { keyGeneration, open, seal } from './crypto'
 import { db, type QueueRow } from './db'
 import { getIdentity, type Identity } from './identity'
+import { notifyDrained, type ReplayResult } from './queueDrain'
+
+export { onQueueDrained } from './queueDrain'
+export type { ReplayResult } from './queueDrain'
 
 type Method = 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 interface Req { method: Method; path: string; body?: unknown }
 /** What is sealed into a row: the request plus who queued it, so another account never replays it. */
 interface Stored extends Req { owner: Identity }
-interface Result { sent: number; failed: number; stoppedOnAuth: boolean }
+type Result = ReplayResult
 
 const MAX_BACKOFF_MS = 5 * 60_000
 const MAX_ERROR_CHARS = 200
@@ -49,6 +53,7 @@ export function replay(opts: { force?: boolean } = {}): Promise<Result> {
         const next = await withLock(() => drain(true))
         r = { sent: r.sent + next.sent, failed: r.failed + next.failed, stoppedOnAuth: next.stoppedOnAuth }
       }
+      notifyDrained(r)
       return r
     } finally {
       rerunForced = false
@@ -159,7 +164,7 @@ async function drain(force: boolean): Promise<Result> {
         sent++
         continue
       }
-      if (res.status >= 500 || res.status === 429) {
+      if (res.status >= 500 || res.status === 429 || res.status === 408) {
         await retryLater()
         break
       }
@@ -179,6 +184,27 @@ async function drain(force: boolean): Promise<Result> {
     if (gen === keyGeneration()) throw e
   }
   return { sent, failed, stoppedOnAuth: false }
+}
+
+const KICK_DELAY_MS = 2000
+let kickTimer: ReturnType<typeof setTimeout> | undefined
+
+/**
+ * Replay soon. For a write queued while online (a 5xx, 408, 429 or a dropped connection): no `online` or
+ * visibility event will come to trigger the replay, so schedule one. Repeated kicks collapse into one.
+ */
+export function kick(delayMs = KICK_DELAY_MS): void {
+  clearTimeout(kickTimer)
+  kickTimer = setTimeout(() => {
+    kickTimer = undefined
+    void replay().catch(() => {})
+  }, delayMs)
+}
+
+/** Drop a scheduled kick (sign-out, tests). */
+export function cancelKick(): void {
+  clearTimeout(kickTimer)
+  kickTimer = undefined
 }
 
 export function startReplayTriggers(): () => void {

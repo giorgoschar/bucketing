@@ -71,6 +71,9 @@
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
 }
+/* Phones fill the width; wider screens get a centred 480px column (spec §7). */
+.shell__main { max-width: 480px; margin: 0 auto; }
+.tabbar { max-width: 480px; margin: 0 auto; }
 
 /* ---------------- Top bar ---------------- */
 .topbar {
@@ -85,6 +88,7 @@
   font-family: var(--font-display); font-weight: 600;
   font-size: 30px; line-height: 1.15; letter-spacing: -.02em;
 }
+.topbar__end { display: flex; align-items: center; gap: 6px; flex: none; }
 .topbar__account {
   width: 44px; height: 44px; flex: none; padding: 0; border: 0; border-radius: 50%;
   display: grid; place-items: center; background: transparent; cursor: pointer;

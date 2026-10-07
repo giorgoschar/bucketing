@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, type ReactNode } from 'react'
 import { useSession } from '../session/SessionProvider'
 import { LogOutIcon } from './icons'
 
@@ -10,7 +10,8 @@ function initials(name: string): string {
   return letters.toUpperCase()
 }
 
-export function TopBar({ title }: { title: string }) {
+/** `actions` (icon buttons for the screen) render before the account button. */
+export function TopBar({ title, actions }: { title: string; actions?: ReactNode }) {
   const { me, signOut } = useSession()
   const sheet = useRef<HTMLDialogElement>(null)
   const cancel = useRef<HTMLButtonElement>(null)
@@ -28,15 +29,18 @@ export function TopBar({ title }: { title: string }) {
   return (
     <header className="topbar">
       <h1 className="topbar__title">{title}</h1>
-      <button
-        type="button"
-        className="topbar__account"
-        aria-label="Account"
-        aria-haspopup="dialog"
-        onClick={open}
-      >
-        <span className={avatarClass} style={tint ? { background: tint } : undefined}>{initials(name)}</span>
-      </button>
+      <div className="topbar__end">
+        {actions}
+        <button
+          type="button"
+          className="topbar__account"
+          aria-label="Account"
+          aria-haspopup="dialog"
+          onClick={open}
+        >
+          <span className={avatarClass} style={tint ? { background: tint } : undefined}>{initials(name)}</span>
+        </button>
+      </div>
       <dialog
         ref={sheet}
         className="sheet"

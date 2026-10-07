@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router'
+import { clearPending } from '../data/pending'
+import { installQueueBridge } from '../data/queueBridge'
 import { startReplayTriggers } from '../offline/queue'
+import { queryClient } from '../queryClient'
 import { authErrorMessage, LINKED_MESSAGE, readAuthResult } from '../session/authMessages'
 import { useSession } from '../session/SessionProvider'
 import { SignIn } from '../session/SignIn'
+import { Toaster } from '../ui/Toast'
 import { CloseIcon } from './icons'
 import { TabBar } from './TabBar'
 import './shell.css'
@@ -27,9 +31,16 @@ export function AppShell() {
   }, [hasParams, location.search, navigate])
 
   // Replay queued offline writes on open, `online` and returning to the tab (iOS has no Background Sync).
+  // The bridge first, so the first drain already refreshes the screens and clears the pending markers.
   useEffect(() => {
     if (status !== 'signedIn') return
-    return startReplayTriggers()
+    const stopBridge = installQueueBridge(queryClient)
+    const stopReplay = startReplayTriggers()
+    return () => {
+      stopReplay()
+      stopBridge()
+      clearPending() // signed out or switched: this account's markers must not outlive it
+    }
   }, [status])
 
   if (status === 'loading') return <div className="boot" aria-busy="true" />
@@ -56,6 +67,7 @@ export function AppShell() {
         <Outlet />
       </main>
       <TabBar />
+      <Toaster />
     </div>
   )
 }
