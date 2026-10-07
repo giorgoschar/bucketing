@@ -1,13 +1,13 @@
 import { act, cleanup, renderHook } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { MemoryRouter, useLocation } from 'react-router'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { useMemoryStorage } from '../../test/storage'
+import { afterEach, describe, expect, it } from 'vitest'
+import { installMemoryStorage } from '../../test/storage'
 import { HOUSEHOLD, LENS_STORAGE_KEY, insightsSearch, lensOptions, lensQuery, resolveLens, useLens } from './lens'
 
 afterEach(cleanup)
 
-useMemoryStorage()
+installMemoryStorage()
 
 const members = [
   { user_id: 'me', display_name: 'Giorgos Charitidis', username: 'giorgos' },

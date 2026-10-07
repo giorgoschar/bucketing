@@ -1,8 +1,8 @@
 import { act, cleanup, renderHook } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { MemoryRouter, useLocation } from 'react-router'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { useMemoryStorage } from '../../test/storage'
+import { afterEach, describe, expect, it } from 'vitest'
+import { installMemoryStorage } from '../../test/storage'
 import {
   PERIOD_STORAGE_KEY,
   parsePeriod,
@@ -16,7 +16,7 @@ import {
 
 afterEach(cleanup)
 
-useMemoryStorage()
+installMemoryStorage()
 
 const q = (s: string) => new URLSearchParams(s)
 

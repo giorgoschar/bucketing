@@ -14,7 +14,7 @@ export function memoryStorage(): Storage {
 }
 
 /** Call at the top of a test file: a fresh in-memory localStorage for every test. */
-export function useMemoryStorage(): void {
+export function installMemoryStorage(): void {
   beforeEach(() => { vi.stubGlobal('localStorage', memoryStorage()) })
   afterEach(() => { vi.unstubAllGlobals() })
 }

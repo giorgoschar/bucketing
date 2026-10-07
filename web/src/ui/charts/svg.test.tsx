@@ -35,6 +35,35 @@ describe('MonthBars', () => {
     expect(container.querySelector('svg text.chart__max')?.textContent).toBe('€9.00')
   })
 
+  it('has a legend, 3-letter month labels and a dashed outline on the running month', () => {
+    const { container } = render(
+      <MonthBars
+        title="In and Out"
+        months={MONTHS}
+        series={[
+          { name: 'In', values: [1, 2, 3, 4, 5, 6] },
+          { name: 'Out', values: [1, 2, 3, 4, 5, 6] },
+        ]}
+        format={eur}
+        current
+      />,
+    )
+    const legend = container.querySelector('.chart-legend')!
+    expect(legend.textContent).toBe('InOut')
+    const labels = [...container.querySelectorAll('svg text:not(.chart__max)')].map((t) => t.textContent)
+    expect(labels).toEqual(MONTHS)
+    expect(container.querySelectorAll('rect.chart__bar--running')).toHaveLength(2)
+  })
+
+  it('draws nothing for negative values', () => {
+    const { container } = render(
+      <MonthBars title="S" months={['Jan', 'Feb']} series={[{ name: 'S', values: [-5, 4] }]} format={eur} />,
+    )
+    const rects = container.querySelectorAll<SVGRectElement>('rect.chart__bar')
+    expect(rects[0].getAttribute('height')).toBe('0')
+    expect(container.innerHTML).not.toContain('NaN')
+  })
+
   it('survives an all-zero series', () => {
     const { container } = render(
       <MonthBars title="Spend" months={MONTHS} series={[{ name: 'Spend', values: [0, 0, 0, 0, 0, 0] }]} format={eur} />,
