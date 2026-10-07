@@ -116,7 +116,7 @@ function PayForm({ entry, actions, onResult }: FormProps) {
   const fallbackWho = item?.paid_by_default ?? me?.id ?? members[0]?.user_id ?? null
   const [picked, setPicked] = useState<string | null>(null)
   const who = picked ?? fallbackWho
-  const [method, setMethod] = useState<PaymentMethod>(isIn ? 'transfer' : 'card')
+  const [method, setMethod] = useState<PaymentMethod>(METHODS.find((m) => m.value === entry.payment_method)?.value ?? (isIn ? 'transfer' : 'card'))
   const [text, setText] = useState(entry.amount === null ? '' : entry.amount.toFixed(2))
   const parsed = parseAmount(text)
   const amount = parsed ?? (entry.amount === null ? null : entry.amount.toFixed(2))

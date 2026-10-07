@@ -38,7 +38,7 @@ it('expected out entry: Paid prefills amount, the item payer and card, then post
 
 it('expected in entry: Received, "Received by" and transfer by default', async () => {
   fakeApi(routes())
-  renderWithProviders(<EntrySheet entry={entry({ direction: 'in', name: 'Salary', amount: 1500 })} onClose={() => {}} />)
+  renderWithProviders(<EntrySheet entry={entry({ direction: 'in', name: 'Salary', amount: 1500, payment_method: 'transfer' })} onClose={() => {}} />)
   fireEvent.click(screen.getByRole('button', { name: 'Received' }))
   expect(screen.getByRole('button', { name: 'Transfer' })).toHaveAttribute('aria-pressed', 'true')
   expect(await screen.findByRole('group', { name: 'Received by' })).toBeInTheDocument()
@@ -148,4 +148,15 @@ it.each([
   expect(within(screen.getByRole('dialog')).getByRole('alert')).toBe(inline)
   await new Promise((r) => setTimeout(r, 20))
   expect(screen.getAllByRole('alert')).toHaveLength(1)
+})
+
+it('Paid opens with the item\'s payment method and sends it', async () => {
+  const fake = fakeApi(routes({ [DONE]: () => entry({ status: 'done' }) }))
+  renderWithProviders(<EntrySheet entry={entry({ payment_method: 'cash' })} onClose={() => {}} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Paid' }))
+  expect(screen.getByRole('button', { name: 'Cash' })).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.getByRole('button', { name: 'Card' })).toHaveAttribute('aria-pressed', 'false')
+  fireEvent.click(screen.getByRole('button', { name: 'Mark paid €38.90' }))
+  await waitFor(() => expect(fake.callsTo(DONE)).toHaveLength(1))
+  expect(fake.callsTo(DONE)[0].body).toMatchObject({ payment_method: 'cash' })
 })
