@@ -708,7 +708,7 @@
             "type": "string"
           },
           "receipt": {
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "Receipt",
             "type": "string"
           },
@@ -1332,7 +1332,7 @@
       "Body_upload_receipt_api_v1_transactions__txn_id__receipt_post": {
         "properties": {
           "file": {
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
           }
@@ -2482,6 +2482,13 @@
       },
       "ValidationError": {
         "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
           "loc": {
             "items": {
               "anyOf": [

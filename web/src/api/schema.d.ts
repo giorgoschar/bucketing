@@ -1253,10 +1253,7 @@ export interface components {
              * @default card
              */
             payment_method: string;
-            /**
-             * Receipt
-             * Format: binary
-             */
+            /** Receipt */
             receipt?: string;
             /**
              * Remember Rule
@@ -1700,10 +1697,7 @@ export interface components {
         };
         /** Body_upload_receipt_api_v1_transactions__txn_id__receipt_post */
         Body_upload_receipt_api_v1_transactions__txn_id__receipt_post: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
         };
         /** Body_verify_backup_submit_login_verify_backup_post */
@@ -2110,6 +2104,10 @@ export interface components {
         };
         /** ValidationError */
         ValidationError: {
+            /** Context */
+            ctx?: Record<string, never>;
+            /** Input */
+            input?: unknown;
             /** Location */
             loc: (string | number)[];
             /** Message */
