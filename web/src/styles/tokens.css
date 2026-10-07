@@ -49,7 +49,7 @@
   --surface-2: #E4E8F1;
   --ink: #0B0E17;
   --ink-2: #353B4D;
-  --muted: #687089;
+  --muted: #5F6780;   /* AA on --bg 5.0:1, --surface-2 4.6:1 */
   --line: #D8DDE8;
   --accent: #2F55E4;
   --accent-ink: #FFFFFF;
@@ -75,7 +75,7 @@
   --surface-2: #E4E8F1;
   --ink: #0B0E17;
   --ink-2: #353B4D;
-  --muted: #687089;
+  --muted: #5F6780;   /* AA on --bg 5.0:1, --surface-2 4.6:1 */
   --line: #D8DDE8;
   --accent: #2F55E4;
   --accent-ink: #FFFFFF;
