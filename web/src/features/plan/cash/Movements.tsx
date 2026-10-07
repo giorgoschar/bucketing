@@ -1,5 +1,6 @@
 import { type ReactNode, useState } from 'react'
 import { Link } from 'react-router'
+import { useOnline } from '../../../data/online'
 import { formatShortDate } from '../../../ui/format'
 import { ArrowInIcon, ArrowOutIcon, CoinsIcon, LandmarkIcon, LockIcon, PlusIcon, WalletIcon } from '../../../ui/icons'
 import { Sheet } from '../../../ui/Sheet'
@@ -96,11 +97,12 @@ function DeleteSheet({ movement, describe: text, onClose }: {
   movement: CashMovementOut | null; describe: (m: CashMovementOut) => string; onClose: () => void
 }) {
   const { remove } = useCashWrite()
+  const online = useOnline()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const close = () => { setError(null); onClose() }
   const confirm = async () => {
-    if (!movement || busy) return
+    if (!movement || busy || !online) return
     setBusy(true)
     setError(null)
     const out = await remove(movement.id)
@@ -112,7 +114,8 @@ function DeleteSheet({ movement, describe: text, onClose }: {
     <Sheet open={movement !== null} onClose={close} title="Cash entry"
       footer={
         <>
-          <button type="button" className="btn btn--danger btn--block btn--lg" disabled={busy} onClick={() => void confirm()}>Delete</button>
+          {!online && <p className="cash-offline-hint cash-offline-hint--foot">Connect to change cash</p>}
+          <button type="button" className="btn btn--danger btn--block btn--lg" disabled={busy || !online} onClick={() => void confirm()}>Delete</button>
           <button type="button" className="btn btn--block" onClick={close}>Cancel</button>
         </>
       }>

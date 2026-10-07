@@ -1,4 +1,5 @@
 import { type ReactNode, useRef, useState } from 'react'
+import { useOnline } from '../../../data/online'
 import { useBuckets, useCategories } from '../../../data/reads'
 import { todayISO } from '../../../ui/format'
 import { EyeOffIcon, LandmarkIcon, LockIcon } from '../../../ui/icons'
@@ -51,6 +52,7 @@ export function CashSheet({ mode: initialMode, onClose, stash, members, currency
   const [error, setError] = useState<string | null>(null)
   const amountRef = useRef<HTMLInputElement>(null)
   const { run } = useCashWrite()
+  const online = useOnline()
 
   const cents = typedCents(text)
   const invalid = text.trim() !== '' && cents === null
@@ -64,7 +66,7 @@ export function CashSheet({ mode: initialMode, onClose, stash, members, currency
   const spending = canSpend && spend
   const bucket = bucketId || buckets[0]?.id || ''
   const short = fromMe && valid && amount > stashCents
-  const ready = valid && !short && !busy && (!spending || bucket !== '')
+  const ready = online && valid && !short && !busy && (!spending || bucket !== '')
 
   const label = !valid
     ? 'Enter an amount'
@@ -99,9 +101,12 @@ export function CashSheet({ mode: initialMode, onClose, stash, members, currency
   return (
     <Sheet open onClose={onClose} title={TITLES[mode]} initialFocus={amountRef}
       footer={
-        <button type="button" className="btn btn--primary btn--block btn--lg" disabled={!ready} onClick={() => void save()}>
-          {label}
-        </button>
+        <>
+          {!online && <p className="cash-offline-hint cash-offline-hint--foot">Connect to change cash</p>}
+          <button type="button" className="btn btn--primary btn--block btn--lg" disabled={!ready} onClick={() => void save()}>
+            {label}
+          </button>
+        </>
       }>
       <form className="cash-form" onSubmit={(ev) => { ev.preventDefault(); void save() }}>
         {mode !== 'add' && (

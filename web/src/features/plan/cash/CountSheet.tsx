@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { useOnline } from '../../../data/online'
 import { Sheet } from '../../../ui/Sheet'
 import { centsToString } from '../../composer/amount'
 import { AmountField } from './AmountField'
@@ -15,13 +16,14 @@ export function CountSheet({ stash, currency, onClose }: { stash: number; curren
   const [error, setError] = useState<string | null>(null)
   const ref = useRef<HTMLInputElement>(null)
   const { run } = useCashWrite()
+  const online = useOnline()
   const cents = typedCents(text)
   const invalid = text.trim() !== '' && cents === null
   const book = Math.round(stash * 100)
   const e = (c: number, signed = false) => euros(c / 100, currency, signed)
 
   const save = async () => {
-    if (cents === null || busy) return
+    if (cents === null || busy || !online) return
     setBusy(true)
     setError(null)
     const out = await run({ kind: 'stash_count', amount: centsToString(cents) })
@@ -33,8 +35,11 @@ export function CountSheet({ stash, currency, onClose }: { stash: number; curren
   return (
     <Sheet open onClose={onClose} title="Count your stash" initialFocus={ref}
       footer={
-        <button type="button" className="btn btn--primary btn--block btn--lg" disabled={cents === null || busy}
-          onClick={() => void save()}>Save count</button>
+        <>
+          {!online && <p className="cash-offline-hint cash-offline-hint--foot">Connect to change cash</p>}
+          <button type="button" className="btn btn--primary btn--block btn--lg" disabled={cents === null || busy || !online}
+            onClick={() => void save()}>Save count</button>
+        </>
       }>
       <form className="cash-form" onSubmit={(ev) => { ev.preventDefault(); void save() }}>
         <AmountField label="Counted" value={text} onChange={(v) => { setText(v); setError(null) }} inputRef={ref}

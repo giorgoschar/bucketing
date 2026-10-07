@@ -112,3 +112,9 @@
 }
 .cash-preview .ui-num { white-space: normal; color: var(--ink); }
 .cash-spend { display: flex; flex-direction: column; gap: 10px; }
+
+/* Fix round 1 */
+/* M1: the kit's row title is nowrap + ellipsis; a movement title must keep "(deleted)" and its amount. */
+.cash-move .ui-row__title { white-space: normal; overflow-wrap: anywhere; }
+/* M4: the reason a sheet's Save is disabled, right above it. */
+.cash-offline-hint--foot { text-align: center; }

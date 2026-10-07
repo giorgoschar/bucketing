@@ -277,3 +277,15 @@ it('I5: a past month\'s card has no Log it and no Still have (they write into th
   await waitFor(() => expect(within(now).getByRole('button', { name: 'Log it' })).toBeInTheDocument())
   expect(within(now).getByRole('button', { name: 'Still have' })).toBeInTheDocument()
 })
+
+it('M4: the Delete in an open movement sheet disables live when the device goes offline', async () => {
+  fakeApi(cashRoutes({ movements: MOVES }))
+  renderWithProviders(<Cash />)
+  const list = await screen.findByRole('list', { name: 'Movements' })
+  fireEvent.click(within(list).getByRole('button', { name: /Took from the bank/ }))
+  const sheet = await screen.findByRole('dialog', { name: 'Cash entry' })
+  expect(within(sheet).getByRole('button', { name: 'Delete' })).toBeEnabled()
+  act(() => setOnline(false))
+  expect(within(sheet).getByRole('button', { name: 'Delete' })).toBeDisabled()
+  expect(within(sheet).getByText('Connect to change cash')).toBeInTheDocument()
+})

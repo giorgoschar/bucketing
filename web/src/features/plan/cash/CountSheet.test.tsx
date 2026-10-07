@@ -1,8 +1,8 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { fakeApi } from '../../../test/fakeApi'
 import { cashRoutes, cashWallets, readRoutes } from '../../../test/fixtures'
-import { renderWithProviders, resetTestEnv } from '../../../test/render'
+import { renderWithProviders, resetTestEnv, setOnline } from '../../../test/render'
 import { Cash } from './Cash'
 
 beforeEach(() => {
@@ -54,4 +54,17 @@ it('a count that matches says so, and can still be saved', async () => {
   expect(within(sheet).getByRole('button', { name: 'Save count' })).toBeEnabled()
   fireEvent.keyDown(document, { key: 'Escape' })
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+})
+
+it('Save count disables live when the device goes offline', async () => {
+  fakeApi({ ...readRoutes(), ...cashRoutes() })
+  renderWithProviders(<Cash />)
+  const stash = await screen.findByRole('region', { name: 'My stash' })
+  fireEvent.click(within(stash).getByRole('button', { name: 'Count' }))
+  const sheet = await screen.findByRole('dialog', { name: 'Count your stash' })
+  fireEvent.change(within(sheet).getByLabelText('Counted'), { target: { value: '10' } })
+  expect(within(sheet).getByRole('button', { name: 'Save count' })).toBeEnabled()
+  act(() => setOnline(false))
+  expect(within(sheet).getByRole('button', { name: 'Save count' })).toBeDisabled()
+  expect(within(sheet).getByText('Connect to change cash')).toBeInTheDocument()
 })

@@ -1,8 +1,8 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { type FakeApi, fakeApi, reply } from '../../../test/fakeApi'
 import { cashRoutes, cashWallets, readRoutes, wallet, walletMember } from '../../../test/fixtures'
-import { renderWithProviders, resetTestEnv } from '../../../test/render'
+import { renderWithProviders, resetTestEnv, setOnline } from '../../../test/render'
 import { Cash } from './Cash'
 
 beforeEach(() => {
@@ -167,14 +167,30 @@ it('a comma decimal ("12,5") parses to 12.50', async () => {
   expect(posts(api)[0].body).toMatchObject({ amount: '12.50' })
 })
 
-it('focus starts on the amount, Tab stays inside the sheet, Esc closes it', async () => {
+it('focus starts on the amount, Tab wraps from the last control to the first, Shift+Tab back, Esc closes', async () => {
   const { sheet } = await open('Take')
   expect(within(sheet).getByLabelText('Amount')).toHaveFocus()
-  const buttons = within(sheet).getAllByRole('button')
-  const last = buttons[buttons.length - 1]
-  last.focus()
+  type(sheet, 'Amount', '5') // Save is disabled (so unfocusable) until an amount is typed
+  const save = within(sheet).getByRole('button', { name: 'Take €5.00' })
+  const close = within(sheet).getByRole('button', { name: 'Close' })
+  save.focus()
+  expect(save).toHaveFocus()
   fireEvent.keyDown(document, { key: 'Tab' })
-  expect(sheet.contains(document.activeElement)).toBe(true)
+  expect(close).toHaveFocus() // jsdom never moves focus on a synthetic Tab: only the trap can have done this
+  fireEvent.keyDown(document, { key: 'Tab', shiftKey: true })
+  expect(save).toHaveFocus()
   fireEvent.keyDown(document, { key: 'Escape' })
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+})
+
+// Review M4: the connection drops while a sheet is open.
+it('Save disables live when the device goes offline, and says why', async () => {
+  const { sheet } = await open('Take')
+  type(sheet, 'Amount', '5')
+  expect(within(sheet).getByRole('button', { name: 'Take €5.00' })).toBeEnabled()
+  act(() => setOnline(false))
+  expect(within(sheet).getByRole('button', { name: 'Take €5.00' })).toBeDisabled()
+  expect(within(sheet).getByText('Connect to change cash')).toBeInTheDocument()
+  act(() => setOnline(true))
+  expect(within(sheet).getByRole('button', { name: 'Take €5.00' })).toBeEnabled()
 })
