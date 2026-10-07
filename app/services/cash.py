@@ -15,11 +15,16 @@ each one member's (``user_id``):
 * ``put_back``   cash from your wallet back into your own stash;
 * ``still_have`` optional: what was in your wallet on that date;
 * ``out``        legacy, no longer offered: cash that left the wallet without
-                 a logged expense; with a category it counts as spending there.
+                 a logged expense; with a category it counts as spending there;
+* ``stash_count`` a recount of your own stash: the owner says what is really
+                 there and the row stores the signed correction (counted minus
+                 the balance then; negative or zero too). Stash only: never a
+                 wallet term, never Insights (:func:`record_stash_count`).
 
 The stash is private::
 
     stash(owner) = stash_in(owner) - takes from owner's stash + put_back(owner)
+                   + stash_count corrections(owner)
 
 Only its owner sees the balance, the stash_ins and put_backs and the stash
 history, which includes other members' takes from it ("Bob took €50").
@@ -87,6 +92,7 @@ from app.core.money import ZERO, quantize
 from app.models import (
     CashKind,
     CashMovement,
+    Household,
     HouseholdMember,
     PaymentMethod,
     Transaction,
@@ -100,11 +106,13 @@ TAKE = CashKind.take.value
 PUT_BACK = CashKind.put_back.value
 STILL_HAVE = CashKind.still_have.value
 OUT = CashKind.out.value
+STASH_COUNT = CashKind.stash_count.value
 
 KINDS = tuple(k.value for k in CashKind)
-# What can be logged now; ``out`` is legacy and only ever read.
+# What can be logged through record_movement; ``out`` is legacy and only ever
+# read, a ``stash_count`` goes through record_stash_count (API only).
 LOGGABLE = (STASH_IN, TAKE, PUT_BACK, STILL_HAVE)
-# The kinds that move a wallet (the month formula's terms).
+# The kinds that move a wallet (the month formula's terms). Never STASH_COUNT.
 WALLET_KINDS = (TAKE, PUT_BACK, STILL_HAVE, OUT)
 
 # Where "I took this from my stash" took the cash from.
@@ -170,6 +178,8 @@ def _stash_rows(owner_id: str):
     return or_(
         and_(CashMovement.user_id == owner_id, CashMovement.kind.in_((STASH_IN, PUT_BACK))),
         and_(CashMovement.kind == TAKE, CashMovement.stash_owner_id == owner_id),
+        # A recount's amount is already signed.
+        and_(CashMovement.user_id == owner_id, CashMovement.kind == STASH_COUNT),
     )
 
 
@@ -300,6 +310,34 @@ def record_movement(
     )
 
 
+def record_stash_count(
+    db: Session,
+    *,
+    household_id: str,
+    actor_id: str,
+    counted: Decimal,
+    when: date,
+    note: str | None,
+    currency: str | None = None,
+) -> CashMovement:
+    """Recount the actor's own stash: they counted ``counted`` (>= 0).
+
+    Stores one ``stash_count`` row with the signed correction ``counted -
+    stash_balance`` worked out now, in the same database transaction as the
+    insert, so the balance afterwards is what was counted. A correction of 0
+    is still stored ("counted, it matched"). ``currency`` defaults to the
+    household's.
+    """
+    if Decimal(counted) < 0:
+        raise HTTPException(status_code=400, detail="Count can't be negative")
+    if currency is None:
+        currency = db.get(Household, household_id).default_currency
+    correction = quantize(Decimal(counted) - stash_balance(db, household_id, actor_id))
+    return add_movement(
+        db, household_id, actor_id, STASH_COUNT, correction, currency, when, note=note
+    )
+
+
 def delete_movement(db: Session, movement: CashMovement) -> None:
     """Soft delete: the row stays, it just stops counting."""
     movement.deleted_at = utcnow_naive()
@@ -311,7 +349,9 @@ def delete_own_movement(db: Session, household_id: str, actor_id: str, movement_
 
     404 for a movement the actor may not see, 403 for one they may see but
     is not theirs (another member's take from their stash), 400 when deleting
-    an addition would leave their stash below zero.
+    an addition would leave their stash below zero. A recount counts as an
+    addition when its correction was positive; deleting a negative (or zero)
+    one only raises the stash, so it is always allowed.
     """
     mv = (
         db.query(CashMovement)
@@ -327,7 +367,11 @@ def delete_own_movement(db: Session, household_id: str, actor_id: str, movement_
         raise HTTPException(status_code=404, detail="Cash movement not found")
     if mv.user_id != actor_id:
         raise HTTPException(status_code=403, detail="You can only delete your own cash movements.")
-    if mv.kind in (STASH_IN, PUT_BACK) and stash_balance(db, household_id, actor_id) < mv.amount:
+    if (
+        mv.kind in (STASH_IN, PUT_BACK, STASH_COUNT)
+        and mv.amount > 0
+        and stash_balance(db, household_id, actor_id) < mv.amount
+    ):
         raise HTTPException(status_code=400, detail="That would leave your stash below zero.")
     delete_movement(db, mv)
 

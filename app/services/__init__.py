@@ -19,6 +19,7 @@ from app.services.cash import (  # noqa: F401
     not_yet_logged,
     parse_month,
     record_movement,
+    record_stash_count,
     stash_balance,
     wallet_summaries,
     wallet_summary,

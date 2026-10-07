@@ -339,6 +339,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cash/wallets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Wallets
+         * @description Every household member's wallet for the month (household-visible):
+         *     you first, then the others by name; plus your own stash balance.
+         */
+        get: operations["wallets_api_v1_cash_wallets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/dashboard": {
         parameters: {
             query?: never;
@@ -2588,6 +2609,75 @@ export interface components {
             /** Undo Until */
             undo_until: string | null;
         };
+        /** CashMovementOut */
+        CashMovementOut: {
+            /** Amount */
+            amount: number;
+            /** Category Id */
+            category_id: string | null;
+            /** Created At */
+            created_at: string | null;
+            /** Currency */
+            currency: string;
+            /** Deleted */
+            deleted: boolean;
+            /** Id */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "stash_in" | "take" | "put_back" | "still_have" | "out" | "stash_count";
+            /**
+             * Movement Date
+             * Format: date
+             */
+            movement_date: string;
+            /** Note */
+            note: string | null;
+            /** Stash Owner Id */
+            stash_owner_id: string | null;
+            /** Transaction Id */
+            transaction_id: string | null;
+            /** User Id */
+            user_id: string;
+        };
+        /** CashMovementsOut */
+        CashMovementsOut: {
+            /** Items */
+            items: components["schemas"]["CashMovementOut"][];
+            /** Stash */
+            stash: number;
+        };
+        /** CashSummaryOut */
+        CashSummaryOut: {
+            /** Member Id */
+            member_id: string;
+            /** Month */
+            month: string;
+            /** Stash */
+            stash: number;
+            wallet: components["schemas"]["SummaryWalletOut"];
+        };
+        /** CashWalletMemberOut */
+        CashWalletMemberOut: {
+            /** Is Me */
+            is_me: boolean;
+            /** Member Id */
+            member_id: string;
+            /** Name */
+            name: string;
+            wallet: components["schemas"]["WalletOut"];
+        };
+        /** CashWalletsOut */
+        CashWalletsOut: {
+            /** Members */
+            members: components["schemas"]["CashWalletMemberOut"][];
+            /** Month */
+            month: string;
+            /** Stash */
+            stash: number;
+        };
         /** CategoryDetailOut */
         CategoryDetailOut: {
             /** Avg Per Month */
@@ -2989,7 +3079,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "stash_in" | "take" | "put_back" | "still_have";
+            kind: "stash_in" | "take" | "put_back" | "still_have" | "stash_count";
             /** Movement Date */
             movement_date?: string | null;
             /** Note */
@@ -3473,6 +3563,31 @@ export interface components {
             /** Year */
             year?: number | null;
         };
+        /**
+         * SummaryWalletOut
+         * @description ``/summary``'s wallet, in its pre-model shape: plus ``labelled_out``,
+         *     and ``put_back`` left out altogether (not null) for another member.
+         */
+        SummaryWalletOut: {
+            /** Carried */
+            carried: number;
+            /** Labelled Out */
+            labelled_out: number;
+            /** Logged */
+            logged: number;
+            /** Not Yet Logged */
+            not_yet_logged: number;
+            /** Outs */
+            outs: number;
+            /** Put Back */
+            put_back?: number | null;
+            /** Spent */
+            spent: number;
+            /** Still Have */
+            still_have: number | null;
+            /** Taken */
+            taken: number;
+        };
         /** TokenIn */
         TokenIn: {
             /** Default Bucket Id */
@@ -3767,6 +3882,30 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /**
+         * WalletOut
+         * @description A member's wallet for a month (app.services.cash.wallet_summaries).
+         *     For anyone but the member, ``taken`` is net of put backs and
+         *     ``put_back`` is null.
+         */
+        WalletOut: {
+            /** Carried */
+            carried: number;
+            /** Logged */
+            logged: number;
+            /** Not Yet Logged */
+            not_yet_logged: number;
+            /** Outs */
+            outs: number;
+            /** Put Back */
+            put_back: number | null;
+            /** Spent */
+            spent: number;
+            /** Still Have */
+            still_have: number | null;
+            /** Taken */
+            taken: number;
         };
         /** YearMonthOut */
         YearMonthOut: {
@@ -4438,7 +4577,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["CashMovementsOut"];
                 };
             };
             /** @description Validation Error */
@@ -4471,7 +4610,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["CashMovementOut"];
                 };
             };
             /** @description Validation Error */
@@ -4533,7 +4672,39 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["CashSummaryOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    wallets_api_v1_cash_wallets_get: {
+        parameters: {
+            query?: {
+                /** @description YYYY-MM; default current month */
+                month?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CashWalletsOut"];
                 };
             };
             /** @description Validation Error */
