@@ -5,6 +5,8 @@ import { TXN, created, renderComposer } from '../../composer/testing'
 import { goOffline } from '../../composer/testHelpers'
 import { hang, reply } from '../../../test/fakeApi'
 import { resetTestEnv, testQueryClient } from '../../../test/render'
+import { db } from '../../../offline/db'
+import { enqueue } from '../../../offline/queue'
 import { resetTickedPrompt } from './tickedOffer'
 import { TickedPrompt } from './TickedPrompt'
 
@@ -141,4 +143,30 @@ it('offline (the save is queued): no prompt', async () => {
   const fetches = vi.mocked(globalThis.fetch).mock.calls.map(([input]) => String(input instanceof Request ? input.url : input))
   expect(fetches.some((u) => u.includes('/stock/summary'))).toBe(false)
   expect(screen.queryByRole('dialog')).toBeNull()
+})
+
+// ---- Fix round 1 (I-1): queued pantry writes must reach the server before apply-ticked.
+
+it('a change still waiting in the offline queue: no prompt at all', async () => {
+  const { api } = await compose('/new', summary(2))
+  await ready()
+  await enqueue({ method: 'DELETE', path: '/api/v1/stock/shopping/ticks/tick-9' })
+  await saveThree()
+  await act(() => new Promise((r) => setTimeout(r, 30)))
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(api.callsTo(SUMMARY)).toHaveLength(0)
+})
+
+it('a change queued while the prompt is open disables Add with "Waiting to sync"; a drained queue enables it', async () => {
+  const { api } = await compose('/new', summary(2))
+  await saveThree()
+  const sheet = await screen.findByRole('dialog', { name: '2 ticked pantry items' })
+  await act(() => enqueue({ method: 'DELETE', path: '/api/v1/stock/shopping/ticks/tick-9' }).then(() => undefined))
+  const add = within(sheet).getByRole('button', { name: 'Add to pantry' })
+  await waitFor(() => expect(add).toBeDisabled())
+  expect(sheet).toHaveTextContent('Waiting to sync 1 change')
+  fireEvent.click(add)
+  expect(api.callsTo(APPLY)).toHaveLength(0)
+  await act(() => db.queue.clear())
+  await waitFor(() => expect(add).toBeEnabled())
 })

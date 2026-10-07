@@ -7,6 +7,7 @@ import { unwrap } from '../../../data/http'
 import { keys } from '../../../data/keys'
 import { type OnlineOutcome, runOnline } from '../../../data/onlineAction'
 import type { RawResult } from '../../../data/rawJson'
+import { useQueue } from '../../../offline/useQueue'
 import { useToast } from '../../../ui/Toast'
 import type {
   AppliedOut, ApplyTickedOut, LineIn, ShoppingItem, ShoppingLine, ShoppingOut, StockSummary, TickOut,
@@ -20,6 +21,17 @@ export const PANTRY_INVALIDATES: readonly QueryKey[] = [['stock'], keys.home.all
 
 /** Shown on an online-only pantry control while offline (spec §4.8). */
 export const PANTRY_OFFLINE = 'Connect to change the pantry'
+
+/**
+ * Writes still in the offline queue (pending or backing off). apply-ticked must wait for them: a queued
+ * untick or tick has to reach the server first, or stock would follow ticks the user no longer has. The
+ * queue's paths are sealed, so this counts every queued write, not only pantry ones.
+ */
+export function useQueuedChanges(): number {
+  return useQueue().pending
+}
+
+export const syncingText = (n: number) => `Waiting to sync ${n === 1 ? '1 change' : `${n} changes`}`
 
 // The new stock routes are not in the generated schema until the pantry integration runs gen:api. They go
 // through the typed client untyped (like data/action.ts does), so the CSRF header and 401 handling still apply.
@@ -106,6 +118,7 @@ export interface NewLine extends LineIn { tempId: string }
  * line create is not, so it queues only when offline (a failure while online could already have added it).
  */
 export function useShoppingActions() {
+  const qc = useQueryClient()
   const shared = { invalidates: PANTRY_INVALIDATES }
   const tick = useAction<ShoppingItem, TickOut>({
     ...shared,
@@ -157,7 +170,18 @@ export function useShoppingActions() {
       })),
   })
   return {
-    toggle: (i: ShoppingItem) => (i.ticked ? untick.run(i) : tick.run(i)),
+    toggle: async (i: ShoppingItem) => {
+      if (i.ticked) return untick.run(i)
+      const r = await tick.run(i)
+      // Keep the server's tick id, so the row can be unticked at once even if the refetch fails.
+      if (r.status === 'done' && r.data?.id) {
+        patchList(qc, (s) => ({
+          ...s,
+          items: s.items.map((x) => (x.id === i.id && x.ticked && !x.tick_id ? { ...x, tick_id: r.data.id } : x)),
+        }))
+      }
+      return r
+    },
     addLine: addLine.run,
     checkLine: (line: ShoppingLine, checked: boolean) => checkLine.run({ line, checked }),
     deleteLine: deleteLine.run,

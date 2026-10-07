@@ -10,7 +10,9 @@ import { Money } from '../../../ui/Money'
 import { QueryView } from '../../../ui/QueryView'
 import { Sheet } from '../../../ui/Sheet'
 import { SwipeRow } from '../../../ui/SwipeRow'
-import { formatQty, PANTRY_OFFLINE, savesVsOneStore, useApplyTicked, useShopping, useShoppingActions } from './shoppingHooks'
+import {
+  formatQty, PANTRY_OFFLINE, savesVsOneStore, syncingText, useApplyTicked, useQueuedChanges, useShopping, useShoppingActions,
+} from './shoppingHooks'
 import type { ShoppingItem, ShoppingLine, ShoppingOut } from './shoppingTypes'
 import './shopping.css'
 
@@ -21,7 +23,10 @@ const itemTitle = (i: ShoppingItem) => `${i.name} × ${formatQty(i.need_qty)}${i
 const lineTitle = (l: ShoppingLine) => (l.quantity == null ? l.name : `${l.name} × ${formatQty(l.quantity)}`)
 
 function reasonText(i: ShoppingItem): string {
-  if (i.reason === 'runout') return i.runout_days_estimate == null ? 'Running out soon' : `Runs out in ~${i.runout_days_estimate} d`
+  if (i.reason === 'runout') {
+    // The estimate is fractional (0.1 d): a whole day, rounded up.
+    return i.runout_days_estimate == null ? 'Running out soon' : `Runs out in ~${Math.max(1, Math.ceil(i.runout_days_estimate))} d`
+  }
   return i.quantity == null ? 'Low' : `Low · ${formatQty(i.quantity)} left`
 }
 
@@ -127,19 +132,24 @@ function ItemRow({ item, pending, onToggle }: { item: ShoppingItem; pending: boo
   // A tick queued offline has no id yet, so it can't be taken back until it syncs.
   const locked = item.ticked && !item.tick_id
   const each = item.price !== null && item.need_qty !== 1 ? ` · ${formatMoney(item.price)} each` : ''
+  const subId = useId()
+  const priceId = useId()
+  const priced = item.line_total !== null
+  // The name stays short ("Milk × 2"); the reason, sync state and price are its description (screen readers).
   return (
     <button type="button" role="checkbox" aria-checked={item.ticked} aria-label={itemTitle(item)}
+      aria-describedby={priced ? `${subId} ${priceId}` : subId}
       className="ui-row shop-row" data-on={item.ticked || undefined} disabled={locked} onClick={onToggle}>
       <Check checked={item.ticked} />
       <span className="ui-row__main">
         <span className="shop-row__title">{itemTitle(item)}</span>
-        <span className="shop-row__sub">
-          {item.advice === 'buy_now' && <span className="shop-drop"><TrendDownIcon />Price drop</span>}
-          {reasonText(item)}{each}
-          {pending && waiting}
+        <span id={subId} className="shop-row__sub">
+          {item.advice === 'buy_now' && <><span className="shop-drop"><TrendDownIcon />Price drop</span>{' '}</>}
+          <span>{reasonText(item)}{each}</span>
+          {pending && <>{' '}{waiting}</>}
         </span>
       </span>
-      {item.line_total !== null && <Money amount={item.line_total} className="ui-row__end shop-row__price" />}
+      {priced && <span id={priceId} className="ui-row__end"><Money amount={item.line_total} className="shop-row__price" /></span>}
     </button>
   )
 }
@@ -162,15 +172,17 @@ function ExtraLines({ lines, pending, onAdd, onCheck, onDelete }: ExtraProps) {
       <div className="ui-list">
         {lines.map((l) => {
           const unsynced = l.id.startsWith(TEMP)
+          const subId = `shop-line-${l.id}`
+          const syncing = unsynced || pending.has(l.id)
           return (
             <SwipeRow key={l.id} disabled={unsynced} onDelete={() => onDelete(l)}>
               <div className="shop-line">
                 <button type="button" role="checkbox" aria-checked={l.checked} aria-label={lineTitle(l)}
-                  className="ui-row shop-row" data-on={l.checked || undefined} disabled={unsynced} onClick={() => onCheck(l)}>
+                  aria-describedby={syncing ? subId : undefined} className="ui-row shop-row" data-on={l.checked || undefined} disabled={unsynced} onClick={() => onCheck(l)}>
                   <Check checked={l.checked} />
                   <span className="ui-row__main">
                     <span className="shop-row__title">{lineTitle(l)}</span>
-                    {(unsynced || pending.has(l.id)) && <span className="shop-row__sub">{waiting}</span>}
+                    {syncing && <span id={subId} className="shop-row__sub">{waiting}</span>}
                   </span>
                 </button>
                 <button type="button" className="ui-iconbtn ui-iconbtn--bare shop-line__del" aria-label={`Delete ${l.name}`}
@@ -189,6 +201,7 @@ function ExtraLines({ lines, pending, onAdd, onCheck, onDelete }: ExtraProps) {
 
 function TickedBar({ count, online }: { count: number; online: boolean }) {
   const apply = useApplyTicked()
+  const queued = useQueuedChanges()
   const [busy, setBusy] = useState(false)
   const run = async () => {
     setBusy(true)
@@ -202,9 +215,10 @@ function TickedBar({ count, online }: { count: number; online: boolean }) {
     <section className="shop-bar" aria-label="Ticked items">
       <span className="shop-bar__sum">
         <span><span className="ui-num">{count}</span> ticked</span>
-        {!online && <span className="shop-bar__why">{PANTRY_OFFLINE}</span>}
+        {!online ? <span className="shop-bar__why">{PANTRY_OFFLINE}</span>
+          : queued > 0 && <span className="shop-bar__why">{syncingText(queued)}</span>}
       </span>
-      <button type="button" className="shop-bar__btn" disabled={!online || busy} onClick={() => void run()}>
+      <button type="button" className="shop-bar__btn" disabled={!online || queued > 0 || busy} onClick={() => void run()}>
         Add to pantry
       </button>
     </section>

@@ -5,6 +5,7 @@ import { keys } from '../../../data/keys'
 import { db } from '../../../offline/db'
 import { listQueuedBodies } from '../../../offline/queuedBodies'
 import { fakeApi, reply } from '../../../test/fakeApi'
+import { replay } from '../../../offline/queue'
 import { shoppingItem, shoppingOut, shoppingRoutes } from '../../../test/fixtures'
 import { renderWithProviders, resetTestEnv, setOnline, testQueryClient } from '../../../test/render'
 import { ShoppingList } from './ShoppingList'
@@ -107,6 +108,8 @@ it('offline, a tick is queued and stays ticked', async () => {
   ])
   expect(row('Milk × 2')).toHaveAttribute('aria-checked', 'true')
   expect(row('Milk × 2')).toHaveTextContent('Waiting to sync')
+  // No tick id until it syncs: it can't be unticked (a DELETE /ticks/null) before then.
+  expect(row('Milk × 2')).toBeDisabled()
 })
 
 it('unticking deletes the tick by its id, queued offline', async () => {
@@ -297,4 +300,123 @@ it('Add to pantry invalidates the pantry reads and Home', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Add to pantry' }))
   await waitFor(() => expect(api.callsTo(APPLY)).toHaveLength(1))
   await waitFor(() => expect(flags(client)).toEqual(STALE.map(() => true)))
+})
+
+// ---- Fix round 1
+
+const ME = { id: 'u1', username: 'g', household_id: 'h1', display_name: 'G', email: null, avatar_color: null }
+
+/** Olive oil and Milk ticked on the server. */
+function twoTicked() {
+  const data = shoppingOut({ ticked_count: 2 })
+  data.items[0] = { ...data.items[0], ticked: true, tick_id: 'tick-8' }
+  data.items[1] = { ...data.items[1], ticked: true, tick_id: 'tick-9' }
+  return data
+}
+
+it('I-1: an untick still in the queue blocks Add to pantry; once the queue drains it is enabled again', async () => {
+  const api = fakeApi({ ...shoppingRoutes(twoTicked()), 'GET /api/v1/auth/me': () => ME })
+  renderWithProviders(<ShoppingList />)
+  await loaded()
+  setOnline(false)
+  fireEvent.click(row('Milk × 2'))
+  await waitFor(async () => expect(await db.queue.count()).toBe(1))
+  setOnline(true)
+  const foot = screen.getByRole('region', { name: 'Ticked items' })
+  const add = within(foot).getByRole('button', { name: 'Add to pantry' })
+  await waitFor(() => expect(add).toBeDisabled())
+  expect(foot).toHaveTextContent('Waiting to sync 1 change')
+  fireEvent.click(add)
+  expect(api.callsTo(APPLY)).toHaveLength(0)
+  await replay()
+  expect(api.callsTo(UNTICK)).toHaveLength(1)
+  await waitFor(() => expect(within(screen.getByRole('region', { name: 'Ticked items' })).getByRole('button', { name: 'Add to pantry' })).toBeEnabled())
+  expect(screen.getByRole('region', { name: 'Ticked items' })).not.toHaveTextContent('Waiting to sync')
+})
+
+it('I-1: two queued changes read in the plural', async () => {
+  fakeApi(shoppingRoutes(twoTicked()))
+  renderWithProviders(<ShoppingList />)
+  await loaded()
+  setOnline(false)
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Batteries' }))
+  fireEvent.click(row('Salt × 1'))
+  await waitFor(async () => expect(await db.queue.count()).toBe(2))
+  setOnline(true)
+  await waitFor(() => expect(screen.getByRole('region', { name: 'Ticked items' })).toHaveTextContent('Waiting to sync 2 changes'))
+})
+
+it('I-2: an online tick keeps the server\'s tick id, so it can be unticked at once even if the refetch fails', async () => {
+  const api = fakeApi(shoppingRoutes())
+  renderWithProviders(<ShoppingList />)
+  await loaded()
+  api.on('GET /api/v1/stock/shopping', () => reply(500, { detail: 'boom' }))
+  fireEvent.click(row('Milk × 2'))
+  await waitFor(() => expect(api.callsTo(TICKS)).toHaveLength(1))
+  await waitFor(() => expect(row('Milk × 2')).toBeEnabled())
+  expect(row('Milk × 2')).toHaveAttribute('aria-checked', 'true')
+  fireEvent.click(row('Milk × 2'))
+  await waitFor(() => expect(api.callsTo(UNTICK)).toHaveLength(1))
+  expect(api.callsTo(UNTICK)[0].path).toBe('/api/v1/stock/shopping/ticks/tick-1')
+})
+
+it('I-3: each row describes its reason, price and sync state to screen readers', async () => {
+  fakeApi(shoppingRoutes())
+  renderWithProviders(<ShoppingList />)
+  await loaded()
+  expect(row('Milk × 2')).toHaveAccessibleDescription('Low · 0 left · €1.09 each €2.18')
+  expect(row('Barilla spaghetti × 2')).toHaveAccessibleDescription('Price drop Runs out in ~5 d · €1.19 each €2.38')
+  expect(row('Salt × 1')).toHaveAccessibleDescription('Low · 0 left')
+  setOnline(false)
+  fireEvent.click(row('Milk × 2'))
+  await waitFor(() => expect(row('Milk × 2')).toHaveAccessibleDescription('Low · 0 left · €1.09 each Waiting to sync €2.18'))
+  fireEvent.click(screen.getByRole('button', { name: 'Add item' }))
+  const sheet = await screen.findByRole('dialog', { name: 'Add item' })
+  fireEvent.change(within(sheet).getByLabelText('Item'), { target: { value: 'Soap' } })
+  fireEvent.click(within(sheet).getByRole('button', { name: 'Add' }))
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Soap' })).toHaveAccessibleDescription('Waiting to sync'))
+})
+
+it('I-4: a rejected tick rolls back and says why', async () => {
+  const api = fakeApi(shoppingRoutes())
+  api.on(TICKS, () => reply(404, { detail: 'Stock item not found' }))
+  renderWithProviders(<ShoppingList />)
+  await loaded()
+  fireEvent.click(row('Milk × 2'))
+  expect(await screen.findByRole('alert')).toHaveTextContent('Stock item not found')
+  expect(row('Milk × 2')).toHaveAttribute('aria-checked', 'false')
+  expect(await db.queue.count()).toBe(0)
+})
+
+it('I-4: a rejected line check rolls back', async () => {
+  const api = fakeApi(shoppingRoutes())
+  api.on(LINE, () => reply(404, { detail: 'Line not found' }))
+  renderWithProviders(<ShoppingList />)
+  await loaded()
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Batteries' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('Line not found')
+  expect(screen.getByRole('checkbox', { name: 'Batteries' })).toHaveAttribute('aria-checked', 'false')
+})
+
+it('I-4: a line add that fails while online is rolled back, not queued (it may have been added)', async () => {
+  const api = fakeApi(shoppingRoutes())
+  api.on(LINES, () => reply(500, { detail: 'boom' }))
+  renderWithProviders(<ShoppingList />)
+  await loaded()
+  fireEvent.click(screen.getByRole('button', { name: 'Add item' }))
+  const sheet = await screen.findByRole('dialog', { name: 'Add item' })
+  fireEvent.change(within(sheet).getByLabelText('Item'), { target: { value: 'Soap' } })
+  fireEvent.click(within(sheet).getByRole('button', { name: 'Add' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('Couldn’t confirm the change')
+  expect(screen.queryByRole('checkbox', { name: 'Soap' })).toBeNull()
+  expect(await db.queue.count()).toBe(0)
+})
+
+it('a run-out estimate is rounded up to a whole day', async () => {
+  const data = shoppingOut()
+  data.items[2] = { ...data.items[2], runout_days_estimate: 4.3 }
+  fakeApi(shoppingRoutes(data))
+  renderWithProviders(<ShoppingList />)
+  await loaded()
+  expect(row('Barilla spaghetti × 2')).toHaveTextContent('Runs out in ~5 d')
 })

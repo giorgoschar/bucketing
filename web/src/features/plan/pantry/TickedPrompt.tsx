@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useOnline } from '../../../data/online'
 import { Sheet } from '../../../ui/Sheet'
-import { PANTRY_OFFLINE, useApplyTicked } from './shoppingHooks'
+import { PANTRY_OFFLINE, syncingText, useApplyTicked, useQueuedChanges } from './shoppingHooks'
 import { resetTickedPrompt, useTickedOffer } from './tickedOffer'
 import './prompt.css'
 
@@ -15,6 +15,7 @@ export function TickedPrompt() {
 function PromptSheet({ count }: { count: number }) {
   const online = useOnline()
   const apply = useApplyTicked()
+  const queued = useQueuedChanges()
   const [busy, setBusy] = useState(false)
   const add = async () => {
     setBusy(true)
@@ -30,13 +31,13 @@ function PromptSheet({ count }: { count: number }) {
       footer={
         <div className="shop-prompt__acts">
           <button type="button" className="btn btn--lg" onClick={resetTickedPrompt}>Not now</button>
-          <button type="button" className="btn btn--lg btn--primary" disabled={!online || busy} onClick={() => void add()}>
+          <button type="button" className="btn btn--lg btn--primary" disabled={!online || queued > 0 || busy} onClick={() => void add()}>
             Add to pantry
           </button>
         </div>
       }>
       <p className="shop-prompt__text">Add them to the pantry?</p>
-      <p className="shop-prompt__note">{online ? 'Their stock goes up. Your expense stays as you saved it.' : PANTRY_OFFLINE}</p>
+      <p className="shop-prompt__note">{!online ? PANTRY_OFFLINE : queued > 0 ? syncingText(queued) : 'Their stock goes up. Your expense stays as you saved it.'}</p>
     </Sheet>
   )
 }

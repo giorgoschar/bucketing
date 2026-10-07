@@ -2,6 +2,7 @@ import { type QueryClient, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useSyncExternalStore } from 'react'
 import { isOnline } from '../../../data/online'
 import { keys } from '../../../data/keys'
+import { db } from '../../../offline/db'
 import { fetchStockSummary } from './shoppingHooks'
 
 /**
@@ -31,11 +32,14 @@ export function resetTickedPrompt(): void {
 
 /**
  * Ask GET /stock/summary (through the cached query) and offer the prompt when something is ticked. Never
- * throws and never awaited by the save: offline, a failed or slow call, or nothing ticked all mean no prompt.
+ * throws and never awaited by the save: offline, queued changes, a failed or slow call, or nothing ticked all
+ * mean no prompt.
  */
 export async function offerTickedPrompt(qc: QueryClient): Promise<void> {
   if (!isOnline()) return
   try {
+    // Earlier pantry writes still queued would have to reach the server before apply-ticked: no offer then.
+    if ((await db.queue.where('status').equals('pending').count()) > 0) return
     const summary = await qc.fetchQuery({ queryKey: keys.stockSummary(), queryFn: ({ signal }) => fetchStockSummary(signal), staleTime: 0, retry: false })
     if (summary.ticked_count > 0) {
       offered = summary.ticked_count
