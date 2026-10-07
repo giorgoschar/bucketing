@@ -113,6 +113,18 @@ class ItemDirection(str, enum.Enum):
     in_ = "in"  # salaries, rent received
 
 
+def default_payment_method(direction: str | None) -> str:
+    """How an item's payments are recorded when nobody picks a method (2d §7.0):
+    transfer for income (what Mark received always recorded), card otherwise."""
+    if direction == ItemDirection.in_.value:
+        return PaymentMethod.transfer.value
+    return PaymentMethod.card.value
+
+
+def _item_payment_method_default(context) -> str:
+    return default_payment_method(context.get_current_parameters().get("direction"))
+
+
 class BucketStatus(str, enum.Enum):
     active = "active"
     archived = "archived"
@@ -559,6 +571,14 @@ class RecurringBill(Base):
     rule_days = Column(Integer, nullable=True)  # easter_offset: days from Easter Sunday
     rule_weekday = Column(Integer, nullable=True)  # weekly: 0 = Monday
     rule_interval_weeks = Column(Integer, nullable=True)  # weekly
+    # How a payment of this item is recorded when the payer picks none: one-tap
+    # Pay, auto-pay, Mark received (2d §7.0). Plain VARCHAR like PaymentMethod.
+    payment_method = Column(
+        String(16),
+        default=_item_payment_method_default,
+        server_default=PaymentMethod.card.value,
+        nullable=False,
+    )
     created_at = Column(DateTime, default=utcnow_naive)
 
     @property
