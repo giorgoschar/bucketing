@@ -70,3 +70,35 @@ def test_dismissal_order_matches_the_check(env, db):  # noqa: F811
     db.expire_all()
     assert db.query(DuplicateDismissal).count() == 15  # every pair of 6, once
     assert all(d.first_id < d.second_id for d in db.query(DuplicateDismissal))
+
+
+def test_undo_waits_for_the_batch_lock_then_409s(env, db, SessionLocal):  # noqa: F811
+    """Stronger than the race above: hold the batch row lock in another
+    connection, start an undo, prove it blocks on the lock, then let the
+    holder "win" (mark the batch undone) and see the waiter answer 409."""
+    from app.core.clock import utcnow_naive
+    from app.models import BulkBatch
+
+    batch_id = env.bulk({"ids": [env.add()]}, {"bucket_id": env.bills}).json()["batch_id"]
+    holder = SessionLocal()
+    try:
+        held = holder.query(BulkBatch).filter_by(id=batch_id).with_for_update().one()
+        result = {}
+
+        def run():
+            c = TestClient(env.client.app)
+            result["status"] = c.post(f"{URL}/{batch_id}/undo", headers=env.headers).status_code
+
+        t = threading.Thread(target=run)
+        t.start()
+        t.join(timeout=1.5)
+        assert t.is_alive(), "the undo did not wait for the batch row lock"
+        assert "status" not in result
+
+        held.undone_at, held.undone_by = utcnow_naive(), env.me
+        holder.commit()  # releases the lock
+        t.join(timeout=30)
+        assert not t.is_alive()
+        assert result["status"] == 409
+    finally:
+        holder.close()
