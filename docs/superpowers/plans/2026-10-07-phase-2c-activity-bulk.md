@@ -8,7 +8,7 @@
 
 **Tech Stack:** FastAPI 0.142, SQLAlchemy 2.0, Pydantic 2.13, Alembic (SQLite and Postgres 18), pytest. On the frontend: React 19, react-router 7, TanStack Query 5, openapi-fetch, Vitest and Testing Library.
 
-**Spec:** `docs/superpowers/specs/2026-10-07-phase-2c-activity-bulk-design.md` (the authority). Read it alongside `2026-10-07-phase-2a-plan-home-design.md` (kit, `useCachedQuery`, `useAction`, `keys.ts`) and `2026-10-07-phase-2b-composer-design.md` (`/new?from=`, `/edit/:id`, `usePendingTransactions`).
+**Spec:** `docs/superpowers/specs/2026-10-07-phase-2c-activity-bulk-design.md` (the authority). Read it alongside `2026-10-07-phase-2a-plan-home-design.md` (kit, `useCachedQuery`, `useAction`, `keys.ts`, the test kit) and its "Stream A exports" section, which is the contract this plan codes against and `2026-10-07-phase-2b-composer-design.md` (`/new?from=`, `/edit/:id`, `usePendingTransactions`).
 
 ## Global Constraints
 
@@ -75,7 +75,7 @@ These are inputs the spec implies but doesn't spell out. Each one has a test in 
   - bulk: `selection.ts`, `BulkSheet.tsx`, `BulkPreview.tsx`, `RecentBulk.tsx`;
   - plumbing: `filters.ts`, `hooks.ts`, `heldDeletes.ts`, `pending.ts`, `format.ts`, `activity.css`, `testing.tsx`, and tests next to each.
 
-**Frontend (modify):** `web/src/data/keys.ts` (additions), `web/src/ui/Toast.tsx` (only if it lacks `action`/`durationMs`), `web/src/screens/Activity.tsx` (re-export), `web/src/router.tsx` (`activity/:id`), and 2a's `web/src/features/plan/ItemSheet.tsx` ("See payments").
+**Frontend (modify):** `web/src/data/keys.ts` (additions), `web/src/screens/Activity.tsx` (re-export), `web/src/router.tsx` (`activity/:id`), and 2a's `web/src/features/plan/ItemSheet.tsx` ("See payments").
 
 ## Rule → test map (spec §5.4)
 
@@ -3855,6 +3855,7 @@ git commit -m "feat(activity): feed filter, typed rows and day totals on GET /tr
     - `GET /api/v1/transactions/duplicates` → `DuplicatesOut`;
     - `GET /api/v1/transactions/{txn_id}/receipt` → the file;
     - `GET /api/v1/transactions/{txn_id}/history` → `HistoryOut`.
+- 2c owns `GET /api/v1/transactions/{txn_id}/receipt` (API auth). 2b's receipt "View" switches to this endpoint once this task is merged.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -4231,32 +4232,37 @@ git commit -m "feat(activity): hide dismissed duplicate pairs; bulk changes in h
 
 **Precondition for every F1 task:** 2a stream A is merged into this branch, so `web/src/ui/` (kit plus `ui.css`), `web/src/data/cachedQuery.ts`, `data/action.ts` and `data/keys.ts` exist, and Task 9's regenerated `schema.d.ts` is present (merge B2 first).
 
-**The 2a/2b contract this stream codes against.** These are the names the 2a and 2b specs fix; their plans are being written in parallel. Open the real files before the first task. If a signature is spelled differently, change only the call sites. The tests in each task pin behaviour, not 2a's spelling.
+**The 2a/2b contract this stream codes against.** These are 2a's real Stream A exports (the "Stream A exports" section of `2026-10-07-phase-2a-plan-home.md`). 2a stream A is merged first, so every name below exists. This plan only adds to `data/keys.ts` (Task 12) and never renames or edits a 2a file.
 
 ```ts
-// web/src/data/cachedQuery.ts (2a §3.1)
-useCachedQuery<T>(key: QueryKey, fetcher: () => Promise<T>)
-  : UseQueryResult<T> & { fromCache: boolean; dataUpdatedAt: number }
-// web/src/data/action.ts (2a §3.2, 2b §3.1)
-useAction<V, R = unknown>(opts: {
-  method: 'POST' | 'PUT' | 'DELETE'
-  path: (v: V) => string
-  body?: (v: V) => unknown
-  optimistic?: (qc: QueryClient, v: V) => (() => void) | void   // returns a rollback
-  invalidates: QueryKey[]
-}): { run: (v: V) => Promise<{ status: 'done'; data: R } | { status: 'queued' }> }
-// web/src/ui (2a §3): Sheet({open, onClose, title, children}), ListRow({icon, title, subtitle,
-//   trailing, badges, onClick}), Badge({tone, children}), Money({value, currency, signed}),
-//   ProgressBar({value, max, label}), Segmented({options, value, onChange}), Toast with
-//   useToast().show({message, action?, durationMs?}) and a ToastProvider.
+// web/src/data/cachedQuery.ts
+useCachedQuery<T>(key: QueryKey, fetcher: (signal: AbortSignal) => Promise<T>, opts?: { enabled?: boolean }): CachedQuery<T>
+interface CachedQuery<T> { data: T | undefined; dataUpdatedAt: number; fromCache: boolean; isLoading: boolean;
+  isError: boolean; offline: boolean; stale: boolean; noData: boolean; refetch(): void }
+// web/src/data/action.ts
+useAction<V = void, T = unknown>(spec: ActionSpec<V, T>): { run(vars: V): Promise<ActionResult<T>>; busy: boolean }
+// ActionSpec<V, T> = { method: 'POST'|'PUT'|'PATCH'|'DELETE'; path: string | ((v: V) => string);
+//   body?: unknown | ((v: V) => unknown); optimistic?(qc, v): void; invalidates: readonly QueryKey[];
+//   pendingId?: string | ((v: V) => string | undefined); toastRejections?: boolean }
+// ActionResult<T> = { status: 'done'; data: T } | { status: 'queued' } | { status: 'rejected'; code: number; detail: string }
+// `run` never throws. Rollback is automatic: it restores every query under the `invalidates` prefixes,
+// so `optimistic` returns nothing and must patch only inside those prefixes.
+// web/src/data/http.ts: unwrap(p), class ApiError { status; detail }, detailOf(error, status?)
+// web/src/data/online.ts: useOnline(), isOnline()
+// web/src/data/keys.ts: keys, affects (see 2a A5; Task 12 adds to it)
+// web/src/data/reads.ts: useHousehold(), useRecurringItems(), useBuckets(), useCategories(), memberName(m)
+// web/src/ui: <Sheet open onClose title closeOnBackdrop? footer? initialFocus?>, <ListRow title subtitle? leading? trailing?
+//   badges? onClick? muted? ariaLabel?> and <List label?>, <Badge tone? icon?>{text}</Badge>, <Money amount={number|null} currency? signed?
+//   whole? estimated? tone? nullText?>, <ProgressBar value max label tone? thin?>, <Segmented label options value onChange>,
+//   <QueryView result={CachedQuery<T>} noDataText>, <EmptyState>, <OfflineBanner>,
+//   toast(message, { action?: {label, onClick}, durationMs?, tone? }), dismissToast(), useToast(): { show, dismiss }, <Toaster />
+// web/src/test: fakeApi(routes) with "METHOD /path" keys (calls, callsTo(route), on, down, up), reply(status, body?),
+//   renderWithProviders(ui, { route?, client? }), setOnline(bool), resetTestEnv(), fixtures (txn, page, bucket, category,
+//   household, member, readRoutes, ...)
 // web/src/features/composer/hooks.ts (2b §5.3): usePendingTransactions(): PendingTxn[]
-// web/src/data/keys.ts (2a): this plan writes 2a's recurring keys as keys.recurring.all
-//   (prefix), keys.recurring.items and keys.recurring.entries(from, to), and its other
-//   invalidation keys as keys.plan.all, keys.budgets, keys.pace and keys.home.all.
-//   Map them to 2a's real names.
 ```
 
-### Task 11: Kit additions (Chip, SearchField, Check, SwipeRow, Toast action)
+### Task 11: Kit additions (Chip, SearchField, Check, SwipeRow)
 
 **Stream:** F1. **Depends on:** 2a stream A.
 
@@ -4264,16 +4270,14 @@ useAction<V, R = unknown>(opts: {
 
 **Files:**
 - Create: `web/src/ui/Chip.tsx`, `web/src/ui/SearchField.tsx`, `web/src/ui/Check.tsx`, `web/src/ui/SwipeRow.tsx`, `web/src/ui/ui-2c.css`
-- Modify (only if needed): `web/src/ui/Toast.tsx`. Add `action` and `durationMs` if 2a's toast lacks them.
-- Test: `web/src/ui/Chip.test.tsx`, `web/src/ui/SearchField.test.tsx`, `web/src/ui/SwipeRow.test.tsx`, `web/src/ui/Toast.test.tsx` (add one case)
+- Test: `web/src/ui/Chip.test.tsx`, `web/src/ui/SearchField.test.tsx`, `web/src/ui/SwipeRow.test.tsx`
 
 **Interfaces:**
 - Produces:
   - `Chip({label, pressed?, count?, disabled?, onClick?})`;
   - `SearchField({value, onChange, placeholder?, label?})` with `SEARCH_DEBOUNCE_MS = 250`;
   - `Check({checked})`;
-  - `SwipeRow({children, onDelete?, onCopy?, onLongPress?, disabled?})` with `SWIPE_THRESHOLD = 0.4` and `LONG_PRESS_MS = 500`;
-  - `useToast().show({message, action?: {label, onClick}, durationMs?})`.
+  - `SwipeRow({children, onDelete?, onCopy?, onLongPress?, disabled?})` with `SWIPE_THRESHOLD = 0.4` and `LONG_PRESS_MS = 500`.
 - Kit components have no data access (2a §3).
 
 - [ ] **Step 1: Write the failing tests**
@@ -4410,31 +4414,10 @@ describe('SwipeRow', () => {
 })
 ```
 
-Add this case to `web/src/ui/Toast.test.tsx`, adapting the render to 2a's provider:
-
-```tsx
-it('shows an action and closes after durationMs', async () => {
-  vi.useFakeTimers()
-  const onUndo = vi.fn()
-  function Fire() {
-    const toast = useToast()
-    return <button onClick={() => toast.show({ message: 'Deleted', action: { label: 'Undo', onClick: onUndo }, durationMs: 5000 })}>go</button>
-  }
-  render(<ToastProvider><Fire /></ToastProvider>)
-  fireEvent.click(screen.getByText('go'))
-  fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
-  expect(onUndo).toHaveBeenCalledOnce()
-  fireEvent.click(screen.getByText('go'))
-  act(() => vi.advanceTimersByTime(5000))
-  expect(screen.queryByText('Deleted')).toBeNull()
-  vi.useRealTimers()
-})
-```
-
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `cd web && npm test -- src/ui/Chip.test.tsx src/ui/SearchField.test.tsx src/ui/SwipeRow.test.tsx src/ui/Toast.test.tsx`
-Expected: FAIL. The modules don't exist, and the Toast case fails if 2a lacks `action`.
+Run: `cd web && npm test -- src/ui/Chip.test.tsx src/ui/SearchField.test.tsx src/ui/SwipeRow.test.tsx`
+Expected: FAIL. The modules don't exist.
 
 - [ ] **Step 3: Implement the components**
 
@@ -4669,17 +4652,15 @@ export function SwipeRow({ children, onDelete, onCopy, onLongPress, disabled }: 
 
 The actions sit under the content. Show them whenever a drag is in progress by setting `data-dragging` on `.swipe` instead, if the sibling selector above doesn't match your DOM order. Keep the focus-within reveal either way.
 
-**Toast.** If 2a's `show()` lacks them, add `action?: { label: string; onClick: () => void }` and `durationMs?: number`. Render the action as `<button type="button" className="toast__action">`. Clicking it calls `onClick` and then dismisses. The auto-dismiss timer uses `durationMs ?? <2a's default>`. Keep `aria-live="polite"` on the toast region.
-
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `cd web && npm test -- src/ui/Chip.test.tsx src/ui/SearchField.test.tsx src/ui/SwipeRow.test.tsx src/ui/Toast.test.tsx`
+Run: `cd web && npm test -- src/ui/Chip.test.tsx src/ui/SearchField.test.tsx src/ui/SwipeRow.test.tsx`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add web/src/ui/Chip.tsx web/src/ui/SearchField.tsx web/src/ui/Check.tsx web/src/ui/SwipeRow.tsx web/src/ui/ui-2c.css web/src/ui/*.test.tsx web/src/ui/Toast.tsx web/package.json web/package-lock.json
+git add web/src/ui/Chip.tsx web/src/ui/SearchField.tsx web/src/ui/Check.tsx web/src/ui/SwipeRow.tsx web/src/ui/ui-2c.css web/src/ui/*.test.tsx web/package.json web/package-lock.json
 git commit -m "feat(ui): Chip, SearchField, Check, SwipeRow; toast action"
 ```
 
@@ -4695,19 +4676,19 @@ git commit -m "feat(ui): Chip, SearchField, Check, SwipeRow; toast action"
 - Test: `web/src/features/activity/filters.test.ts`, `format.test.ts`, `hooks.test.ts`
 
 **Interfaces:**
-- Consumes: `api` (`web/src/api/client.ts`), `components['schemas']` from `web/src/api/schema.d.ts`, `useCachedQuery`, `useAction` and `keys`.
+- Consumes: `api` (`web/src/api/client.ts`), `components['schemas']` from `web/src/api/schema.d.ts`, and 2a's `useCachedQuery`, `useAction`, `keys`, `affects`, `unwrap`, `ApiError`, `useOnline`, `useHousehold`, `useCategories` and `useRecurringItems` (no local copies).
 - Produces (Tasks 13–20 use these exact names):
   - `filters.ts`:
     - the types `TransactionFilter` and `FeedState = {filter, dups}`;
     - `fromSearch(params, today?)`, `toSearch(state)`, `toQuery(filter)`, `isEmpty(filter)`, `monthRange(date)`, `monthLabel(filter)`, `activeFilterCount(filter)`, `toggle(filter, patch)`.
   - `hooks.ts`:
-    - the types `Txn`, `TxnPage`, `Counts`, `DuplicateGroup`, `HistoryEvent`, `RefData`, `TxnPatch`, and the class `ApiError`;
+    - the types `Txn`, `TxnPage`, `Counts`, `DuplicateGroup`, `HistoryEvent`, `RefData`, `TxnPatch`;
     - `PAGE_SIZE = 50`, `OFFLINE_MESSAGE`, `ACTIVITY_WRITES`;
-    - the hooks `useOnline()`, `useFeedPage(filter, page)`, `useCounts()`, `useDuplicates()`, `useTransaction(id)`, `useHistory(id)`, `useRefData()`, `useEditTransaction()`, `useDeleteTransaction()`;
-    - `editBody(txn, patch)`, `receiptUrl(id)`, `uploadReceipt(id, file)`, `online(call)`, `must(promise)`.
+    - the hooks `useFeedPage(filter, page)`, `useCounts()`, `useDuplicates()`, `useTransaction(id)`, `useHistory(id)`, `useRefData()`, `useEditTransaction()`, `useDeleteTransaction()`;
+    - `editBody(txn, patch)`, `receiptUrl(id)`, `uploadReceipt(id, file)`, `online(call)`. (`ApiError` and `unwrap` are 2a's, from `data/http`; `useOnline` is 2a's, from `data/online`.)
   - `pending.ts`: `usePendingTransactions(): PendingTxn[]` (2b's, or `[]` until 2b lands) and the type `PendingTxn = Txn & { pending: true }`.
   - `format.ts`: `dayLabel(iso, today?)`, `groupByDay(rows, dayTotals)`, `gapLabel(a, b)`, `rowTitle(t, ref)`, `rowSubtitle(t, ref)`, `METHOD_LABELS`.
-  - `testing.tsx`: `fakeFetch(routes)` and `renderWithApp(ui, {route, path})`.
+  - `testing.tsx`: `renderActivity(ui, {route, path})` (a thin wrapper over 2a's `renderWithProviders`) and the fixtures `makeTxn`, `pageOf`, `refRoutes`, `REF`. Route stubs use 2a's `fakeApi` with "METHOD /path" keys.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -4834,19 +4815,27 @@ Expected: FAIL (modules missing).
 
 - [ ] **Step 3: Add the keys**
 
-In `web/src/data/keys.ts`, add the entries below in the same style as 2a's other keys. If 2a scopes keys by household (a prefix or a function argument), these get the same scope. `transactions.all` **must be a prefix** of every other `transactions.*` key, including 2b's `recent` and `one(id)`, so one invalidation covers them. If 2b hasn't landed, add `transactions.one`, `buckets`, `categories` and `household` here too.
+This task **adds to `web/src/data/keys.ts`**, on top of 2a's A5 file. It never renames or changes a 2a key. 2a already has `keys.transactions.{all, recent, one, forItem}`, `keys.recurring.{all, list, one, entries}`, `keys.plan.{all, budgets, pace, ...}`, `keys.home.all`, `keys.matches()`, `keys.buckets()`, `keys.categories()`, `keys.household()` and `affects`. 2a's convention is a `const` array for a prefix (`all`) and a function for a leaf. 2c needs these extra keys, in the same style:
 
 ```ts
-transactions: {
-  all: ['transactions'] as const,
-  list: (filter: object, page: number) => ['transactions', 'list', filter, page] as const,
-  history: (id: string) => ['transactions', 'history', id] as const,
-  counts: ['transactions', 'counts'] as const,
-  // 2b: recent, one(id) live under the same 'transactions' prefix
-},
-duplicates: ['duplicates'] as const,
-bulkRecent: ['bulkRecent'] as const,
+// inside keys.transactions (next to all / recent / one / forItem)
+    /** TxnPage: one page of the Activity feed for a filter */
+    list: (filter: object, page: number) => ['transactions', 'list', filter, page] as const,
+    /** HistoryEvent[]: GET /transactions/{id}/history */
+    history: (id: string) => ['transactions', 'history', id] as const,
+    /** Counts: GET /transactions/counts (the chip badges) */
+    counts: () => ['transactions', 'counts'] as const,
+// top level of keys
+  /** DuplicateGroup[]: GET /transactions/duplicates */
+  duplicates: () => ['duplicates'] as const,
+  /** RecentBatch[]: GET /transactions/bulk?limit=10 */
+  bulkRecent: () => ['bulk-recent'] as const,
+  /** The raw GET /buckets rows. 2a's keys.buckets() holds the narrowed Bucket[] (no show_income or icon), which
+   *  the bucket pickers need. It sits under the 'buckets' prefix, so invalidating keys.buckets() covers it too. */
+  bucketsFull: () => ['buckets', 'full'] as const,
 ```
+
+Every `transactions.*` key sits under `keys.transactions.all`, so one invalidation covers the list, a row, its history and the counts. `duplicates` and `bulkRecent` are listed in `ACTIVITY_WRITES` (Step 5) because they are not under that prefix.
 
 - [ ] **Step 4: Implement `filters.ts`**
 
@@ -4972,13 +4961,15 @@ export function activeFilterCount(f: TransactionFilter): number {
 - [ ] **Step 5: Implement `hooks.ts`**
 
 ```ts
-import { useSyncExternalStore } from 'react'
 import type { QueryClient } from '@tanstack/react-query'
 import { api } from '../../api/client'
 import type { components } from '../../api/schema'
 import { useAction } from '../../data/action'
 import { useCachedQuery } from '../../data/cachedQuery'
-import { keys } from '../../data/keys'
+import { ApiError, unwrap } from '../../data/http'
+import { affects, keys } from '../../data/keys'
+import { useCategories, useHousehold } from '../../data/reads'
+import type { Category, Member } from '../../data/types'
 import { toQuery, type TransactionFilter } from './filters'
 
 type S = components['schemas']
@@ -4993,35 +4984,17 @@ export type TxnPatch = Partial<
 >
 export type RefData = {
   buckets: { id: string; name: string; kind: string; status: string; show_income: boolean; icon: string | null }[]
-  categories: { id: string; name: string; icon: string | null; system_key: string | null }[]
-  members: { user_id: string; display_name: string | null }[]
+  categories: Pick<Category, 'id' | 'name' | 'icon'>[]
+  members: Pick<Member, 'user_id' | 'display_name'>[]
 }
 
 export const PAGE_SIZE = 50
 export const OFFLINE_MESSAGE = "Couldn't reach the server. Nothing was changed."
-/** What a delete, edit, bulk apply or undo invalidates (spec §6). Reconcile
- * the 2a names (plan, budgets, pace, home) with data/keys.ts. */
-export const ACTIVITY_WRITES = [
-  keys.transactions.all, keys.duplicates, keys.bulkRecent,
-  keys.plan.all, keys.budgets, keys.pace, keys.home.all,
-]
+/** What a delete, edit, bulk apply or undo invalidates (spec §6): 2a's `affects.entry` (plan, home, recurring,
+ * matches, transactions, insights) plus the two keys this plan adds. */
+export const ACTIVITY_WRITES = [...affects.entry, keys.duplicates(), keys.bulkRecent()] as const
 
-export class ApiError extends Error {
-  constructor(public status: number, message: string) {
-    super(message)
-  }
-}
-
-export async function must<T>(p: Promise<{ data?: T; error?: unknown; response: Response }>): Promise<T> {
-  const { data, error, response } = await p
-  if (error !== undefined || (data === undefined && response.status !== 204)) {
-    const detail = (error as { detail?: unknown } | undefined)?.detail
-    throw new ApiError(response.status, typeof detail === 'string' ? detail : `Request failed (${response.status})`)
-  }
-  return data as T
-}
-
-/** Online-only calls (bulk, undo, dismiss): a network failure is never queued. */
+/** Online-only calls (bulk, undo, dismiss): a network failure is never queued. `ApiError` is 2a's (data/http). */
 export async function online<T>(call: () => Promise<T>): Promise<T> {
   try {
     return await call()
@@ -5031,49 +5004,36 @@ export async function online<T>(call: () => Promise<T>): Promise<T> {
   }
 }
 
-function subscribe(cb: () => void) {
-  addEventListener('online', cb)
-  addEventListener('offline', cb)
-  return () => {
-    removeEventListener('online', cb)
-    removeEventListener('offline', cb)
-  }
-}
-export function useOnline(): boolean {
-  return useSyncExternalStore(subscribe, () => navigator.onLine, () => true)
-}
-
 export function useFeedPage(filter: TransactionFilter, page: number) {
-  return useCachedQuery(keys.transactions.list(filter, page), () =>
-    must(api.GET('/api/v1/transactions', { params: { query: { ...toQuery(filter), page, page_size: PAGE_SIZE } } })),
+  return useCachedQuery(keys.transactions.list(filter, page), (signal) =>
+    unwrap(api.GET('/api/v1/transactions', { params: { query: { ...toQuery(filter), page, page_size: PAGE_SIZE } }, signal })),
   )
 }
 export function useCounts() {
-  return useCachedQuery(keys.transactions.counts, () => must(api.GET('/api/v1/transactions/counts')))
+  return useCachedQuery(keys.transactions.counts(), (signal) => unwrap(api.GET('/api/v1/transactions/counts', { signal })))
 }
 export function useDuplicates() {
-  return useCachedQuery(keys.duplicates, () => must(api.GET('/api/v1/transactions/duplicates')))
+  return useCachedQuery(keys.duplicates(), (signal) => unwrap(api.GET('/api/v1/transactions/duplicates', { signal })))
 }
 export function useTransaction(id: string) {
-  return useCachedQuery(keys.transactions.one(id), () =>
-    must(api.GET('/api/v1/transactions/{txn_id}', { params: { path: { txn_id: id } } })),
+  return useCachedQuery(keys.transactions.one(id), (signal) =>
+    unwrap(api.GET('/api/v1/transactions/{txn_id}', { params: { path: { txn_id: id } }, signal })),
   )
 }
 export function useHistory(id: string) {
-  return useCachedQuery(keys.transactions.history(id), () =>
-    must(api.GET('/api/v1/transactions/{txn_id}/history', { params: { path: { txn_id: id } } })),
+  return useCachedQuery(keys.transactions.history(id), (signal) =>
+    unwrap(api.GET('/api/v1/transactions/{txn_id}/history', { params: { path: { txn_id: id } }, signal })),
   )
 }
+/** Buckets (raw rows, for show_income and icon), plus 2a's categories and household reads. */
 export function useRefData(): RefData | undefined {
-  const buckets = useCachedQuery(keys.buckets, () => must(api.GET('/api/v1/buckets')))
-  const categories = useCachedQuery(keys.categories, () => must(api.GET('/api/v1/settings/categories')))
-  const household = useCachedQuery(keys.household, () => must(api.GET('/api/v1/settings/household')))
+  const buckets = useCachedQuery(keys.bucketsFull(), async (signal) =>
+    (await unwrap(api.GET('/api/v1/buckets', { signal }))) as RefData['buckets'],
+  )
+  const categories = useCategories()
+  const household = useHousehold()
   if (!buckets.data || !categories.data || !household.data) return undefined
-  return {
-    buckets: buckets.data as RefData['buckets'],
-    categories: categories.data as RefData['categories'],
-    members: (household.data as { members: RefData['members'] }).members,
-  }
+  return { buckets: buckets.data, categories: categories.data, members: household.data.members }
 }
 
 export const receiptUrl = (id: string) => `/api/v1/transactions/${encodeURIComponent(id)}/receipt`
@@ -5082,7 +5042,7 @@ export async function uploadReceipt(id: string, file: File): Promise<void> {
   const form = new FormData()
   form.append('file', file)
   await online(() =>
-    must(api.POST('/api/v1/transactions/{txn_id}/receipt', {
+    unwrap(api.POST('/api/v1/transactions/{txn_id}/receipt', {
       params: { path: { txn_id: id } },
       body: form as never,
       bodySerializer: (b: unknown) => b as FormData,
@@ -5115,10 +5075,10 @@ export function editBody(t: Txn, patch: TxnPatch): TxnUpdate {
 }
 
 /** Patch (or drop, when fn returns null) one row in every cached list and
- * single-row query; returns the rollback. */
-export function patchRows(qc: QueryClient, id: string, fn: (t: Txn) => Txn | null): () => void {
-  const snapshot = qc.getQueriesData({ queryKey: keys.transactions.all })
-  for (const [key, data] of snapshot) {
+ * single-row query. It returns nothing: useAction rolls back by restoring every
+ * query under the `invalidates` prefixes, and keys.transactions.all is one of them. */
+export function patchRows(qc: QueryClient, id: string, fn: (t: Txn) => Txn | null): void {
+  for (const [key, data] of qc.getQueriesData({ queryKey: keys.transactions.all })) {
     if (!data || typeof data !== 'object') continue
     if ('items' in data) {
       const page = data as TxnPage
@@ -5128,7 +5088,6 @@ export function patchRows(qc: QueryClient, id: string, fn: (t: Txn) => Txn | nul
       if (next) qc.setQueryData(key, next)
     }
   }
-  return () => snapshot.forEach(([key, data]) => qc.setQueryData(key, data))
 }
 
 export function useEditTransaction() {
@@ -5138,6 +5097,7 @@ export function useEditTransaction() {
     body: ({ txn, patch }) => editBody(txn, patch),
     optimistic: (qc, { txn, patch }) => patchRows(qc, txn.id, (row) => ({ ...row, ...patch })),
     invalidates: ACTIVITY_WRITES,
+    pendingId: ({ txn }) => txn.id,
   })
 }
 
@@ -5147,6 +5107,7 @@ export function useDeleteTransaction() {
     path: ({ id }) => `/api/v1/transactions/${id}`,
     optimistic: (qc, { id }) => patchRows(qc, id, () => null),
     invalidates: ACTIVITY_WRITES,
+    pendingId: ({ id }) => id,
   })
 }
 ```
@@ -5230,66 +5191,30 @@ export function rowSubtitle(t: Txn, ref?: RefData): string {
 }
 ```
 
-`testing.tsx`. If 2a ships a provider wrapper for tests (so the encrypted cache has a key), use it inside `renderWithApp` in place of the bare `QueryClientProvider`:
+`testing.tsx`. The tests use 2a's test kit (`web/src/test`): `fakeApi` for the network (route keys like `'GET /api/v1/transactions'`, `fake.callsTo(route)`, `fake.down()`), `renderWithProviders` for the providers, `setOnline` for connectivity and `resetTestEnv` in `afterEach`. 2a's `fakeApi` types each reply from the OpenAPI schema. These fixtures are looser than the schema in places, so cast a reply `as never` at the handler when typecheck objects. This file only adds what Activity screens need on top: a route pattern for `:id` and a location readout.
 
 ```tsx
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render } from '@testing-library/react'
 import type { ReactElement } from 'react'
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
-import { vi } from 'vitest'
-import { ToastProvider } from '../../ui/Toast'
-
-export type FakeRoute = {
-  method?: string
-  path: string | RegExp
-  status?: number
-  body?: unknown | ((url: URL, body: unknown) => unknown)
-}
-export type Call = { method: string; path: string; search: URLSearchParams; body: unknown }
-
-/** A fetch double: answers matching routes, records every call. */
-export function fakeFetch(routes: FakeRoute[]) {
-  const calls: Call[] = []
-  const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-    const req = input as Request
-    const url = new URL(req.url)
-    const text = ['GET', 'DELETE'].includes(req.method) ? '' : await req.clone().text()
-    let body: unknown = undefined
-    try { body = text ? JSON.parse(text) : undefined } catch { body = text }
-    calls.push({ method: req.method, path: url.pathname, search: url.searchParams, body })
-    const route = routes.find(
-      (r) => (r.method ?? 'GET') === req.method && (typeof r.path === 'string' ? r.path === url.pathname : r.path.test(url.pathname)),
-    )
-    if (!route) return new Response(JSON.stringify({ detail: `not faked: ${req.method} ${url.pathname}` }), { status: 404 })
-    const status = route.status ?? 200
-    if (status === 204) return new Response(null, { status })
-    const payload = typeof route.body === 'function' ? (route.body as (u: URL, b: unknown) => unknown)(url, body) : route.body
-    return new Response(JSON.stringify(payload ?? {}), { status, headers: { 'Content-Type': 'application/json' } })
-  })
-  return { calls, spy }
-}
+import { Route, Routes, useLocation } from 'react-router'
+import { renderWithProviders } from '../../test/render'
 
 function Where() {
   const loc = useLocation()
   return <output data-testid="location">{loc.pathname + loc.search}</output>
 }
 
-export function renderWithApp(ui: ReactElement, { route = '/activity', path = '/activity' } = {}) {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  const view = render(
-    <QueryClientProvider client={qc}>
-      <ToastProvider>
-        <MemoryRouter initialEntries={[route]}>
-          <Routes>
-            <Route path={path} element={<>{ui}<Where /></>} />
-            <Route path="*" element={<Where />} />
-          </Routes>
-        </MemoryRouter>
-      </ToastProvider>
-    </QueryClientProvider>,
+/** 2a's renderWithProviders (query client, memory router, Toaster, signed-in identity) renders `ui` at every path.
+ * This mounts it at `path` so a screen can read `:id`, and adds the location readout the tests assert on. */
+export function renderActivity(ui: ReactElement, { route = '/activity', path = '/activity' } = {}) {
+  return renderWithProviders(
+    <>
+      <Routes>
+        <Route path={path} element={ui} />
+      </Routes>
+      <Where />
+    </>,
+    { route },
   )
-  return { qc, ...view }
 }
 ```
 
@@ -5337,7 +5262,8 @@ git commit -m "feat(activity): URL filters, data hooks, formatting and test help
 Append to `web/src/features/activity/testing.tsx`:
 
 ```tsx
-import type { Txn } from './hooks'
+import type { Routes as ApiRoutes } from '../../test/fakeApi'
+import type { Txn, TxnPage } from './hooks'
 
 const iso = (d: Date) => d.toISOString().slice(0, 10)
 export const TODAY = iso(new Date())
@@ -5366,19 +5292,19 @@ export const REF = {
   members: [{ user_id: 'u-me', display_name: 'Giorgos' }, { user_id: 'u-maria', display_name: 'Maria' }],
 }
 
-/** The reference reads every Activity screen makes. */
-export function refRoutes(counts = { no_payer: 0, duplicate_groups: 0 }): FakeRoute[] {
-  return [
-    { path: '/api/v1/buckets', body: REF.buckets },
-    { path: '/api/v1/settings/categories', body: REF.categories },
-    { path: '/api/v1/settings/household', body: { id: 'h', members: REF.members } },
-    { path: '/api/v1/transactions/counts', body: counts },
-    { path: '/api/v1/recurring', body: [] },
-  ]
+/** The reference reads every Activity screen makes, as 2a fakeApi routes. Spread it, then add the screen's own routes. */
+export function refRoutes(counts = { no_payer: 0, duplicate_groups: 0 }): ApiRoutes {
+  return {
+    'GET /api/v1/buckets': () => REF.buckets as never,
+    'GET /api/v1/settings/categories': () => REF.categories as never,
+    'GET /api/v1/settings/household': () => ({ id: 'h', name: 'Home', default_currency: 'EUR', members: REF.members }) as never,
+    'GET /api/v1/transactions/counts': () => counts as never,
+    'GET /api/v1/recurring': () => [] as never,
+  }
 }
 
-export function pageOf(items: Txn[], extra: Partial<{ total: number; page: number; day_totals: Record<string, number> }> = {}) {
-  return { total: items.length, page: 1, page_size: 50, items, day_totals: {}, ...extra }
+export function pageOf(items: Txn[], extra: Partial<{ total: number; page: number; day_totals: Record<string, number> }> = {}): TxnPage {
+  return { total: items.length, page: 1, page_size: 50, items, day_totals: {}, ...extra } as TxnPage
 }
 ```
 
@@ -5388,19 +5314,22 @@ export function pageOf(items: Txn[], extra: Partial<{ total: number; page: numbe
 
 ```tsx
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
+import { fakeApi } from '../../test/fakeApi'
+import { resetTestEnv, setOnline } from '../../test/render'
 import { Activity } from './Activity'
-import { YESTERDAY, TODAY, fakeFetch, makeTxn, pageOf, refRoutes, renderWithApp } from './testing'
+import { YESTERDAY, TODAY, makeTxn, pageOf, refRoutes, renderActivity } from './testing'
 
-afterEach(() => vi.restoreAllMocks())
+afterEach(resetTestEnv)
+
+const FEED = 'GET /api/v1/transactions' as const
 
 describe('Activity feed', () => {
   it('groups rows by day with the server net and titles rows merchant > notes > category', async () => {
-    fakeFetch([
+    fakeApi({
       ...refRoutes(),
-      {
-        path: '/api/v1/transactions',
-        body: pageOf(
+      [FEED]: () =>
+        pageOf(
           [
             makeTxn({ merchant: 'Cosmote', amount: 38.9 }),
             makeTxn({ notes: 'Bread' }),
@@ -5408,9 +5337,8 @@ describe('Activity feed', () => {
           ],
           { day_totals: { [TODAY]: -48.9, [YESTERDAY]: -10 } },
         ),
-      },
-    ])
-    renderWithApp(<Activity />)
+    })
+    renderActivity(<Activity />)
     const today = await screen.findByRole('region', { name: /^Today/ })
     expect(within(today).getByText('Cosmote')).toBeInTheDocument()
     expect(within(today).getByText('Bread')).toBeInTheDocument()
@@ -5419,18 +5347,18 @@ describe('Activity feed', () => {
   })
 
   it('asks the API with its own names', async () => {
-    const { calls } = fakeFetch([...refRoutes(), { path: '/api/v1/transactions', body: pageOf([]) }])
-    renderWithApp(<Activity />, { route: '/activity?q=cosmote&all=1' })
-    await waitFor(() => expect(calls.some((c) => c.path === '/api/v1/transactions')).toBe(true))
-    const feed = calls.find((c) => c.path === '/api/v1/transactions')!
-    expect(feed.search.get('q')).toBe('cosmote')
-    expect(feed.search.get('page_size')).toBe('50')
-    expect(feed.search.get('from_date')).toBeNull()
+    const fake = fakeApi({ ...refRoutes(), [FEED]: () => pageOf([]) })
+    renderActivity(<Activity />, { route: '/activity?q=cosmote&all=1' })
+    await waitFor(() => expect(fake.callsTo(FEED)).toHaveLength(1))
+    const feed = fake.callsTo(FEED)[0]
+    expect(feed.query.get('q')).toBe('cosmote')
+    expect(feed.query.get('page_size')).toBe('50')
+    expect(feed.query.get('from_date')).toBeNull()
   })
 
   it('hides chips at 0; No payer shows its count, toggles and clears the month', async () => {
-    fakeFetch([...refRoutes({ no_payer: 3, duplicate_groups: 0 }), { path: '/api/v1/transactions', body: pageOf([]) }])
-    renderWithApp(<Activity />)
+    fakeApi({ ...refRoutes({ no_payer: 3, duplicate_groups: 0 }), [FEED]: () => pageOf([]) })
+    renderActivity(<Activity />)
     const chip = await screen.findByRole('button', { name: /no payer 3/i })
     expect(screen.queryByRole('button', { name: /duplicates/i })).toBeNull()
     expect(chip).toHaveAttribute('aria-pressed', 'false')
@@ -5441,8 +5369,8 @@ describe('Activity feed', () => {
   })
 
   it('shows "No matches" with Clear filters, and "Nothing here yet" on the plain list', async () => {
-    fakeFetch([...refRoutes(), { path: '/api/v1/transactions', body: pageOf([]) }])
-    renderWithApp(<Activity />, { route: '/activity?q=zzz' })
+    fakeApi({ ...refRoutes(), [FEED]: () => pageOf([]) })
+    renderActivity(<Activity />, { route: '/activity?q=zzz' })
     fireEvent.click(await screen.findByRole('button', { name: 'Clear filters' }))
     expect(screen.getByTestId('location').textContent).toMatch(/from_date=/)
     expect(await screen.findByText('Nothing here yet')).toBeInTheDocument()
@@ -5451,17 +5379,14 @@ describe('Activity feed', () => {
   it('loads more and keeps one header for a day split across pages', async () => {
     const first = Array.from({ length: 50 }, (_, i) => makeTxn({ notes: `row ${i}` }))
     const last = makeTxn({ notes: 'row 50' })
-    fakeFetch([
+    fakeApi({
       ...refRoutes(),
-      {
-        path: '/api/v1/transactions',
-        body: (url: URL) =>
-          url.searchParams.get('page') === '2'
-            ? pageOf([last], { total: 51, page: 2, day_totals: { [TODAY]: -510 } })
-            : pageOf(first, { total: 51, day_totals: { [TODAY]: -510 } }),
-      },
-    ])
-    renderWithApp(<Activity />)
+      [FEED]: (req) =>
+        req.query.get('page') === '2'
+          ? pageOf([last], { total: 51, page: 2, day_totals: { [TODAY]: -510 } })
+          : pageOf(first, { total: 51, day_totals: { [TODAY]: -510 } }),
+    })
+    renderActivity(<Activity />)
     fireEvent.click(await screen.findByRole('button', { name: 'Load more' }))
     expect(await screen.findByText('row 50')).toBeInTheDocument()
     expect(screen.getAllByRole('region', { name: /^Today/ })).toHaveLength(1)
@@ -5469,9 +5394,9 @@ describe('Activity feed', () => {
   })
 
   it('offline without a cached result offers the saved list', async () => {
-    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
-    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Failed to fetch'))
-    renderWithApp(<Activity />, { route: '/activity?q=new-term' })
+    fakeApi(refRoutes()).down()
+    setOnline(false)
+    renderActivity(<Activity />, { route: '/activity?q=new-term' })
     expect(await screen.findByText('Search needs a connection')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Show saved list' }))
     expect(screen.getByTestId('location').textContent).toMatch(/from_date=/)
@@ -5564,10 +5489,10 @@ export function FeedRow({ t, refData, onOpen, pending, selecting, selected }: Pr
     <div className="feedrow" aria-selected={selecting ? !!selected : undefined} data-pending={pending || undefined}>
       {selecting && <Check checked={!!selected} />}
       <ListRow
-        icon={<span aria-hidden="true">{icon}</span>}
+        leading={<span aria-hidden="true">{icon}</span>}
         title={rowTitle(t, refData)}
         subtitle={rowSubtitle(t, refData)}
-        trailing={<Money value={sign === 0 ? t.amount : sign * t.amount} currency={t.currency ?? 'EUR'} signed={sign !== 0} />}
+        trailing={<Money amount={sign === 0 ? t.amount : sign * t.amount} currency={t.currency ?? 'EUR'} signed={sign !== 0} />}
         badges={badges}
         onClick={() => onOpen(t.id)}
       />
@@ -5585,7 +5510,7 @@ import { Money } from '../../ui/Money'
 import { type TransactionFilter, activeFilterCount, isEmpty } from './filters'
 import { groupByDay } from './format'
 import { FeedRow } from './FeedRow'
-import { type RefData, type Txn, type TxnPage, useFeedPage, useOnline, useRefData } from './hooks'
+import { type RefData, type Txn, type TxnPage, useFeedPage, useRefData } from './hooks'
 import { type PendingTxn, usePendingTransactions } from './pending'
 
 export type RenderRow = (t: Txn, row: ReactNode, opts: { pending: boolean }) => ReactNode
@@ -5623,7 +5548,6 @@ function Empty({ title, action }: { title: string; action?: { label: string; onC
 
 function FeedList({ filter, onClear, renderRow, hidden, rowProps, onLoaded }: Props) {
   const navigate = useNavigate()
-  const online = useOnline()
   const refData: RefData | undefined = useRefData()
   const first = useFeedPage(filter, 1)
   const [more, setMore] = useState<TxnPage[]>([])
@@ -5658,10 +5582,11 @@ function FeedList({ filter, onClear, renderRow, hidden, rowProps, onLoaded }: Pr
   }, [canLoadMore, loadMore])
 
   if (!first.data) {
-    if (!online && !first.isFetching) {
+    // CachedQuery: noData means offline (or failing) with no saved copy; isLoading means it may still arrive.
+    if (first.noData && first.offline) {
       return <Empty title="Search needs a connection" action={{ label: 'Show saved list', onClick: onClear }} />
     }
-    if (first.isError) return <Empty title="Couldn't load activity" action={{ label: 'Try again', onClick: () => void first.refetch() }} />
+    if (first.noData) return <Empty title="Couldn't load activity" action={{ label: 'Try again', onClick: first.refetch }} />
     return <p className="screen__note" aria-busy="true">Loading…</p>
   }
   if (groups.length === 0) {
@@ -5685,7 +5610,7 @@ function FeedList({ filter, onClear, renderRow, hidden, rowProps, onLoaded }: Pr
         <section key={g.date} aria-labelledby={`day-${g.date}`}>
           <h3 className="daygroup" id={`day-${g.date}`}>
             <span>{g.label}</span>
-            <span className="num"><Money value={g.net} signed /></span>
+            <span className="num"><Money amount={g.net} signed /></span>
           </h3>
           <ul className="list">
             {g.rows.map((t) => {
@@ -5831,14 +5756,14 @@ git commit -m "feat(activity): feed with search, chips, day groups, paging and e
 
 **Files:**
 - Create: `web/src/features/activity/FiltersSheet.tsx`
-- Modify: `web/src/features/activity/Activity.tsx` (open the sheet from the Filters chip), `web/src/features/activity/hooks.ts` (add `useRecurringItems`)
+- Modify: `web/src/features/activity/Activity.tsx` (open the sheet from the Filters chip), `web/src/features/activity/hooks.ts` (add the `RecurringItem` type)
 - Test: `web/src/features/activity/FiltersSheet.test.tsx`
 
 **Interfaces:**
 - Consumes: `TransactionFilter`, `RefData`, `METHOD_LABELS`, and 2a's `Sheet` and `Segmented`.
 - Produces:
   - `FiltersSheet({open, filter, refData, items, onApply, onClose})`;
-  - `useRecurringItems(): {id, name, direction}[] | undefined` (`GET /api/v1/recurring`, cached under 2a's items key, written here as `keys.recurring.items`).
+  - nothing new for data: the items come from 2a's `useRecurringItems()` (`data/reads.ts`, key `keys.recurring.list()`), and `FiltersSheet` takes them as `items?: RecurringItem[]` (the `RecurringItem` type, added to `hooks.ts` below).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -5886,13 +5811,12 @@ Expected: FAIL (module missing).
 
 - [ ] **Step 3: Implement**
 
-Add to `hooks.ts`:
+Add to `hooks.ts` (2a's `useRecurringItems` already exists in `data/reads.ts`; don't add another hook):
 
 ```ts
-export type RecurringItem = { id: string; name: string; direction: string }
-export function useRecurringItems(): RecurringItem[] | undefined {
-  return useCachedQuery(keys.recurring.items, () => must(api.GET('/api/v1/recurring'))).data as RecurringItem[] | undefined
-}
+import type { RecurringItemOut } from '../../data/types'
+
+export type RecurringItem = Pick<RecurringItemOut, 'id' | 'name' | 'direction'>
 ```
 
 `web/src/features/activity/FiltersSheet.tsx`:
@@ -5937,6 +5861,7 @@ export function FiltersSheet({ open, filter, refData, items, onApply, onClose }:
     <Sheet open={open} onClose={onClose} title="Filters">
       <form className="filters vstack" onSubmit={submit}>
         <Segmented
+          label="Type"
           options={[
             { value: '', label: 'All' },
             { value: 'expense', label: 'Out' },
@@ -6008,13 +5933,13 @@ In `Activity.tsx`, render the sheet next to the month sheet:
   open={sheet === 'filters'}
   filter={f}
   refData={useRefData()}
-  items={useRecurringItems()}
+  items={items}
   onApply={setFilter}
   onClose={() => setSheet(null)}
 />
 ```
 
-Call `useRefData()` and `useRecurringItems()` at the top of `Activity`, not inline. Hooks must not be called conditionally.
+At the top of `Activity`, call `const refData = useRefData()` and `const items = useRecurringItems().data` (2a's hook from `../../data/reads`), and pass `refData={refData}` to the sheet instead of the inline `useRefData()` call above. Hooks must not be called conditionally.
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
@@ -6100,47 +6025,50 @@ describe('held deletes', () => {
 ```tsx
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { fakeApi } from '../../test/fakeApi'
+import { resetTestEnv } from '../../test/render'
 import { Activity } from './Activity'
 import { HOLD_MS, _resetHeldForTests } from './heldDeletes'
-import { fakeFetch, makeTxn, pageOf, refRoutes, renderWithApp } from './testing'
+import { makeTxn, pageOf, refRoutes, renderActivity } from './testing'
 
-afterEach(() => {
+afterEach(async () => {
   _resetHeldForTests()
-  vi.useRealTimers()
-  vi.restoreAllMocks()
+  await resetTestEnv()
 })
+
+const DELETE = 'DELETE /api/v1/transactions/{txn_id}' as const
 
 function setup() {
   const row = makeTxn({ merchant: 'Cosmote', recurring_bill_id: 'r1', bucket_id: 'b-bills' })
-  const fetch = fakeFetch([
-    ...refRoutes().filter((r) => r.path !== '/api/v1/recurring'),
-    { path: '/api/v1/recurring', body: [{ id: 'r1', name: 'Cosmote', direction: 'out' }] },
-    { path: '/api/v1/transactions', body: pageOf([row]) },
-    { method: 'DELETE', path: /^\/api\/v1\/transactions\//, status: 204 },
-  ])
-  renderWithApp(<Activity />)
-  return { row, ...fetch }
+  const fake = fakeApi({
+    ...refRoutes(),
+    'GET /api/v1/recurring': () => [{ id: 'r1', name: 'Cosmote', direction: 'out' }] as never,
+    'GET /api/v1/transactions': () => pageOf([row]),
+    [DELETE]: () => null,
+  })
+  renderActivity(<Activity />)
+  return { row, fake }
 }
 
 describe('swipe delete', () => {
   it('hides the row, offers Undo, and Undo sends nothing', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
-    const { calls } = setup()
+    const { fake } = setup()
     fireEvent.click(await screen.findByRole('button', { name: 'Delete' }))
     expect(screen.queryByText('Cosmote')).toBeNull()
     expect(screen.getByText(/Cosmote .* is expected again/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
     expect(await screen.findByText('Cosmote')).toBeInTheDocument()
     act(() => vi.advanceTimersByTime(HOLD_MS * 2))
-    expect(calls.filter((c) => c.method === 'DELETE')).toHaveLength(0)
+    expect(fake.callsTo(DELETE)).toHaveLength(0)
   })
 
   it('sends the DELETE after 5 s', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
-    const { calls, row } = setup()
+    const { fake, row } = setup()
     fireEvent.click(await screen.findByRole('button', { name: 'Delete' }))
     act(() => vi.advanceTimersByTime(HOLD_MS))
-    await waitFor(() => expect(calls.filter((c) => c.method === 'DELETE').map((c) => c.path)).toEqual([`/api/v1/transactions/${row.id}`]))
+    await waitFor(() => expect(fake.callsTo(DELETE).map((c) => c.path)).toEqual([`/api/v1/transactions/${row.id}`]))
   })
 
   it('Copy opens the composer with ?from=', async () => {
@@ -6240,20 +6168,20 @@ export function _resetHeldForTests() {
 ```ts
 import { useToast } from '../../ui/Toast'
 import { HOLD_MS, holdDelete, undoDelete } from './heldDeletes'
-import { type Txn, useDeleteTransaction, useRecurringItems } from './hooks'
+import { useRecurringItems } from '../../data/reads'
+import { type Txn, useDeleteTransaction } from './hooks'
 
 const MONTH = new Intl.DateTimeFormat('en-GB', { month: 'short' })
 
 export function useDeleteWithUndo() {
   const del = useDeleteTransaction()
   const toast = useToast()
-  const items = useRecurringItems()
+  const items = useRecurringItems().data
   return (t: Txn) => {
     holdDelete(t.id, () => void del.run({ id: t.id }))
     const bill = t.recurring_bill_id ? items?.find((i) => i.id === t.recurring_bill_id) : undefined
     const month = t.transaction_date ? MONTH.format(new Date(`${t.transaction_date}T12:00:00`)) : ''
-    toast.show({
-      message: bill ? `Deleted · ${bill.name} ${month} is expected again` : 'Deleted',
+    toast.show(bill ? `Deleted · ${bill.name} ${month} is expected again` : 'Deleted', {
       action: { label: 'Undo', onClick: () => undoDelete(t.id) },
       durationMs: HOLD_MS,
     })
@@ -6319,7 +6247,7 @@ The detail is read-first: every field row is a button that opens a picker.
 - Test: `web/src/features/activity/Detail.test.tsx`, `web/src/features/activity/pickers.test.ts`
 
 **Interfaces:**
-- Consumes: `useTransaction`, `useHistory`, `useRefData`, `useEditTransaction`, `useDeleteWithUndo`, `usePendingTransactions`, `receiptUrl`, `uploadReceipt`, `useOnline`, `OptionSheet`, `dayLabel`, `METHOD_LABELS`; 2a's `EntrySheet` (opened for a linked entry, with 2a's props).
+- Consumes: `useTransaction`, `useHistory`, `useRefData`, `useEditTransaction`, `useDeleteWithUndo`, `usePendingTransactions`, `receiptUrl`, `uploadReceipt`, 2a's `useOnline`, `OptionSheet`, `dayLabel`, `METHOD_LABELS`; 2a's `EntrySheet` (opened for a linked entry, with 2a's props).
 - Produces:
   - `ActivityDetail()` (route element; the module also exports it as `Detail`);
   - `pickers.ts`: `bucketOptions(t, ref) -> {options, note?}`, `payerOptions(ref)`, `payerPatch(value) -> TxnPatch`, `OWN_SHARE = '__own'`;
@@ -6364,11 +6292,15 @@ describe('bucket picker (R7)', () => {
 
 ```tsx
 import { fireEvent, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
+import { fakeApi } from '../../test/fakeApi'
+import { resetTestEnv, setOnline } from '../../test/render'
 import { Detail } from './Detail'
-import { fakeFetch, makeTxn, refRoutes, renderWithApp } from './testing'
+import { makeTxn, refRoutes, renderActivity } from './testing'
 
-afterEach(() => vi.restoreAllMocks())
+afterEach(resetTestEnv)
+
+const PUT = 'PUT /api/v1/transactions/{txn_id}' as const
 
 const ROW = makeTxn({
   id: 'rent', notes: 'Rent', amount: 1100, payer_mode: 'own_share', paid_by: null, category_id: null,
@@ -6376,24 +6308,24 @@ const ROW = makeTxn({
 })
 
 function setup(row = ROW) {
-  const fetch = fakeFetch([
+  const fake = fakeApi({
     ...refRoutes(),
-    { path: `/api/v1/transactions/${row.id}`, body: row },
-    { path: `/api/v1/transactions/${row.id}/history`, body: { events: [] } },
-    { path: '/api/v1/recurring/entries', body: [] },
-    { method: 'PUT', path: `/api/v1/transactions/${row.id}`, body: (_u: URL, b: unknown) => ({ ...row, ...(b as object) }) },
-  ])
-  renderWithApp(<Detail />, { route: `/activity/${row.id}`, path: '/activity/:id' })
-  return fetch
+    'GET /api/v1/transactions/{txn_id}': () => row,
+    'GET /api/v1/transactions/{txn_id}/history': () => ({ events: [] }) as never,
+    'GET /api/v1/recurring/entries': () => [],
+    [PUT]: (req) => ({ ...row, ...(req.body as object) }),
+  })
+  renderActivity(<Detail />, { route: `/activity/${row.id}`, path: '/activity/:id' })
+  return fake
 }
 
 describe('Detail', () => {
   it('a field edit PUTs the full row, keeping splits and payer_mode', async () => {
-    const { calls } = setup()
+    const fake = setup()
     fireEvent.click(await screen.findByRole('button', { name: /^Category/ }))
     fireEvent.click(screen.getByRole('button', { name: /Groceries/ }))
-    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
-    const put = calls.find((c) => c.method === 'PUT')!.body as Record<string, unknown>
+    await waitFor(() => expect(fake.callsTo(PUT)).toHaveLength(1))
+    const put = fake.callsTo(PUT)[0].body as Record<string, unknown>
     expect(put.category_id).toBe('c-groc')
     expect(put.payer_mode).toBe('own_share')
     expect(put.splits).toEqual([{ user_id: 'u-me', amount: 700 }, { user_id: 'u-maria', amount: 400 }])
@@ -6405,7 +6337,7 @@ describe('Detail', () => {
   })
 
   it('Add receipt is disabled offline', async () => {
-    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+    setOnline(false)
     setup(makeTxn({ id: 'r2', merchant: 'Lidl' }))
     expect(await screen.findByRole('button', { name: /Add receipt/ })).toBeDisabled()
   })
@@ -6494,6 +6426,7 @@ export function NotesSheet({ open, value, onSave, onClose }: { open: boolean; va
 ```tsx
 import { type ReactNode, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
+import { useOnline } from '../../data/online'
 import { TopBar } from '../../shell/TopBar'
 import { Money } from '../../ui/Money'
 import { useToast } from '../../ui/Toast'
@@ -6501,7 +6434,7 @@ import { EntrySheet } from '../plan/EntrySheet'
 import { dayLabel, METHOD_LABELS, rowTitle } from './format'
 import {
   type HistoryEvent, type RefData, type Txn, type TxnPatch, receiptUrl, uploadReceipt,
-  useEditTransaction, useHistory, useLinkedEntry, useOnline, useRefData, useTransaction,
+  useEditTransaction, useHistory, useLinkedEntry, useRefData, useTransaction,
 } from './hooks'
 import { NotesSheet } from './NotesSheet'
 import { OptionSheet } from './OptionSheet'
@@ -6589,7 +6522,7 @@ export function Detail({ historyAction }: { historyAction?: (e: HistoryEvent) =>
       <section className="screen detail">
         <header className="detail__head">
           <h1 className="h1">{rowTitle(t, ref)}</h1>
-          <p className="amt-xl"><Money value={sign ? sign * t.amount : t.amount} currency={t.currency ?? 'EUR'} signed={sign !== 0} /></p>
+          <p className="amt-xl"><Money amount={sign ? sign * t.amount : t.amount} currency={t.currency ?? 'EUR'} signed={sign !== 0} /></p>
           <p className="muted">{dayLabel(t.transaction_date ?? '')} · {METHOD_LABELS[t.payment_method] ?? t.payment_method}</p>
           {readOnly && <p className="badge warn">Saves when you're back online</p>}
         </header>
@@ -6619,7 +6552,7 @@ export function Detail({ historyAction }: { historyAction?: (e: HistoryEvent) =>
                     await uploadReceipt(t.id, f)
                     void query.refetch()
                   } catch (err) {
-                    toast.show({ message: (err as Error).message })
+                    toast.show((err as Error).message, { tone: 'error' })
                   }
                 }}
               />
@@ -6659,7 +6592,7 @@ export function Detail({ historyAction }: { historyAction?: (e: HistoryEvent) =>
               {t.splits.map((s) => (
                 <li key={s.user_id} className="row between">
                   <span>{ref?.members.find((m) => m.user_id === s.user_id)?.display_name ?? 'Member'}</span>
-                  <Money value={s.amount} currency={t.currency ?? 'EUR'} />
+                  <Money amount={s.amount} currency={t.currency ?? 'EUR'} />
                 </li>
               ))}
             </ul>
@@ -6707,7 +6640,7 @@ export function Detail({ historyAction }: { historyAction?: (e: HistoryEvent) =>
 export { Detail as ActivityDetail }
 ```
 
-Add `useLinkedEntry` to `hooks.ts`. It finds the entry this transaction paid within ±45 days, using 2a's entries endpoint and key:
+Add `useLinkedEntry` to `hooks.ts`. It finds the entry this transaction paid within ±45 days, using 2a's entries endpoint and its `keys.recurring.entries(from, to)` key:
 
 ```ts
 export type LinkedEntry = S['EntryOut']
@@ -6716,8 +6649,8 @@ export function useLinkedEntry(t: Txn | undefined): LinkedEntry | undefined {
   const shift = (d: string, n: number) => new Date(Date.parse(d) + n * 864e5).toISOString().slice(0, 10)
   const from = shift(day, -45)
   const to = shift(day, 45)
-  const q = useCachedQuery(keys.recurring.entries(from, to), () =>
-    must(api.GET('/api/v1/recurring/entries', { params: { query: { from, to } } })),
+  const q = useCachedQuery(keys.recurring.entries(from, to), (signal) =>
+    unwrap(api.GET('/api/v1/recurring/entries', { params: { query: { from, to } }, signal })),
   )
   return t?.recurring_bill_id ? q.data?.find((e) => e.transaction_id === t.id) : undefined
 }
@@ -6773,7 +6706,7 @@ git commit -m "feat(activity): read-first detail with per-field edits"
 - Test: `web/src/features/activity/Duplicates.test.tsx`
 
 **Interfaces:**
-- Consumes: `useDuplicates`, `useOnline`, `online()`, `must()`, `useDeleteWithUndo`, `useHeldDeletes`, `gapLabel`, `rowTitle`.
+- Consumes: `useDuplicates`, 2a's `useOnline` and `unwrap`, `online()`, `useDeleteWithUndo`, `useHeldDeletes`, `gapLabel`, `rowTitle`.
 - Produces: `Duplicates()`, and `dismissDuplicates(ids: string[]): Promise<void>` in `hooks.ts` (online only; it never queues).
 
 - [ ] **Step 1: Write the failing test**
@@ -6782,47 +6715,51 @@ git commit -m "feat(activity): read-first detail with per-field edits"
 
 ```tsx
 import { fireEvent, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
+import { fakeApi } from '../../test/fakeApi'
+import { resetTestEnv, setOnline } from '../../test/render'
 import { Activity } from './Activity'
 import { _resetHeldForTests } from './heldDeletes'
-import { TODAY, fakeFetch, makeTxn, refRoutes, renderWithApp } from './testing'
+import { TODAY, makeTxn, refRoutes, renderActivity } from './testing'
 
-afterEach(() => {
+afterEach(async () => {
   _resetHeldForTests()
-  vi.restoreAllMocks()
+  await resetTestEnv()
 })
+
+const DISMISS = 'POST /api/v1/transactions/duplicates/dismiss' as const
 
 const a = makeTxn({ id: 'd1', merchant: 'Taverna', amount: 42, created_at: `${TODAY}T20:00:00` })
 const b = makeTxn({ id: 'd2', merchant: 'Taverna', amount: 42, created_at: `${TODAY}T20:02:00`, paid_by: 'u-maria' })
 
 function setup(groups = [{ amount: 42, transactions: [a, b] }]) {
-  return fakeFetch([
+  return fakeApi({
     ...refRoutes({ no_payer: 0, duplicate_groups: groups.length }),
-    { path: '/api/v1/transactions/duplicates', body: { groups } },
-    { method: 'POST', path: '/api/v1/transactions/duplicates/dismiss', status: 204 },
-    { method: 'DELETE', path: /^\/api\/v1\/transactions\//, status: 204 },
-  ])
+    'GET /api/v1/transactions/duplicates': () => ({ groups }) as never,
+    [DISMISS]: () => null,
+    'DELETE /api/v1/transactions/{txn_id}': () => null,
+  })
 }
 
 describe('Duplicates mode', () => {
   it('shows pair cards with the gap and disables the other chips', async () => {
     setup()
-    renderWithApp(<Activity />, { route: '/activity?dups=1' })
+    renderActivity(<Activity />, { route: '/activity?dups=1' })
     expect(await screen.findByText('2 min apart')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^Income/ })).toBeDisabled()
     expect(screen.getByRole('button', { name: /Duplicates\? 1/ })).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('Keep both posts the pair', async () => {
-    const { calls } = setup()
-    renderWithApp(<Activity />, { route: '/activity?dups=1' })
+    const fake = setup()
+    renderActivity(<Activity />, { route: '/activity?dups=1' })
     fireEvent.click(await screen.findByRole('button', { name: 'Keep both' }))
-    await waitFor(() => expect(calls.find((c) => c.method === 'POST')?.body).toEqual({ ids: ['d1', 'd2'] }))
+    await waitFor(() => expect(fake.callsTo(DISMISS)[0]?.body).toEqual({ ids: ['d1', 'd2'] }))
   })
 
   it('tap a row to drop it, then confirm deletes that one (held, with Undo)', async () => {
     setup()
-    renderWithApp(<Activity />, { route: '/activity?dups=1' })
+    renderActivity(<Activity />, { route: '/activity?dups=1' })
     fireEvent.click(await screen.findByRole('button', { name: /Taverna.*Maria/ }))
     expect(screen.getByText('Will be deleted')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Delete this one' }))
@@ -6831,15 +6768,15 @@ describe('Duplicates mode', () => {
   })
 
   it('Keep both needs a connection', async () => {
-    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+    setOnline(false)
     setup()
-    renderWithApp(<Activity />, { route: '/activity?dups=1' })
+    renderActivity(<Activity />, { route: '/activity?dups=1' })
     expect(await screen.findByRole('button', { name: 'Keep both' })).toBeDisabled()
   })
 
   it('empty state', async () => {
     setup([])
-    renderWithApp(<Activity />, { route: '/activity?dups=1' })
+    renderActivity(<Activity />, { route: '/activity?dups=1' })
     expect(await screen.findByText('No possible duplicates in the last 90 days')).toBeInTheDocument()
   })
 })
@@ -6856,7 +6793,7 @@ Add to `hooks.ts`:
 
 ```ts
 export async function dismissDuplicates(ids: string[]): Promise<void> {
-  await online(() => must(api.POST('/api/v1/transactions/duplicates/dismiss', { body: { ids } })))
+  await online(() => unwrap(api.POST('/api/v1/transactions/duplicates/dismiss', { body: { ids } })))
 }
 ```
 
@@ -6865,13 +6802,14 @@ export async function dismissDuplicates(ids: string[]): Promise<void> {
 ```tsx
 import { useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
+import { useOnline } from '../../data/online'
 import { keys } from '../../data/keys'
 import { Badge } from '../../ui/Badge'
 import { Money } from '../../ui/Money'
 import { useToast } from '../../ui/Toast'
 import { gapLabel, rowTitle } from './format'
 import { useHeldDeletes } from './heldDeletes'
-import { type DuplicateGroup, type RefData, dismissDuplicates, useDuplicates, useOnline, useRefData } from './hooks'
+import { type DuplicateGroup, type RefData, dismissDuplicates, useDuplicates, useRefData } from './hooks'
 import { useDeleteWithUndo } from './useDeleteWithUndo'
 
 function PairCard({ group, refData }: { group: DuplicateGroup; refData?: RefData }) {
@@ -6888,17 +6826,17 @@ function PairCard({ group, refData }: { group: DuplicateGroup; refData?: RefData
   const keepBoth = async () => {
     try {
       await dismissDuplicates(rows.map((t) => t.id))
-      await qc.invalidateQueries({ queryKey: keys.duplicates })
-      await qc.invalidateQueries({ queryKey: keys.transactions.counts })
+      await qc.invalidateQueries({ queryKey: keys.duplicates() })
+      await qc.invalidateQueries({ queryKey: keys.transactions.counts() })
     } catch (e) {
-      toast.show({ message: (e as Error).message })
+      toast.show((e as Error).message, { tone: 'error' })
     }
   }
 
   return (
     <article className="card vstack dup" aria-label={`Possible duplicate: ${rowTitle(first, refData)}`}>
       <div className="between">
-        <span className="h3">{rowTitle(first, refData)} · <Money value={group.amount} /></span>
+        <span className="h3">{rowTitle(first, refData)} · <Money amount={group.amount} /></span>
         <Badge>{gapLabel(first, last)}</Badge>
       </div>
       <div className="pair">
@@ -6999,7 +6937,7 @@ git commit -m "feat(activity): duplicates mode with Keep both and delete one"
 - Test: `web/src/features/activity/selection.test.ts`, `web/src/ui/BulkBar.test.tsx`, `web/src/features/activity/select.test.tsx`
 
 **Interfaces:**
-- Consumes: `Feed`'s `rowProps`, `renderRow` and `onLoaded`; `toQuery`; `isEmpty`; `useOnline`.
+- Consumes: `Feed`'s `rowProps`, `renderRow` and `onLoaded`; `toQuery`; `isEmpty`; 2a's `useOnline`.
 - Produces:
   - `selection.ts`:
     - `type Selection = {kind: 'off'} | {kind: 'picked', ids: string[]} | {kind: 'filter', filter, count} | {kind: 'bill', billId, count}`;
@@ -7084,21 +7022,23 @@ describe('BulkBar', () => {
 `web/src/features/activity/select.test.tsx`:
 
 ```tsx
-import { fireEvent, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it } from 'vitest'
+import { fakeApi } from '../../test/fakeApi'
+import { resetTestEnv, setOnline } from '../../test/render'
 import { Activity } from './Activity'
-import { fakeFetch, makeTxn, pageOf, refRoutes, renderWithApp } from './testing'
+import { makeTxn, pageOf, refRoutes, renderActivity } from './testing'
 
-afterEach(() => vi.restoreAllMocks())
+afterEach(resetTestEnv)
 
 const rows = [makeTxn({ notes: 'one' }), makeTxn({ notes: 'two' }), makeTxn({ notes: 'three' })]
 
 function setup(route = '/activity') {
-  fakeFetch([
+  fakeApi({
     ...refRoutes({ no_payer: 3, duplicate_groups: 0 }),
-    { path: '/api/v1/transactions', body: pageOf(rows, { total: 120 }) },
-  ])
-  renderWithApp(<Activity />, { route })
+    'GET /api/v1/transactions': () => pageOf(rows, { total: 120 }),
+  })
+  renderActivity(<Activity />, { route })
 }
 
 describe('selection mode', () => {
@@ -7124,18 +7064,18 @@ describe('selection mode', () => {
   })
 
   it('the bar is disabled offline', async () => {
-    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
     setup()
     fireEvent.click(await screen.findByRole('button', { name: 'More' }))
     fireEvent.click(screen.getByRole('button', { name: /^Select/ }))
     fireEvent.click(await screen.findByText('one'))
+    act(() => setOnline(false)) // the rows are already on screen
     expect(screen.getByRole('button', { name: 'Bucket' })).toBeDisabled()
     expect(screen.getByText('Needs a connection')).toBeInTheDocument()
   })
 })
 ```
 
-The offline test needs a cached first page. If 2a's `useCachedQuery` won't fetch with `navigator.onLine` false, seed the cache first with `qc.setQueryData(keys.transactions.list(filter, 1), pageOf(rows, { total: 120 }))` through the `qc` that `renderWithApp` returns. Use `fromSearch(new URLSearchParams(''))` for the filter, re-rendering if needed.
+The offline test goes offline after the rows are on screen (`setOnline(false)` inside `act`), so it needs no cache seeding.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
@@ -7267,7 +7207,7 @@ In `Activity.tsx`:
   - when selecting, `renderRow` returns `row` as is (no swipe); otherwise it is the `SwipeRow` from Task 15 plus `onLongPress={() => dispatch({ type: 'enter', id: t.id })}`.
 - When selecting, render `<BulkBar>`:
   - `count={selectedCount(sel)}`;
-  - for a picked selection, `total` is `<Money value={sum of the picked loaded rows' amounts} />`;
+  - for a picked selection, `total` is `<Money amount={sum of the picked loaded rows' amounts} />`;
   - `disabled={!online}`, with `disabledReason="Needs a connection"`;
   - `actions` Bucket, Category, Payer and Method each call `setBulk(<that>)`.
 
@@ -7304,7 +7244,7 @@ git commit -m "feat(activity): selection by hand, by filter or by bill; BulkBar"
 - Test: `web/src/features/activity/BulkSheet.test.tsx`
 
 **Interfaces:**
-- Consumes: Task 18's `Selection`, `toSelect` and `expectedCount`; `RefData`; `RecurringItem`; `online()`; `must()`; `ApiError`; `ACTIVITY_WRITES`.
+- Consumes: Task 18's `Selection`, `toSelect` and `expectedCount`; `RefData`; `RecurringItem`; `online()`; 2a's `unwrap` and `ApiError`; `ACTIVITY_WRITES`.
 - Produces:
   - `hooks.ts`:
     - the types `BulkChanges = S['ChangesIn']`, `BulkResult = S['BulkResult']`, `BulkReq = {select, changes, move_bill}`;
@@ -7330,11 +7270,15 @@ git commit -m "feat(activity): selection by hand, by filter or by bill; BulkBar"
 ```tsx
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { fakeApi, reply, type FakeRequest } from '../../test/fakeApi'
+import { resetTestEnv } from '../../test/render'
 import { BulkSheet } from './BulkSheet'
 import type { Selection } from './selection'
-import { REF, type FakeRoute, fakeFetch, makeTxn, renderWithApp } from './testing'
+import { REF, makeTxn, renderActivity } from './testing'
 
-afterEach(() => vi.restoreAllMocks())
+afterEach(resetTestEnv)
+
+const BULK = 'POST /api/v1/transactions/bulk' as const
 
 const RESULT = {
   dry_run: true, batch_id: null, matched: 3, changed: 2, unchanged: 1, total_out: 90, total_in: 0,
@@ -7345,20 +7289,16 @@ const RESULT = {
   }],
 }
 const ITEMS = [{ id: 'r1', name: 'Cosmote', direction: 'out' }, { id: 'r-sal', name: 'Salary', direction: 'in' }]
-const ECHO: FakeRoute = {
-  method: 'POST',
-  path: '/api/v1/transactions/bulk',
-  body: (_u: URL, b: unknown) => {
-    const dry = (b as { dry_run: boolean }).dry_run
-    return { ...RESULT, dry_run: dry, batch_id: dry ? null : 'batch1' }
+const ECHO = {
+  [BULK]: (req: FakeRequest) => {
+    const dry = (req.body as { dry_run: boolean }).dry_run
+    return { ...RESULT, dry_run: dry, batch_id: dry ? null : 'batch1' } as never
   },
 }
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
 function renderSheet(selection: Selection, rows = [makeTxn()]) {
   const onApplied = vi.fn()
-  renderWithApp(
+  renderActivity(
     <BulkSheet open selection={selection} rows={rows} refData={REF} items={ITEMS} initial="bucket" onApplied={onApplied} onClose={() => {}} />,
   )
   return onApplied
@@ -7368,7 +7308,7 @@ const pickBucket = (value: string) => fireEvent.change(screen.getByLabelText('Bu
 
 describe('BulkSheet', () => {
   it('previews with dry_run, then applies with expected_count', async () => {
-    const { calls } = fakeFetch([ECHO])
+    const fake = fakeApi(ECHO)
     const onApplied = renderSheet({ kind: 'filter', filter: { missing_payer: true }, count: 3 })
     pickBucket('b-bills')
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
@@ -7377,28 +7317,30 @@ describe('BulkSheet', () => {
     expect(screen.getByText('1 already set')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Apply to 2' }))
     await waitFor(() => expect(onApplied).toHaveBeenCalled())
-    const [preview, apply] = calls.map((c) => c.body as Record<string, unknown>)
+    const [preview, apply] = fake.callsTo(BULK).map((c) => c.body as Record<string, unknown>)
     expect(preview).toMatchObject({ dry_run: true, select: { filter: { missing_payer: true } }, changes: { bucket_id: 'b-bills' } })
     expect(apply).toMatchObject({ dry_run: false, expected_count: 3 })
   })
 
   it('hand-picked rows apply without expected_count', async () => {
-    const { calls } = fakeFetch([ECHO])
+    const fake = fakeApi(ECHO)
     renderSheet({ kind: 'picked', ids: ['t1'] })
     pickBucket('b-bills')
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Apply to 2' }))
-    await waitFor(() => expect(calls).toHaveLength(2))
-    expect((calls[1].body as { expected_count: unknown }).expected_count).toBeNull()
+    await waitFor(() => expect(fake.callsTo(BULK)).toHaveLength(2))
+    expect((fake.callsTo(BULK)[1].body as { expected_count: unknown }).expected_count).toBeNull()
   })
 
   it('a 409 on apply re-previews and shows the message', async () => {
     const bodies: { dry_run: boolean }[] = []
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-      const body = JSON.parse(await (input as Request).clone().text())
-      bodies.push(body)
-      if (!body.dry_run) return json({ detail: 'The selection changed: 4 now match. Preview again.' }, 409)
-      return json({ ...RESULT, matched: bodies.length > 1 ? 4 : 3 })
+    fakeApi({
+      [BULK]: (req) => {
+        const body = req.body as { dry_run: boolean }
+        bodies.push(body)
+        if (!body.dry_run) return reply(409, { detail: 'The selection changed: 4 now match. Preview again.' })
+        return { ...RESULT, matched: bodies.length > 1 ? 4 : 3 } as never
+      },
     })
     renderSheet({ kind: 'filter', filter: { q: 'x' }, count: 3 })
     pickBucket('b-bills')
@@ -7409,12 +7351,12 @@ describe('BulkSheet', () => {
   })
 
   it('a 400 stays open with the server detail; a network failure says nothing changed', async () => {
-    fakeFetch([{ method: 'POST', path: '/api/v1/transactions/bulk', status: 400, body: { detail: 'That bucket is archived. Choose an active one.' } }])
+    const fake = fakeApi({ [BULK]: () => reply(400, { detail: 'That bucket is archived. Choose an active one.' }) })
     renderSheet({ kind: 'picked', ids: ['t1'] })
     pickBucket('b-bills')
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
     expect(await screen.findByText('That bucket is archived. Choose an active one.')).toBeInTheDocument()
-    vi.mocked(globalThis.fetch).mockRejectedValue(new TypeError('Failed to fetch'))
+    fake.down()
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
     expect(await screen.findByText("Couldn't reach the server. Nothing was changed.")).toBeInTheDocument()
   })
@@ -7464,11 +7406,11 @@ export type BulkResult = S['BulkResult']
 export type BulkReq = { select: import('./selection').BulkSelect; changes: BulkChanges; move_bill: boolean }
 
 export function previewBulk(req: BulkReq): Promise<BulkResult> {
-  return online(() => must(api.POST('/api/v1/transactions/bulk', { body: { ...req, dry_run: true } as never })))
+  return online(() => unwrap(api.POST('/api/v1/transactions/bulk', { body: { ...req, dry_run: true } as never })))
 }
 export function applyBulk(req: BulkReq, expected: number | null): Promise<BulkResult> {
   return online(() =>
-    must(api.POST('/api/v1/transactions/bulk', { body: { ...req, dry_run: false, expected_count: expected } as never })),
+    unwrap(api.POST('/api/v1/transactions/bulk', { body: { ...req, dry_run: false, expected_count: expected } as never })),
   )
 }
 ```
@@ -7488,8 +7430,8 @@ export function BulkPreview({ result }: { result: BulkResult }) {
   return (
     <div className="vstack bulk-preview" aria-live="polite">
       <p>
-        <b>{result.changed}</b> of {result.matched} change · out <Money value={result.total_out} />
-        {result.total_in > 0 && <> · in <Money value={result.total_in} /></>}
+        <b>{result.changed}</b> of {result.matched} change · out <Money amount={result.total_out} />
+        {result.total_in > 0 && <> · in <Money amount={result.total_in} /></>}
       </p>
       {result.unchanged > 0 && <p className="muted">{result.unchanged} already set</p>}
       {result.buckets.map((b) => (
@@ -7524,7 +7466,9 @@ import { useEffect, useState } from 'react'
 import { Sheet } from '../../ui/Sheet'
 import { BulkPreview } from './BulkPreview'
 import { METHOD_LABELS } from './format'
-import { ApiError, applyBulk, type BulkChanges, type BulkReq, type BulkResult, previewBulk, type RecurringItem, type RefData, type Txn, useOnline } from './hooks'
+import { ApiError } from '../../data/http'
+import { useOnline } from '../../data/online'
+import { applyBulk, type BulkChanges, type BulkReq, type BulkResult, previewBulk, type RecurringItem, type RefData, type Txn } from './hooks'
 import { OWN_SHARE } from './pickers'
 import { expectedCount, type Selection, toSelect } from './selection'
 
@@ -7683,17 +7627,15 @@ const toast = useToast()
   onApplied={(result, req) => {
     setBulk(null)
     dispatch({ type: 'cancel' })
-    const extra = req.move_bill ? [keys.recurring.all] : []
-    for (const key of [...ACTIVITY_WRITES, ...extra]) void qc.invalidateQueries({ queryKey: key })
-    toast.show({
-      message: 'bucket_id' in req.changes ? `Moved ${result.changed} payments` : `Changed ${result.changed}`,
+    for (const key of ACTIVITY_WRITES) void qc.invalidateQueries({ queryKey: key }) // includes recurring, for "Also move the bill"
+    toast.show('bucket_id' in req.changes ? `Moved ${result.changed} payments` : `Changed ${result.changed}`, {
       durationMs: 10_000,
     })
   }}
 />
 ```
 
-`keys.recurring.all` stands for 2a's prefix that covers both `recurring` and `recurring/entries`. Task 20 adds the toast's Undo action.
+`ACTIVITY_WRITES` includes `keys.recurring.all`, 2a's prefix that covers both the recurring list and `recurring/entries`. Task 20 adds the toast's Undo action.
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
@@ -7721,9 +7663,9 @@ git commit -m "feat(activity): bulk sheet with budget preview and guarded apply"
 - Test: `web/src/features/activity/undo.test.tsx`
 
 **Interfaces:**
-- Consumes: `online`, `must`, `ApiError`, `ACTIVITY_WRITES`, `HistoryList`'s `renderAction`, `useToast`, `Sheet`.
+- Consumes: `online`, 2a's `unwrap` and `ApiError`, `ACTIVITY_WRITES`, `HistoryList`'s `renderAction`, `useToast`, `Sheet`.
 - Produces:
-  - `hooks.ts`: `undoBulk(batchId) -> Promise<UndoResult>` and `useRecentBulk()` (`keys.bulkRecent`, `GET /api/v1/transactions/bulk?limit=10`);
+  - `hooks.ts`: `undoBulk(batchId) -> Promise<UndoResult>` and `useRecentBulk()` (`keys.bulkRecent()`, `GET /api/v1/transactions/bulk?limit=10`);
   - `useUndoBulk(): (batchId: string) => Promise<void>`. It shows the result toast ("Restored N · M changed since, left as they are" with a "Details" action) and toasts a 409's detail;
   - `RecentBulk({open, onClose})`.
 
@@ -7733,12 +7675,16 @@ git commit -m "feat(activity): bulk sheet with budget preview and guarded apply"
 
 ```tsx
 import { fireEvent, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
+import { fakeApi, reply } from '../../test/fakeApi'
+import { resetTestEnv } from '../../test/render'
 import { RecentBulk } from './RecentBulk'
 import { Detail } from './Detail'
-import { fakeFetch, makeTxn, refRoutes, renderWithApp } from './testing'
+import { makeTxn, refRoutes, renderActivity } from './testing'
 
-afterEach(() => vi.restoreAllMocks())
+afterEach(resetTestEnv)
+
+const UNDO = 'POST /api/v1/transactions/bulk/{batch_id}/undo' as const
 
 const RECENT = [
   { id: 'b2', created_at: '2026-10-07T09:00:00', created_by: 'Giorgos', summary: 'Bucket → Bills · 12 transactions', row_count: 12, undone_at: null, can_undo: true },
@@ -7747,44 +7693,42 @@ const RECENT = [
 
 describe('undo', () => {
   it('Recent bulk changes lists the last batches; Undo reports skips', async () => {
-    const { calls } = fakeFetch([
-      { path: '/api/v1/transactions/bulk', body: RECENT },
-      { method: 'POST', path: '/api/v1/transactions/bulk/b2/undo', body: { restored: 11, skipped: [{ id: 'x', code: 'changed_since', reason: 'Changed since' }], bill_restored: false } },
-    ])
-    renderWithApp(<RecentBulk open onClose={() => {}} />)
+    const fake = fakeApi({
+      'GET /api/v1/transactions/bulk': () => RECENT as never,
+      [UNDO]: () => ({ restored: 11, skipped: [{ id: 'x', code: 'changed_since', reason: 'Changed since' }], bill_restored: false }) as never,
+    })
+    renderActivity(<RecentBulk open onClose={() => {}} />)
     expect(await screen.findByText('Bucket → Bills · 12 transactions')).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: 'Undo' })).toHaveLength(1) // only the one that can
     fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
     expect(await screen.findByText('Restored 11 · 1 changed since, left as they are')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Details' })).toBeInTheDocument()
-    expect(calls.some((c) => c.method === 'POST' && c.path.endsWith('/b2/undo'))).toBe(true)
+    expect(fake.callsTo(UNDO).map((c) => c.path)).toEqual(['/api/v1/transactions/bulk/b2/undo'])
   })
 
   it('a 409 shows the detail', async () => {
-    fakeFetch([
-      { path: '/api/v1/transactions/bulk', body: RECENT },
-      { method: 'POST', path: '/api/v1/transactions/bulk/b2/undo', status: 409, body: { detail: 'Changes can be undone for 24 hours.' } },
-    ])
-    renderWithApp(<RecentBulk open onClose={() => {}} />)
+    fakeApi({
+      'GET /api/v1/transactions/bulk': () => RECENT as never,
+      [UNDO]: () => reply(409, { detail: 'Changes can be undone for 24 hours.' }),
+    })
+    renderActivity(<RecentBulk open onClose={() => {}} />)
     fireEvent.click(await screen.findByRole('button', { name: 'Undo' }))
     expect(await screen.findByText('Changes can be undone for 24 hours.')).toBeInTheDocument()
   })
 
   it('the detail history offers "Undo this change" for an undoable bulk event', async () => {
     const row = makeTxn({ id: 'h1', merchant: 'Cosmote' })
-    const { calls } = fakeFetch([
+    const fake = fakeApi({
       ...refRoutes(),
-      { path: '/api/v1/transactions/h1', body: row },
-      { path: '/api/v1/recurring/entries', body: [] },
-      {
-        path: '/api/v1/transactions/h1/history',
-        body: { events: [{ at: '2026-10-07T09:00:00', kind: 'bulk_change', by: 'Giorgos', text: 'Bucket: Day to day → Bills', batch_id: 'b2', can_undo: true }] },
-      },
-      { method: 'POST', path: '/api/v1/transactions/bulk/b2/undo', body: { restored: 1, skipped: [], bill_restored: false } },
-    ])
-    renderWithApp(<Detail />, { route: '/activity/h1', path: '/activity/:id' })
+      'GET /api/v1/transactions/{txn_id}': () => row,
+      'GET /api/v1/recurring/entries': () => [],
+      'GET /api/v1/transactions/{txn_id}/history': () =>
+        ({ events: [{ at: '2026-10-07T09:00:00', kind: 'bulk_change', by: 'Giorgos', text: 'Bucket: Day to day → Bills', batch_id: 'b2', can_undo: true }] }) as never,
+      [UNDO]: () => ({ restored: 1, skipped: [], bill_restored: false }) as never,
+    })
+    renderActivity(<Detail />, { route: '/activity/h1', path: '/activity/:id' })
     fireEvent.click(await screen.findByRole('button', { name: 'Undo this change' }))
-    await waitFor(() => expect(calls.some((c) => c.path.endsWith('/b2/undo'))).toBe(true))
+    await waitFor(() => expect(fake.callsTo(UNDO).map((c) => c.path)).toEqual(['/api/v1/transactions/bulk/b2/undo']))
     expect(await screen.findByText('Restored 1')).toBeInTheDocument()
   })
 })
@@ -7805,12 +7749,12 @@ export type RecentBatch = S['RecentBatchOut']
 
 export function undoBulk(batchId: string): Promise<UndoResult> {
   return online(() =>
-    must(api.POST('/api/v1/transactions/bulk/{batch_id}/undo', { params: { path: { batch_id: batchId } } })),
+    unwrap(api.POST('/api/v1/transactions/bulk/{batch_id}/undo', { params: { path: { batch_id: batchId } } })),
   )
 }
 export function useRecentBulk() {
-  return useCachedQuery(keys.bulkRecent, () =>
-    must(api.GET('/api/v1/transactions/bulk', { params: { query: { limit: 10 } } })),
+  return useCachedQuery(keys.bulkRecent(), (signal) =>
+    unwrap(api.GET('/api/v1/transactions/bulk', { params: { query: { limit: 10 } }, signal })),
   )
 }
 ```
@@ -7834,15 +7778,13 @@ export function useUndoBulk(onDetails?: (skipped: { id: string; reason: string }
   return async (batchId: string) => {
     try {
       const r = await undoBulk(batchId)
-      const extra = r.bill_restored ? [keys.recurring.all] : []
-      for (const key of [...ACTIVITY_WRITES, ...extra]) void qc.invalidateQueries({ queryKey: key })
-      toast.show({
-        message: undoMessage(r.restored, r.skipped.length),
+      for (const key of ACTIVITY_WRITES) void qc.invalidateQueries({ queryKey: key }) // recurring.all is in it, for a restored bill
+      toast.show(undoMessage(r.restored, r.skipped.length), {
         action: r.skipped.length && onDetails ? { label: 'Details', onClick: () => onDetails(r.skipped) } : undefined,
       })
     } catch (e) {
-      void qc.invalidateQueries({ queryKey: keys.bulkRecent }) // the Undo button goes away
-      toast.show({ message: (e as Error).message })
+      void qc.invalidateQueries({ queryKey: keys.bulkRecent() }) // the Undo button goes away
+      toast.show((e as Error).message, { tone: 'error' })
     }
   }
 }
@@ -7853,7 +7795,8 @@ export function useUndoBulk(onDetails?: (skipped: { id: string; reason: string }
 ```tsx
 import { useState } from 'react'
 import { Sheet } from '../../ui/Sheet'
-import { useOnline, useRecentBulk } from './hooks'
+import { useOnline } from '../../data/online'
+import { useRecentBulk } from './hooks'
 import { useUndoBulk } from './useUndoBulk'
 
 const when = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
