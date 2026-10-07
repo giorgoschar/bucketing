@@ -186,6 +186,27 @@ async function drain(force: boolean): Promise<Result> {
   return { sent, failed, stoppedOnAuth: false }
 }
 
+const KICK_DELAY_MS = 2000
+let kickTimer: ReturnType<typeof setTimeout> | undefined
+
+/**
+ * Replay soon. For a write queued while online (a 5xx, 408, 429 or a dropped connection): no `online` or
+ * visibility event will come to trigger the replay, so schedule one. Repeated kicks collapse into one.
+ */
+export function kick(delayMs = KICK_DELAY_MS): void {
+  clearTimeout(kickTimer)
+  kickTimer = setTimeout(() => {
+    kickTimer = undefined
+    void replay().catch(() => {})
+  }, delayMs)
+}
+
+/** Drop a scheduled kick (sign-out, tests). */
+export function cancelKick(): void {
+  clearTimeout(kickTimer)
+  kickTimer = undefined
+}
+
 export function startReplayTriggers(): () => void {
   let timer: ReturnType<typeof setTimeout> | undefined
   let stopped = false

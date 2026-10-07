@@ -1,4 +1,4 @@
-import { act, render, renderHook, screen } from '@testing-library/react'
+import { act, render, renderHook, screen, waitFor } from '@testing-library/react'
 import type { QueryClient } from '@tanstack/react-query'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { db } from '../offline/db'
@@ -104,4 +104,20 @@ it('401: rolls back, no toast and nothing queued', async () => {
   expect(status()).toBe('expected')
   expect(await db.queue.count()).toBe(0)
   expect(screen.getByRole('status')).toBeEmptyDOMElement()
+})
+
+it('a 503 while online is replayed shortly after, without an online or visibility event', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true })
+  let n = 0
+  const ME = { id: 'u1', username: 'g', household_id: 'h1', display_name: 'G', email: null, avatar_color: null }
+  const fake = fakeApi({
+    'GET /api/v1/auth/me': () => ME,
+    [SKIP]: () => (++n === 1 ? reply(503) : entry({ status: 'skipped' })),
+  })
+  const { run } = setup()
+  expect(await run()).toEqual({ status: 'queued' })
+  expect(fake.callsTo(SKIP)).toHaveLength(1)
+  await act(() => vi.advanceTimersByTimeAsync(2_000))
+  await waitFor(() => expect(fake.callsTo(SKIP)).toHaveLength(2))
+  await waitFor(async () => expect(await db.queue.count()).toBe(0))
 })

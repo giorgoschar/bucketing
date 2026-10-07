@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react-query'
 import { api } from '../api/client'
-import { enqueue } from '../offline/queue'
+import { enqueue, kick } from '../offline/queue'
 import { toast } from '../ui/Toast'
 import { detailOf } from './http'
 import { isOnline } from './online'
@@ -61,7 +61,8 @@ export async function perform<V, T>(qc: QueryClient, s: ActionSpec<V, T>, vars: 
   const rollback = () => { for (const [k, data] of snapshot) qc.setQueryData(k, data) }
   const invalidate = () => { for (const queryKey of s.invalidates) void qc.invalidateQueries({ queryKey }) }
 
-  const queue = async (): Promise<ActionResult<T>> => {
+  /** `online`: queued after a failure while online, so no online/visibility trigger will replay it: kick one. */
+  const queue = async (online: boolean): Promise<ActionResult<T>> => {
     try {
       await enqueue({ method: s.method, path, body })
     } catch {
@@ -71,22 +72,23 @@ export async function perform<V, T>(qc: QueryClient, s: ActionSpec<V, T>, vars: 
       return { status: 'rejected', code: 0, detail }
     }
     if (pendingId) markPending(pendingId)
+    if (online) kick()
     return { status: 'queued' }
   }
 
-  if (!isOnline()) return queue()
+  if (!isOnline()) return queue(false)
   let res: Raw
   try {
     res = await send(s.method, path, body)
   } catch {
-    return queue() // failed at the network level
+    return queue(true) // failed at the network level
   }
   if (res.response.ok) {
     invalidate()
     return { status: 'done', data: res.data as T }
   }
   const code = res.response.status
-  if (queueable(code)) return queue()
+  if (queueable(code)) return queue(true)
   rollback()
   const detail = detailOf(res.error, code)
   if (code === 401) return { status: 'rejected', code, detail }

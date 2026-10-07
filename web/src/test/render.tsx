@@ -5,6 +5,7 @@ import { createMemoryRouter, RouterProvider } from 'react-router'
 import { vi } from 'vitest'
 import { clearPending } from '../data/pending'
 import { wipe } from '../offline/db'
+import { cancelKick } from '../offline/queue'
 import { setIdentity, type Identity } from '../offline/identity'
 import { dismissToast, Toaster } from '../ui/Toast'
 
@@ -52,6 +53,7 @@ export async function resetTestEnv(): Promise<void> {
   cleanup()
   vi.restoreAllMocks()
   vi.useRealTimers()
+  cancelKick()
   Reflect.deleteProperty(navigator, 'onLine') // falls back to Navigator.prototype.onLine
   onlineManager.setOnline(true)
   dismissToast()
