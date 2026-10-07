@@ -16,13 +16,22 @@ import re
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.clock import local_today, utcnow_naive
 from app.core.money import ZERO, quantize, to_decimal
-from app.integrations.posokanei import valid_product_id
-from app.models import PriceSnapshot, Product, StockItem, StockMovement, StockReason
+from app.integrations import posokanei
+from app.integrations.posokanei import PosokaneiUnavailable, valid_product_id
+from app.models import (
+    PriceSnapshot,
+    Product,
+    ShoppingLine,
+    StockItem,
+    StockMovement,
+    StockReason,
+)
 
 MAX_QUANTITY = Decimal("100000")
 _BARCODE_RE = re.compile(r"^\d{6,14}$")
@@ -30,6 +39,12 @@ _BARCODE_RE = re.compile(r"^\d{6,14}$")
 
 class StockError(ValueError):
     """Invalid stock input (maps to HTTP 400)."""
+
+
+class ShoppingIdConflict(Exception):
+    """A client-chosen shopping-line id is already used by a row this request
+    cannot be a replay of (another household's, another item's, or the other
+    kind of line). Maps to 409, saying nothing about that row."""
 
 
 # ---------------------------------------------------------------------------
@@ -92,12 +107,72 @@ def get_stock_item(db: Session, hh_id: str, item_id: str) -> StockItem | None:
     return item
 
 
+def pantry_match(
+    db: Session, hh_id: str, barcode: str | None, posokanei_id: str | None = None
+) -> StockItem | None:
+    """The household's (unarchived) stock item with this barcode or this
+    PosoKanei product id, if any; a barcode match wins."""
+    keys = []
+    if barcode:
+        keys.append(Product.barcode == barcode)
+    if posokanei_id:
+        keys.append(Product.posokanei_id == posokanei_id)
+    if not keys:
+        return None
+    rows = (
+        db.query(StockItem)
+        .join(Product, Product.id == StockItem.product_id)
+        .filter(Product.household_id == hh_id, Product.archived_at.is_(None), or_(*keys))
+        .all()
+    )
+    rows.sort(key=lambda i: (not barcode or i.product.barcode != barcode, i.product.name, i.id))
+    return rows[0] if rows else None
+
+
+def _lock_query(db: Session, hh_id: str, item_id: str):
+    return (
+        db.query(StockItem)
+        .filter(StockItem.id == item_id, StockItem.household_id == hh_id)
+        .with_for_update()
+        .populate_existing()
+    )
+
+
+def lock_stock_item(db: Session, hh_id: str, item_id: str) -> StockItem | None:
+    """The household's stock item, row-locked (FOR UPDATE on Postgres) and
+    freshly read, so a read-modify-write of its quantity cannot lose a
+    concurrent one."""
+    return _lock_query(db, hh_id, item_id).first()
+
+
+def stock_summary(db: Session, hh_id: str) -> dict:
+    """Home's pantry counts: count queries only (no prices, no run-out)."""
+    low_count = (
+        db.query(func.count(StockItem.id))
+        .join(Product, Product.id == StockItem.product_id)
+        .filter(
+            StockItem.household_id == hh_id,
+            Product.archived_at.is_(None),
+            StockItem.quantity <= StockItem.min_quantity,
+        )
+        .scalar()
+    )
+    return {"low_count": int(low_count or 0), "ticked_count": ticked_count(db, hh_id)}
+
+
 # ---------------------------------------------------------------------------
 # Mutations (caller commits)
 # ---------------------------------------------------------------------------
 
 
-def _move(db, item: StockItem, delta: Decimal, reason: StockReason, user_id: str | None):
+def _move(
+    db,
+    item: StockItem,
+    delta: Decimal,
+    reason: StockReason,
+    user_id: str | None,
+    client_id: str | None = None,
+):
     db.add(
         StockMovement(
             stock_item_id=item.id,
@@ -105,6 +180,7 @@ def _move(db, item: StockItem, delta: Decimal, reason: StockReason, user_id: str
             reason=reason.value,
             created_by=user_id,
             created_at=utcnow_naive(),
+            client_id=client_id,
         )
     )
 
@@ -194,13 +270,16 @@ def adjust_stock(
     delta,
     user_id: str | None,
     reason: StockReason | None = None,
+    client_id: str | None = None,
 ) -> StockItem | None:
     """Change a quantity by ``delta`` (never below zero) and log the movement.
 
     The logged delta is what actually changed, so using an item already at
-    zero records nothing and cannot skew the consumption rate.
+    zero records nothing and cannot skew the consumption rate. ``client_id``
+    (the PWA's queued stepper) is stored on the movement for
+    :func:`find_adjust_replay`. The item row is locked first.
     """
-    item = get_stock_item(db, hh_id, item_id)
+    item = lock_stock_item(db, hh_id, item_id)
     if item is None:
         return None
     delta = to_decimal(delta)
@@ -212,9 +291,29 @@ def adjust_stock(
     item.quantity = after
     item.updated_at = utcnow_naive()
     if actual != 0:
-        _move(db, item, actual, reason, user_id)
+        _move(db, item, actual, reason, user_id, client_id)
     db.flush()
     return item
+
+
+ADJUST_DEDUPE_WINDOW = timedelta(hours=24)
+
+
+def find_adjust_replay(db: Session, hh_id: str, client_id: str) -> StockMovement | None:
+    """The household's movement logged with ``client_id`` in the last 24 h:
+    an adjust with that id was already applied. (A clamped no-op logs no
+    movement, so its replay runs again, and clamps again.)"""
+    since = utcnow_naive() - ADJUST_DEDUPE_WINDOW
+    return (
+        db.query(StockMovement)
+        .join(StockItem, StockItem.id == StockMovement.stock_item_id)
+        .filter(
+            StockItem.household_id == hh_id,
+            StockMovement.client_id == client_id,
+            StockMovement.created_at >= since,
+        )
+        .first()
+    )
 
 
 def update_stock_settings(
@@ -232,17 +331,35 @@ def update_stock_settings(
 
 
 def archive_product(db: Session, hh_id: str, item_id: str) -> StockItem | None:
-    """Hide a product from the stock list. History stays (soft delete)."""
+    """Hide a product from the stock list. History stays (soft delete); its
+    active shopping-list tick is cleared."""
     item = get_stock_item(db, hh_id, item_id)
     if item is None:
         return None
-    item.product.archived_at = utcnow_naive()
+    now = utcnow_naive()
+    item.product.archived_at = now
+    _active_lines(db, hh_id).filter(ShoppingLine.stock_item_id == item.id).update(
+        {ShoppingLine.cleared_at: now}, synchronize_session="fetch"
+    )
     return item
 
 
 # ---------------------------------------------------------------------------
 # Price snapshots
 # ---------------------------------------------------------------------------
+
+
+def snapshot_now(db: Session, product: Product) -> bool:
+    """Fetch and store today's prices for a linked product. False if the
+    product is not linked to PosoKanei or PosoKanei is unavailable."""
+    if not product.posokanei_id:
+        return False
+    try:
+        summary = posokanei.get(product.posokanei_id)
+    except PosokaneiUnavailable:
+        return False
+    record_snapshots(db, product, summary, local_today())
+    return True
 
 
 def record_snapshots(db: Session, product: Product, summary, day: date) -> int:
@@ -344,6 +461,29 @@ def current_prices(db: Session, product_ids) -> dict[str, list[PriceSnapshot]]:
     for rows in out.values():
         rows.sort(key=_price_key)
     return out
+
+
+HISTORY_DAYS = 183
+
+
+def price_history(
+    db: Session, product_id: str, today: date | None = None, days: int = HISTORY_DAYS
+) -> list[tuple[date, Decimal]]:
+    """One point per day over the last ``days`` days (today included): the
+    lowest price across retailers that day, oldest first."""
+    today = today or local_today()
+    rows = (
+        db.query(PriceSnapshot.snapshot_date, func.min(PriceSnapshot.price))
+        .filter(
+            PriceSnapshot.product_id == product_id,
+            PriceSnapshot.snapshot_date > today - timedelta(days=days),
+            PriceSnapshot.snapshot_date <= today,
+        )
+        .group_by(PriceSnapshot.snapshot_date)
+        .order_by(PriceSnapshot.snapshot_date)
+        .all()
+    )
+    return [(d, to_decimal(p)) for d, p in rows]
 
 
 def _price_key(s: PriceSnapshot):
@@ -548,18 +688,27 @@ def restock_quantity(item: StockItem) -> Decimal:
     return max(Decimal("1"), Decimal(math.ceil(gap)))
 
 
-def shopping_list(db: Session, hh_id: str, today: date | None = None) -> dict:
+def shopping_list(
+    db: Session, hh_id: str, today: date | None = None, *, include_ticked: bool = False
+) -> dict:
     """Items to buy (at/below minimum, or running out within a week), each at
-    its cheapest current retailer, grouped into per-retailer baskets."""
+    its cheapest current retailer, grouped into per-retailer baskets.
+
+    ``include_ticked`` (the PWA list) also keeps any item with an active tick
+    that is neither, with reason ``ticked``, so every tick that is counted
+    and applied has a row it can be unticked from."""
     today = today or local_today()
     items = list_stock(db, hh_id)
     runout = runout_bulk(db, items, today)
-    wanted = [
-        i
-        for i in items
-        if to_decimal(i.quantity) <= to_decimal(i.min_quantity)
-        or (runout[i.id] is not None and runout[i.id] <= RUNOUT_SOON_DAYS)
-    ]
+    ticked = set(active_ticks(db, hh_id)) if include_ticked else set()
+
+    def _low(i):
+        return to_decimal(i.quantity) <= to_decimal(i.min_quantity)
+
+    def _soon(i):
+        return runout[i.id] is not None and runout[i.id] <= RUNOUT_SOON_DAYS
+
+    wanted = [i for i in items if _low(i) or _soon(i) or i.id in ticked]
     pids = [i.product_id for i in wanted]
     prices = current_prices(db, pids)
     advice = price_advice_bulk(db, pids, today)
@@ -574,9 +723,7 @@ def shopping_list(db: Session, hh_id: str, today: date | None = None) -> dict:
                 "item": i,
                 "product": i.product,
                 "need_qty": need,
-                "reason": "low"
-                if to_decimal(i.quantity) <= to_decimal(i.min_quantity)
-                else "runout",
+                "reason": "low" if _low(i) else "runout" if _soon(i) else "ticked",
                 "runout_days": runout[i.id],
                 "retailer": best.retailer if best else None,
                 "retailer_name": retailer_label(best.retailer) if best else None,
@@ -682,3 +829,235 @@ def rotation_suggestions(db: Session, hh_id: str, today: date | None = None) -> 
                 }
             )
     return out
+
+
+# ---------------------------------------------------------------------------
+# Shopping list lines: ticks on computed items and one-off lines (caller
+# commits). A tick never changes stock; apply_ticked does, after the user
+# confirms. Nothing here touches transactions.
+# ---------------------------------------------------------------------------
+
+
+def _active_lines(db: Session, hh_id: str):
+    return db.query(ShoppingLine).filter(
+        ShoppingLine.household_id == hh_id, ShoppingLine.cleared_at.is_(None)
+    )
+
+
+def get_live_item(db: Session, hh_id: str, item_id: str) -> StockItem | None:
+    """The household's stock item, unless it is archived."""
+    item = get_stock_item(db, hh_id, item_id)
+    if item is None or item.product.archived_at is not None:
+        return None
+    return item
+
+
+def active_ticks(db: Session, hh_id: str, item_ids=None) -> dict[str, ShoppingLine]:
+    """Active ticks by stock item id (only ``item_ids``' when given)."""
+    q = _active_lines(db, hh_id).filter(ShoppingLine.stock_item_id.isnot(None))
+    if item_ids is not None:
+        q = q.filter(ShoppingLine.stock_item_id.in_(list(item_ids)))
+    rows = q.all()
+    return {r.stock_item_id: r for r in rows}
+
+
+def one_off_lines(db: Session, hh_id: str) -> list[ShoppingLine]:
+    """Active one-off lines, oldest first."""
+    return (
+        _active_lines(db, hh_id)
+        .filter(ShoppingLine.stock_item_id.is_(None))
+        .order_by(ShoppingLine.created_at, ShoppingLine.id)
+        .all()
+    )
+
+
+def ticked_count(db: Session, hh_id: str) -> int:
+    """Active ticks on items still in the pantry, plus checked one-off lines."""
+    n = (
+        _active_lines(db, hh_id)
+        .outerjoin(StockItem, StockItem.id == ShoppingLine.stock_item_id)
+        .outerjoin(Product, Product.id == StockItem.product_id)
+        .filter(
+            ShoppingLine.checked_at.isnot(None),
+            or_(ShoppingLine.stock_item_id.is_(None), Product.archived_at.is_(None)),
+        )
+        .with_entities(func.count(ShoppingLine.id))
+        .scalar()
+    )
+    return int(n or 0)
+
+
+def _replayed(db: Session, hh_id: str, line_id: str | None, stock_item_id: str | None):
+    """The row a create with client id ``line_id`` already made, if any.
+    Raises ShoppingIdConflict when the id is taken by a row this create cannot
+    be a replay of (another household's, or another item / kind of line)."""
+    if not line_id:
+        return None
+    row = db.get(ShoppingLine, line_id)
+    if row is None:
+        return None
+    if row.household_id != hh_id or row.stock_item_id != stock_item_id:
+        raise ShoppingIdConflict(line_id)
+    return row
+
+
+def tick_item(
+    db: Session,
+    hh_id: str,
+    user_id: str | None,
+    stock_item_id: str,
+    quantity=None,
+    tick_id: str | None = None,
+) -> ShoppingLine | None:
+    """Tick a stock item on the shopping list. Idempotent: an item already
+    ticked returns its tick unchanged, and so does a replay of a client
+    ``tick_id`` (even once applied or cleared, so a late replay never ticks
+    again). ``quantity`` defaults to the item's restock quantity now. None if
+    the item is missing, foreign or archived."""
+    replay = _replayed(db, hh_id, tick_id, stock_item_id)
+    if replay is not None:
+        return replay
+    item = get_live_item(db, hh_id, stock_item_id)
+    if item is None:
+        return None
+
+    def existing():
+        return _active_lines(db, hh_id).filter(ShoppingLine.stock_item_id == item.id).first()
+
+    tick = existing()
+    if tick is not None:
+        return tick
+    qty = restock_quantity(item) if quantity is None else parse_quantity(quantity, allow_zero=False)
+    now = utcnow_naive()
+    tick = ShoppingLine(
+        **({"id": tick_id} if tick_id else {}),
+        household_id=hh_id,
+        stock_item_id=item.id,
+        quantity=qty,
+        checked_at=now,
+        created_by=user_id,
+        created_at=now,
+    )
+    try:
+        with db.begin_nested():
+            db.add(tick)
+    except IntegrityError:
+        # A concurrent create won: the same client id replayed, or someone
+        # else ticked the item. Theirs is the tick.
+        return _replayed(db, hh_id, tick_id, stock_item_id) or existing()
+    return tick
+
+
+def untick(db: Session, hh_id: str, tick_id: str) -> bool:
+    """Remove an active tick (hard delete). False if there is no such tick."""
+    n = (
+        _active_lines(db, hh_id)
+        .filter(ShoppingLine.id == tick_id, ShoppingLine.stock_item_id.isnot(None))
+        .delete(synchronize_session="fetch")
+    )
+    return n > 0
+
+
+def add_line(
+    db: Session,
+    hh_id: str,
+    user_id: str | None,
+    name: str,
+    quantity=None,
+    line_id: str | None = None,
+) -> ShoppingLine:
+    """Add a one-off line. A replay of a client ``line_id`` returns that line
+    as it is now (idempotent)."""
+    replay = _replayed(db, hh_id, line_id, None)
+    if replay is not None:
+        return replay
+    name = _clip(name, 200)
+    if not name:
+        raise StockError("Name is required.")
+    qty = None if quantity in (None, "") else parse_quantity(quantity, allow_zero=False)
+    line = ShoppingLine(
+        **({"id": line_id} if line_id else {}),
+        household_id=hh_id,
+        name=name,
+        quantity=qty,
+        created_by=user_id,
+        created_at=utcnow_naive(),
+    )
+    try:
+        with db.begin_nested():
+            db.add(line)
+    except IntegrityError:
+        replay = _replayed(db, hh_id, line_id, None)
+        if replay is None:
+            raise
+        return replay
+    return line
+
+
+def _one_off(db: Session, hh_id: str, line_id: str):
+    return _active_lines(db, hh_id).filter(
+        ShoppingLine.id == line_id, ShoppingLine.stock_item_id.is_(None)
+    )
+
+
+def set_line_checked(db: Session, hh_id: str, line_id: str, checked: bool) -> ShoppingLine | None:
+    line = _one_off(db, hh_id, line_id).first()
+    if line is None:
+        return None
+    if not checked:
+        line.checked_at = None
+    elif line.checked_at is None:
+        line.checked_at = utcnow_naive()
+    db.flush()
+    return line
+
+
+def delete_line(db: Session, hh_id: str, line_id: str) -> bool:
+    return _one_off(db, hh_id, line_id).delete(synchronize_session="fetch") > 0
+
+
+def apply_ticked(db: Session, hh_id: str, user_id: str | None) -> dict:
+    """Add every active tick's quantity to stock (a ``buy`` movement) and
+    clear it; clear every checked one-off line; leave unchecked lines.
+
+    One unit of work for the caller's single commit. The active rows are
+    locked (FOR UPDATE on Postgres), so a concurrent second call waits and
+    then finds nothing to apply. A tick whose item was archived meanwhile is
+    cleared without an adjust. Returns ``{"applied": [{stock_item_id, name,
+    before, after}], "cleared_lines": n}``.
+    """
+    now = utcnow_naive()
+    ticks = (
+        _active_lines(db, hh_id)
+        .filter(ShoppingLine.stock_item_id.isnot(None))
+        .order_by(ShoppingLine.created_at, ShoppingLine.id)
+        .with_for_update()
+        .all()
+    )
+    applied = []
+    for tick in ticks:
+        tick.cleared_at = now
+        item = get_live_item(db, hh_id, tick.stock_item_id)
+        if item is None:
+            continue
+        before = to_decimal(item.quantity)
+        qty = to_decimal(tick.quantity) if tick.quantity else restock_quantity(item)
+        adjust_stock(db, hh_id, item.id, qty, user_id, reason=StockReason.buy)
+        applied.append(
+            {
+                "stock_item_id": item.id,
+                "name": item.product.name,
+                "before": before,
+                "after": to_decimal(item.quantity),
+            }
+        )
+    lines = (
+        _active_lines(db, hh_id)
+        .filter(ShoppingLine.stock_item_id.is_(None), ShoppingLine.checked_at.isnot(None))
+        .with_for_update()
+        .all()
+    )
+    for line in lines:
+        line.cleared_at = now
+    db.flush()
+    return {"applied": applied, "cleared_lines": len(lines)}

@@ -1,6 +1,96 @@
 {
   "components": {
     "schemas": {
+      "AdviceDetailOut": {
+        "description": "app.services.stock.price_advice: the verdict and the figures behind it.",
+        "properties": {
+          "advice": {
+            "enum": [
+              "buy_now",
+              "wait",
+              "neutral",
+              "unknown"
+            ],
+            "title": "Advice",
+            "type": "string"
+          },
+          "as_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "current_min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Min"
+          },
+          "is_discount": {
+            "title": "Is Discount",
+            "type": "boolean"
+          },
+          "median_30d": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median 30D"
+          },
+          "min_90d": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min 90D"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "trend_pct_30d": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trend Pct 30D"
+          }
+        },
+        "required": [
+          "advice",
+          "reason",
+          "current_min",
+          "median_30d",
+          "min_90d",
+          "trend_pct_30d",
+          "is_discount",
+          "as_of"
+        ],
+        "title": "AdviceDetailOut",
+        "type": "object"
+      },
       "AlertTypeOut": {
         "properties": {
           "enabled": {
@@ -126,6 +216,55 @@
         "title": "ApplePayIn",
         "type": "object"
       },
+      "AppliedOut": {
+        "properties": {
+          "after": {
+            "title": "After",
+            "type": "number"
+          },
+          "before": {
+            "title": "Before",
+            "type": "number"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "stock_item_id": {
+            "title": "Stock Item Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stock_item_id",
+          "name",
+          "before",
+          "after"
+        ],
+        "title": "AppliedOut",
+        "type": "object"
+      },
+      "ApplyTickedOut": {
+        "properties": {
+          "applied": {
+            "items": {
+              "$ref": "#/components/schemas/AppliedOut"
+            },
+            "title": "Applied",
+            "type": "array"
+          },
+          "cleared_lines": {
+            "title": "Cleared Lines",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "applied",
+          "cleared_lines"
+        ],
+        "title": "ApplyTickedOut",
+        "type": "object"
+      },
       "BackupCodesOut": {
         "properties": {
           "backup_codes": {
@@ -140,6 +279,39 @@
           "backup_codes"
         ],
         "title": "BackupCodesOut",
+        "type": "object"
+      },
+      "BestStoreOut": {
+        "properties": {
+          "covers": {
+            "title": "Covers",
+            "type": "integer"
+          },
+          "missing": {
+            "title": "Missing",
+            "type": "integer"
+          },
+          "retailer": {
+            "title": "Retailer",
+            "type": "string"
+          },
+          "retailer_name": {
+            "title": "Retailer Name",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "number"
+          }
+        },
+        "required": [
+          "retailer",
+          "retailer_name",
+          "total",
+          "covers",
+          "missing"
+        ],
+        "title": "BestStoreOut",
         "type": "object"
       },
       "BillIn": {
@@ -2610,6 +2782,51 @@
         "title": "ChangesIn",
         "type": "object"
       },
+      "CheapestOut": {
+        "properties": {
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "is_discount": {
+            "title": "Is Discount",
+            "type": "boolean"
+          },
+          "price": {
+            "title": "Price",
+            "type": "number"
+          },
+          "retailer": {
+            "title": "Retailer",
+            "type": "string"
+          },
+          "retailer_name": {
+            "title": "Retailer Name",
+            "type": "string"
+          },
+          "unit_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Price"
+          }
+        },
+        "required": [
+          "retailer",
+          "retailer_name",
+          "price",
+          "unit_price",
+          "is_discount",
+          "date"
+        ],
+        "title": "CheapestOut",
+        "type": "object"
+      },
       "CountsOut": {
         "properties": {
           "duplicate_groups": {
@@ -3049,6 +3266,24 @@
         "title": "HistoryOut",
         "type": "object"
       },
+      "HistoryPointOut": {
+        "properties": {
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "min_price": {
+            "title": "Min Price",
+            "type": "number"
+          }
+        },
+        "required": [
+          "date",
+          "min_price"
+        ],
+        "title": "HistoryPointOut",
+        "type": "object"
+      },
       "HouseholdIn": {
         "properties": {
           "default_currency": {
@@ -3065,6 +3300,24 @@
           "name"
         ],
         "title": "HouseholdIn",
+        "type": "object"
+      },
+      "InPantryOut": {
+        "properties": {
+          "quantity": {
+            "title": "Quantity",
+            "type": "number"
+          },
+          "stock_item_id": {
+            "title": "Stock Item Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stock_item_id",
+          "quantity"
+        ],
+        "title": "InPantryOut",
         "type": "object"
       },
       "IncomeIn": {
@@ -3142,6 +3395,57 @@
           "amount"
         ],
         "title": "IncomeIn",
+        "type": "object"
+      },
+      "LineCheckIn": {
+        "properties": {
+          "checked": {
+            "title": "Checked",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "checked"
+        ],
+        "title": "LineCheckIn",
+        "type": "object"
+      },
+      "LineIn": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "LineIn",
         "type": "object"
       },
       "LoginRequest": {
@@ -3748,6 +4052,363 @@
           "transaction_count"
         ],
         "title": "PersonShareOut",
+        "type": "object"
+      },
+      "PricePointOut": {
+        "properties": {
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "is_discount": {
+            "title": "Is Discount",
+            "type": "boolean"
+          },
+          "price": {
+            "title": "Price",
+            "type": "number"
+          },
+          "retailer": {
+            "title": "Retailer",
+            "type": "string"
+          },
+          "unit_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Price"
+          }
+        },
+        "required": [
+          "date",
+          "retailer",
+          "price",
+          "unit_price",
+          "is_discount"
+        ],
+        "title": "PricePointOut",
+        "type": "object"
+      },
+      "PriceStatsOut": {
+        "properties": {
+          "avg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg"
+          },
+          "max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min"
+          }
+        },
+        "required": [
+          "min",
+          "max",
+          "avg"
+        ],
+        "title": "PriceStatsOut",
+        "type": "object"
+      },
+      "PriceTodayOut": {
+        "properties": {
+          "is_discount": {
+            "title": "Is Discount",
+            "type": "boolean"
+          },
+          "price": {
+            "title": "Price",
+            "type": "number"
+          },
+          "retailer": {
+            "title": "Retailer",
+            "type": "string"
+          },
+          "retailer_name": {
+            "title": "Retailer Name",
+            "type": "string"
+          },
+          "unit_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Price"
+          }
+        },
+        "required": [
+          "retailer",
+          "retailer_name",
+          "price",
+          "unit_price",
+          "is_discount"
+        ],
+        "title": "PriceTodayOut",
+        "type": "object"
+      },
+      "ProductLookupErrorOut": {
+        "description": "404 (not on PosoKanei) and 503 (prices unavailable) on the barcode\nlookup: the usual string ``detail`` plus the household's pantry match by\nbarcode.",
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "in_pantry": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InPantryOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "detail",
+          "in_pantry"
+        ],
+        "title": "ProductLookupErrorOut",
+        "type": "object"
+      },
+      "ProductLookupOut": {
+        "properties": {
+          "barcode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Barcode"
+          },
+          "brand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/PricePointOut"
+            },
+            "title": "History",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
+          },
+          "in_pantry": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InPantryOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "price_stats": {
+            "$ref": "#/components/schemas/PriceStatsOut"
+          },
+          "retailer_prices": {
+            "items": {
+              "$ref": "#/components/schemas/RetailerPriceOut"
+            },
+            "title": "Retailer Prices",
+            "type": "array"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "unit_quantity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Quantity"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "brand",
+          "barcode",
+          "unit",
+          "unit_quantity",
+          "image_url",
+          "retailer_prices",
+          "price_stats",
+          "history",
+          "in_pantry"
+        ],
+        "title": "ProductLookupOut",
+        "type": "object"
+      },
+      "ProductOut": {
+        "description": "A PosoKanei product (app.integrations.posokanei.ProductSummary).",
+        "properties": {
+          "barcode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Barcode"
+          },
+          "brand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/PricePointOut"
+            },
+            "title": "History",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "price_stats": {
+            "$ref": "#/components/schemas/PriceStatsOut"
+          },
+          "retailer_prices": {
+            "items": {
+              "$ref": "#/components/schemas/RetailerPriceOut"
+            },
+            "title": "Retailer Prices",
+            "type": "array"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "unit_quantity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Quantity"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "brand",
+          "barcode",
+          "unit",
+          "unit_quantity",
+          "image_url",
+          "retailer_prices",
+          "price_stats",
+          "history"
+        ],
+        "title": "ProductOut",
         "type": "object"
       },
       "ProfileIn": {
@@ -4403,6 +5064,77 @@
         "title": "RecurringItemOut",
         "type": "object"
       },
+      "RetailerPriceOut": {
+        "properties": {
+          "discount_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discount Pct"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "is_discount": {
+            "title": "Is Discount",
+            "type": "boolean"
+          },
+          "last_updated": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Updated"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price"
+          },
+          "retailer": {
+            "title": "Retailer",
+            "type": "string"
+          },
+          "unit_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Price"
+          }
+        },
+        "required": [
+          "retailer",
+          "display_name",
+          "price",
+          "unit_price",
+          "is_discount",
+          "discount_pct",
+          "last_updated"
+        ],
+        "title": "RetailerPriceOut",
+        "type": "object"
+      },
       "RulePreviewIn": {
         "description": "The schedule fields of RecurringItemIn, plus how many dates to return.",
         "properties": {
@@ -4664,6 +5396,307 @@
         "title": "SettleIn",
         "type": "object"
       },
+      "ShoppingGroupOut": {
+        "properties": {
+          "item_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Item Ids",
+            "type": "array"
+          },
+          "retailer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retailer"
+          },
+          "retailer_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retailer Name"
+          },
+          "total": {
+            "title": "Total",
+            "type": "number"
+          }
+        },
+        "required": [
+          "retailer",
+          "retailer_name",
+          "total",
+          "item_ids"
+        ],
+        "title": "ShoppingGroupOut",
+        "type": "object"
+      },
+      "ShoppingLineOut": {
+        "description": "A one-off line the user added to the shopping list.",
+        "properties": {
+          "checked": {
+            "title": "Checked",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "quantity",
+          "checked"
+        ],
+        "title": "ShoppingLineOut",
+        "type": "object"
+      },
+      "ShoppingOut": {
+        "properties": {
+          "best_single_store": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BestStoreOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/ShoppingGroupOut"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ShoppingRowOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/ShoppingLineOut"
+            },
+            "title": "Lines",
+            "type": "array"
+          },
+          "ticked_count": {
+            "title": "Ticked Count",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "number"
+          },
+          "unpriced": {
+            "title": "Unpriced",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "groups",
+          "best_single_store",
+          "total",
+          "unpriced",
+          "lines",
+          "ticked_count"
+        ],
+        "title": "ShoppingOut",
+        "type": "object"
+      },
+      "ShoppingRowOut": {
+        "properties": {
+          "advice": {
+            "enum": [
+              "buy_now",
+              "wait",
+              "neutral",
+              "unknown"
+            ],
+            "title": "Advice",
+            "type": "string"
+          },
+          "advice_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Advice Reason"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "line_total": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Line Total"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "need_qty": {
+            "title": "Need Qty",
+            "type": "number"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price"
+          },
+          "quantity": {
+            "title": "Quantity",
+            "type": "number"
+          },
+          "reason": {
+            "enum": [
+              "low",
+              "runout",
+              "ticked"
+            ],
+            "title": "Reason",
+            "type": "string"
+          },
+          "retailer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retailer"
+          },
+          "retailer_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retailer Name"
+          },
+          "runout_days_estimate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runout Days Estimate"
+          },
+          "tick_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tick Id"
+          },
+          "ticked": {
+            "title": "Ticked",
+            "type": "boolean"
+          },
+          "trend_pct_30d": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trend Pct 30D"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "need_qty",
+          "reason",
+          "runout_days_estimate",
+          "retailer",
+          "retailer_name",
+          "price",
+          "line_total",
+          "advice",
+          "advice_reason",
+          "trend_pct_30d",
+          "unit",
+          "quantity",
+          "ticked",
+          "tick_id"
+        ],
+        "title": "ShoppingRowOut",
+        "type": "object"
+      },
       "SkippedOut": {
         "properties": {
           "code": {
@@ -4755,6 +5788,17 @@
             ],
             "title": "Brand"
           },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
+          },
           "min_quantity": {
             "anyOf": [
               {
@@ -4804,6 +5848,20 @@
               }
             ],
             "title": "Unit"
+          },
+          "unit_quantity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Quantity"
           }
         },
         "required": [
@@ -4814,6 +5872,17 @@
       },
       "StockAdjust": {
         "properties": {
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
           "delta": {
             "anyOf": [
               {
@@ -4830,6 +5899,430 @@
           "delta"
         ],
         "title": "StockAdjust",
+        "type": "object"
+      },
+      "StockDetailOut": {
+        "properties": {
+          "advice": {
+            "enum": [
+              "buy_now",
+              "wait",
+              "neutral",
+              "unknown"
+            ],
+            "title": "Advice",
+            "type": "string"
+          },
+          "advice_detail": {
+            "$ref": "#/components/schemas/AdviceDetailOut"
+          },
+          "barcode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Barcode"
+          },
+          "brand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand"
+          },
+          "cheapest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CheapestOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryPointOut"
+            },
+            "title": "History",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
+          },
+          "low": {
+            "title": "Low",
+            "type": "boolean"
+          },
+          "min_quantity": {
+            "title": "Min Quantity",
+            "type": "number"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "need_qty": {
+            "title": "Need Qty",
+            "type": "number"
+          },
+          "posokanei_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Posokanei Id"
+          },
+          "prices_as_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prices As Of"
+          },
+          "prices_today": {
+            "items": {
+              "$ref": "#/components/schemas/PriceTodayOut"
+            },
+            "title": "Prices Today",
+            "type": "array"
+          },
+          "product_id": {
+            "title": "Product Id",
+            "type": "string"
+          },
+          "quantity": {
+            "title": "Quantity",
+            "type": "number"
+          },
+          "runout_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runout Days"
+          },
+          "tick_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tick Id"
+          },
+          "ticked": {
+            "title": "Ticked",
+            "type": "boolean"
+          },
+          "track_price": {
+            "title": "Track Price",
+            "type": "boolean"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "unit_quantity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Quantity"
+          }
+        },
+        "required": [
+          "id",
+          "product_id",
+          "name",
+          "brand",
+          "barcode",
+          "posokanei_id",
+          "quantity",
+          "min_quantity",
+          "track_price",
+          "low",
+          "cheapest",
+          "unit",
+          "unit_quantity",
+          "image_url",
+          "need_qty",
+          "runout_days",
+          "advice",
+          "ticked",
+          "tick_id",
+          "prices_today",
+          "history",
+          "advice_detail",
+          "prices_as_of"
+        ],
+        "title": "StockDetailOut",
+        "type": "object"
+      },
+      "StockItemOut": {
+        "description": "A pantry row. ``need_qty`` is what a restock buys (max(1, ceil(2\u00b7min \u2212\nqty))); ``runout_days`` is a whole-day estimate (floored), null without\nenough use history; ``advice`` is the price-advice verdict.",
+        "properties": {
+          "advice": {
+            "enum": [
+              "buy_now",
+              "wait",
+              "neutral",
+              "unknown"
+            ],
+            "title": "Advice",
+            "type": "string"
+          },
+          "barcode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Barcode"
+          },
+          "brand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand"
+          },
+          "cheapest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CheapestOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
+          },
+          "low": {
+            "title": "Low",
+            "type": "boolean"
+          },
+          "min_quantity": {
+            "title": "Min Quantity",
+            "type": "number"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "need_qty": {
+            "title": "Need Qty",
+            "type": "number"
+          },
+          "posokanei_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Posokanei Id"
+          },
+          "product_id": {
+            "title": "Product Id",
+            "type": "string"
+          },
+          "quantity": {
+            "title": "Quantity",
+            "type": "number"
+          },
+          "runout_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runout Days"
+          },
+          "tick_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tick Id"
+          },
+          "ticked": {
+            "title": "Ticked",
+            "type": "boolean"
+          },
+          "track_price": {
+            "title": "Track Price",
+            "type": "boolean"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "unit_quantity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Quantity"
+          }
+        },
+        "required": [
+          "id",
+          "product_id",
+          "name",
+          "brand",
+          "barcode",
+          "posokanei_id",
+          "quantity",
+          "min_quantity",
+          "track_price",
+          "low",
+          "cheapest",
+          "unit",
+          "unit_quantity",
+          "image_url",
+          "need_qty",
+          "runout_days",
+          "advice",
+          "ticked",
+          "tick_id"
+        ],
+        "title": "StockItemOut",
+        "type": "object"
+      },
+      "StockSettingsIn": {
+        "properties": {
+          "min_quantity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Quantity"
+          },
+          "track_price": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Price"
+          }
+        },
+        "title": "StockSettingsIn",
+        "type": "object"
+      },
+      "StockSummaryOut": {
+        "properties": {
+          "low_count": {
+            "title": "Low Count",
+            "type": "integer"
+          },
+          "ticked_count": {
+            "title": "Ticked Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "low_count",
+          "ticked_count"
+        ],
+        "title": "StockSummaryOut",
         "type": "object"
       },
       "StrictTransactionFilter": {
@@ -5063,6 +6556,67 @@
           "labelled_out"
         ],
         "title": "SummaryWalletOut",
+        "type": "object"
+      },
+      "TickIn": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "stock_item_id": {
+            "title": "Stock Item Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stock_item_id"
+        ],
+        "title": "TickIn",
+        "type": "object"
+      },
+      "TickOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "quantity": {
+            "title": "Quantity",
+            "type": "number"
+          },
+          "stock_item_id": {
+            "title": "Stock Item Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "stock_item_id",
+          "quantity"
+        ],
+        "title": "TickOut",
         "type": "object"
       },
       "TokenIn": {
@@ -8159,10 +9713,22 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ProductLookupOut"
+                }
               }
             },
             "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductLookupErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
           },
           "422": {
             "content": {
@@ -8173,6 +9739,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductLookupErrorOut"
+                }
+              }
+            },
+            "description": "Service Unavailable"
           }
         },
         "security": [
@@ -8205,7 +9781,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProductOut"
+                  },
+                  "title": "Response Search Products Api V1 Products Search Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -9757,7 +11339,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StockItemOut"
+                  },
+                  "title": "Response List Stock Api V1 Stock Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -9789,7 +11377,9 @@
           "201": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/StockItemOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -9823,7 +11413,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ShoppingOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -9835,6 +11427,389 @@
           }
         ],
         "summary": "Shopping",
+        "tags": [
+          "stock"
+        ]
+      }
+    },
+    "/api/v1/stock/shopping/apply-ticked": {
+      "post": {
+        "description": "Add the ticked items to the pantry and clear the checked one-off lines,\nin one transaction. Never touches transactions; a second call with\nnothing ticked returns empty results.",
+        "operationId": "apply_ticked_api_v1_stock_shopping_apply_ticked_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplyTickedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Apply Ticked",
+        "tags": [
+          "stock"
+        ]
+      }
+    },
+    "/api/v1/stock/shopping/lines": {
+      "post": {
+        "operationId": "add_line_api_v1_stock_shopping_lines_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LineIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShoppingLineOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Add Line",
+        "tags": [
+          "stock"
+        ]
+      }
+    },
+    "/api/v1/stock/shopping/lines/{line_id}": {
+      "delete": {
+        "operationId": "delete_line_api_v1_stock_shopping_lines__line_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "line_id",
+            "required": true,
+            "schema": {
+              "title": "Line Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Line",
+        "tags": [
+          "stock"
+        ]
+      },
+      "patch": {
+        "operationId": "check_line_api_v1_stock_shopping_lines__line_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "line_id",
+            "required": true,
+            "schema": {
+              "title": "Line Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LineCheckIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShoppingLineOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Check Line",
+        "tags": [
+          "stock"
+        ]
+      }
+    },
+    "/api/v1/stock/shopping/ticks": {
+      "post": {
+        "description": "Tick a shopping-list item. Idempotent: ticking it again returns the\nexisting tick unchanged. Never changes stock.",
+        "operationId": "tick_api_v1_stock_shopping_ticks_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TickIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TickOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Tick",
+        "tags": [
+          "stock"
+        ]
+      }
+    },
+    "/api/v1/stock/shopping/ticks/{tick_id}": {
+      "delete": {
+        "operationId": "untick_api_v1_stock_shopping_ticks__tick_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tick_id",
+            "required": true,
+            "schema": {
+              "title": "Tick Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Untick",
+        "tags": [
+          "stock"
+        ]
+      }
+    },
+    "/api/v1/stock/summary": {
+      "get": {
+        "operationId": "stock_summary_api_v1_stock_summary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StockSummaryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Stock Summary",
+        "tags": [
+          "stock"
+        ]
+      }
+    },
+    "/api/v1/stock/{item_id}": {
+      "get": {
+        "operationId": "stock_detail_api_v1_stock__item_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StockDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Stock Detail",
+        "tags": [
+          "stock"
+        ]
+      },
+      "patch": {
+        "operationId": "stock_settings_api_v1_stock__item_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StockSettingsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StockItemOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Stock Settings",
         "tags": [
           "stock"
         ]
@@ -9868,7 +11843,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/StockItemOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -9890,6 +11867,95 @@
           }
         ],
         "summary": "Adjust Stock",
+        "tags": [
+          "stock"
+        ]
+      }
+    },
+    "/api/v1/stock/{item_id}/archive": {
+      "post": {
+        "description": "Hide the product (its history stays) and clear its active tick.",
+        "operationId": "stock_archive_api_v1_stock__item_id__archive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Stock Archive",
+        "tags": [
+          "stock"
+        ]
+      }
+    },
+    "/api/v1/stock/{item_id}/refresh": {
+      "post": {
+        "description": "Fetch today's prices from PosoKanei (503 when it is unavailable). A\nproduct not linked to PosoKanei has nothing to fetch: its detail as is.",
+        "operationId": "stock_refresh_api_v1_stock__item_id__refresh_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StockDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Stock Refresh",
         "tags": [
           "stock"
         ]
