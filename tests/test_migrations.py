@@ -430,3 +430,23 @@ def test_shopping_lines_migration_round_trip_and_active_tick_index(tmp_path):
     assert "shopping_lines" not in inspect(create_engine(db_url)).get_table_names()
     up = _alembic(["upgrade", "head"], db_url)
     assert up.returncode == 0, up.stderr
+
+
+def test_stock_movements_client_id_migration_round_trip(tmp_path):
+    """Pantry §4.8: e1f2a3b4c5d6 also adds stock_movements.client_id (the
+    stepper's dedupe key), indexed, and drops it on downgrade."""
+    db_url = _db_url(tmp_path, "client_id.db")
+    up = _alembic(["upgrade", "head"], db_url)
+    assert up.returncode == 0, up.stderr
+    insp = inspect(create_engine(db_url))
+    assert "client_id" in {c["name"] for c in insp.get_columns("stock_movements")}
+    assert "ix_stock_movements_client_id" in {
+        i["name"] for i in insp.get_indexes("stock_movements")
+    }
+
+    down = _alembic(["downgrade", "d0e1f2a3b4c5"], db_url)
+    assert down.returncode == 0, down.stderr
+    insp = inspect(create_engine(db_url))
+    assert "client_id" not in {c["name"] for c in insp.get_columns("stock_movements")}
+    up = _alembic(["upgrade", "head"], db_url)
+    assert up.returncode == 0, up.stderr

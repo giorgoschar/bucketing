@@ -3,7 +3,13 @@
 A row with ``stock_item_id`` is a tick on a computed shopping-list item; one
 without is a one-off line (``name``). Active means ``cleared_at IS NULL``; a
 partial unique index allows one active tick per stock item (pantry spec
-§3.1). Additive: the downgrade drops the table.
+§3.1).
+
+Also ``stock_movements.client_id``: the PWA's queued stepper sends one per
+tap, and a replay within 24 h is not applied twice (spec §4.8). Indexed,
+not unique: the dedupe window is 24 h.
+
+Additive: the downgrade drops the table and the column.
 
 Revision ID: e1f2a3b4c5d6
 Revises: d0e1f2a3b4c5
@@ -61,9 +67,15 @@ def upgrade() -> None:
         sqlite_where=sa.text(_ACTIVE_TICK),
         postgresql_where=sa.text(_ACTIVE_TICK),
     )
+    with op.batch_alter_table("stock_movements") as batch:
+        batch.add_column(sa.Column("client_id", sa.String(length=64), nullable=True))
+        batch.create_index("ix_stock_movements_client_id", ["client_id"])
 
 
 def downgrade() -> None:
+    with op.batch_alter_table("stock_movements") as batch:
+        batch.drop_index("ix_stock_movements_client_id")
+        batch.drop_column("client_id")
     op.drop_index("uq_shopping_lines_active_tick", table_name="shopping_lines")
     op.drop_index("ix_shopping_lines_household_id", table_name="shopping_lines")
     op.drop_table("shopping_lines")

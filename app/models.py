@@ -1013,7 +1013,10 @@ class StockMovement(Base):
     """Consumption/purchase log; drives run-out prediction."""
 
     __tablename__ = "stock_movements"
-    __table_args__ = (Index("ix_stock_movements_item_created", "stock_item_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_stock_movements_item_created", "stock_item_id", "created_at"),
+        Index("ix_stock_movements_client_id", "client_id"),
+    )
 
     id = Column(String, primary_key=True, default=gen_id)
     stock_item_id = Column(String, ForeignKey("stock_items.id", ondelete="CASCADE"), nullable=False)
@@ -1021,6 +1024,9 @@ class StockMovement(Base):
     reason = Column(String(12), nullable=False)  # StockReason value
     created_at = Column(DateTime, default=utcnow_naive)
     created_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    # The PWA's queued ± stepper sends one per tap; a replay of the same id
+    # within 24 h (same household) is not applied again (Pantry spec §4.8).
+    client_id = Column(String(64), nullable=True)
 
     stock_item = relationship("StockItem", back_populates="movements")
 

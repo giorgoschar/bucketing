@@ -1276,6 +1276,136 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/stock/shopping/apply-ticked": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Ticked
+         * @description Add the ticked items to the pantry and clear the checked one-off lines,
+         *     in one transaction. Never touches transactions; a second call with
+         *     nothing ticked returns empty results.
+         */
+        post: operations["apply_ticked_api_v1_stock_shopping_apply_ticked_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/stock/shopping/lines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add Line */
+        post: operations["add_line_api_v1_stock_shopping_lines_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/stock/shopping/lines/{line_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Line */
+        delete: operations["delete_line_api_v1_stock_shopping_lines__line_id__delete"];
+        options?: never;
+        head?: never;
+        /** Check Line */
+        patch: operations["check_line_api_v1_stock_shopping_lines__line_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/stock/shopping/ticks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tick
+         * @description Tick a shopping-list item. Idempotent: ticking it again returns the
+         *     existing tick unchanged. Never changes stock.
+         */
+        post: operations["tick_api_v1_stock_shopping_ticks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/stock/shopping/ticks/{tick_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Untick */
+        delete: operations["untick_api_v1_stock_shopping_ticks__tick_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/stock/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stock Summary */
+        get: operations["stock_summary_api_v1_stock_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/stock/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stock Detail */
+        get: operations["stock_detail_api_v1_stock__item_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Stock Settings */
+        patch: operations["stock_settings_api_v1_stock__item_id__patch"];
+        trace?: never;
+    };
     "/api/v1/stock/{item_id}/adjust": {
         parameters: {
             query?: never;
@@ -1287,6 +1417,47 @@ export interface paths {
         put?: never;
         /** Adjust Stock */
         post: operations["adjust_stock_api_v1_stock__item_id__adjust_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/stock/{item_id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stock Archive
+         * @description Hide the product (its history stays) and clear its active tick.
+         */
+        post: operations["stock_archive_api_v1_stock__item_id__archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/stock/{item_id}/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stock Refresh
+         * @description Fetch today's prices from PosoKanei (503 when it is unavailable). A
+         *     product not linked to PosoKanei has nothing to fetch: its detail as is.
+         */
+        post: operations["stock_refresh_api_v1_stock__item_id__refresh_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1554,6 +1725,31 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AdviceDetailOut
+         * @description app.services.stock.price_advice: the verdict and the figures behind it.
+         */
+        AdviceDetailOut: {
+            /**
+             * Advice
+             * @enum {string}
+             */
+            advice: "buy_now" | "wait" | "neutral" | "unknown";
+            /** As Of */
+            as_of: string | null;
+            /** Current Min */
+            current_min: number | null;
+            /** Is Discount */
+            is_discount: boolean;
+            /** Median 30D */
+            median_30d: number | null;
+            /** Min 90D */
+            min_90d: number | null;
+            /** Reason */
+            reason: string;
+            /** Trend Pct 30D */
+            trend_pct_30d: number | null;
+        };
         /** AlertTypeOut */
         AlertTypeOut: {
             /** Enabled */
@@ -1582,10 +1778,41 @@ export interface components {
             /** Occurred At */
             occurred_at?: string | null;
         };
+        /** AppliedOut */
+        AppliedOut: {
+            /** After */
+            after: number;
+            /** Before */
+            before: number;
+            /** Name */
+            name: string;
+            /** Stock Item Id */
+            stock_item_id: string;
+        };
+        /** ApplyTickedOut */
+        ApplyTickedOut: {
+            /** Applied */
+            applied: components["schemas"]["AppliedOut"][];
+            /** Cleared Lines */
+            cleared_lines: number;
+        };
         /** BackupCodesOut */
         BackupCodesOut: {
             /** Backup Codes */
             backup_codes: string[];
+        };
+        /** BestStoreOut */
+        BestStoreOut: {
+            /** Covers */
+            covers: number;
+            /** Missing */
+            missing: number;
+            /** Retailer */
+            retailer: string;
+            /** Retailer Name */
+            retailer_name: string;
+            /** Total */
+            total: number;
         };
         /** BillIn */
         BillIn: {
@@ -2819,6 +3046,21 @@ export interface components {
             /** Payment Method */
             payment_method?: string | null;
         };
+        /** CheapestOut */
+        CheapestOut: {
+            /** Date */
+            date: string;
+            /** Is Discount */
+            is_discount: boolean;
+            /** Price */
+            price: number;
+            /** Retailer */
+            retailer: string;
+            /** Retailer Name */
+            retailer_name: string;
+            /** Unit Price */
+            unit_price: number | null;
+        };
         /** CountsOut */
         CountsOut: {
             /** Duplicate Groups */
@@ -2958,6 +3200,13 @@ export interface components {
             /** Events */
             events: components["schemas"]["HistoryEventOut"][];
         };
+        /** HistoryPointOut */
+        HistoryPointOut: {
+            /** Date */
+            date: string;
+            /** Min Price */
+            min_price: number;
+        };
         /** HouseholdIn */
         HouseholdIn: {
             /**
@@ -2967,6 +3216,13 @@ export interface components {
             default_currency: string;
             /** Name */
             name: string;
+        };
+        /** InPantryOut */
+        InPantryOut: {
+            /** Quantity */
+            quantity: number;
+            /** Stock Item Id */
+            stock_item_id: string;
         };
         /** IncomeIn */
         IncomeIn: {
@@ -2993,6 +3249,18 @@ export interface components {
              * @default
              */
             transaction_date: string;
+        };
+        /** LineCheckIn */
+        LineCheckIn: {
+            /** Checked */
+            checked: boolean;
+        };
+        /** LineIn */
+        LineIn: {
+            /** Name */
+            name: string;
+            /** Quantity */
+            quantity?: number | string | null;
         };
         /** LoginRequest */
         LoginRequest: {
@@ -3182,6 +3450,89 @@ export interface components {
             transaction_count: number;
             /** User Id */
             user_id: string;
+        };
+        /** PricePointOut */
+        PricePointOut: {
+            /** Date */
+            date: string;
+            /** Is Discount */
+            is_discount: boolean;
+            /** Price */
+            price: number;
+            /** Retailer */
+            retailer: string;
+            /** Unit Price */
+            unit_price: number | null;
+        };
+        /** PriceStatsOut */
+        PriceStatsOut: {
+            /** Avg */
+            avg: number | null;
+            /** Max */
+            max: number | null;
+            /** Min */
+            min: number | null;
+        };
+        /** PriceTodayOut */
+        PriceTodayOut: {
+            /** Is Discount */
+            is_discount: boolean;
+            /** Price */
+            price: number;
+            /** Retailer */
+            retailer: string;
+            /** Retailer Name */
+            retailer_name: string;
+            /** Unit Price */
+            unit_price: number | null;
+        };
+        /** ProductLookupOut */
+        ProductLookupOut: {
+            /** Barcode */
+            barcode: string | null;
+            /** Brand */
+            brand: string | null;
+            /** History */
+            history: components["schemas"]["PricePointOut"][];
+            /** Id */
+            id: string;
+            /** Image Url */
+            image_url: string | null;
+            in_pantry: components["schemas"]["InPantryOut"] | null;
+            /** Name */
+            name: string;
+            price_stats: components["schemas"]["PriceStatsOut"];
+            /** Retailer Prices */
+            retailer_prices: components["schemas"]["RetailerPriceOut"][];
+            /** Unit */
+            unit: string | null;
+            /** Unit Quantity */
+            unit_quantity: number | null;
+        };
+        /**
+         * ProductOut
+         * @description A PosoKanei product (app.integrations.posokanei.ProductSummary).
+         */
+        ProductOut: {
+            /** Barcode */
+            barcode: string | null;
+            /** Brand */
+            brand: string | null;
+            /** History */
+            history: components["schemas"]["PricePointOut"][];
+            /** Id */
+            id: string;
+            /** Image Url */
+            image_url: string | null;
+            /** Name */
+            name: string;
+            price_stats: components["schemas"]["PriceStatsOut"];
+            /** Retailer Prices */
+            retailer_prices: components["schemas"]["RetailerPriceOut"][];
+            /** Unit */
+            unit: string | null;
+            /** Unit Quantity */
+            unit_quantity: number | null;
         };
         /** ProfileIn */
         ProfileIn: {
@@ -3382,6 +3733,23 @@ export interface components {
             /** Total Occurrences */
             total_occurrences: number | null;
         };
+        /** RetailerPriceOut */
+        RetailerPriceOut: {
+            /** Discount Pct */
+            discount_pct: number | null;
+            /** Display Name */
+            display_name: string;
+            /** Is Discount */
+            is_discount: boolean;
+            /** Last Updated */
+            last_updated: string | null;
+            /** Price */
+            price: number | null;
+            /** Retailer */
+            retailer: string;
+            /** Unit Price */
+            unit_price: number | null;
+        };
         /**
          * RulePreviewIn
          * @description The schedule fields of RecurringItemIn, plus how many dates to return.
@@ -3464,6 +3832,88 @@ export interface components {
             /** To User Id */
             to_user_id?: string | null;
         };
+        /** ShoppingGroupOut */
+        ShoppingGroupOut: {
+            /** Item Ids */
+            item_ids: string[];
+            /** Retailer */
+            retailer: string | null;
+            /** Retailer Name */
+            retailer_name: string | null;
+            /** Total */
+            total: number;
+        };
+        /**
+         * ShoppingLineOut
+         * @description A one-off line the user added to the shopping list.
+         */
+        ShoppingLineOut: {
+            /** Checked */
+            checked: boolean;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Quantity */
+            quantity: number | null;
+        };
+        /** ShoppingOut */
+        ShoppingOut: {
+            best_single_store: components["schemas"]["BestStoreOut"] | null;
+            /** Groups */
+            groups: components["schemas"]["ShoppingGroupOut"][];
+            /** Items */
+            items: components["schemas"]["ShoppingRowOut"][];
+            /** Lines */
+            lines: components["schemas"]["ShoppingLineOut"][];
+            /** Ticked Count */
+            ticked_count: number;
+            /** Total */
+            total: number;
+            /** Unpriced */
+            unpriced: number;
+        };
+        /** ShoppingRowOut */
+        ShoppingRowOut: {
+            /**
+             * Advice
+             * @enum {string}
+             */
+            advice: "buy_now" | "wait" | "neutral" | "unknown";
+            /** Advice Reason */
+            advice_reason: string | null;
+            /** Id */
+            id: string;
+            /** Line Total */
+            line_total: number | null;
+            /** Name */
+            name: string;
+            /** Need Qty */
+            need_qty: number;
+            /** Price */
+            price: number | null;
+            /** Quantity */
+            quantity: number;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "low" | "runout";
+            /** Retailer */
+            retailer: string | null;
+            /** Retailer Name */
+            retailer_name: string | null;
+            /** Runout Days Estimate */
+            runout_days_estimate: number | null;
+            /** Tick Id */
+            tick_id: string | null;
+            /** Ticked */
+            ticked: boolean;
+            /** Trend Pct 30D */
+            trend_pct_30d: number | null;
+            /** Unit */
+            unit: string | null;
+        };
         /** SkippedOut */
         SkippedOut: {
             /** Code */
@@ -3493,6 +3943,8 @@ export interface components {
             barcode?: string | null;
             /** Brand */
             brand?: string | null;
+            /** Image Url */
+            image_url?: string | null;
             /**
              * Min Quantity
              * @default 1
@@ -3509,11 +3961,127 @@ export interface components {
             quantity: number | string;
             /** Unit */
             unit?: string | null;
+            /** Unit Quantity */
+            unit_quantity?: number | string | null;
         };
         /** StockAdjust */
         StockAdjust: {
+            /** Client Id */
+            client_id?: string | null;
             /** Delta */
             delta: number | string;
+        };
+        /** StockDetailOut */
+        StockDetailOut: {
+            /**
+             * Advice
+             * @enum {string}
+             */
+            advice: "buy_now" | "wait" | "neutral" | "unknown";
+            advice_detail: components["schemas"]["AdviceDetailOut"];
+            /** Barcode */
+            barcode: string | null;
+            /** Brand */
+            brand: string | null;
+            cheapest: components["schemas"]["CheapestOut"] | null;
+            /** History */
+            history: components["schemas"]["HistoryPointOut"][];
+            /** Id */
+            id: string;
+            /** Image Url */
+            image_url: string | null;
+            /** Low */
+            low: boolean;
+            /** Min Quantity */
+            min_quantity: number;
+            /** Name */
+            name: string;
+            /** Need Qty */
+            need_qty: number;
+            /** Posokanei Id */
+            posokanei_id: string | null;
+            /** Prices As Of */
+            prices_as_of: string | null;
+            /** Prices Today */
+            prices_today: components["schemas"]["PriceTodayOut"][];
+            /** Product Id */
+            product_id: string;
+            /** Quantity */
+            quantity: number;
+            /** Runout Days */
+            runout_days: number | null;
+            /** Tick Id */
+            tick_id: string | null;
+            /** Ticked */
+            ticked: boolean;
+            /** Track Price */
+            track_price: boolean;
+            /** Unit */
+            unit: string | null;
+            /** Unit Quantity */
+            unit_quantity: number | null;
+        };
+        /**
+         * StockItemOut
+         * @description A pantry row. ``need_qty`` is what a restock buys (max(1, ceil(2·min −
+         *     qty))); ``runout_days`` is a whole-day estimate (floored), null without
+         *     enough use history; ``advice`` is the price-advice verdict.
+         */
+        StockItemOut: {
+            /**
+             * Advice
+             * @enum {string}
+             */
+            advice: "buy_now" | "wait" | "neutral" | "unknown";
+            /** Barcode */
+            barcode: string | null;
+            /** Brand */
+            brand: string | null;
+            cheapest: components["schemas"]["CheapestOut"] | null;
+            /** Id */
+            id: string;
+            /** Image Url */
+            image_url: string | null;
+            /** Low */
+            low: boolean;
+            /** Min Quantity */
+            min_quantity: number;
+            /** Name */
+            name: string;
+            /** Need Qty */
+            need_qty: number;
+            /** Posokanei Id */
+            posokanei_id: string | null;
+            /** Product Id */
+            product_id: string;
+            /** Quantity */
+            quantity: number;
+            /** Runout Days */
+            runout_days: number | null;
+            /** Tick Id */
+            tick_id: string | null;
+            /** Ticked */
+            ticked: boolean;
+            /** Track Price */
+            track_price: boolean;
+            /** Unit */
+            unit: string | null;
+            /** Unit Quantity */
+            unit_quantity: number | null;
+        };
+        /** StockSettingsIn */
+        StockSettingsIn: {
+            /** Min Quantity */
+            min_quantity?: number | string | null;
+            /** Track Price */
+            track_price?: boolean | null;
+        };
+        /** StockSummaryOut */
+        StockSummaryOut: {
+            /** Low Count */
+            low_count: number;
+            /** Ticked Count */
+            ticked_count: number;
         };
         /**
          * StrictTransactionFilter
@@ -3587,6 +4155,22 @@ export interface components {
             still_have: number | null;
             /** Taken */
             taken: number;
+        };
+        /** TickIn */
+        TickIn: {
+            /** Quantity */
+            quantity?: number | string | null;
+            /** Stock Item Id */
+            stock_item_id: string;
+        };
+        /** TickOut */
+        TickOut: {
+            /** Id */
+            id: string;
+            /** Quantity */
+            quantity: number;
+            /** Stock Item Id */
+            stock_item_id: string;
         };
         /** TokenIn */
         TokenIn: {
@@ -5255,7 +5839,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ProductLookupOut"];
                 };
             };
             /** @description Validation Error */
@@ -5286,7 +5870,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ProductOut"][];
                 };
             };
             /** @description Validation Error */
@@ -6385,7 +6969,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["StockItemOut"][];
                 };
             };
         };
@@ -6409,7 +6993,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["StockItemOut"];
                 };
             };
             /** @description Validation Error */
@@ -6438,7 +7022,272 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ShoppingOut"];
+                };
+            };
+        };
+    };
+    apply_ticked_api_v1_stock_shopping_apply_ticked_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplyTickedOut"];
+                };
+            };
+        };
+    };
+    add_line_api_v1_stock_shopping_lines_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LineIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShoppingLineOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_line_api_v1_stock_shopping_lines__line_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                line_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_line_api_v1_stock_shopping_lines__line_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                line_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LineCheckIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShoppingLineOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    tick_api_v1_stock_shopping_ticks_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TickIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TickOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    untick_api_v1_stock_shopping_ticks__tick_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tick_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stock_summary_api_v1_stock_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StockSummaryOut"];
+                };
+            };
+        };
+    };
+    stock_detail_api_v1_stock__item_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StockDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stock_settings_api_v1_stock__item_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StockSettingsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StockItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -6464,7 +7313,67 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["StockItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stock_archive_api_v1_stock__item_id__archive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stock_refresh_api_v1_stock__item_id__refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StockDetailOut"];
                 };
             };
             /** @description Validation Error */

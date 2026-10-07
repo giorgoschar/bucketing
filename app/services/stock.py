@@ -101,6 +101,20 @@ def get_stock_item(db: Session, hh_id: str, item_id: str) -> StockItem | None:
     return item
 
 
+def pantry_item_by_barcode(db: Session, hh_id: str, barcode: str) -> StockItem | None:
+    """The household's (unarchived) stock item with this barcode, if any."""
+    return (
+        db.query(StockItem)
+        .join(Product, Product.id == StockItem.product_id)
+        .filter(
+            Product.household_id == hh_id,
+            Product.barcode == barcode,
+            Product.archived_at.is_(None),
+        )
+        .first()
+    )
+
+
 def stock_summary(db: Session, hh_id: str) -> dict:
     """Home's pantry counts: count queries only (no prices, no run-out)."""
     low_count = (
@@ -121,7 +135,14 @@ def stock_summary(db: Session, hh_id: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def _move(db, item: StockItem, delta: Decimal, reason: StockReason, user_id: str | None):
+def _move(
+    db,
+    item: StockItem,
+    delta: Decimal,
+    reason: StockReason,
+    user_id: str | None,
+    client_id: str | None = None,
+):
     db.add(
         StockMovement(
             stock_item_id=item.id,
@@ -129,6 +150,7 @@ def _move(db, item: StockItem, delta: Decimal, reason: StockReason, user_id: str
             reason=reason.value,
             created_by=user_id,
             created_at=utcnow_naive(),
+            client_id=client_id,
         )
     )
 
@@ -218,11 +240,14 @@ def adjust_stock(
     delta,
     user_id: str | None,
     reason: StockReason | None = None,
+    client_id: str | None = None,
 ) -> StockItem | None:
     """Change a quantity by ``delta`` (never below zero) and log the movement.
 
     The logged delta is what actually changed, so using an item already at
-    zero records nothing and cannot skew the consumption rate.
+    zero records nothing and cannot skew the consumption rate. ``client_id``
+    (the PWA's queued stepper) is stored on the movement for
+    :func:`find_adjust_replay`.
     """
     item = get_stock_item(db, hh_id, item_id)
     if item is None:
@@ -236,9 +261,29 @@ def adjust_stock(
     item.quantity = after
     item.updated_at = utcnow_naive()
     if actual != 0:
-        _move(db, item, actual, reason, user_id)
+        _move(db, item, actual, reason, user_id, client_id)
     db.flush()
     return item
+
+
+ADJUST_DEDUPE_WINDOW = timedelta(hours=24)
+
+
+def find_adjust_replay(db: Session, hh_id: str, client_id: str) -> StockMovement | None:
+    """The household's movement logged with ``client_id`` in the last 24 h:
+    an adjust with that id was already applied. (A clamped no-op logs no
+    movement, so its replay runs again, and clamps again.)"""
+    since = utcnow_naive() - ADJUST_DEDUPE_WINDOW
+    return (
+        db.query(StockMovement)
+        .join(StockItem, StockItem.id == StockMovement.stock_item_id)
+        .filter(
+            StockItem.household_id == hh_id,
+            StockMovement.client_id == client_id,
+            StockMovement.created_at >= since,
+        )
+        .first()
+    )
 
 
 def update_stock_settings(
@@ -386,6 +431,29 @@ def current_prices(db: Session, product_ids) -> dict[str, list[PriceSnapshot]]:
     for rows in out.values():
         rows.sort(key=_price_key)
     return out
+
+
+HISTORY_DAYS = 183
+
+
+def price_history(
+    db: Session, product_id: str, today: date | None = None, days: int = HISTORY_DAYS
+) -> list[tuple[date, Decimal]]:
+    """One point per day over the last ``days`` days (today included): the
+    lowest price across retailers that day, oldest first."""
+    today = today or local_today()
+    rows = (
+        db.query(PriceSnapshot.snapshot_date, func.min(PriceSnapshot.price))
+        .filter(
+            PriceSnapshot.product_id == product_id,
+            PriceSnapshot.snapshot_date > today - timedelta(days=days),
+            PriceSnapshot.snapshot_date <= today,
+        )
+        .group_by(PriceSnapshot.snapshot_date)
+        .order_by(PriceSnapshot.snapshot_date)
+        .all()
+    )
+    return [(d, to_decimal(p)) for d, p in rows]
 
 
 def _price_key(s: PriceSnapshot):
@@ -739,7 +807,7 @@ def _active_lines(db: Session, hh_id: str):
     )
 
 
-def _live_item(db: Session, hh_id: str, item_id: str) -> StockItem | None:
+def get_live_item(db: Session, hh_id: str, item_id: str) -> StockItem | None:
     """The household's stock item, unless it is archived."""
     item = get_stock_item(db, hh_id, item_id)
     if item is None or item.product.archived_at is not None:
@@ -785,7 +853,7 @@ def tick_item(
     """Tick a stock item on the shopping list (idempotent: an item already
     ticked returns its tick unchanged). ``quantity`` defaults to the item's
     restock quantity now. None if the item is missing, foreign or archived."""
-    item = _live_item(db, hh_id, stock_item_id)
+    item = get_live_item(db, hh_id, stock_item_id)
     if item is None:
         return None
 
@@ -882,7 +950,7 @@ def apply_ticked(db: Session, hh_id: str, user_id: str | None) -> dict:
     applied = []
     for tick in ticks:
         tick.cleared_at = now
-        item = _live_item(db, hh_id, tick.stock_item_id)
+        item = get_live_item(db, hh_id, tick.stock_item_id)
         if item is None:
             continue
         before = to_decimal(item.quantity)

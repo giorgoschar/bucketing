@@ -89,6 +89,7 @@ class ShoppingRowOut(BaseModel):
     advice_reason: str | None
     trend_pct_30d: Num | None
     unit: str | None
+    quantity: Num  # current stock, as on /stock ("Low · 1 left")
     ticked: bool
     tick_id: str | None
 
@@ -241,6 +242,48 @@ class ProductOut(BaseModel):
     history: list[PricePointOut]
 
 
+class PriceTodayOut(BaseModel):
+    retailer: str
+    retailer_name: str
+    price: Num
+    unit_price: Num | None
+    is_discount: bool
+
+
+class HistoryPointOut(BaseModel):
+    date: str  # ISO date
+    min_price: Num  # the lowest price across retailers that day
+
+
+class AdviceDetailOut(BaseModel):
+    """app.services.stock.price_advice: the verdict and the figures behind it."""
+
+    advice: Advice
+    reason: str
+    current_min: Num | None
+    median_30d: Num | None
+    min_90d: Num | None
+    trend_pct_30d: Num | None
+    is_discount: bool
+    as_of: str | None  # ISO date of the latest snapshot in the last 90 days
+
+
+class StockDetailOut(StockItemOut):
+    prices_today: list[PriceTodayOut]  # the latest day's snapshots, cheapest unit price first
+    history: list[HistoryPointOut]  # one point per day, last 183 days, oldest first
+    advice_detail: AdviceDetailOut
+    prices_as_of: str | None  # ISO date of the latest snapshot
+
+
+class InPantryOut(BaseModel):
+    stock_item_id: str
+    quantity: Num
+
+
+class ProductLookupOut(ProductOut):
+    in_pantry: InPantryOut | None  # this household's item with the barcode
+
+
 class StockSummaryOut(BaseModel):
     low_count: int
     ticked_count: int
@@ -281,6 +324,39 @@ def item_payload(item, prices=None, *, advice=None, runout=None, tick=None) -> d
     }
 
 
+def _detail(db: Session, hh_id: str, item) -> dict:
+    out = _payloads(db, hh_id, [item])[0]
+    snaps = stock_svc.current_prices(db, [item.product_id]).get(item.product_id, [])
+    advice = stock_svc.price_advice(db, item.product)
+    as_of = advice["as_of"]
+    out.update(
+        prices_today=[
+            {
+                "retailer": s.retailer,
+                "retailer_name": stock_svc.retailer_label(s.retailer),
+                "price": s.price,
+                "unit_price": s.unit_price,
+                "is_discount": s.is_discount,
+            }
+            for s in snaps
+        ],
+        history=[
+            {"date": d.isoformat(), "min_price": p}
+            for d, p in stock_svc.price_history(db, item.product_id)
+        ],
+        advice_detail={**advice, "as_of": as_of.isoformat() if as_of else None},
+        prices_as_of=snaps[0].snapshot_date.isoformat() if snaps else None,
+    )
+    return out
+
+
+def _live_or_404(db: Session, hh_id: str, item_id: str):
+    item = stock_svc.get_live_item(db, hh_id, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Stock item not found")
+    return item
+
+
 def _payloads(db: Session, hh_id: str, items) -> list[dict]:
     """List rows for ``items``, with prices, advice and run-out from bulk
     queries (a fixed number of statements whatever the item count)."""
@@ -315,6 +391,31 @@ class StockAdd(BaseModel):
 
 class StockAdjust(BaseModel):
     delta: float | str
+    # One per queued stepper tap: a replay within 24 h is not applied again.
+    client_id: str | None = None
+
+    @field_validator("client_id")
+    @classmethod
+    def _client_id(cls, v: str | None) -> str | None:
+        v = (v or "").strip()
+        if len(v) > 64:
+            raise ValueError("client_id must be at most 64 characters.")
+        return v or None
+
+
+class StockSettingsIn(BaseModel):
+    min_quantity: float | str | None = None
+    track_price: bool | None = None
+
+    @field_validator("min_quantity")
+    @classmethod
+    def _min(cls, v):
+        if v is None:
+            return None
+        try:
+            return stock_svc.parse_quantity(v, field="Minimum")
+        except StockError as exc:
+            raise ValueError(str(exc)) from None
 
 
 @router.get("", response_model=list[StockItemOut])
@@ -371,7 +472,14 @@ def adjust_stock(
         )
     except StockError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
-    item = stock_svc.adjust_stock(db, hh_id, item_id, delta, user.id)
+    if body.client_id:
+        prior = stock_svc.find_adjust_replay(db, hh_id, body.client_id)
+        if prior is not None:
+            # Already applied (the reply was lost): answer again, change nothing.
+            if prior.stock_item_id != item_id:
+                raise HTTPException(status_code=409, detail="client_id already used")
+            return _payloads(db, hh_id, [prior.stock_item])[0]
+    item = stock_svc.adjust_stock(db, hh_id, item_id, delta, user.id, client_id=body.client_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Stock item not found")
     db.commit()
@@ -401,6 +509,7 @@ def shopping(auth=Depends(require_api_auth), db: Session = Depends(get_db)):
             "advice_reason": a.get("reason"),
             "trend_pct_30d": a.get("trend_pct_30d"),
             "unit": r["product"].unit,
+            "quantity": r["item"].quantity,
             "ticked": tick is not None,
             "tick_id": tick.id if tick is not None else None,
         }
@@ -485,6 +594,51 @@ def apply_ticked(auth=Depends(require_api_auth), db: Session = Depends(get_db)):
     return result
 
 
+@router.get("/{item_id}", response_model=StockDetailOut)
+def stock_detail(item_id: str, auth=Depends(require_api_auth), db: Session = Depends(get_db)):
+    _user, hh_id = auth
+    return _detail(db, hh_id, _live_or_404(db, hh_id, item_id))
+
+
+@router.patch("/{item_id}", response_model=StockItemOut)
+def stock_settings(
+    item_id: str,
+    body: StockSettingsIn,
+    auth=Depends(require_api_auth),
+    db: Session = Depends(get_db),
+):
+    _user, hh_id = auth
+    item = _live_or_404(db, hh_id, item_id)
+    stock_svc.update_stock_settings(
+        db, hh_id, item.id, min_quantity=body.min_quantity, track_price=body.track_price
+    )
+    db.commit()
+    return _payloads(db, hh_id, [item])[0]
+
+
+@router.post("/{item_id}/refresh", response_model=StockDetailOut)
+def stock_refresh(item_id: str, auth=Depends(require_api_auth), db: Session = Depends(get_db)):
+    """Fetch today's prices from PosoKanei (503 when it is unavailable). A
+    product not linked to PosoKanei has nothing to fetch: its detail as is."""
+    _user, hh_id = auth
+    item = _live_or_404(db, hh_id, item_id)
+    if item.product.posokanei_id:
+        if not stock_svc.snapshot_now(db, item.product):
+            raise HTTPException(status_code=503, detail="Prices unavailable")
+        db.commit()
+    return _detail(db, hh_id, item)
+
+
+@router.post("/{item_id}/archive", status_code=204)
+def stock_archive(item_id: str, auth=Depends(require_api_auth), db: Session = Depends(get_db)):
+    """Hide the product (its history stays) and clear its active tick."""
+    _user, hh_id = auth
+    item = _live_or_404(db, hh_id, item_id)
+    stock_svc.archive_product(db, hh_id, item.id)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 def _product(summary) -> dict:
     return asdict(summary)
 
@@ -499,8 +653,9 @@ def search_products(q: str = "", auth=Depends(require_api_auth)):
         raise HTTPException(status_code=503, detail="Prices unavailable") from None
 
 
-@products_router.get("/barcode/{code}", response_model=ProductOut)
-def product_by_barcode(code: str, auth=Depends(require_api_auth)):
+@products_router.get("/barcode/{code}", response_model=ProductLookupOut)
+def product_by_barcode(code: str, auth=Depends(require_api_auth), db: Session = Depends(get_db)):
+    _user, hh_id = auth
     try:
         barcode = stock_svc.clean_barcode(code)
     except StockError as exc:
@@ -511,4 +666,10 @@ def product_by_barcode(code: str, auth=Depends(require_api_auth)):
         raise HTTPException(status_code=503, detail="Prices unavailable") from None
     if product is None:
         raise HTTPException(status_code=404, detail="Product not found")
-    return _product(product)
+    mine = stock_svc.pantry_item_by_barcode(db, hh_id, barcode)
+    return {
+        **_product(product),
+        "in_pantry": None
+        if mine is None
+        else {"stock_item_id": mine.id, "quantity": mine.quantity},
+    }
