@@ -40,3 +40,11 @@ Gaps found in the current app that the new app (web/) must cover.
   - Edge cases: cash take-and-spend links and bill-linked transactions keep their links.
     Moving a trip/savings bucket's payments changes its progress, and the preview shows
     this.
+
+## Polish batch after Cash and Pantry (noted 2026-10-08, user: do them all together then)
+
+- **Insights month picker** wobbles and overflows; the top of the selected circle is cut off. Reproduce at 390×844 first.
+- **Activity filter total:** when a filter or search is active, a small discreet line above the list, e.g. "23 entries · Out €412.30 · In €0". Server-computed over all matches, not only loaded rows. Hidden when unfiltered.
+- **Appearance setting:** Settings › Appearance with System / Light / Dark (per device). Today the app follows the iPhone setting only.
+- **P3 final-review minors M1–M8** (`.superpowers/sdd/phase2/p3-final-review.md` in ~/expenses-p2): "All" selection can include pending/mid-delete rows; no router errorElement for a failed lazy chunk; "Paid out vs share" spins forever offline when uncached; Activity detail offline ignores the cached list row; swipe-delete Undo at exactly 5 s can fail; shared-device push 409 can orphan the other user's subscription; swipe/long-press untested on device; mocks use the old light `--warn`.
+- Not needed (user decision): the full Shortcut guide on the Apple Pay screen.
