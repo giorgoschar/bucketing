@@ -8,7 +8,7 @@ import { AppShell } from './AppShell'
 
 const stop = vi.fn()
 const start = vi.fn(() => stop)
-vi.mock('../offline/queue', () => ({ startReplayTriggers: () => start(), onQueueDrained: () => () => {} }))
+vi.mock('../offline/queue', () => ({ startReplayTriggers: () => start() }))
 
 const session: Session = { status: 'signedIn', signOut: async () => {}, logoutFailed: false, retryLogout: async () => {} }
 vi.mock('../session/SessionProvider', () => ({ useSession: () => session }))
