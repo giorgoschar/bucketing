@@ -42,7 +42,7 @@
 .swipe[data-dragging] .swipe__actions { clip-path: none; }
 .swipe__actions button { min-width: 88px; min-height: 44px; border: 0; font: inherit; font-weight: 650; cursor: pointer; }
 .swipe__copy { background: var(--accent-soft); color: var(--ink); }
-.swipe__delete { margin-left: auto; background: var(--neg); color: #fff; }
+.swipe__delete { margin-left: auto; background: var(--neg); color: var(--on-neg); }
 .swipe__content {
   position: relative; z-index: 1; background: var(--surface); touch-action: pan-y;
   -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;

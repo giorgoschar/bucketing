@@ -31,3 +31,20 @@ it('muted text meets WCAG AA (4.5:1) on the page, cards and the segmented contro
     }
   }
 })
+
+// The P3 pass measured the warn badge ("1 min apart", "+12% vs the previous period") at 3.26:1 and the
+// Insights "above usual" flag at 3.73:1 in light, and the swipe Delete label (white on --neg) at 2.75:1 in dark.
+it('warn text meets AA on its soft tint, the page and cards, in every theme', () => {
+  for (const t of themes()) {
+    for (const bg of ['warn-soft', 'bg', 'surface']) {
+      expect(ratio(t.warn, t[bg]), `--warn ${t.warn} on --${bg} ${t[bg]}`).toBeGreaterThanOrEqual(4.5)
+    }
+  }
+})
+
+it('--on-neg (the swipe Delete label) meets AA on --neg in every theme', () => {
+  for (const t of themes()) {
+    expect(t['on-neg'], 'every theme block sets --on-neg').toBeDefined()
+    expect(ratio(t['on-neg'], t.neg), `--on-neg ${t['on-neg']} on --neg ${t.neg}`).toBeGreaterThanOrEqual(4.5)
+  }
+})

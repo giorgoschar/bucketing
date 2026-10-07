@@ -15,6 +15,7 @@
   --pos: #3DD9A4;
   --neg: #FF6B7A;
   --warn: #FFC24B;
+  --on-neg: #0B0E17;       /* label on a --neg fill: 7.0:1 */
   --pos-soft: #0F2D27;
   --neg-soft: #33141C;
   --warn-soft: #33290F;
@@ -56,7 +57,8 @@
   --accent-soft: #DFE6FF;
   --pos: #0A7550;       /* AA: 4.9:1 on --pos-soft */
   --neg: #B4233A;       /* AA: 5.2:1 on --neg-soft */
-  --warn: #B07A00;
+  --warn: #8A5F00;      /* AA: 4.9:1 on --warn-soft, 5.0:1 on --bg */
+  --on-neg: #FFFFFF;    /* label on a --neg fill: 6.5:1 */
   --pos-soft: #D9F3E9;
   --neg-soft: #FBE0E4;
   --warn-soft: #FBEFD2;
@@ -82,7 +84,8 @@
   --accent-soft: #DFE6FF;
   --pos: #0A7550;       /* AA: 4.9:1 on --pos-soft */
   --neg: #B4233A;       /* AA: 5.2:1 on --neg-soft */
-  --warn: #B07A00;
+  --warn: #8A5F00;      /* AA: 4.9:1 on --warn-soft, 5.0:1 on --bg */
+  --on-neg: #FFFFFF;    /* label on a --neg fill: 6.5:1 */
   --pos-soft: #D9F3E9;
   --neg-soft: #FBE0E4;
   --warn-soft: #FBEFD2;
