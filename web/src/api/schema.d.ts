@@ -500,6 +500,149 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/recurring": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Items
+         * @description Every item, paused ones included, each with its next expected entry.
+         */
+        get: operations["list_items_api_v1_recurring_get"];
+        put?: never;
+        /**
+         * Create Item
+         * @description Create an item. Nothing is created before today (spec §3.4.4).
+         */
+        post: operations["create_item_api_v1_recurring_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/recurring/entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Entries
+         * @description Entries of active items due in [from, to] (Upcoming, Year, history).
+         */
+        get: operations["entries_api_v1_recurring_entries_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/recurring/entries/{entry_id}/amount": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Entry Amount */
+        post: operations["entry_amount_api_v1_recurring_entries__entry_id__amount_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/recurring/entries/{entry_id}/done": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Entry Done
+         * @description Pay (out: always an expense, a Fixed cost without a bucket) or Mark
+         *     received (in: an income). Either creates and links the transaction.
+         */
+        post: operations["entry_done_api_v1_recurring_entries__entry_id__done_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/recurring/entries/{entry_id}/skip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Entry Skip */
+        post: operations["entry_skip_api_v1_recurring_entries__entry_id__skip_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/recurring/entries/{entry_id}/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Entry Undo
+         * @description Done -> expected (unlinks; ``delete_transaction`` deletes it too), or
+         *     skipped -> expected.
+         */
+        post: operations["entry_undo_api_v1_recurring_entries__entry_id__undo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/recurring/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Item */
+        get: operations["get_item_api_v1_recurring__item_id__get"];
+        /**
+         * Update Item
+         * @description Edit an item. Only future expected entries with no amount set are
+         *     regenerated (spec §3.4.3); resuming fills the horizon at once.
+         */
+        put: operations["update_item_api_v1_recurring__item_id__put"];
+        post?: never;
+        /** Delete Item */
+        delete: operations["delete_item_api_v1_recurring__item_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings/categories": {
         parameters: {
             query?: never;
@@ -1765,6 +1908,65 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** EntryAmountIn */
+        EntryAmountIn: {
+            /** Amount */
+            amount: number | string;
+        };
+        /** EntryDoneIn */
+        EntryDoneIn: {
+            /** Amount */
+            amount?: number | string | null;
+            /**
+             * Payment Method
+             * @default card
+             */
+            payment_method: string;
+            /** Person */
+            person?: string | null;
+        };
+        /** EntryOut */
+        EntryOut: {
+            /** Amount */
+            amount: number | null;
+            /** Bucket Id */
+            bucket_id: string | null;
+            /** Category Id */
+            category_id: string | null;
+            /** Currency */
+            currency: string;
+            /** Direction */
+            direction: string;
+            /**
+             * Due Date
+             * Format: date
+             */
+            due_date: string;
+            /** Estimated */
+            estimated: boolean;
+            /** Id */
+            id: string;
+            /** Infrequent */
+            infrequent: boolean;
+            /** Item Id */
+            item_id: string;
+            /** Name */
+            name: string;
+            /** Overdue */
+            overdue: boolean;
+            /** Status */
+            status: string;
+            /** Transaction Id */
+            transaction_id: string | null;
+        };
+        /** EntryUndoIn */
+        EntryUndoIn: {
+            /**
+             * Delete Transaction
+             * @default false
+             */
+            delete_transaction: boolean;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -1893,6 +2095,144 @@ export interface components {
             /** Email */
             email?: string | null;
         };
+        /** RecurringItemIn */
+        RecurringItemIn: {
+            /** Amount */
+            amount?: number | string | null;
+            /** Bucket Id */
+            bucket_id?: string | null;
+            /** Category Id */
+            category_id?: string | null;
+            /** Contract End Date */
+            contract_end_date?: string | null;
+            /**
+             * Currency
+             * @default EUR
+             */
+            currency: string;
+            /**
+             * Direction
+             * @default out
+             */
+            direction: string;
+            /** End Date */
+            end_date?: string | null;
+            /**
+             * Interval Months
+             * @default 1
+             */
+            interval_months: number;
+            /**
+             * Is Active
+             * @default true
+             */
+            is_active: boolean;
+            /**
+             * Is Auto Pay
+             * @default false
+             */
+            is_auto_pay: boolean;
+            /** Name */
+            name: string;
+            /** Notes */
+            notes?: string | null;
+            /** Paid By Default */
+            paid_by_default?: string | null;
+            /**
+             * Payer Mode
+             * @default single
+             */
+            payer_mode: string;
+            /**
+             * Rule Adjust
+             * @default none
+             */
+            rule_adjust: string;
+            /** Rule Day */
+            rule_day?: number | null;
+            /** Rule Days */
+            rule_days?: number | null;
+            /** Rule Interval Weeks */
+            rule_interval_weeks?: number | null;
+            /**
+             * Rule Kind
+             * @default monthly_day
+             */
+            rule_kind: string;
+            /** Rule Month */
+            rule_month?: number | null;
+            /** Rule Weekday */
+            rule_weekday?: number | null;
+            /**
+             * Splits
+             * @default []
+             */
+            splits: components["schemas"]["SplitIn"][];
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
+            /** Total Occurrences */
+            total_occurrences?: number | null;
+        };
+        /** RecurringItemOut */
+        RecurringItemOut: {
+            /** Amount */
+            amount: number | null;
+            /** Bucket Id */
+            bucket_id: string | null;
+            /** Category Id */
+            category_id: string | null;
+            /** Contract End Date */
+            contract_end_date: string | null;
+            /** Currency */
+            currency: string;
+            /** Direction */
+            direction: string;
+            /** End Date */
+            end_date: string | null;
+            /** Id */
+            id: string;
+            /** Interval Months */
+            interval_months: number;
+            /** Is Active */
+            is_active: boolean;
+            /** Is Auto Pay */
+            is_auto_pay: boolean;
+            /** Name */
+            name: string;
+            next_entry: components["schemas"]["EntryOut"] | null;
+            /** Notes */
+            notes: string | null;
+            /** Paid By Default */
+            paid_by_default: string | null;
+            /** Payer Mode */
+            payer_mode: string;
+            /** Rule Adjust */
+            rule_adjust: string;
+            /** Rule Day */
+            rule_day: number | null;
+            /** Rule Days */
+            rule_days: number | null;
+            /** Rule Interval Weeks */
+            rule_interval_weeks: number | null;
+            /** Rule Kind */
+            rule_kind: string;
+            /** Rule Month */
+            rule_month: number | null;
+            /** Rule Weekday */
+            rule_weekday: number | null;
+            /** Splits */
+            splits: components["schemas"]["SplitOut"][];
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
+            /** Total Occurrences */
+            total_occurrences: number | null;
+        };
         /** SettleIn */
         SettleIn: {
             /** Amount */
@@ -1910,6 +2250,13 @@ export interface components {
         SplitIn: {
             /** Amount */
             amount: number | string;
+            /** User Id */
+            user_id: string;
+        };
+        /** SplitOut */
+        SplitOut: {
+            /** Amount */
+            amount: number;
             /** User Id */
             user_id: string;
         };
@@ -3147,6 +3494,322 @@ export interface operations {
                 content: {
                     "application/json": unknown;
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_items_api_v1_recurring_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecurringItemOut"][];
+                };
+            };
+        };
+    };
+    create_item_api_v1_recurring_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecurringItemIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecurringItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    entries_api_v1_recurring_entries_get: {
+        parameters: {
+            query: {
+                from: string;
+                to: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EntryOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    entry_amount_api_v1_recurring_entries__entry_id__amount_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EntryAmountIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EntryOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    entry_done_api_v1_recurring_entries__entry_id__done_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EntryDoneIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EntryOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    entry_skip_api_v1_recurring_entries__entry_id__skip_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EntryOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    entry_undo_api_v1_recurring_entries__entry_id__undo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EntryUndoIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EntryOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_item_api_v1_recurring__item_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecurringItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_item_api_v1_recurring__item_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecurringItemIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecurringItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_item_api_v1_recurring__item_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

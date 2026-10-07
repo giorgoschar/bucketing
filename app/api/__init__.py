@@ -17,6 +17,7 @@ from app.api import (
     insights,
     notifications,
     personal_tokens,
+    recurring,
     settings,
     stock,
     transactions,
@@ -40,3 +41,6 @@ router.include_router(personal_tokens.router)
 router.include_router(settings.router)
 router.include_router(stock.router)
 router.include_router(stock.products_router)
+
+# Planning (spec §6.3)
+router.include_router(recurring.router)
