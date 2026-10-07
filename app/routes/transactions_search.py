@@ -37,6 +37,7 @@ from app.services import (
     find_household_duplicates,
 )
 from app.services.cash import linked_taker
+from app.services.duplicates import drop_dismissed
 from app.templates import templates
 from app.validators import (
     parse_amount,
@@ -491,7 +492,7 @@ def duplicates_page(
         {
             "request": request,
             "user": user,
-            "groups": find_household_duplicates(db, hh_id),
+            "groups": drop_dismissed(db, hh_id, find_household_duplicates(db, hh_id)),
         }
     )
     return templates.TemplateResponse("transactions/duplicates.html", ctx)
