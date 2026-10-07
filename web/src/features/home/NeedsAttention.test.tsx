@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { db } from '../../offline/db'
 import { enqueue } from '../../offline/queue'
-import { fakeApi, type Routes } from '../../test/fakeApi'
+import { fakeApi, hang, reply, type Routes } from '../../test/fakeApi'
 import { budgetRow, categoryUsual, day, entry, match, readRoutes } from '../../test/fixtures'
 import { renderWithProviders, resetTestEnv, setOnline, TEST_IDENTITY } from '../../test/render'
 import { setIdentity } from '../../offline/identity'
@@ -44,14 +44,41 @@ it('lists what needs a tap in the spec order, with words for each state', async 
   expect(document.querySelector('[data-attn="category"]')).toHaveTextContent('Groceries above usual')
 })
 
-it('Link and Not this remove the suggestion at once and call the API', async () => {
+it.each([
+  ['Link', LINK, '/api/v1/matches/m1/link', entry({ status: 'done' })],
+  ['Not this', DISMISS, '/api/v1/matches/m1/dismiss', null],
+] as const)('%s removes the suggestion at once, before the server answers', async (button, route, path, body) => {
+  let answer!: (r: Response) => void
   const fake = fakeApi(routes({ 'GET /api/v1/matches': () => (served ? [] : [match()]) }))
-  fake.on(LINK, () => { served = true; return entry({ status: 'done' }) })
+  fake.on(route, () => new Promise<Response>((r) => { answer = r }))
   renderWithProviders(<NeedsAttention />)
-  fireEvent.click(await screen.findByRole('button', { name: 'Link' }))
-  await waitFor(() => expect(kinds()).not.toContain('match'))
-  expect(fake.callsTo(LINK)[0].path).toBe('/api/v1/matches/m1/link')
+  fireEvent.click(await screen.findByRole('button', { name: button }))
+  await waitFor(() => expect(fake.callsTo(route)).toHaveLength(1))
+  expect(fake.callsTo(route)[0].path).toBe(path)
+  // The request is still pending: only the optimistic patch can have removed the row.
+  expect(kinds()).not.toContain('match')
+  served = true
+  answer(body === null ? new Response(null, { status: 204 }) : Response.json(body))
+  await new Promise((r) => setTimeout(r, 20))
+  expect(kinds()).not.toContain('match')
 })
+
+it.each([['Link', LINK], ['Not this', DISMISS]] as const)(
+  'a 409 on %s brings the suggestion back',
+  async (button, route) => {
+    let answer!: (r: Response) => void
+    let reads = 0
+    // Later reads (the invalidation after the 409) never answer: what the screen shows is the rollback.
+    const fake = fakeApi(routes({ 'GET /api/v1/matches': () => (++reads === 1 ? [match()] : hang()) }))
+    fake.on(route, () => new Promise<Response>((r) => { answer = r }))
+    renderWithProviders(<NeedsAttention />)
+    fireEvent.click(await screen.findByRole('button', { name: button }))
+    await waitFor(() => expect(kinds()).not.toContain('match'))
+    answer(reply(409, { detail: 'This payment is already linked.' }))
+    await waitFor(() => expect(kinds()).toContain('match'))
+    expect(document.querySelector('[data-attn="match"]')).toHaveTextContent('looks like Cosmote due 5 Oct')
+  },
+)
 
 it('Not this dismisses', async () => {
   const fake = fakeApi(routes({ 'GET /api/v1/matches': () => (served ? [] : [match()]) }))
