@@ -38,6 +38,7 @@ from app.services.bills import (
     settle_occurrence,
 )
 from app.validators import (
+    check_split_sum,
     parse_amount,
     require_bucket,
     require_category,
@@ -255,12 +256,7 @@ def create_bill(
     db.flush()
 
     if body.splits:
-        split_total = sum(s.amount for s in body.splits)
-        if amount is not None and round(split_total, 4) != round(amount, 4):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Split amounts ({split_total:.2f}) must sum to the bill amount ({float(amount):.2f})",
-            )
+        check_split_sum([s.amount for s in body.splits], amount)
         for s in body.splits:
             db.add(RecurringBillSplit(bill_id=bill.id, user_id=s.user_id, amount=s.amount))
 
@@ -305,12 +301,7 @@ def update_bill(
     amount = parse_amount(body.amount, field="Bill amount", allow_blank=True)
 
     if body.splits:
-        split_total = sum(s.amount for s in body.splits)
-        if amount is not None and round(split_total, 4) != round(amount, 4):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Split amounts ({split_total:.2f}) must sum to the bill amount ({float(amount):.2f})",
-            )
+        check_split_sum([s.amount for s in body.splits], amount)
 
     delete_future_occurrences(db, bill_id)
 

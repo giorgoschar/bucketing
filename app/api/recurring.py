@@ -14,7 +14,7 @@ from app.api.planning_models import EntryOut, RecurringItemOut
 from app.api_auth import require_api_auth
 from app.core.clock import local_today
 from app.core.database import get_db
-from app.core.schedule import RuleError, validate_rule
+from app.core.schedule import MAX_INTERVAL_MONTHS, MAX_INTERVAL_WEEKS, RuleError, validate_rule
 from app.models import (
     BillOccurrence,
     BucketKind,
@@ -41,6 +41,7 @@ from app.services.bills import (
 )
 from app.services.planning import entry_for, list_entries
 from app.validators import (
+    check_split_sum,
     parse_amount,
     require_bucket,
     require_category,
@@ -128,16 +129,39 @@ def _apply(db: Session, item: RecurringBill, body: RecurringItemIn, hh_id: str) 
         )
     if body.end_date and body.end_date < body.start_date:
         raise HTTPException(status_code=400, detail="The end date is before the start date.")
+    if not 1 <= body.interval_months <= MAX_INTERVAL_MONTHS:
+        raise HTTPException(
+            status_code=400, detail=f"The interval must be 1 to {MAX_INTERVAL_MONTHS} months."
+        )
+    if body.rule_interval_weeks is not None and not (
+        1 <= body.rule_interval_weeks <= MAX_INTERVAL_WEEKS
+    ):
+        raise HTTPException(
+            status_code=400, detail=f"The interval must be 1 to {MAX_INTERVAL_WEEKS} weeks."
+        )
+    amount = parse_amount(body.amount, field="Amount", allow_blank=True)
+    split_amounts = [parse_amount(s.amount, field="Split amount") for s in body.splits]
     if body.splits:
-        validate_split_users([s.user_id for s in body.splits], hh_id, db)
+        ids = [s.user_id for s in body.splits]
+        if len(set(ids)) != len(ids):
+            raise HTTPException(status_code=400, detail="A member can have one share only.")
+        validate_split_users(ids, hh_id, db)
+        check_split_sum(split_amounts, amount)
     if body.payer_mode == PayerMode.own_share.value and not body.splits:
         raise HTTPException(
             status_code=400, detail="payer_mode own_share needs splits (each member's share)."
         )
+    currency = validate_currency(body.currency)
+    if item.id and (direction != item.direction or currency != (item.currency or "EUR")):
+        if bill_has_payment_history(db, item.id):
+            raise HTTPException(
+                status_code=409,
+                detail="This item has payments, so its direction and currency can't change.",
+            )
     item.direction = direction
     item.name = body.name.strip()
-    item.amount = parse_amount(body.amount, field="Amount", allow_blank=True)
-    item.currency = validate_currency(body.currency)
+    item.amount = amount
+    item.currency = currency
     item.category_id = require_category(db, body.category_id, hh_id)
     item.bucket_id = bucket.id if bucket else None
     item.rule_kind = body.rule_kind
@@ -171,7 +195,9 @@ def _replace_splits(db: Session, item: RecurringBill, body: RecurringItemIn) -> 
     db.query(RecurringBillSplit).filter_by(bill_id=item.id).delete(synchronize_session=False)
     db.expire(item, ["splits"])
     for s in body.splits:
-        db.add(RecurringBillSplit(bill_id=item.id, user_id=s.user_id, amount=s.amount))
+        db.add(
+            RecurringBillSplit(bill_id=item.id, user_id=s.user_id, amount=parse_amount(s.amount))
+        )
 
 
 def _item_out(item: RecurringBill, next_entry) -> RecurringItemOut:

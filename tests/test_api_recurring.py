@@ -186,3 +186,49 @@ def test_failed_action_leaves_state_and_foreign_member_is_refused(client, db, ap
     db.expire_all()
     assert db.query(Transaction).count() == 0
     assert db.get(BillOccurrence, entry["id"]).status == OccurrenceStatus.unpaid
+
+
+def _split_body(splits, **over):
+    return _salary(
+        direction="out", name="Rent", amount="100", rule_adjust="none", splits=splits, **over
+    )
+
+
+def test_split_validation(client, db, api):  # noqa: F811
+    headers, hh = api
+    me = hh.user_id
+    for bad in (
+        [{"user_id": me, "amount": "0"}],
+        [{"user_id": me, "amount": "-100"}],
+        [{"user_id": me, "amount": "NaN"}],
+        [{"user_id": me, "amount": "50"}, {"user_id": me, "amount": "50"}],
+        [{"user_id": me, "amount": "60"}],  # sum mismatch
+    ):
+        r = client.post(URL, headers=headers, json=_split_body(bad))
+        assert r.status_code in (400, 422), (bad, r.text)
+    ok = client.post(URL, headers=headers, json=_split_body([{"user_id": me, "amount": "100"}]))
+    assert ok.status_code == 201, ok.text
+    assert ok.json()["splits"] == [{"user_id": me, "amount": 100.0}]
+
+
+def test_interval_ranges(client, db, api):  # noqa: F811
+    headers, hh = api
+    for over in ({"interval_months": 0}, {"interval_months": 500}):
+        assert client.post(URL, headers=headers, json=_salary(**over)).status_code == 400
+    weekly = _salary(rule_kind="weekly", rule_day=None, rule_weekday=1, rule_adjust="none")
+    r = client.post(URL, headers=headers, json={**weekly, "rule_interval_weeks": 99})
+    assert r.status_code == 400
+    r = client.post(URL, headers=headers, json={**weekly, "rule_interval_weeks": 2})
+    assert r.status_code == 201, r.text
+
+
+def test_direction_and_currency_locked_by_history(client, db, api):  # noqa: F811
+    headers, hh = api
+    item = client.post(URL, headers=headers, json=_salary()).json()
+    entry = _first_entry(client, headers)
+    done = client.post(f"{URL}/entries/{entry['id']}/done", headers=headers, json={})
+    assert done.status_code == 200
+    url = f"{URL}/{item['id']}"
+    assert client.put(url, headers=headers, json=_salary(direction="out")).status_code == 409
+    assert client.put(url, headers=headers, json=_salary(currency="USD")).status_code == 409
+    assert client.put(url, headers=headers, json=_salary(name="Pay")).status_code == 200

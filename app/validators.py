@@ -230,3 +230,13 @@ def require_receipt_content(ext: str, content: bytes) -> None:
     """Raise 400 unless the bytes really are the type the extension claims."""
     if sniff_upload(content[:16]) != RECEIPT_KIND_BY_EXT.get(ext):
         raise HTTPException(status_code=400, detail="File content does not match its type.")
+
+
+def check_split_sum(amounts, bill_amount) -> None:
+    """HTTP 400 unless the shares add up to the bill amount (when it has one)."""
+    total = sum(amounts)
+    if bill_amount is not None and round(total, 4) != round(bill_amount, 4):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Split amounts ({total:.2f}) must sum to the bill amount ({float(bill_amount):.2f})",
+        )
