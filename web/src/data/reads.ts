@@ -37,7 +37,11 @@ export function toBuckets(raw: unknown): Bucket[] {
 export function toCategories(raw: unknown): Category[] {
   return list(raw).map((c) => {
     const d = asDict(c)
-    return { id: str(d.id), name: str(d.name), icon: strOrNull(d.icon), color: strOrNull(d.color), system_key: strOrNull(d.system_key) }
+    return {
+      id: str(d.id), name: str(d.name), icon: strOrNull(d.icon), color: strOrNull(d.color), system_key: strOrNull(d.system_key),
+      is_default: d.is_default === true, locked: d.locked === true,
+      expense_count: num(d.expense_count ?? 0), rule_count: num(d.rule_count ?? 0),
+    }
   })
 }
 
