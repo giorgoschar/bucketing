@@ -40,8 +40,11 @@ async function scan(result: object) {
 
 it('a QR success fills the form, tags the fields, and saves after the duplicate check', async () => {
   const { api, router } = await scan(RESULT)
-  expect(router.state.location.search).toBe('')
-  expect(screen.queryByRole('dialog', { name: 'Scan receipt' })).not.toBeInTheDocument()
+  // The overlay closes after the URL update re-renders: wait for it instead of racing it.
+  await waitFor(() => {
+    expect(router.state.location.search).toBe('')
+    expect(screen.queryByRole('dialog', { name: 'Scan receipt' })).not.toBeInTheDocument()
+  })
   expect(screen.getByText('Amount 12.50 euro')).toBeInTheDocument()
   expect(screen.getByPlaceholderText('Where? (optional)')).toHaveValue('Test Taverna')
   expect(screen.getByRole('button', { name: 'Category: Eating out, from receipt. Change' })).toBeInTheDocument()
