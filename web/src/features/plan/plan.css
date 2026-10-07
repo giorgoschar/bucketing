@@ -56,3 +56,7 @@
 .plan-archive__text { margin: 0; font-size: 14.5px; line-height: 1.45; color: var(--ink-2); }
 .plan-archive__actions { display: flex; gap: 8px; }
 .plan-archive__actions > .btn { flex: 1; }
+
+/* Month | Year scale (cash spec §4.1) */
+.plan-scale { display: flex; justify-content: center; }
+.plan-scale .ui-seg { width: min(100%, 240px); }

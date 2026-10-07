@@ -254,3 +254,33 @@ it('merchant suggestions are a keyboard combobox: arrows move, Enter picks, Esca
   expect(screen.queryByRole('listbox', { name: 'Recent places' })).not.toBeInTheDocument()
   expect(input).toHaveValue('Cof')
 })
+
+// Plan › Cash §4.5: "Log it" opens /new?mode=cash&take=none&amount=…
+it('?amount=12.50 pre-fills €12.50', async () => {
+  await renderComposer('/new?mode=cash&amount=12.50')
+  expect(await screen.findByRole('button', { name: /^Save 12 euro 50/ })).toBeInTheDocument()
+})
+
+it('?amount=45.00 pre-fills €45', async () => {
+  await renderComposer('/new?amount=45.00')
+  await ready()
+  expect(screen.getByRole('button', { name: 'Save 45 euro to Day to day' })).toBeInTheDocument()
+})
+
+it.each(['abc', '-3', '0', '1.234', ''])('?amount=%s is ignored', async (amount) => {
+  await renderComposer(`/new?amount=${amount}`)
+  await ready()
+  expect(screen.getByRole('button', { name: /^Save 0 euro/ })).toBeDisabled()
+})
+
+it('take=none: method cash, take "Not tracked", and the POST says took_cash false', async () => {
+  const { api } = await renderComposer('/new?mode=cash&take=none&amount=45.00')
+  expect(await screen.findByRole('button', { name: 'Not tracked' })).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.queryByText('Wallet: €50.00')).not.toBeInTheDocument()
+  fireEvent.click(await screen.findByRole('button', { name: /^Save 45 euro/ }))
+  await screen.findByText('home screen')
+  expect(writes(api)).toHaveLength(1)
+  expect(writes(api)[0].body).toMatchObject({ amount: '45.00', payment_method: 'cash', took_cash: false, paid_by: 'u1' })
+  expect(writes(api)[0].body).not.toHaveProperty('take_from')
+  expect(api.calls.some((c) => c.method === 'POST' && c.path.startsWith('/api/v1/cash'))).toBe(false)
+})
