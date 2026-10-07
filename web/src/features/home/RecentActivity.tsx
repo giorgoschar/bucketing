@@ -25,23 +25,32 @@ export function RecentActivity() {
   const pending = usePendingTransactions()
   const buckets = useBuckets().data
   const bucketName = (id: string | null) => (id ? buckets?.find((b) => b.id === id)?.name : undefined)
+  const pendingRow = (r: PendingRow, key: string) => (
+    <ListRow key={key}
+      title={r.merchant || bucketName(r.bucket_id) || (r.type === 'income' ? 'Income' : 'Expense')}
+      subtitle={[formatShortDate(r.transaction_date), bucketName(r.bucket_id)].filter(Boolean).join(' · ')}
+      badges={waiting}
+      trailing={<Money amount={signedAmount(r.type, Number(r.amount))} currency={r.currency} signed tone="auto" />} />
+  )
   return (
     <section className="home-recent" aria-labelledby="recent-title">
       <div className="ui-sec">
         <h2 id="recent-title" className="ui-sec__title">Recent activity</h2>
         <Link to="/activity">See all</Link>
       </div>
+      {recent.data === undefined && recent.noData && (() => {
+        // Nothing loaded and nothing coming, but this phone's own queued saves are still worth showing.
+        const queued = mergePending([], pending)
+        return queued.length > 0 && (
+          <div className="ui-list">
+            {queued.map((it) => (it.kind === 'pending' ? pendingRow(it.row, `p:${it.row.key}`) : null))}
+          </div>
+        )
+      })()}
       <QueryView result={recent} noDataText="No saved activity yet." showBanner={false}>
         {(rows) => {
           const items = mergePending(rows, pending)
           if (items.length === 0) return <EmptyState title="No payments yet" />
-          const pendingRow = (r: PendingRow, key: string) => (
-            <ListRow key={key}
-              title={r.merchant || bucketName(r.bucket_id) || (r.type === 'income' ? 'Income' : 'Expense')}
-              subtitle={[formatShortDate(r.transaction_date), bucketName(r.bucket_id)].filter(Boolean).join(' · ')}
-              badges={waiting}
-              trailing={<Money amount={signedAmount(r.type, Number(r.amount))} currency={r.currency} signed tone="auto" />} />
-          )
           return (
             <div className="ui-list">
               {items.map((it) => {
