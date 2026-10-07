@@ -4,6 +4,7 @@ by default; a NotificationMute row turns one type off for in-app and push.
 
 from typing import NamedTuple
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import NotificationMute, NotificationType
@@ -60,9 +61,17 @@ def set_muted(db: Session, user_id: str, household_id: str, disabled: list[str])
         if value not in MUTABLE:
             raise ValueError(f"Unknown alert type '{value}'.")
         wanted.add(value)
-    db.query(NotificationMute).filter_by(user_id=user_id, household_id=household_id).delete(
-        synchronize_session=False
-    )
-    for value in sorted(wanted):
-        db.add(NotificationMute(user_id=user_id, household_id=household_id, type=value))
-    db.flush()
+    # A concurrent PUT can insert the same primary key between our delete and
+    # insert; redo the replacement once inside a savepoint so it is idempotent.
+    for attempt in (0, 1):
+        try:
+            with db.begin_nested():
+                db.query(NotificationMute).filter_by(
+                    user_id=user_id, household_id=household_id
+                ).delete(synchronize_session=False)
+                for value in sorted(wanted):
+                    db.add(NotificationMute(user_id=user_id, household_id=household_id, type=value))
+            return
+        except IntegrityError:
+            if attempt:
+                raise

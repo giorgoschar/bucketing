@@ -6,6 +6,7 @@ from app.models import (
     HouseholdMember,
     MemberRole,
     Notification,
+    NotificationMute,
     NotificationType,
     PushSubscription,
 )
@@ -125,3 +126,31 @@ def test_a_muted_scheduler_alert_sends_no_push(db, make_household, monkeypatch):
     )
     db.commit()
     assert db.query(Notification).count() == 0 and sent == []
+
+
+def test_set_muted_survives_a_concurrent_insert_conflict(db, make_household, monkeypatch):
+    """Two PUTs racing: the other request's row lands between our delete and
+    insert, so our insert hits the primary key. We retry once instead of 500."""
+    from sqlalchemy import insert
+
+    from app.services.notification_prefs import muted_types, set_muted
+
+    hh = make_household()
+    real_add = db.add
+    raced = []
+
+    def add_with_race(obj):
+        if not raced:
+            raced.append(True)
+            db.execute(
+                insert(NotificationMute).values(
+                    user_id=obj.user_id, household_id=obj.household_id, type=obj.type
+                )
+            )
+        return real_add(obj)
+
+    monkeypatch.setattr(db, "add", add_with_race)
+    set_muted(db, hh.user_id, hh.household_id, ["bill_due", "stock_low"])
+    db.commit()
+    assert raced
+    assert muted_types(db, hh.user_id, hh.household_id) == {"bill_due", "stock_low"}
