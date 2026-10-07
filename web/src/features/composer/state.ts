@@ -1,5 +1,5 @@
 import { type AmountKey, fromApiAmount, pressKey, toCents } from './amount'
-import { amountShares, equalShares, percentShares, toShareList } from './splits'
+import { amountShares, equalShares, percentShares, toShareList, typedFromShares } from './splits'
 import type { QrReceipt } from './types'
 
 export type TxnType = 'expense' | 'income'
@@ -172,8 +172,13 @@ function step(s: ComposerState, a: Action): ComposerState {
         a.remembered,
         'category',
       )
-    case 'pickPayer':
-      return { ...s, paidBy: a.id, ownShare: false, splits: s.ownShare ? [] : s.splits, touched: add(s.touched, 'payer') }
+    case 'pickPayer': {
+      const next = { ...s, paidBy: a.id, ownShare: false, splits: s.ownShare ? [] : s.splits, touched: add(s.touched, 'payer') }
+      // The sheet types only the non-payers; with a new remainder holder, freeze every current share as typed
+      // (percent cannot stay percent) so the old payer keeps theirs and the new payer takes the remainder.
+      if (next.splitOn && next.splitMode !== 'equal') return { ...next, splitMode: 'amounts', splitTyped: typedFromShares(next.splits) }
+      return next
+    }
     case 'setOwnShare':
       return { ...s, ownShare: true, paidBy: null, splitOn: false, splits: a.splits, splitTyped: a.typed ?? {}, cashMode: false, tookFrom: 'none', touched: add(s.touched, 'payer') }
     case 'pickMethod':

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { validate } from './model'
 import { blankState, reduce, type ComposerState } from './state'
 
 const base = (over: Partial<ComposerState> = {}): ComposerState => ({
@@ -117,5 +118,34 @@ describe('splits follow the amount (I1)', () => {
   it('setSplit keeps what was typed, so a Percent split reopens with its percents', () => {
     const s = reduce(base(), { type: 'setSplit', on: true, mode: 'percent', splits: two('7.50', '2.50'), typed: { u2: '25' } })
     expect(s.splitTyped).toEqual({ u2: '25' })
+  })
+
+  describe('changing the payer keeps the other member\'s share', () => {
+    const V = { householdCurrency: 'EUR', today: '2026-10-07', stashCents: null, meId: 'u1', fuelCategoryId: 'c-fuel' }
+    const open = (mode: 'amounts' | 'percent') =>
+      base({
+        amount: '100', splitOn: true, splitMode: mode, paidBy: 'u1', splits: two('70.00', '30.00'),
+        splitTyped: { u2: mode === 'amounts' ? '30.00' : '30' },
+      })
+    for (const mode of ['amounts', 'percent'] as const) {
+      it(`${mode}: A keeps their fixed share, B (new payer) takes the remainder`, () => {
+        const swapped = reduce(open(mode), { type: 'pickPayer', id: 'u2' })
+        expect(swapped.splitMode).toBe('amounts')
+        expect(swapped.splitTyped).toEqual({ u1: '70.00', u2: '30.00' })
+        const s = type(swapped, '0') // 100 -> 1000
+        expect(s.splits).toEqual(two('70.00', '930.00'))
+      })
+      it(`${mode}: an amount below A's fixed share is flagged, not zeroed`, () => {
+        const s = reduce(reduce(open(mode), { type: 'pickPayer', id: 'u2' }), { type: 'key', key: 'back' })
+        expect(s.amount).toBe('10')
+        expect(s.splits).toEqual(two('70.00', '-60.00'))
+        expect(validate(s, V).problems.split).toBe('Fix the split')
+      })
+    }
+    it('equal mode is unchanged by a payer change', () => {
+      const s = reduce(base({ amount: '10', splitOn: true, splitMode: 'equal', splits: two('5.00', '5.00') }), { type: 'pickPayer', id: 'u2' })
+      expect(s.splitMode).toBe('equal')
+      expect(s.splitTyped).toEqual({})
+    })
   })
 })
