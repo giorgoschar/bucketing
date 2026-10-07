@@ -24,11 +24,13 @@ export function Feed(props: Props) {
   return <FeedList key={JSON.stringify(props.filter)} {...props} />
 }
 
-function PageLoader({ filter, page, onLoad }: { filter: TransactionFilter; page: number; onLoad: (p: TxnPage) => void }) {
+function PageLoader({ filter, page, index, onLoad }: {
+  filter: TransactionFilter; page: number; index: number; onLoad: (index: number, p: TxnPage) => void
+}) {
   const q = useFeedPage(filter, page)
   useEffect(() => {
-    if (q.data) onLoad(q.data)
-  }, [q.data, onLoad])
+    if (q.data) onLoad(index, q.data)
+  }, [q.data, index, onLoad])
   return null
 }
 
@@ -51,7 +53,8 @@ function FeedList({ filter, onClear, renderRow, hidden, rowProps, onLoaded }: Pr
 
   const loaded = useMemo(() => (first.data ? [first.data, ...more.filter(Boolean)] : []), [first.data, more])
   const total = first.data?.total ?? 0
-  const serverRows = loaded.flatMap((p) => p.items)
+  // A row can shift between pages while the user scrolls: keep the first copy, in first-seen order.
+  const serverRows = [...new Map(loaded.flatMap((p) => p.items).map((t) => [t.id, t])).values()]
   const rows = serverRows.filter((t) => !hidden?.has(t.id))
   const pending: PendingTxn[] = plain ? pendingAll : []
   const dayTotals = Object.assign({}, ...loaded.map((p) => p.day_totals)) as Record<string, number>
@@ -65,6 +68,10 @@ function FeedList({ filter, onClear, renderRow, hidden, rowProps, onLoaded }: Pr
     onLoaded?.(serverRows, total)
   }, [serverRows.length, total]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const onPageLoad = useCallback(
+    (i: number, p: TxnPage) => setMore((m) => (m[i] === p ? m : Object.assign([...m], { [i]: p }))),
+    [],
+  )
   const loadMore = useCallback(() => setExtra((n) => n + 1), [])
   const sentinel = useRef<HTMLButtonElement>(null)
   useEffect(() => {
@@ -97,7 +104,8 @@ function FeedList({ filter, onClear, renderRow, hidden, rowProps, onLoaded }: Pr
           key={i}
           filter={filter}
           page={i + 2}
-          onLoad={(p) => setMore((m) => { const c = [...m]; c[i] = p; return c })}
+          index={i}
+          onLoad={onPageLoad}
         />
       ))}
       {groups.map((g) => (

@@ -1,5 +1,5 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fakeApi } from '../../test/fakeApi'
 import { resetTestEnv, setOnline } from '../../test/render'
 import { Activity } from './Activity'
@@ -76,6 +76,31 @@ describe('Activity feed', () => {
     expect(await screen.findByText('row 50')).toBeInTheDocument()
     expect(screen.getAllByRole('region', { name: /^Today/ })).toHaveLength(1)
     expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull()
+  })
+
+  it('does not loop after Load more', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const first = Array.from({ length: 50 }, (_, i) => makeTxn({ notes: `row ${i}` }))
+    fakeApi({
+      ...refRoutes(),
+      [FEED]: (req) => (req.query.get('page') === '2' ? pageOf([makeTxn({ notes: 'row 50' })], { total: 51, page: 2 }) : pageOf(first, { total: 51 })),
+    })
+    renderActivity(<Activity />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more' }))
+    expect(await screen.findByText('row 50')).toBeInTheDocument()
+    expect(err.mock.calls.flat().join(' ')).not.toContain('Maximum update depth')
+  })
+
+  it('shows a row repeated on page 2 once', async () => {
+    const first = Array.from({ length: 50 }, (_, i) => makeTxn({ notes: `row ${i}` }))
+    fakeApi({
+      ...refRoutes(),
+      [FEED]: (req) => (req.query.get('page') === '2' ? pageOf([first[49], makeTxn({ notes: 'row 50' })], { total: 52, page: 2 }) : pageOf(first, { total: 52 })),
+    })
+    renderActivity(<Activity />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more' }))
+    await screen.findByText('row 50')
+    expect(screen.getAllByText('row 49')).toHaveLength(1)
   })
 
   it('offline without a cached result offers the saved list', async () => {
