@@ -38,7 +38,17 @@ from app.models import (
 )
 from app.schemas import absorb_own_share_cent
 from app.services.budgets import bucket_period, bucket_spent
-from app.services.bulk_rules import OWN_SHARE, SINGLE, Changes, RowContext, RowPlan, Skip, plan_row
+from app.services.bulk_rules import (
+    OWN_SHARE,
+    SINGLE,
+    Changes,
+    RowContext,
+    RowPlan,
+    Skip,
+    UndoContext,
+    plan_row,
+    undo_problem,
+)
 from app.services.fuel import fuel_category_id
 from app.services.insights import _month_range
 from app.services.money import base_amount_expr, to_base
@@ -442,3 +452,187 @@ def run_bulk(
     db.commit()
     result.update(batch_id=batch.id, undo_until=now + UNDO_WINDOW)
     return result
+
+
+# ---------------------------------------------------------------------- undo
+
+
+def _restore(db: Session, t: Transaction, row: BulkBatchRow, fields: tuple[str, ...]) -> None:
+    if "bucket" in fields:
+        t.bucket_id = row.old_bucket_id
+    if "category" in fields:
+        t.category_id = row.old_category_id
+    if "payer" in fields:
+        t.paid_by, t.payer_mode = row.old_paid_by, row.old_payer_mode
+        if row.occurrence_id is not None:
+            occ = db.get(BillOccurrence, row.occurrence_id)
+            if occ is not None and occ.transaction_id == t.id:
+                occ.paid_by = row.old_occurrence_paid_by  # U6
+    if "method" in fields:
+        t.payment_method = row.old_payment_method
+    # U8: the own-share cent stays where R17 put it.
+
+
+def undo_batch(db: Session, *, household_id: str, user_id: str, batch_id: str) -> dict:
+    """Restore every row of a batch that still holds the batch's values.
+    The batch row is locked, so of two concurrent undos one gets 409."""
+    hh = household_id
+    batch = (
+        db.query(BulkBatch)
+        .filter(BulkBatch.id == batch_id, BulkBatch.household_id == hh)
+        .with_for_update()
+        .first()
+    )
+    if batch is None:
+        raise HTTPException(status_code=404, detail="Bulk change not found.")
+    if batch.undone_at is not None:
+        raise HTTPException(status_code=409, detail="This change was already undone.")
+    now = utcnow_naive()
+    if not can_undo(batch, now):
+        raise HTTPException(status_code=409, detail="Changes can be undone for 24 hours.")
+
+    fields = tuple(f for f in batch.fields.split(",") if f)
+    rows = db.query(BulkBatchRow).filter(BulkBatchRow.batch_id == batch.id).all()
+    ids = [r.transaction_id for r in rows]
+    txns = {t.id: t for t in _load(db.query(Transaction).filter(Transaction.id.in_(ids)), True)}
+    ctx = UndoContext(
+        takers=_takers(db, ids),
+        bucket_ids=set(_bucket_names(db, hh)),
+        category_ids={c for (c,) in db.query(Category.id).filter(Category.household_id == hh)},
+        member_ids=household_member_ids(db, hh),
+    )
+    restored, skipped = 0, []
+    for row in rows:
+        t = txns[row.transaction_id]
+        problem = undo_problem(t, row, fields, ctx)
+        if problem is not None:
+            skipped.append({"id": t.id, "code": problem.code, "reason": problem.reason})
+            continue
+        _restore(db, t, row, fields)
+        row.restored = True
+        restored += 1
+
+    bill_restored = False
+    if batch.bill_moved and batch.bill_id is not None:  # U7
+        bill = db.get(RecurringBill, batch.bill_id)
+        old_exists = batch.bill_bucket_old is None or batch.bill_bucket_old in ctx.bucket_ids
+        if bill is not None and bill.bucket_id == batch.bill_bucket_new and old_exists:
+            bill.bucket_id = batch.bill_bucket_old
+            bill_restored = True
+
+    batch.undone_at, batch.undone_by = now, user_id  # set even when rows are skipped
+    db.commit()
+    return {"restored": restored, "skipped": skipped, "bill_restored": bill_restored}
+
+
+# ------------------------------------------------------------- recent, history
+
+
+def _user_names(db: Session, ids) -> dict[str, str]:
+    ids = {i for i in ids if i}
+    if not ids:
+        return {}
+    return dict(db.query(User.id, User.display_name).filter(User.id.in_(ids)).all())
+
+
+def recent_batches(db: Session, household_id: str, limit: int = 10) -> list[dict]:
+    batches = (
+        db.query(BulkBatch)
+        .filter(BulkBatch.household_id == household_id)
+        .order_by(BulkBatch.created_at.desc(), BulkBatch.id)
+        .limit(limit)
+        .all()
+    )
+    names = _user_names(db, (b.created_by for b in batches))
+    now = utcnow_naive()
+    return [
+        {
+            "id": b.id,
+            "created_at": b.created_at,
+            "created_by": names.get(b.created_by),
+            "summary": b.summary,
+            "row_count": b.row_count,
+            "undone_at": b.undone_at,
+            "can_undo": can_undo(b, now),
+        }
+        for b in batches
+    ]
+
+
+def bulk_history_events(db: Session, household_id: str, txn_id: str) -> list[dict]:
+    """The bulk changes (and their undos) that touched one transaction."""
+    pairs = (
+        db.query(BulkBatchRow, BulkBatch)
+        .join(BulkBatch, BulkBatchRow.batch_id == BulkBatch.id)
+        .filter(BulkBatchRow.transaction_id == txn_id, BulkBatch.household_id == household_id)
+        .order_by(BulkBatch.created_at)
+        .all()
+    )
+    if not pairs:
+        return []
+    buckets = _bucket_names(db, household_id)
+    categories = dict(
+        db.query(Category.id, Category.name).filter(Category.household_id == household_id).all()
+    )
+    users = _user_names(
+        db,
+        {r.old_paid_by for r, _ in pairs}
+        | {r.new_paid_by for r, _ in pairs}
+        | {b.created_by for _, b in pairs}
+        | {b.undone_by for _, b in pairs},
+    )
+
+    def bucket(v):
+        return buckets.get(v, "a deleted bucket") if v else "No bucket"
+
+    def category(v):
+        return categories.get(v, "a deleted category") if v else "No category"
+
+    def payer(user_id, mode):
+        if mode == OWN_SHARE:
+            return "Each their own share"
+        return users.get(user_id, "a former member") if user_id else "No payer"
+
+    now = utcnow_naive()
+    events = []
+    for row, batch in pairs:
+        parts = []
+        for field in batch.fields.split(","):
+            if field == "bucket":
+                parts.append(f"Bucket: {bucket(row.old_bucket_id)} → {bucket(row.new_bucket_id)}")
+            elif field == "category":
+                parts.append(
+                    f"Category: {category(row.old_category_id)} → {category(row.new_category_id)}"
+                )
+            elif field == "payer":
+                parts.append(
+                    f"Payer: {payer(row.old_paid_by, row.old_payer_mode)} → "
+                    f"{payer(row.new_paid_by, row.new_payer_mode)}"
+                )
+            elif field == "method":
+                parts.append(
+                    f"Method: {METHOD_LABELS.get(row.old_payment_method, row.old_payment_method)}"
+                    f" → {METHOD_LABELS.get(row.new_payment_method, row.new_payment_method)}"
+                )
+        events.append(
+            {
+                "at": batch.created_at,
+                "kind": "bulk_change",
+                "by": users.get(batch.created_by),
+                "text": "; ".join(parts),
+                "batch_id": batch.id,
+                "can_undo": can_undo(batch, now),
+            }
+        )
+        if batch.undone_at is not None:
+            events.append(
+                {
+                    "at": batch.undone_at,
+                    "kind": "bulk_undone",
+                    "by": users.get(batch.undone_by),
+                    "text": "Change undone" if row.restored else "Undo left this one as it was",
+                    "batch_id": batch.id,
+                    "can_undo": False,
+                }
+            )
+    return events

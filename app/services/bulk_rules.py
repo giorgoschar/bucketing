@@ -157,3 +157,60 @@ def plan_row(t: Transaction, ch: Changes, ctx: RowContext) -> RowPlan | Skip:
         t.payment_method,
     )
     return RowPlan(bucket_id, category_id, paid_by, payer_mode, method, changed, absorb)
+
+
+# ---------------------------------------------------------------------- undo
+
+
+@dataclass(frozen=True)
+class UndoContext:
+    takers: dict[str, str]
+    bucket_ids: set[str]  # the household's buckets, archived included
+    category_ids: set[str]
+    member_ids: set[str]
+
+
+def undo_problem(t: Transaction, row, fields: tuple[str, ...], ctx: UndoContext) -> Skip | None:
+    """Why ``row`` (a BulkBatchRow) can't be restored on ``t``, if it can't.
+    ``require_takes_income`` is not re-checked (U6)."""
+    if t.deleted_at is not None:
+        return skip("deleted_since")  # U1
+    holds_new = {
+        "bucket": t.bucket_id == row.new_bucket_id,
+        "category": t.category_id == row.new_category_id,
+        "payer": (t.paid_by, t.payer_mode) == (row.new_paid_by, row.new_payer_mode),
+        "method": t.payment_method == row.new_payment_method,
+    }
+    if not all(holds_new[f] for f in fields):
+        return skip("changed_since")  # U2
+    if (
+        ("bucket" in fields and row.old_bucket_id and row.old_bucket_id not in ctx.bucket_ids)
+        or (
+            "category" in fields
+            and row.old_category_id
+            and row.old_category_id not in ctx.category_ids
+        )
+        or ("payer" in fields and row.old_paid_by and row.old_paid_by not in ctx.member_ids)
+    ):
+        return skip("target_gone")  # U3
+    if (
+        "bucket" in fields
+        and row.old_bucket_id is None
+        and t.type != TransactionType.income
+        and t.recurring_bill_id is None
+    ):
+        return skip("needs_bucket")  # U4: the item was deleted since (FK SET NULL)
+    taker = ctx.takers.get(t.id)
+    if taker is not None:  # U5 with R13 and R14
+        if "payer" in fields and (row.old_payer_mode == OWN_SHARE or row.old_paid_by != taker):
+            return skip("cash_take")
+        if "method" in fields and row.old_payment_method != CASH:
+            return skip("cash_take")
+    if (
+        "payer" in fields
+        and row.old_payer_mode == OWN_SHARE
+        and t.payer_mode != OWN_SHARE
+        and own_share_problem(t.amount, (s.amount for s in t.splits))
+    ):
+        return skip("no_split")  # U5 with R17
+    return None

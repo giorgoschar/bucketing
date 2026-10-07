@@ -8,14 +8,14 @@ app.api includes this router ahead of app.api.transactions, so the literal
 from datetime import date, datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy.orm import Session
 
 from app.api.planning_models import Money
 from app.api_auth import require_api_auth
 from app.core.database import get_db
-from app.services.bulk import Selection, run_bulk
+from app.services.bulk import Selection, recent_batches, run_bulk, undo_batch
 from app.services.bulk_rules import Changes, Payer
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
@@ -143,3 +143,41 @@ def bulk_change(
         dry_run=body.dry_run,
         expected_count=body.expected_count,
     )
+
+
+class UndoResult(BaseModel):
+    restored: int
+    skipped: list[SkippedOut]
+    bill_restored: bool
+
+
+class RecentBatchOut(BaseModel):
+    id: str
+    created_at: datetime
+    created_by: str | None  # display name
+    summary: str
+    row_count: int
+    undone_at: datetime | None
+    can_undo: bool
+
+
+@router.get("/bulk", response_model=list[RecentBatchOut])
+def recent_bulk(
+    limit: int = Query(10, ge=1, le=50),
+    auth=Depends(require_api_auth),
+    db: Session = Depends(get_db),
+):
+    """The household's latest bulk changes, newest first ("Recent bulk changes")."""
+    user, hh_id = auth
+    return recent_batches(db, hh_id, limit)
+
+
+@router.post("/bulk/{batch_id}/undo", response_model=UndoResult)
+def undo_bulk(
+    batch_id: str,
+    auth=Depends(require_api_auth),
+    db: Session = Depends(get_db),
+):
+    """Undo a batch within 24 hours, once. Rows changed since are left as they are."""
+    user, hh_id = auth
+    return undo_batch(db, household_id=hh_id, user_id=user.id, batch_id=batch_id)
