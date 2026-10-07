@@ -1,5 +1,5 @@
 import { useEffect, useReducer, useRef, useState } from 'react'
-import { useBlocker, useNavigate } from 'react-router'
+import { useBlocker, useNavigate, useSearchParams } from 'react-router'
 import { CloseIcon } from '../../shell/icons'
 import { AmountDisplay } from '../../ui/AmountDisplay'
 import { Keypad } from '../../ui/Keypad'
@@ -10,7 +10,7 @@ import { CashControls } from './CashControls'
 import { ConfirmSheet } from './ConfirmSheet'
 import { currencyName, currencySymbol, formatCents, spokenMoney } from './currencies'
 import { dayLabel, todayLocal } from './dates'
-import { type DefaultsRecord, matchRule, sanitize, suggestMerchants } from './defaults'
+import { type DefaultsRecord, matchRule, RULES_API_READY, sanitize, suggestMerchants } from './defaults'
 import { DuplicateCard } from './DuplicateCard'
 import { EditTopMenu } from './EditTopMenu'
 import type { ComposerData } from './hooks/useComposerData'
@@ -20,6 +20,8 @@ import { useSaveTransaction } from './hooks/useSaveTransaction'
 import { useUndoCreate } from './hooks/undo'
 import { firstProblem, isDirtyNew, isFuel, moreDirty, toUpdateBody, validate } from './model'
 import { MoreSheet } from './MoreSheet'
+import { ReviewBanner } from './scan/ReviewBanner'
+import { ScanScreen } from './scan/ScanScreen'
 import { SplitSheet } from './SplitSheet'
 import { BucketSheet } from './pickers/BucketSheet'
 import { CategorySheet } from './pickers/CategorySheet'
@@ -56,6 +58,15 @@ export function ComposerForm({ initial, data, defaults }: { initial: ComposerSta
   const [typing, setTyping] = useState(false)
   const [stashCents, setStashCents] = useState<number | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  // The scan overlay is ?mode=scan, replaced in place: Back and Save still return to where the composer opened.
+  const [params, setParams] = useSearchParams()
+  const scanOpen = params.get('mode') === 'scan'
+  const setScan = (open: boolean) =>
+    setParams((p) => {
+      if (open) p.set('mode', 'scan')
+      else p.delete('mode')
+      return p
+    }, { replace: true })
   const v = validate(s, { ...ctx, today, stashCents })
 
   const memberIds = data.members.map((m) => m.user_id)
@@ -142,7 +153,7 @@ export function ComposerForm({ initial, data, defaults }: { initial: ComposerSta
   useEffect(() => { onSaveRef.current = onSave })
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (sheet || dup || confirmDelete || blocker.state === 'blocked') return
+      if (sheet || dup || confirmDelete || scanOpen || blocker.state === 'blocked') return
       const t = e.target as HTMLElement | null
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
       let key: AmountKey | null = null
@@ -156,7 +167,7 @@ export function ComposerForm({ initial, data, defaults }: { initial: ComposerSta
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [sheet, dup, confirmDelete, blocker.state])
+  }, [sheet, dup, confirmDelete, scanOpen, blocker.state])
 
   const switchType = (value: TxnType) => {
     const r = sanitize(value === 'income' ? defaults.lastIncome : defaults.last, lookup(value))
@@ -213,12 +224,15 @@ export function ComposerForm({ initial, data, defaults }: { initial: ComposerSta
       <div className="composer__body">
         {s.mode === 'new' && !income && (
           <div className="composer__modes" role="group" aria-label="Entry mode">
+            <button type="button" className="ck-chip" onClick={() => setScan(true)}>Scan receipt</button>
             <button type="button" className={s.cashMode ? 'ck-chip on' : 'ck-chip'} aria-pressed={s.cashMode} onClick={toggleCash}>
               Cash from wallet
             </button>
           </div>
         )}
 
+        <ReviewBanner s={s} categories={data.categories} rulesReady={RULES_API_READY}
+          onRemember={(on) => dispatch({ type: 'setRemember', on })} />
         <AmountDisplay text={displayAmount(s.amount)} symbol={currencySymbol(s.currency)} currency={s.currency}
           spoken={`Amount ${centsToString(cents)} ${currencyName(s.currency)}`} tone={income ? 'income' : 'default'}
           converted={converted} onCurrency={() => setSheet('currency')}
@@ -316,6 +330,20 @@ export function ComposerForm({ initial, data, defaults }: { initial: ComposerSta
           dispatch(sheet === 'own' ? { type: 'setOwnShare', splits: r.shares } : { type: 'setSplit', on: true, mode: r.mode, splits: r.shares })
         }
         onClose={() => setSheet(sheet === 'split' ? 'more' : null)} />
+      {scanOpen && (
+        <ScanScreen
+          online={online}
+          onResult={(r) => {
+            dispatch({ type: 'applyScan', result: r, householdCurrency: data.householdCurrency, today })
+            setScan(false)
+          }}
+          onPhoto={(file) => {
+            dispatch({ type: 'attachPhoto', file })
+            setScan(false)
+          }}
+          onClose={() => setScan(false)}
+        />
+      )}
       <ConfirmSheet open={blocker.state === 'blocked'} title="Discard this entry?" confirmLabel="Discard"
         cancelLabel="Keep editing" danger onConfirm={() => blocker.proceed?.()} onCancel={() => blocker.reset?.()} />
       <ConfirmSheet open={confirmDelete} title="Delete this entry?" confirmLabel="Delete" cancelLabel="Cancel" danger
