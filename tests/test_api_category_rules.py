@@ -177,3 +177,22 @@ def test_categories_list_counts_expenses_and_rules(client, db, api):  # noqa: F8
         if c["id"] == cat
     )
     assert (row["expense_count"], row["rule_count"]) == (2, 1)
+
+
+def test_put_race_on_the_unique_pattern_is_409_not_500(client, db, api, monkeypatch):  # noqa: F811
+    """Two PUTs both pass the pre-check; the unique constraint catches the second."""
+    headers, hh = api
+    cat = _category(db, hh.household_id)
+    client.post(URL, headers=headers, json={"pattern": "lidl", "category_id": cat})
+    second = client.post(URL, headers=headers, json={"pattern": "ab", "category_id": cat}).json()
+    # The pre-check misses (the other request has not committed yet)...
+    monkeypatch.setattr("app.api.category_rules._by_pattern", lambda *a, **k: None)
+    r = client.put(
+        f"{URL}/{second['id']}", headers=headers, json={"pattern": "lidl", "category_id": cat}
+    )
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"] == "Another rule already uses this pattern."
+    # ...and the session is usable afterwards, with the rule unchanged.
+    monkeypatch.undo()
+    rules = {x["pattern"] for x in client.get(URL, headers=headers).json()}
+    assert rules == {"lidl", "ab"}

@@ -11,6 +11,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api_auth import require_api_auth
@@ -120,7 +121,12 @@ def update_category_rule(
         raise HTTPException(status_code=409, detail=PATTERN_TAKEN_MSG)
     rule.pattern = pattern
     rule.category_id = category_id
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # Another request took this pattern between the check and the commit.
+        db.rollback()
+        raise HTTPException(status_code=409, detail=PATTERN_TAKEN_MSG) from None
     db.refresh(rule)
     return _out(rule)
 
