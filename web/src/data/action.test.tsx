@@ -3,11 +3,11 @@ import type { QueryClient } from '@tanstack/react-query'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { db } from '../offline/db'
 import { setIdentity } from '../offline/identity'
-import { fakeApi, reply } from '../test/fakeApi'
+import { fakeApi, hang, reply } from '../test/fakeApi'
 import { day, entry } from '../test/fixtures'
 import { Providers, resetTestEnv, setOnline, TEST_IDENTITY, testQueryClient } from '../test/render'
 import { Toaster } from '../ui/Toast'
-import { useAction, type ActionResult, type ActionSpec } from './action'
+import { SEND_TIMEOUT_MS, UNCONFIRMED_DETAIL, useAction, type ActionResult, type ActionSpec } from './action'
 import { keys } from './keys'
 import { isPending } from './pending'
 import type { EntryOut, UpcomingDayOut } from './types'
@@ -40,7 +40,7 @@ function setup(s = spec()) {
     return r!
   }
   const status = () => client.getQueryData<UpcomingDayOut[]>(KEY)![0].entries[0].status
-  return { client, run, status }
+  return { client, run, status, hook }
 }
 
 it('online 2xx: keeps the patch, resolves done with the data and invalidates', async () => {
@@ -120,4 +120,59 @@ it('a 503 while online is replayed shortly after, without an online or visibilit
   await act(() => vi.advanceTimersByTimeAsync(2_000))
   await waitFor(() => expect(fake.callsTo(SKIP)).toHaveLength(2))
   await waitFor(async () => expect(await db.queue.count()).toBe(0))
+})
+
+it("queue 'offline-only': a 503 while online rolls back, says so and queues nothing", async () => {
+  fakeApi({ [SKIP]: () => reply(503) })
+  const { client, run, status } = setup(spec({ queue: 'offline-only' }))
+  const spy = vi.spyOn(client, 'invalidateQueries')
+  expect(await run()).toEqual({ status: 'rejected', code: 503, detail: UNCONFIRMED_DETAIL })
+  expect(status()).toBe('expected')
+  expect(await db.queue.count()).toBe(0)
+  expect(isPending('e1')).toBe(false)
+  expect(document.body).toHaveTextContent(UNCONFIRMED_DETAIL)
+  expect(spy).toHaveBeenCalledWith({ queryKey: ['plan'] })
+})
+
+it("queue 'offline-only': a network error while online rolls back too", async () => {
+  fakeApi({}).down()
+  const { run, status } = setup(spec({ queue: 'offline-only' }))
+  expect(await run()).toEqual({ status: 'rejected', code: 0, detail: UNCONFIRMED_DETAIL })
+  expect(status()).toBe('expected')
+  expect(await db.queue.count()).toBe(0)
+})
+
+it("queue 'offline-only': offline still queues", async () => {
+  fakeApi({})
+  setOnline(false)
+  const { run, status } = setup(spec({ queue: 'offline-only' }))
+  expect(await run()).toEqual({ status: 'queued' })
+  expect(status()).toBe('skipped')
+  expect(await db.queue.count()).toBe(1)
+})
+
+async function runTimingOut(s: ActionSpec<void, EntryOut>) {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true })
+  fakeApi({ [SKIP]: () => hang() })
+  const { hook, status } = setup(s)
+  let r: ActionResult<EntryOut> | undefined
+  await act(async () => {
+    const p = hook.result.current.run()
+    await vi.advanceTimersByTimeAsync(SEND_TIMEOUT_MS)
+    r = await p
+  })
+  return { r: r!, status }
+}
+
+it('a request that takes longer than the timeout counts as a network error: queued by default', async () => {
+  const { r } = await runTimingOut(spec())
+  expect(r).toEqual({ status: 'queued' })
+  expect(await db.queue.count()).toBe(1)
+})
+
+it("a timeout with queue 'offline-only' rolls back instead", async () => {
+  const { r, status } = await runTimingOut(spec({ queue: 'offline-only' }))
+  expect(r).toEqual({ status: 'rejected', code: 0, detail: UNCONFIRMED_DETAIL })
+  expect(status()).toBe('expected')
+  expect(await db.queue.count()).toBe(0)
 })
