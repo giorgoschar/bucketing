@@ -93,9 +93,23 @@ deploying.
    `pg_dump "$DATABASE_URL" | gzip > expenses-pre-planning.sql.gz`
 2. Restore it into a scratch database on a Postgres 18 you control:
    `createdb expenses_upgrade_check && gunzip -c expenses-pre-planning.sql.gz | psql expenses_upgrade_check`
-   No dump at hand? Build production's schema from the deployed code instead:
-   `git worktree add /tmp/expenses-8b01313 8b01313 && (cd /tmp/expenses-8b01313 && DATABASE_URL=postgresql://localhost/expenses_upgrade_check APP_SECRET_KEY=$(openssl rand -hex 32) DEBUG=true <repo>/.venv/bin/alembic upgrade head)`
-   (a pre-Phase-1 backup: use commit `67da44c`, head `e9f0a1b2c3d4`).
+   No dump at hand? Build production's schema from the deployed code instead,
+   with that code's own virtualenv (this branch's `.venv` would import this
+   branch's models and migrations, and build the wrong schema):
+   ```sh
+   git worktree add /tmp/expenses-8b01313 8b01313
+   cd /tmp/expenses-8b01313
+   python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt
+   DATABASE_URL=postgresql://localhost/expenses_upgrade_check \
+     APP_SECRET_KEY=$(openssl rand -hex 32) DEBUG=true .venv/bin/alembic upgrade head
+   .venv/bin/alembic current   # → f0a1b2c3d4e5 (head)
+   cd - && git worktree remove /tmp/expenses-8b01313
+   ```
+   Or use the production image, which has exactly the deployed code and
+   dependencies: `docker run --rm --network host --entrypoint alembic -e DATABASE_URL=postgresql://<user>:<pass>@localhost/expenses_upgrade_check -e APP_SECRET_KEY=$(openssl rand -hex 32) -e DEBUG=true <production image> upgrade head`
+   (`--network host` reaches the host's Postgres on Linux; on Docker Desktop
+   drop it and use `host.docker.internal` instead of `localhost`).
+   (A pre-Phase-1 backup: use commit `67da44c`, head `e9f0a1b2c3d4`.)
 3. Upgrade with this branch:
    `DATABASE_URL=postgresql://localhost/expenses_upgrade_check .venv/bin/alembic upgrade head`
 4. Check the backfill:
@@ -104,8 +118,19 @@ deploying.
    - `psql expenses_upgrade_check -c "SELECT count(*) FROM bill_occurrences o JOIN transactions t ON t.id = o.transaction_id WHERE o.status = 'paid' AND t.recurring_bill_id IS DISTINCT FROM o.bill_id"` → 0
 5. Old-app smoke test on the upgraded copy:
    `DATABASE_URL=postgresql://localhost/expenses_upgrade_check APP_SECRET_KEY=<prod key> FIELD_ENCRYPTION_KEY=<prod key> DEBUG=true ENABLE_SCHEDULER=false .venv/bin/uvicorn app.main:app --port 8001`
-   Log in with password + TOTP. Open the dashboard (same month totals as production), Bills (same list, pay one occurrence), Insights, a trip bucket and Search.
+   Log in with password + TOTP. (In production people may also sign in to the
+   new app with a Pocket ID passkey; that flow returns to the production
+   callback URL, not to this local copy. Everyone who linked a passkey did so
+   after a password + TOTP login, so that path works for every account.)
+   Open the dashboard (same month totals as production), Bills (same list, pay one occurrence), Insights, a trip bucket and Search.
 6. Round trip: `.venv/bin/alembic downgrade f0a1b2c3d4e5 && .venv/bin/alembic upgrade head` (`f0a1b2c3d4e5` is the revision this migration revises).
+   The downgrade refuses, without changing anything, while the database has
+   any recurring item that is incoming (`direction = 'in'`) or uses a new
+   schedule rule (`rule_kind <> 'monthly_interval'`), any expense without a
+   bucket (a Fixed cost paid from the new app), or an undone auto-payment
+   still in the 3-day auto-pay window. A fresh copy of production has none of
+   these; if you tried the new app on the copy first, remove them (or start
+   again from the dump) before this step.
 7. Drop the scratch database.
 
 Then note the date and result in the PR description.
