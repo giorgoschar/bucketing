@@ -66,6 +66,21 @@ def parse_amount(
     return value.quantize(Decimal("0.0001"))
 
 
+def payment_method_or_400(value) -> str | None:
+    """A sent payment method, normalised; None when not sent (blank or null),
+    meaning "the item's own" (2d §7.0). An unknown method is a 400 with
+    parse_payment_method's message. parse_payment_method itself keeps mapping
+    blank to card: transactions rely on that."""
+    from app.schemas import parse_payment_method
+
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    try:
+        return parse_payment_method(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+
 def validate_currency(value: str) -> str:
     """Return the currency code if the app supports it, else raise HTTP 400."""
     from app.core.config import settings

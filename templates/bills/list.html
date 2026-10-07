@@ -431,8 +431,9 @@
       <div>
         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Paid with</label>
         <select name="payment_method" class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 focus:border-primary-500 outline-none text-sm">
+          <option value="" selected>Bill's default</option>
           {% for pm in payment_methods %}
-          <option value="{{ pm.value }}" {% if pm.value == 'card' %}selected{% endif %}>{{ pm.value | replace('_', ' ') | title }}</option>
+          <option value="{{ pm.value }}">{{ pm.value | replace('_', ' ') | title }}</option>
           {% endfor %}
         </select>
       </div>

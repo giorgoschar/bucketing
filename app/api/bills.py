@@ -19,10 +19,11 @@ from app.models import (
     ItemDirection,
     OccurrenceStatus,
     PayerMode,
+    PaymentMethod,
     RecurringBill,
     RecurringBillSplit,
 )
-from app.schemas import parse_payer_mode, parse_payment_method
+from app.schemas import parse_payer_mode
 from app.services import get_overdue_bills, get_upcoming_bills
 from app.services.bills import (
     BILL_HAS_HISTORY_MSG,
@@ -40,6 +41,7 @@ from app.services.bills import (
 from app.validators import (
     check_split_sum,
     parse_amount,
+    payment_method_or_400,
     require_bucket,
     require_category,
     require_member,
@@ -119,6 +121,7 @@ class BillIn(BaseModel):
     # "single" (paid_by_default pays) or "own_share" (each member pays their
     # split directly; needs splits).
     payer_mode: str = PayerMode.single.value
+    payment_method: str | None = None  # None: card on create, unchanged on update
     # Update only: also give past payments with no payer this bill's payer.
     apply_to_past: bool = False
 
@@ -133,13 +136,8 @@ class PayOccurrenceIn(BaseModel):
     paid_by: str | None = None
     # None: paid_by if given, else the bill's payer mode.
     payer_mode: str | None = None
-    payment_method: str = "card"
+    payment_method: str | None = None  # None: the bill's
     splits: list[BillSplitIn] = []
-
-    @field_validator("payment_method", mode="before")
-    @classmethod
-    def _payment_method(cls, v):
-        return parse_payment_method(v)
 
     @field_validator("payer_mode", mode="before")
     @classmethod
@@ -164,6 +162,7 @@ def _bill_dict(b: RecurringBill) -> dict:
         "total_occurrences": b.total_occurrences,
         "paid_by_default": b.paid_by_default,
         "payer_mode": b.payer_mode,
+        "payment_method": b.payment_method,
         "notes": b.notes,
         "is_auto_pay": b.is_auto_pay,
         "is_active": b.is_active,
@@ -231,6 +230,7 @@ def create_bill(
     db: Session = Depends(get_db),
 ):
     user, hh_id = auth
+    method = payment_method_or_400(body.payment_method)
     _validate_bill_refs(body, hh_id, db)
     amount = parse_amount(body.amount, field="Bill amount", allow_blank=True)
 
@@ -251,6 +251,7 @@ def create_bill(
         payer_mode=body.payer_mode,
         notes=body.notes,
         is_auto_pay=body.is_auto_pay,
+        payment_method=method or PaymentMethod.card.value,
     )
     db.add(bill)
     db.flush()
@@ -298,6 +299,7 @@ def update_bill(
     if not bill.old_app_editable:
         raise HTTPException(status_code=409, detail=EDIT_IN_NEW_APP_MSG)
     _validate_bill_refs(body, hh_id, db)
+    method = payment_method_or_400(body.payment_method)
     amount = parse_amount(body.amount, field="Bill amount", allow_blank=True)
 
     if body.splits:
@@ -320,6 +322,8 @@ def update_bill(
     bill.payer_mode = body.payer_mode
     bill.notes = body.notes
     bill.is_auto_pay = body.is_auto_pay
+    if method is not None:
+        bill.payment_method = method
 
     # Replace splits
     for s in bill.splits:
@@ -398,6 +402,7 @@ def pay_occurrence(
         fallback_user_id=user.id,
     )
 
+    method = payment_method_or_400(body.payment_method)
     try:
         paid = settle_occurrence(
             db,
@@ -406,7 +411,7 @@ def pay_occurrence(
             paid_by=payer,
             payer_mode=payer_mode,
             paid_on=utcnow_naive(),
-            payment_method=body.payment_method,
+            payment_method=method,
             split_overrides=effective_overrides(
                 bill, {s.user_id: Decimal(str(s.amount)) for s in body.splits}
             ),

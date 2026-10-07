@@ -462,7 +462,7 @@ def test_bill_payment_method_is_backfilled_from_history(tmp_path, revision):
             ids["rent"],
             when=same_day,
             method="apple_pay",
-            created_at=datetime(2026, 1, 1, 9, 0),
+            created_at=datetime(2026, 1, 1, 9, 0),  # noqa: DTZ001
         )
     engine.dispose()
 

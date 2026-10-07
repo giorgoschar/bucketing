@@ -1210,6 +1210,8 @@ export interface components {
              * @default single
              */
             payer_mode: string;
+            /** Payment Method */
+            payment_method?: string | null;
             /**
              * Splits
              * @default []
@@ -1843,7 +1845,7 @@ export interface components {
             paid_by: string;
             /**
              * Payment Method
-             * @default card
+             * @default
              */
             payment_method: string;
         };
@@ -2146,11 +2148,8 @@ export interface components {
         EntryDoneIn: {
             /** Amount */
             amount?: number | string | null;
-            /**
-             * Payment Method
-             * @default card
-             */
-            payment_method: string;
+            /** Payment Method */
+            payment_method?: string | null;
             /** Person */
             person?: string | null;
         };
@@ -2183,6 +2182,8 @@ export interface components {
             name: string;
             /** Overdue */
             overdue: boolean;
+            /** Payment Method */
+            payment_method: string;
             /** Status */
             status: string;
             /** Transaction Id */
@@ -2364,11 +2365,8 @@ export interface components {
             paid_by?: string | null;
             /** Payer Mode */
             payer_mode?: string | null;
-            /**
-             * Payment Method
-             * @default card
-             */
-            payment_method: string;
+            /** Payment Method */
+            payment_method?: string | null;
             /**
              * Splits
              * @default []
@@ -2435,6 +2433,8 @@ export interface components {
              * @default single
              */
             payer_mode: string;
+            /** Payment Method */
+            payment_method?: string | null;
             /**
              * Rule Adjust
              * @default none
@@ -2501,6 +2501,8 @@ export interface components {
             paid_by_default: string | null;
             /** Payer Mode */
             payer_mode: string;
+            /** Payment Method */
+            payment_method: string;
             /** Rule Adjust */
             rule_adjust: string;
             /** Rule Day */
