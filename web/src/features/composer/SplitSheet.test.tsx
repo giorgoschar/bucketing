@@ -82,3 +82,17 @@ it('malformed text shows an error and keeps Done disabled in amounts, percent an
   expect(screen.getByRole('button', { name: 'Done' })).toBeDisabled()
   expect(screen.getByText('Use a number like 12.50')).toBeInTheDocument()
 })
+
+it('reopening a Percent split shows the percents that were typed', () => {
+  const onTyped = vi.fn()
+  const p = props({ totalCents: 1000, payerId: 'u1', onTyped })
+  render(<SplitSheet {...p} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Percent' }))
+  fireEvent.change(screen.getByLabelText('Maria percent'), { target: { value: '25' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Done' }))
+  const r = (p.onDone as ReturnType<typeof vi.fn>).mock.calls[0][0]
+  expect(onTyped).toHaveBeenCalledWith({ u2: '25' })
+  cleanup()
+  render(<SplitSheet {...props({ totalCents: 1000, payerId: 'u1', initial: { mode: 'percent', shares: r.shares, typed: { u2: '25' } } })} />)
+  expect(screen.getByLabelText('Maria percent')).toHaveValue('25')
+})

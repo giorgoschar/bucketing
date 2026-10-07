@@ -1,6 +1,7 @@
 import type { components } from '../../api/schema'
 import { centsToString, convertCents, fromApiAmount, parseFuelPrice, parseRate, toCents } from './amount'
 import { formatCents } from './currencies'
+import { typedFromShares } from './splits'
 import { blankState, type ComposerState, type Method, METHODS } from './state'
 import type { Txn } from './types'
 
@@ -74,6 +75,7 @@ export function fromTransaction(t: Txn, c: { householdCurrency: string; meId: st
     splitOn: !ownShare && splits.length > 0,
     splitMode: 'amounts',
     splits,
+    splitTyped: typedFromShares(splits),
     countInForecast: !t.exclude_from_forecast,
     excludeFromSettlement: t.exclude_from_settlement,
     storedReceiptPath: t.receipt_path,
@@ -111,7 +113,9 @@ export function validate(s: ComposerState, c: ValidateCtx): Validation {
   if (isFuel(s, c) && s.fuelPrice.trim() !== '' && parseFuelPrice(s.fuelPrice) === null) p.fuel = 'Price must be above 0'
   if (s.type === 'expense' && (s.splitOn || s.ownShare)) {
     const sum = s.splits.reduce((a, x) => a + toCents(x.amount), 0)
-    if (s.ownShare ? Math.abs(sum - cents) > 1 : sum > cents) p.split = 'Fix the split'
+    const negative = s.splits.some((x) => x.amount.trim().startsWith('-'))
+    if (s.ownShare && Math.abs(sum - cents) > 1) p.split = `Who paid what must add up to ${formatCents(cents, s.currency)}`
+    else if (negative || sum > cents) p.split = 'Fix the split'
   }
   if (tookCash(s) && s.paidBy !== c.meId) p.payer = 'Cash taken must be paid by you'
   if (tookCash(s) && s.tookFrom === 'stash' && c.stashCents !== null) {

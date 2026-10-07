@@ -58,6 +58,7 @@ export function ComposerForm({ initial, data, defaults }: { initial: ComposerSta
   const [typing, setTyping] = useState(false)
   const [stashCents, setStashCents] = useState<number | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const splitTyped = useRef<Record<string, string>>({})
   // The scan overlay is ?mode=scan, replaced in place: Back and Save still return to where the composer opened.
   const [params, setParams] = useSearchParams()
   const scanOpen = params.get('mode') === 'scan'
@@ -325,10 +326,12 @@ export function ComposerForm({ initial, data, defaults }: { initial: ComposerSta
           members: data.members, meId: data.meId, problems: v.problems, onOpenSplit: () => setSheet('split'),
         }} />
       <SplitSheet open={sheet === 'split' || sheet === 'own'} variant={sheet === 'own' ? 'own' : 'split'} totalCents={cents}
-        currency={s.currency} members={data.members} payerId={s.paidBy} initial={{ mode: s.splitMode, shares: s.splits }}
-        onDone={(r) =>
-          dispatch(sheet === 'own' ? { type: 'setOwnShare', splits: r.shares } : { type: 'setSplit', on: true, mode: r.mode, splits: r.shares })
-        }
+        currency={s.currency} members={data.members} payerId={s.paidBy} initial={{ mode: s.splitMode, shares: s.splits, typed: (sheet === 'own' ? s.ownShare : s.splitOn) ? s.splitTyped : undefined }}
+        onTyped={(t) => { splitTyped.current = t }}
+        onDone={(r) => {
+          const typed = splitTyped.current
+          dispatch(sheet === 'own' ? { type: 'setOwnShare', splits: r.shares, typed } : { type: 'setSplit', on: true, mode: r.mode, splits: r.shares, typed })
+        }}
         onClose={() => setSheet(sheet === 'split' ? 'more' : null)} />
       {scanOpen && (
         <ScanScreen

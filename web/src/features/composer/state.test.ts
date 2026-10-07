@@ -79,3 +79,43 @@ describe('scan', () => {
     expect(s).toMatchObject({ amount: '', scanNoTotal: true, date: '2026-10-07' })
   })
 })
+
+describe('splits follow the amount (I1)', () => {
+  const type = (s: ComposerState, keys: string) => [...keys].reduce((x, k) => reduce(x, { type: 'key', key: k as never }), s)
+  const two = (u1: string, u2: string) => [{ user_id: 'u1', amount: u1 }, { user_id: 'u2', amount: u2 }]
+
+  it('equal: re-equalises, leftover cent to the payer', () => {
+    const s = type(base({ amount: '10', splitOn: true, splitMode: 'equal', splits: two('5.00', '5.00'), paidBy: 'u2' }), '.01')
+    expect(s.amount).toBe('10.01')
+    expect(s.splits).toEqual(two('5.00', '5.01'))
+  })
+  it('amounts: typed shares stay, the payer takes the new remainder', () => {
+    const s = reduce(
+      base({ amount: '10', splitOn: true, splitMode: 'amounts', splits: two('6.50', '3.50'), splitTyped: { u2: '3.50' } }),
+      { type: 'key', key: '0' },
+    )
+    expect(s.splits).toEqual(two('96.50', '3.50'))
+  })
+  it('percent: percents stay, shares recompute', () => {
+    const s = reduce(
+      base({ amount: '10', splitOn: true, splitMode: 'percent', splits: two('7.50', '2.50'), splitTyped: { u2: '25' } }),
+      { type: 'key', key: '0' },
+    )
+    expect(s.splits).toEqual(two('75.00', '25.00'))
+  })
+  it('own share: shares are left alone and validation flags the mismatch', () => {
+    const s = reduce(base({ amount: '10', ownShare: true, paidBy: null, splits: two('6.00', '4.00') }), { type: 'key', key: '0' })
+    expect(s.splits).toEqual(two('6.00', '4.00'))
+  })
+  it('a scanned total also recomputes', () => {
+    const s = reduce(base({ amount: '10', splitOn: true, splitMode: 'equal', splits: two('5.00', '5.00') }), {
+      type: 'applyScan', householdCurrency: 'EUR', today: '2026-10-07',
+      result: { amount: 20, currency: null, date: null, merchant: null, category_id: null } as never,
+    })
+    expect(s.splits).toEqual(two('10.00', '10.00'))
+  })
+  it('setSplit keeps what was typed, so a Percent split reopens with its percents', () => {
+    const s = reduce(base(), { type: 'setSplit', on: true, mode: 'percent', splits: two('7.50', '2.50'), typed: { u2: '25' } })
+    expect(s.splitTyped).toEqual({ u2: '25' })
+  })
+})

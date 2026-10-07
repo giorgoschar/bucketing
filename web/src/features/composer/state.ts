@@ -1,4 +1,5 @@
-import { type AmountKey, fromApiAmount, pressKey } from './amount'
+import { type AmountKey, fromApiAmount, pressKey, toCents } from './amount'
+import { amountShares, equalShares, percentShares, toShareList } from './splits'
 import type { QrReceipt } from './types'
 
 export type TxnType = 'expense' | 'income'
@@ -47,6 +48,8 @@ export interface ComposerState {
   splitMode: SplitMode
   /** Every member's share, adding up to the total (split or own share). */
   splits: Share[]
+  /** What was typed in the split sheet (amounts or percents by user id): recomputes and reopens the split. */
+  splitTyped: Record<string, string>
   countInForecast: boolean
   /** Edit only: the stored value, sent back untouched. */
   excludeFromSettlement: boolean
@@ -69,7 +72,7 @@ export function blankState(p: BlankInput): ComposerState {
     bucketId: null, fixedCost: false, categoryId: null, ruleLabel: null,
     paidBy: p.meId, ownShare: false, method: p.type === 'income' ? 'transfer' : 'card',
     tookFrom: 'none', cashMode: false, date: p.date, notes: '', fuelPrice: '',
-    splitOn: false, splitMode: 'equal', splits: [], countInForecast: true, excludeFromSettlement: false,
+    splitOn: false, splitMode: 'equal', splits: [], splitTyped: {}, countInForecast: true, excludeFromSettlement: false,
     receipt: null, storedReceiptPath: null, source: 'manual', fromReceipt: [], scanCategoryId: null,
     scanNoTotal: false, rememberRule: false, touched: [],
   }
@@ -82,7 +85,7 @@ export type Action =
   | { type: 'pickBucket'; id: string | null; remembered: Remembered }
   | { type: 'pickCategory'; id: string | null; remembered: Remembered }
   | { type: 'pickPayer'; id: string }
-  | { type: 'setOwnShare'; splits: Share[] }
+  | { type: 'setOwnShare'; splits: Share[]; typed?: Record<string, string> }
   | { type: 'pickMethod'; method: Method }
   | { type: 'setTookFrom'; value: TookFrom }
   | { type: 'setCashMode'; on: boolean; meId: string; defaultMethod: Method }
@@ -91,7 +94,7 @@ export type Action =
   | { type: 'setDate'; value: string }
   | { type: 'setNotes'; value: string }
   | { type: 'setFuelPrice'; value: string }
-  | { type: 'setSplit'; on: boolean; mode: SplitMode; splits: Share[] }
+  | { type: 'setSplit'; on: boolean; mode: SplitMode; splits: Share[]; typed?: Record<string, string> }
   | { type: 'setForecast'; on: boolean }
   | { type: 'setReceipt'; file: File | null }
   | { type: 'applyScan'; result: QrReceipt; householdCurrency: string; today: string }
@@ -118,14 +121,35 @@ export function fill(s: ComposerState, r: Remembered, except: DefaultField): Com
   }
 }
 
+/**
+ * The amount changed: a split follows it. Equal re-equalises; amounts and percent keep what was typed and
+ * the payer takes the new remainder. Own share is left alone: validate() flags a mismatch.
+ */
+export function resplit(s: ComposerState): ComposerState {
+  if (s.type !== 'expense' || s.ownShare || !s.splitOn || !s.splits.length) return s
+  const ids = s.splits.map((x) => x.user_id)
+  const total = toCents(s.amount)
+  if (s.splitMode === 'equal') return { ...s, splits: toShareList(ids, equalShares(total, ids, s.paidBy)) }
+  if (!s.paidBy || !ids.includes(s.paidBy)) return s // no remainder holder: leave it for validate()
+  const shares = s.splitMode === 'amounts'
+    ? amountShares(total, ids, s.paidBy, s.splitTyped)
+    : percentShares(total, ids, s.paidBy, s.splitTyped)
+  return { ...s, splits: toShareList(ids, shares) }
+}
+
 export function reduce(s: ComposerState, a: Action): ComposerState {
+  const next = step(s, a)
+  return next.amount !== s.amount && a.type !== 'replace' ? resplit(next) : next
+}
+
+function step(s: ComposerState, a: Action): ComposerState {
   switch (a.type) {
     case 'key':
       return { ...s, amount: pressKey(s.amount, a.key), fromReceipt: drop(s.fromReceipt, 'amount'), scanNoTotal: false }
     case 'setType': {
       if (s.mode === 'edit' || s.type === a.value) return s
       return {
-        ...s, type: a.value, touched: [], ownShare: false, splitOn: false, splits: [], cashMode: false,
+        ...s, type: a.value, touched: [], ownShare: false, splitOn: false, splits: [], splitTyped: {}, cashMode: false,
         tookFrom: 'none', fuelPrice: '', ruleLabel: null,
         bucketId: a.defaults.bucket_id ?? null,
         categoryId: a.defaults.category_id ?? null,
@@ -151,7 +175,7 @@ export function reduce(s: ComposerState, a: Action): ComposerState {
     case 'pickPayer':
       return { ...s, paidBy: a.id, ownShare: false, splits: s.ownShare ? [] : s.splits, touched: add(s.touched, 'payer') }
     case 'setOwnShare':
-      return { ...s, ownShare: true, paidBy: null, splitOn: false, splits: a.splits, cashMode: false, tookFrom: 'none', touched: add(s.touched, 'payer') }
+      return { ...s, ownShare: true, paidBy: null, splitOn: false, splits: a.splits, splitTyped: a.typed ?? {}, cashMode: false, tookFrom: 'none', touched: add(s.touched, 'payer') }
     case 'pickMethod':
       return {
         ...s, method: a.method, tookFrom: a.method === 'cash' ? s.tookFrom : 'none',
@@ -177,7 +201,7 @@ export function reduce(s: ComposerState, a: Action): ComposerState {
     case 'setFuelPrice':
       return { ...s, fuelPrice: a.value }
     case 'setSplit':
-      return { ...s, splitOn: a.on, splitMode: a.mode, splits: a.on ? a.splits : [] }
+      return { ...s, splitOn: a.on, splitMode: a.mode, splits: a.on ? a.splits : [], splitTyped: a.on ? (a.typed ?? {}) : {} }
     case 'setForecast':
       return { ...s, countInForecast: a.on }
     case 'setReceipt':

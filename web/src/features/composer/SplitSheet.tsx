@@ -18,8 +18,10 @@ export interface SplitSheetProps {
   members: Member[]
   /** The payer (split variant); null for own share. */
   payerId: string | null
-  initial: { mode: SplitMode; shares: Share[] }
+  initial: { mode: SplitMode; shares: Share[]; typed?: Record<string, string> }
   onDone: (r: { mode: SplitMode; shares: Share[] }) => void
+  /** Called just before onDone with what was typed, so the composer can recompute and reopen the split. */
+  onTyped?: (typed: Record<string, string>) => void
 }
 
 const MODES = [
@@ -34,12 +36,14 @@ export function SplitSheet(props: SplitSheetProps) {
   return <SplitBody {...props} />
 }
 
-function SplitBody({ onClose, variant, totalCents, currency, members, payerId, initial, onDone }: SplitSheetProps) {
+function SplitBody({ onClose, variant, totalCents, currency, members, payerId, initial, onDone, onTyped }: SplitSheetProps) {
   const ids = members.map((m) => m.user_id)
   const own = variant === 'own'
   const [mode, setMode] = useState<SplitMode>(own ? 'amounts' : initial.mode)
+  // Reopen with what was typed (percents too); a stored split has only amounts.
   const [typed, setTyped] = useState<Record<string, string>>(() =>
-    own || initial.mode === 'amounts' ? typedFromShares(initial.shares) : {})
+    initial.typed && Object.keys(initial.typed).length ? initial.typed
+    : own || initial.mode === 'amounts' ? typedFromShares(initial.shares) : {})
   const payer = payerId ?? ids[0]
   const shares =
     own ? ownShares(ids, typed)
@@ -57,6 +61,7 @@ function SplitBody({ onClose, variant, totalCents, currency, members, payerId, i
     setTyped({}) // amounts and percents mean different things
   }
   const done = () => {
+    onTyped?.(mode === 'equal' && !own ? {} : typed)
     onDone({ mode, shares: toShareList(ids, shares) })
     onClose()
   }

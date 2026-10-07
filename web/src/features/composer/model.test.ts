@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { copyOf, firstProblem, fromTransaction, isDirtyNew, moreDirty, toCreateBody, toUpdateBody, validate } from './model'
-import { blankState, type ComposerState } from './state'
+import { blankState, type ComposerState, reduce } from './state'
 import type { Txn } from './types'
 
 const CTX = { householdCurrency: 'EUR', fuelCategoryId: 'c-fuel' }
@@ -118,7 +118,7 @@ describe('validate', () => {
     const over = [{ user_id: 'u1', amount: '3.00' }, { user_id: 'u2', amount: '2.00' }]
     expect(validate(expense({ splitOn: true, splits: over }), V).problems.split).toBe('Fix the split')
     const short = [{ user_id: 'u1', amount: '2.00' }, { user_id: 'u2', amount: '2.00' }]
-    expect(validate(expense({ ownShare: true, paidBy: null, splits: short }), V).problems.split).toBe('Fix the split')
+    expect(validate(expense({ ownShare: true, paidBy: null, splits: short }), V).problems.split).toMatch(/^Who paid what must add up to /)
     const ok = [{ user_id: 'u1', amount: '2.05' }, { user_id: 'u2', amount: '2.04' }]
     expect(validate(expense({ ownShare: true, paidBy: null, splits: ok }), V).ok).toBe(true)
   })
@@ -146,5 +146,22 @@ describe('dirty', () => {
     expect(moreDirty(expense({ date: '2026-10-06' }), c)).toBe(true)
     expect(moreDirty(expense({ countInForecast: false }), c)).toBe(true)
     expect(moreDirty(expense({ currency: 'GBP' }), c)).toBe(true)
+  })
+})
+
+describe('editing the amount of a stored split (I1)', () => {
+  const back3 = (s: ComposerState) => [0, 1, 2].reduce((x) => reduce(x, { type: 'key', key: 'back' }), s)
+  it('the payer takes the remainder of the new amount', () => {
+    const s = back3(fromTransaction({ ...STORED, paid_by: 'u1' }, { householdCurrency: 'EUR', meId: 'u1' }))
+    expect(s.amount).toBe('64')
+    expect(s.splits).toEqual([{ user_id: 'u1', amount: '31.90' }, { user_id: 'u2', amount: '32.10' }])
+    expect(validate(s, { ...V, fuelCategoryId: null }).ok).toBe(true)
+  })
+  it('own share: shares stay and Save is blocked with a clear message', () => {
+    const s = back3(fromTransaction({ ...STORED, payer_mode: 'own_share', paid_by: null }, { householdCurrency: 'EUR', meId: 'u1' }))
+    expect(s.splits).toEqual([{ user_id: 'u1', amount: '32.10' }, { user_id: 'u2', amount: '32.10' }])
+    const v = validate(s, { ...V, fuelCategoryId: null })
+    expect(v.ok).toBe(false)
+    expect(v.problems.split).toBe('Who paid what must add up to €64.00')
   })
 })
