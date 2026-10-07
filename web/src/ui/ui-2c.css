@@ -1,0 +1,48 @@
+/* 2c kit additions on tokens.css (mock: access-home.html §03). */
+.chips { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin-inline: -16px; padding-inline: 16px; }
+.chips::-webkit-scrollbar { display: none; }
+.chip {
+  position: relative; flex: none; display: inline-flex; align-items: center; gap: 6px;
+  min-height: 32px; padding: 0 12px; border-radius: var(--r-pill);
+  background: var(--surface); border: 1px solid var(--line); color: var(--ink-2);
+  font: inherit; font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation; user-select: none; -webkit-user-select: none;
+}
+.chip::before { content: ''; position: absolute; inset: -6px -2px; } /* 44 pt hit area */
+.chip:active { transform: scale(.97); }
+.chip.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.chip .count { font-family: var(--font-num); font-variant-numeric: tabular-nums; opacity: .7; }
+.chip:disabled { opacity: .4; cursor: default; }
+
+.search { position: relative; display: flex; align-items: center; }
+.search input {
+  flex: 1; min-width: 0; height: 44px; padding: 0 44px 0 14px; border-radius: var(--r-md);
+  border: 1px solid transparent; background: var(--surface-2); color: var(--ink);
+  font: 500 16px/1 var(--font-body); /* 16px: no zoom on iOS focus */
+  -webkit-appearance: none; appearance: none;
+}
+.search input::-webkit-search-cancel-button { display: none; }
+.search__clear {
+  position: absolute; right: 0; width: 44px; height: 44px; border: 0; background: none; color: var(--muted);
+  font-size: 20px; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
+
+.check { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--line); flex: none; display: grid; place-items: center; }
+.check.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.check svg { width: 14px; height: 14px; stroke-width: 3; }
+
+.swipe { position: relative; overflow: hidden; }
+.swipe__actions { position: absolute; inset: 0; display: flex; justify-content: space-between; visibility: hidden; }
+.swipe:focus-within .swipe__actions, .swipe[data-dragging] .swipe__actions { visibility: visible; }
+.swipe__actions button { min-width: 88px; min-height: 44px; border: 0; font: inherit; font-weight: 650; cursor: pointer; }
+.swipe__copy { background: var(--accent-soft); color: var(--ink); }
+.swipe__delete { margin-left: auto; background: var(--neg); color: #fff; }
+.swipe__content {
+  position: relative; background: var(--surface); touch-action: pan-y;
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+}
+.swipe__content:not([data-dragging]) { transition: transform 220ms cubic-bezier(.2, .8, .2, 1); }
+@media (prefers-reduced-motion: reduce) { .swipe__content { transition: none !important; } }
+
+.daygroup { display: flex; justify-content: space-between; margin: 0; font-size: 12.5px; font-weight: 600; color: var(--muted); padding: 12px 2px 6px; }
+.daygroup .num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
