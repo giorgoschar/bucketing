@@ -12,6 +12,7 @@ import { currencyName, currencySymbol, formatCents, spokenMoney } from './curren
 import { dayLabel, todayLocal } from './dates'
 import { type DefaultsRecord, matchRule, sanitize, suggestMerchants } from './defaults'
 import { DuplicateCard } from './DuplicateCard'
+import { EditTopMenu } from './EditTopMenu'
 import type { ComposerData } from './hooks/useComposerData'
 import { useDuplicateCheck } from './hooks/useDuplicateCheck'
 import { useReceiptUpload } from './hooks/useReceiptUpload'
@@ -53,6 +54,7 @@ export function ComposerForm({ initial, data, defaults }: { initial: ComposerSta
   const [dup, setDup] = useState<Duplicate | null>(null)
   const [typing, setTyping] = useState(false)
   const [stashCents, setStashCents] = useState<number | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const v = validate(s, { ...ctx, today, stashCents })
 
   const memberIds = data.members.map((m) => m.user_id)
@@ -117,12 +119,21 @@ export function ComposerForm({ initial, data, defaults }: { initial: ComposerSta
     }
   }
 
+  async function onDelete() {
+    setConfirmDelete(false)
+    const r = await save.deleteEntry()
+    if (r.status === 'done' || r.status === 'queued') {
+      leave()
+      toast({ text: r.status === 'queued' ? QUEUED : 'Deleted' })
+    }
+  }
+
   // Hardware keyboard (spec §4.2): digits, "." or ",", Backspace, Enter saves. Not while a field or sheet has focus.
   const onSaveRef = useRef(onSave)
   useEffect(() => { onSaveRef.current = onSave })
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (sheet || dup || blocker.state === 'blocked') return
+      if (sheet || dup || confirmDelete || blocker.state === 'blocked') return
       const t = e.target as HTMLElement | null
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
       let key: AmountKey | null = null
@@ -136,7 +147,7 @@ export function ComposerForm({ initial, data, defaults }: { initial: ComposerSta
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [sheet, dup, blocker.state])
+  }, [sheet, dup, confirmDelete, blocker.state])
 
   const switchType = (value: TxnType) => {
     const r = sanitize(value === 'income' ? defaults.lastIncome : defaults.last, lookup(value))
@@ -184,7 +195,10 @@ export function ComposerForm({ initial, data, defaults }: { initial: ComposerSta
         </button>
         <Segmented label="Entry type" value={s.type} onChange={switchType} disabled={s.mode === 'edit'}
           options={[{ value: 'expense', label: 'Expense' }, { value: 'income', label: 'Income' }]} />
-        <span className="composer__slot">{!online && <span className="composer__offline">Offline</span>}</span>
+        <span className="composer__slot">
+          {!online && <span className="composer__offline">Offline</span>}
+          {s.mode === 'edit' && <EditTopMenu onDelete={() => setConfirmDelete(true)} />}
+        </span>
       </header>
 
       <div className="composer__body">
@@ -289,6 +303,8 @@ export function ComposerForm({ initial, data, defaults }: { initial: ComposerSta
         }} />
       <ConfirmSheet open={blocker.state === 'blocked'} title="Discard this entry?" confirmLabel="Discard"
         cancelLabel="Keep editing" danger onConfirm={() => blocker.proceed?.()} onCancel={() => blocker.reset?.()} />
+      <ConfirmSheet open={confirmDelete} title="Delete this entry?" confirmLabel="Delete" cancelLabel="Cancel" danger
+        onConfirm={() => void onDelete()} onCancel={() => setConfirmDelete(false)} />
     </div>
   )
 }

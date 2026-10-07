@@ -96,3 +96,8 @@
 @media (prefers-reduced-motion: reduce) {
   .composer *, .composer--loading::before, .composer--loading::after { transition: none !important; animation: none !important; }
 }
+
+/* Edit */
+.composer__menu { background: transparent; }
+.composer--gone { justify-content: center; gap: 20px; text-align: center; }
+.composer__gone { margin: 0; font-size: 17px; font-weight: 600; color: var(--ink-2); }
