@@ -1,0 +1,26 @@
+.hbars { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.hbars__row {
+  display: grid; gap: 6px; width: 100%; min-height: 44px; padding: 8px 0; box-sizing: border-box;
+  background: none; border: 0; color: inherit; text-align: left; font: inherit;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+button.hbars__row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.hbars__head { display: flex; align-items: baseline; gap: 8px; }
+.hbars__icon { flex: none; }
+.hbars__label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hbars__note { font-size: 12px; color: var(--muted); }
+.hbars__value, .num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.hbars__track { height: 8px; border-radius: 4px; background: color-mix(in srgb, var(--ink) 8%, transparent); overflow: hidden; }
+.hbars__fill { display: block; height: 100%; border-radius: 4px; background: var(--bar); }
+.hbars__fill--hatched, .stackbar__seg--hatched {
+  background: repeating-linear-gradient(135deg, var(--bar) 0 3px, transparent 3px 6px);
+  box-shadow: inset 0 0 0 1px var(--bar);
+}
+.stackbar { display: flex; height: 14px; border-radius: 7px; overflow: hidden; gap: 2px;
+  background: color-mix(in srgb, var(--ink) 8%, transparent); }
+.stackbar__seg { display: block; height: 100%; background: var(--bar); }
+.chart { display: block; width: 100%; height: auto; overflow: visible; }
+.chart text { font: 500 10px/1 var(--font-num); fill: var(--ink-2); font-variant-numeric: tabular-nums; }
+.chart .chart__grid { stroke: var(--line); stroke-width: 1; }
+.chart-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
