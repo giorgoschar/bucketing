@@ -16,9 +16,11 @@ from app.core.schedule import MAX_INTERVAL_MONTHS, Rule, RuleKind, iter_entries,
 from app.models import (
     BillOccurrence,
     HouseholdMember,
+    ItemDirection,
     MemberRole,
     OccurrenceStatus,
     PayerMode,
+    PaymentMethod,
     RecurringBill,
     Transaction,
     TransactionSplit,
@@ -429,6 +431,49 @@ def pay_occurrence(
 
     for uid, share in splits.items():
         db.add(TransactionSplit(transaction_id=txn.id, user_id=uid, amount=share))
+    return txn
+
+
+def receive_occurrence(
+    db: Session,
+    occ: BillOccurrence,
+    *,
+    amount,
+    received_by: str | None,
+    paid_on: datetime,
+    fallback_user_id: str | None = None,
+) -> Transaction | None:
+    """Mark received: create the entry's income and link it (spec §3.3).
+
+    Income has no bucket and is dated on the due date. The recipient is
+    ``received_by``, else the item's "received by" (``paid_by_default``) while
+    still a member, then ``fallback_user_id``, then the owner (as for bill
+    payers, :func:`resolve_bill_payer`). Returns None when the atomic claim
+    fails (already done). Raises ValueError for an out item. Does not commit.
+    """
+    bill = occ.bill
+    if bill.direction != ItemDirection.in_.value:
+        raise ValueError("Only an income item can be marked received.")
+    amount = _q(amount)
+    person = received_by or resolve_bill_payer(db, bill, fallback_user_id)
+    if not claim_occurrence(db, occ, paid_by=person, paid_on=paid_on):
+        return None
+    txn = Transaction(
+        bucket_id=None,
+        household_id=bill.household_id,
+        amount=amount,
+        currency=bill.currency,
+        type=TransactionType.income,
+        paid_by=person,
+        category_id=bill.category_id,
+        notes=f"Income: {bill.name}",
+        payment_method=PaymentMethod.transfer.value,
+        transaction_date=occ.due_date,
+        recurring_bill_id=bill.id,
+    )
+    db.add(txn)
+    db.flush()
+    _link_transaction(db, occ, txn)
     return txn
 
 
