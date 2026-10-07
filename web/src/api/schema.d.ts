@@ -435,6 +435,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/insights/categories/{category_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Category Detail
+         * @description One category over the period (2d §7.2). ``category_id`` may be
+         *     ``uncategorised``.
+         */
+        get: operations["category_detail_api_v1_insights_categories__category_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/insights/person": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Person Share
+         * @description Paid out vs my share for one member over the period (2d §7.1). The
+         *     settle-up ``net`` and ``by_bucket`` of get_person_summary are left out:
+         *     there is no settle up in the new app.
+         */
+        get: operations["person_share_api_v1_insights_person_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/matches": {
         parameters: {
             query?: never;
@@ -813,7 +856,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Categories */
+        /**
+         * List Categories
+         * @description Categories with how many active expenses and rules use each (2d §5.3:
+         *     the delete confirmation names both counts).
+         */
         get: operations["list_categories_api_v1_settings_categories_get"];
         put?: never;
         /** Create Category */
@@ -837,6 +884,53 @@ export interface paths {
         post?: never;
         /** Delete Category */
         delete: operations["delete_category_api_v1_settings_categories__category_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/category-rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Category Rules
+         * @description The household's rules, most used first.
+         */
+        get: operations["list_category_rules_api_v1_settings_category_rules_get"];
+        put?: never;
+        /**
+         * Upsert Category Rule
+         * @description Teach a rule, or re-point the one with the same folded pattern (kept
+         *     match_count). 201 when new, 200 when it existed.
+         */
+        post: operations["upsert_category_rule_api_v1_settings_category_rules_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/category-rules/{rule_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Category Rule
+         * @description Edit a rule's pattern and category; match_count is kept. A pattern
+         *     another rule already folds to is a 409 (no silent merge on edit).
+         */
+        put: operations["update_category_rule_api_v1_settings_category_rules__rule_id__put"];
+        post?: never;
+        /** Delete Category Rule */
+        delete: operations["delete_category_rule_api_v1_settings_category_rules__rule_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -926,6 +1020,85 @@ export interface paths {
         put?: never;
         /** Change Password */
         post: operations["change_password_api_v1_settings_profile_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/security": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Security */
+        get: operations["security_api_v1_settings_security_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/security/totp/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Totp Disable
+         * @description Turn 2FA off: the same effects as the old route (secret and codes
+         *     cleared, every session and token revoked), then this browser's cookie is
+         *     reissued so the caller stays signed in, to set it up again.
+         */
+        post: operations["totp_disable_api_v1_settings_security_totp_disable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/security/totp/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Totp Enable
+         * @description Confirm the pending secret with a code; returns the 8 backup codes once.
+         */
+        post: operations["totp_enable_api_v1_settings_security_totp_enable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/security/totp/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Totp Setup
+         * @description The pending secret (reused across calls) and its otpauth:// link.
+         */
+        post: operations["totp_setup_api_v1_settings_security_totp_setup_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1203,6 +1376,11 @@ export interface components {
             notes?: string | null;
             /** Occurred At */
             occurred_at?: string | null;
+        };
+        /** BackupCodesOut */
+        BackupCodesOut: {
+            /** Backup Codes */
+            backup_codes: string[];
         };
         /** BillIn */
         BillIn: {
@@ -2147,6 +2325,42 @@ export interface components {
             /** Spent */
             spent: number;
         };
+        /** CategoryDetailOut */
+        CategoryDetailOut: {
+            /** Avg Per Month */
+            avg_per_month: number | null;
+            category: components["schemas"]["CategoryRefOut"] | null;
+            /** Count */
+            count: number;
+            /** Merchants */
+            merchants: components["schemas"]["CategoryMerchantOut"][];
+            /** Months */
+            months: components["schemas"]["CategoryMonthOut"][];
+            /** Recent */
+            recent: components["schemas"]["CategoryExpenseOut"][];
+            /** Rules */
+            rules: components["schemas"]["CategoryRuleRefOut"][];
+            /** Total */
+            total: number;
+        };
+        /** CategoryExpenseOut */
+        CategoryExpenseOut: {
+            /** Amount */
+            amount: number;
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Id */
+            id: string;
+            /** Merchant */
+            merchant: string | null;
+            /** Notes */
+            notes: string | null;
+            /** Paid By */
+            paid_by: string | null;
+        };
         /** CategoryIn */
         CategoryIn: {
             /**
@@ -2161,6 +2375,66 @@ export interface components {
             icon: string;
             /** Name */
             name: string;
+        };
+        /** CategoryMerchantOut */
+        CategoryMerchantOut: {
+            /** Count */
+            count: number;
+            /** Merchant */
+            merchant: string;
+            /** Total */
+            total: number;
+        };
+        /** CategoryMonthOut */
+        CategoryMonthOut: {
+            /** Label */
+            label: string;
+            /** Month */
+            month: number;
+            /** Total */
+            total: number;
+            /** Year */
+            year: number;
+        };
+        /** CategoryRefOut */
+        CategoryRefOut: {
+            /** Color */
+            color: string | null;
+            /** Icon */
+            icon: string | null;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /** CategoryRuleIn */
+        CategoryRuleIn: {
+            /** Category Id */
+            category_id: string;
+            /** Pattern */
+            pattern: string;
+        };
+        /** CategoryRuleOut */
+        CategoryRuleOut: {
+            /** Category Id */
+            category_id: string;
+            /** Created At */
+            created_at: string | null;
+            /** Id */
+            id: string;
+            /** Match Count */
+            match_count: number;
+            /** Pattern */
+            pattern: string;
+        };
+        /** CategoryRuleRefOut */
+        CategoryRuleRefOut: {
+            /** Id */
+            id: string;
+            /** Match Count */
+            match_count: number;
+            /** Pattern */
+            pattern: string;
         };
         /** CategoryUsualOut */
         CategoryUsualOut: {
@@ -2443,6 +2717,38 @@ export interface components {
              */
             splits: components["schemas"]["BillSplitIn"][];
         };
+        /** PersonLargestOut */
+        PersonLargestOut: {
+            /** Amount */
+            amount: number;
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Notes */
+            notes: string | null;
+        };
+        /** PersonShareOut */
+        PersonShareOut: {
+            /** Balance */
+            balance: number;
+            /** Household Total */
+            household_total: number;
+            largest: components["schemas"]["PersonLargestOut"] | null;
+            /** My Share */
+            my_share: number;
+            /** Paid Out */
+            paid_out: number;
+            /** Share Pct */
+            share_pct: number | null;
+            /** Shared Count */
+            shared_count: number;
+            /** Transaction Count */
+            transaction_count: number;
+            /** User Id */
+            user_id: string;
+        };
         /** ProfileIn */
         ProfileIn: {
             /**
@@ -2616,6 +2922,19 @@ export interface components {
             /** Total Occurrences */
             total_occurrences: number | null;
         };
+        /** SecurityOut */
+        SecurityOut: {
+            /** Backup Codes Remaining */
+            backup_codes_remaining: number;
+            /** Passkey Available */
+            passkey_available: boolean;
+            /** Passkey Linked */
+            passkey_linked: boolean;
+            /** Password Session */
+            password_session: boolean;
+            /** Totp Enabled */
+            totp_enabled: boolean;
+        };
         /** SettleIn */
         SettleIn: {
             /** Amount */
@@ -2682,6 +3001,25 @@ export interface components {
         TokenRefreshRequest: {
             /** Refresh Token */
             refresh_token: string;
+        };
+        /** TotpCodeIn */
+        TotpCodeIn: {
+            /** Code */
+            code: string;
+        };
+        /** TotpDisableIn */
+        TotpDisableIn: {
+            /** Code */
+            code: string;
+            /** Current Password */
+            current_password: string;
+        };
+        /** TotpSetupOut */
+        TotpSetupOut: {
+            /** Otpauth Uri */
+            otpauth_uri: string;
+            /** Secret */
+            secret: string;
         };
         /** TotpVerifyRequest */
         TotpVerifyRequest: {
@@ -3808,6 +4146,76 @@ export interface operations {
             };
         };
     };
+    category_detail_api_v1_insights_categories__category_id__get: {
+        parameters: {
+            query?: {
+                preset?: string;
+                start_date?: string;
+                end_date?: string;
+                paid_by?: string;
+            };
+            header?: never;
+            path: {
+                category_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    person_share_api_v1_insights_person_get: {
+        parameters: {
+            query: {
+                user_id: string;
+                preset?: string;
+                start_date?: string;
+                end_date?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonShareOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_matches_api_v1_matches_get: {
         parameters: {
             query?: never;
@@ -4587,6 +4995,132 @@ export interface operations {
             };
         };
     };
+    list_category_rules_api_v1_settings_category_rules_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryRuleOut"][];
+                };
+            };
+        };
+    };
+    upsert_category_rule_api_v1_settings_category_rules_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CategoryRuleIn"];
+            };
+        };
+        responses: {
+            /** @description The pattern had a rule; re-pointed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryRuleOut"];
+                };
+            };
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryRuleOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_category_rule_api_v1_settings_category_rules__rule_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CategoryRuleIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryRuleOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_category_rule_api_v1_settings_category_rules__rule_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_household_api_v1_settings_household_get: {
         parameters: {
             query?: never;
@@ -4769,6 +5303,110 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    security_api_v1_settings_security_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecurityOut"];
+                };
+            };
+        };
+    };
+    totp_disable_api_v1_settings_security_totp_disable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TotpDisableIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    totp_enable_api_v1_settings_security_totp_enable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TotpCodeIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupCodesOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    totp_setup_api_v1_settings_security_totp_setup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TotpSetupOut"];
                 };
             };
         };

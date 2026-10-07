@@ -98,6 +98,22 @@
         "title": "ApplePayIn",
         "type": "object"
       },
+      "BackupCodesOut": {
+        "properties": {
+          "backup_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Backup Codes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "backup_codes"
+        ],
+        "title": "BackupCodesOut",
+        "type": "object"
+      },
       "BillIn": {
         "properties": {
           "amount": {
@@ -1639,6 +1655,139 @@
         "title": "BudgetRowOut",
         "type": "object"
       },
+      "CategoryDetailOut": {
+        "properties": {
+          "avg_per_month": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Per Month"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CategoryRefOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "merchants": {
+            "items": {
+              "$ref": "#/components/schemas/CategoryMerchantOut"
+            },
+            "title": "Merchants",
+            "type": "array"
+          },
+          "months": {
+            "items": {
+              "$ref": "#/components/schemas/CategoryMonthOut"
+            },
+            "title": "Months",
+            "type": "array"
+          },
+          "recent": {
+            "items": {
+              "$ref": "#/components/schemas/CategoryExpenseOut"
+            },
+            "title": "Recent",
+            "type": "array"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/CategoryRuleRefOut"
+            },
+            "title": "Rules",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "number"
+          }
+        },
+        "required": [
+          "category",
+          "total",
+          "count",
+          "avg_per_month",
+          "months",
+          "merchants",
+          "recent",
+          "rules"
+        ],
+        "title": "CategoryDetailOut",
+        "type": "object"
+      },
+      "CategoryExpenseOut": {
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "number"
+          },
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "merchant": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Merchant"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "paid_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paid By"
+          }
+        },
+        "required": [
+          "id",
+          "date",
+          "merchant",
+          "notes",
+          "amount",
+          "paid_by"
+        ],
+        "title": "CategoryExpenseOut",
+        "type": "object"
+      },
       "CategoryIn": {
         "properties": {
           "color": {
@@ -1660,6 +1809,181 @@
           "name"
         ],
         "title": "CategoryIn",
+        "type": "object"
+      },
+      "CategoryMerchantOut": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "merchant": {
+            "title": "Merchant",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "number"
+          }
+        },
+        "required": [
+          "merchant",
+          "count",
+          "total"
+        ],
+        "title": "CategoryMerchantOut",
+        "type": "object"
+      },
+      "CategoryMonthOut": {
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "month": {
+            "title": "Month",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "number"
+          },
+          "year": {
+            "title": "Year",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "year",
+          "month",
+          "label",
+          "total"
+        ],
+        "title": "CategoryMonthOut",
+        "type": "object"
+      },
+      "CategoryRefOut": {
+        "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "icon",
+          "color"
+        ],
+        "title": "CategoryRefOut",
+        "type": "object"
+      },
+      "CategoryRuleIn": {
+        "properties": {
+          "category_id": {
+            "title": "Category Id",
+            "type": "string"
+          },
+          "pattern": {
+            "title": "Pattern",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pattern",
+          "category_id"
+        ],
+        "title": "CategoryRuleIn",
+        "type": "object"
+      },
+      "CategoryRuleOut": {
+        "properties": {
+          "category_id": {
+            "title": "Category Id",
+            "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "match_count": {
+            "title": "Match Count",
+            "type": "integer"
+          },
+          "pattern": {
+            "title": "Pattern",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "pattern",
+          "category_id",
+          "match_count",
+          "created_at"
+        ],
+        "title": "CategoryRuleOut",
+        "type": "object"
+      },
+      "CategoryRuleRefOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "match_count": {
+            "title": "Match Count",
+            "type": "integer"
+          },
+          "pattern": {
+            "title": "Pattern",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "pattern",
+          "match_count"
+        ],
+        "title": "CategoryRuleRefOut",
         "type": "object"
       },
       "CategoryUsualOut": {
@@ -2536,6 +2860,103 @@
         "title": "PayOccurrenceIn",
         "type": "object"
       },
+      "PersonLargestOut": {
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "number"
+          },
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          }
+        },
+        "required": [
+          "amount",
+          "notes",
+          "date"
+        ],
+        "title": "PersonLargestOut",
+        "type": "object"
+      },
+      "PersonShareOut": {
+        "properties": {
+          "balance": {
+            "title": "Balance",
+            "type": "number"
+          },
+          "household_total": {
+            "title": "Household Total",
+            "type": "number"
+          },
+          "largest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PersonLargestOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "my_share": {
+            "title": "My Share",
+            "type": "number"
+          },
+          "paid_out": {
+            "title": "Paid Out",
+            "type": "number"
+          },
+          "share_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Share Pct"
+          },
+          "shared_count": {
+            "title": "Shared Count",
+            "type": "integer"
+          },
+          "transaction_count": {
+            "title": "Transaction Count",
+            "type": "integer"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "paid_out",
+          "my_share",
+          "balance",
+          "share_pct",
+          "household_total",
+          "largest",
+          "shared_count",
+          "transaction_count"
+        ],
+        "title": "PersonShareOut",
+        "type": "object"
+      },
       "ProfileIn": {
         "properties": {
           "avatar_color": {
@@ -3109,6 +3530,39 @@
         "title": "RecurringItemOut",
         "type": "object"
       },
+      "SecurityOut": {
+        "properties": {
+          "backup_codes_remaining": {
+            "title": "Backup Codes Remaining",
+            "type": "integer"
+          },
+          "passkey_available": {
+            "title": "Passkey Available",
+            "type": "boolean"
+          },
+          "passkey_linked": {
+            "title": "Passkey Linked",
+            "type": "boolean"
+          },
+          "password_session": {
+            "title": "Password Session",
+            "type": "boolean"
+          },
+          "totp_enabled": {
+            "title": "Totp Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "totp_enabled",
+          "backup_codes_remaining",
+          "passkey_available",
+          "passkey_linked",
+          "password_session"
+        ],
+        "title": "SecurityOut",
+        "type": "object"
+      },
       "SettleIn": {
         "properties": {
           "amount": {
@@ -3354,6 +3808,55 @@
           "refresh_token"
         ],
         "title": "TokenRefreshRequest",
+        "type": "object"
+      },
+      "TotpCodeIn": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "TotpCodeIn",
+        "type": "object"
+      },
+      "TotpDisableIn": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "current_password": {
+            "title": "Current Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "current_password",
+          "code"
+        ],
+        "title": "TotpDisableIn",
+        "type": "object"
+      },
+      "TotpSetupOut": {
+        "properties": {
+          "otpauth_uri": {
+            "title": "Otpauth Uri",
+            "type": "string"
+          },
+          "secret": {
+            "title": "Secret",
+            "type": "string"
+          }
+        },
+        "required": [
+          "secret",
+          "otpauth_uri"
+        ],
+        "title": "TotpSetupOut",
         "type": "object"
       },
       "TotpVerifyRequest": {
@@ -5313,6 +5816,172 @@
         ]
       }
     },
+    "/api/v1/insights/categories/{category_id}": {
+      "get": {
+        "description": "One category over the period (2d \u00a77.2). ``category_id`` may be\n``uncategorised``.",
+        "operationId": "category_detail_api_v1_insights_categories__category_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "category_id",
+            "required": true,
+            "schema": {
+              "title": "Category Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "preset",
+            "required": false,
+            "schema": {
+              "default": "this_month",
+              "title": "Preset",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start_date",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Start Date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end_date",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "End Date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "paid_by",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Paid By",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Category Detail",
+        "tags": [
+          "insights"
+        ]
+      }
+    },
+    "/api/v1/insights/person": {
+      "get": {
+        "description": "Paid out vs my share for one member over the period (2d \u00a77.1). The\nsettle-up ``net`` and ``by_bucket`` of get_person_summary are left out:\nthere is no settle up in the new app.",
+        "operationId": "person_share_api_v1_insights_person_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "preset",
+            "required": false,
+            "schema": {
+              "default": "this_month",
+              "title": "Preset",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start_date",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Start Date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end_date",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "End Date",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonShareOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Person Share",
+        "tags": [
+          "insights"
+        ]
+      }
+    },
     "/api/v1/matches": {
       "get": {
         "description": "Open suggestions, for Needs attention.",
@@ -6335,6 +7004,7 @@
     },
     "/api/v1/settings/categories": {
       "get": {
+        "description": "Categories with how many active expenses and rules use each (2d \u00a75.3:\nthe delete confirmation names both counts).",
         "operationId": "list_categories_api_v1_settings_categories_get",
         "responses": {
           "200": {
@@ -6487,6 +7157,188 @@
           }
         ],
         "summary": "Update Category",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/category-rules": {
+      "get": {
+        "description": "The household's rules, most used first.",
+        "operationId": "list_category_rules_api_v1_settings_category_rules_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CategoryRuleOut"
+                  },
+                  "title": "Response List Category Rules Api V1 Settings Category Rules Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Category Rules",
+        "tags": [
+          "settings"
+        ]
+      },
+      "post": {
+        "description": "Teach a rule, or re-point the one with the same folded pattern (kept\nmatch_count). 201 when new, 200 when it existed.",
+        "operationId": "upsert_category_rule_api_v1_settings_category_rules_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CategoryRuleIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryRuleOut"
+                }
+              }
+            },
+            "description": "The pattern had a rule; re-pointed"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryRuleOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Upsert Category Rule",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/category-rules/{rule_id}": {
+      "delete": {
+        "operationId": "delete_category_rule_api_v1_settings_category_rules__rule_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rule_id",
+            "required": true,
+            "schema": {
+              "title": "Rule Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Category Rule",
+        "tags": [
+          "settings"
+        ]
+      },
+      "put": {
+        "description": "Edit a rule's pattern and category; match_count is kept. A pattern\nanother rule already folds to is a 409 (no silent merge on edit).",
+        "operationId": "update_category_rule_api_v1_settings_category_rules__rule_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rule_id",
+            "required": true,
+            "schema": {
+              "title": "Rule Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CategoryRuleIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryRuleOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Category Rule",
         "tags": [
           "settings"
         ]
@@ -6723,6 +7575,146 @@
           }
         ],
         "summary": "Change Password",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/security": {
+      "get": {
+        "operationId": "security_api_v1_settings_security_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecurityOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Security",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/security/totp/disable": {
+      "post": {
+        "description": "Turn 2FA off: the same effects as the old route (secret and codes\ncleared, every session and token revoked), then this browser's cookie is\nreissued so the caller stays signed in, to set it up again.",
+        "operationId": "totp_disable_api_v1_settings_security_totp_disable_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TotpDisableIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Totp Disable",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/security/totp/enable": {
+      "post": {
+        "description": "Confirm the pending secret with a code; returns the 8 backup codes once.",
+        "operationId": "totp_enable_api_v1_settings_security_totp_enable_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TotpCodeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupCodesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Totp Enable",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/security/totp/setup": {
+      "post": {
+        "description": "The pending secret (reused across calls) and its otpauth:// link.",
+        "operationId": "totp_setup_api_v1_settings_security_totp_setup_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TotpSetupOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Totp Setup",
         "tags": [
           "settings"
         ]
