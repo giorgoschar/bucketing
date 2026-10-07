@@ -1709,9 +1709,10 @@ def get_category_detail(
         key=lambda r: (-r["total"], r["merchant"]),
     )[:5]
 
+    never = datetime.min  # noqa: DTZ901  (created_at is a naive UTC column)
     latest = sorted(
         in_period,
-        key=lambda pair: (pair[0].transaction_date, pair[0].created_at or datetime.min, pair[0].id),
+        key=lambda pair: (pair[0].transaction_date, pair[0].created_at or never, pair[0].id),
         reverse=True,
     )[:10]
     recent = [
