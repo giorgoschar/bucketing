@@ -32,6 +32,13 @@ const METHODS: readonly string[] = ['card', 'cash', 'apple_pay', 'transfer', 'ot
 const pad = (n: number) => String(n).padStart(2, '0')
 const iso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 
+function validDate(v: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v)
+  if (!m) return false
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+  return d.getFullYear() === Number(m[1]) && d.getMonth() === Number(m[2]) - 1 && d.getDate() === Number(m[3])
+}
+
 export function monthRange(d: Date): { from_date: string; to_date: string } {
   return {
     from_date: iso(new Date(d.getFullYear(), d.getMonth(), 1)),
@@ -50,6 +57,8 @@ export function fromSearch(params: URLSearchParams, today = new Date()): FeedSta
     if (!v) continue
     if (k === 'type' && !TYPES.includes(v)) continue
     if (k === 'payment_method' && !METHODS.includes(v)) continue
+    if ((k === 'from_date' || k === 'to_date') && !validDate(v)) continue
+    if ((k === 'min_amount' || k === 'max_amount') && !/^\d+(?:[.,]\d+)?$/.test(v)) continue
     ;(filter as Record<string, string>)[k] = v
   }
   for (const k of FLAG_KEYS) if (params.get(k) === '1') filter[k] = true

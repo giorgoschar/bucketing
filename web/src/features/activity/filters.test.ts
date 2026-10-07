@@ -35,6 +35,11 @@ describe('filters', () => {
     expect(fromSearch(new URLSearchParams('type=bogus&q=%20&all=1'), TODAY).filter).toEqual({})
   })
 
+  it('drops invalid dates and amounts but keeps comma decimals', () => {
+    const p = new URLSearchParams('from_date=2026-13-40&to_date=soon&min_amount=abc&max_amount=12,5&all=1')
+    expect(fromSearch(p, TODAY).filter).toEqual({ max_amount: '12,5' })
+  })
+
   it('sends the API names, flags as true', () => {
     expect(toQuery({ q: 'x', missing_payer: true, ...OCT })).toEqual({ q: 'x', missing_payer: true, ...OCT })
   })
