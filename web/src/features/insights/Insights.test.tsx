@@ -15,6 +15,10 @@ const hooks = vi.hoisted(() => ({
   useInsights: vi.fn(), usePersonShare: vi.fn(), useMembers: vi.fn(), useCategoriesVsUsual: vi.fn(), usePlanMonth: vi.fn(), useHouseholdId: () => 'hh1',
 }))
 vi.mock('./hooks', () => hooks)
+vi.mock('../settings/hooks', () => ({
+  useBuckets: () => query([{ id: 'b1', name: 'Daily' }]),
+  useCategories: () => query([]),
+}))
 
 import { Insights } from './Insights'
 
@@ -97,5 +101,21 @@ describe('Insights', () => {
     hooks.useInsights.mockReturnValue(query(undefined, { noData: true, offline: true, isLoading: false }))
     renderAt('/insights?p=last_month')
     expect(screen.getByText('No saved data for this view. Connect once to load it.')).toBeInTheDocument()
+  })
+
+  it('Filters opens the sheet, and URL filters reach the query', () => {
+    renderAt('/insights?bucket_ids=b1')
+    expect(hooks.useInsights).toHaveBeenLastCalledWith({ preset: 'this_month' }, 'household', { bucketIds: ['b1'], categoryIds: [] })
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }))
+    expect(screen.getByRole('dialog', { name: 'Filters' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Daily' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('the Custom chip opens the sheet and Apply sets a custom period', () => {
+    renderAt('/insights')
+    fireEvent.click(screen.getByRole('button', { name: 'Custom' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(hooks.useInsights).toHaveBeenLastCalledWith({ preset: 'custom', from: '2026-10-01', to: '2026-10-06' }, 'household', { bucketIds: [], categoryIds: [] })
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 })

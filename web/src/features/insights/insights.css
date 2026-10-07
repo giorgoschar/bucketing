@@ -61,3 +61,15 @@
 .insights__budgets { display: flex; flex-direction: column; gap: 12px; }
 .insights__budget-head { display: flex; justify-content: space-between; gap: 8px; font-size: 13.5px; margin-bottom: 6px; }
 .insights__budget-name { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.insights__filters { position: relative; }
+.insights__filtercount {
+  position: absolute; top: 6px; right: 4px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: var(--r-pill);
+  background: var(--accent); color: var(--accent-ink, var(--bg)); font: 700 10.5px/16px var(--font-body); text-align: center;
+}
+.insights__range { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.insights__range .ui-input { font-size: 16px; min-width: 0; }
+.insights__filtergroup { display: flex; flex-direction: column; gap: 6px; margin-top: 16px; }
+.insights__filtergroup .ui-field__label { margin: 0; }
+.insights__chipwrap .chips { flex-wrap: wrap; overflow: visible; }
+.insights__sheetbtns { display: grid; grid-template-columns: 1fr 2fr; gap: 8px; }

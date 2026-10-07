@@ -1,10 +1,13 @@
-import type { ReactNode } from 'react'
+import { type ReactNode, useState } from 'react'
 import { useSession } from '../../session/SessionProvider'
 import { TopBar } from '../../shell/TopBar'
 import { Chips } from '../../ui/Chips'
 import { QueryView } from '../../ui/QueryView'
 import type { HouseholdMember } from '../settings/hooks'
+import { useInsightFilters } from './filters'
+import { FiltersIcon } from './icons'
 import { LensControl } from './LensControl'
+import { RangeSheet } from './RangeSheet'
 import { useInsights, useMembers, usePersonShare } from './hooks'
 import { HOUSEHOLD, type Lens, lensOptions, useLens } from './lens'
 import { type WidgetId, visibleWidgets } from './overview'
@@ -47,7 +50,8 @@ export function Insights() {
   const members = household.data?.members
   const [period, setPeriod] = usePeriod()
   const [lens, setLens] = useLens(members)
-  const filters = NO_FILTERS // F2.3 wires the Filters sheet
+  const [filters, setFilters] = useInsightFilters()
+  const [sheet, setSheet] = useState(false)
   const insights = useInsights(period, lens, filters)
   const share = usePersonShare(period, lens === HOUSEHOLD ? null : lens)
   const meId = me?.id ?? ''
@@ -55,12 +59,23 @@ export function Insights() {
   const firstView = period.preset === 'this_month' && lens === HOUSEHOLD
 
   const pickPreset = (p: Preset) => {
-    if (p !== 'custom') setPeriod({ preset: p })
+    if (p === 'custom') setSheet(true)
+    else setPeriod({ preset: p })
   }
+  const active = filters.bucketIds.length + filters.categoryIds.length
 
   return (
     <>
-      <TopBar title="Insights" />
+      <TopBar
+        title="Insights"
+        actions={
+          <button type="button" className="ui-iconbtn ui-iconbtn--bare insights__filters" aria-label="Filters"
+            aria-haspopup="dialog" onClick={() => setSheet(true)}>
+            <FiltersIcon />
+            {active > 0 && <span className="insights__filtercount" aria-hidden="true">{active}</span>}
+          </button>
+        }
+      />
       <div className="insights__bar">
         <Chips label="Period" options={PRESETS} value={period.preset} onChange={pickPreset} />
       </div>
@@ -88,6 +103,15 @@ export function Insights() {
           }}
         </QueryView>
       </section>
+      <RangeSheet
+        open={sheet}
+        onClose={() => setSheet(false)}
+        initialFrom={period.from ?? insights.data?.kpis.range_start ?? ''}
+        initialTo={period.to ?? insights.data?.kpis.range_end ?? ''}
+        filters={filters}
+        onApply={(p, f) => { setPeriod(p); setFilters(f); setSheet(false) }}
+        onReset={() => { setPeriod({ preset: 'this_month' }); setFilters(NO_FILTERS); setSheet(false) }}
+      />
     </>
   )
 }
