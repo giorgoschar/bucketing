@@ -64,6 +64,9 @@ export function useItemActions() {
     optimistic: (qc, v) => editList(qc, (items) => [...items, pendingItem(v.body, v.tempId)]),
     invalidates: affects.item,
     pendingId: (v) => v.tempId,
+    // A create is not idempotent: an online failure may already have created the item, so replaying it
+    // could make a duplicate. Queue only when offline; online, roll back and let the user retry.
+    queue: 'offline-only',
   })
   const update = useAction<UpdateVars, RecurringItemOut>({
     method: 'PUT',

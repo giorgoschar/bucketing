@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { keys } from '../../../data/keys'
 import { isPending } from '../../../data/pending'
 import type { RecurringItemOut } from '../../../data/types'
+import { db } from '../../../offline/db'
 import { setIdentity } from '../../../offline/identity'
 import { fakeApi, reply } from '../../../test/fakeApi'
 import { item } from '../../../test/fixtures'
@@ -77,4 +78,32 @@ it('creating offline shows the item at once, marked pending', async () => {
   expect(status).toBe('queued')
   expect(client.getQueryData<RecurringItemOut[]>(keys.recurring.list())!.map((i) => i.name)).toEqual(['Cosmote', 'Salary'])
   expect(isPending('pending-1')).toBe(true)
+})
+
+it('creating online: a 503 rolls the item back and queues nothing (a create must not be replayed)', async () => {
+  const fake = fakeApi({ 'POST /api/v1/recurring': () => reply(503) })
+  const client = testQueryClient()
+  client.setQueryData(keys.recurring.list(), [item()])
+  const { result } = renderHook(() => useItemActions(), { wrapper: wrap(client) })
+  const body = formToBody({ ...emptyItemForm('2026-10-07', 'u1'), name: 'Salary', direction: 'in', amount: '1500' })
+  let status = ''
+  await act(async () => { status = (await result.current.create({ body, tempId: 'pending-2' })).status })
+  expect(status).toBe('rejected')
+  expect(fake.callsTo('POST /api/v1/recurring')).toHaveLength(1)
+  expect(client.getQueryData<RecurringItemOut[]>(keys.recurring.list())!.map((i) => i.name)).toEqual(['Cosmote'])
+  expect(isPending('pending-2')).toBe(false)
+  expect(await db.queue.count()).toBe(0)
+})
+
+it('creating offline still queues the create', async () => {
+  fakeApi({})
+  setOnline(false)
+  const client = testQueryClient()
+  client.setQueryData(keys.recurring.list(), [item()])
+  const { result } = renderHook(() => useItemActions(), { wrapper: wrap(client) })
+  const body = formToBody({ ...emptyItemForm('2026-10-07', 'u1'), name: 'Salary', direction: 'in', amount: '1500' })
+  let status = ''
+  await act(async () => { status = (await result.current.create({ body, tempId: 'pending-3' })).status })
+  expect(status).toBe('queued')
+  expect(await db.queue.count()).toBe(1)
 })
