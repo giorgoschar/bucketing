@@ -29,3 +29,10 @@ export async function unwrap<R extends Raw>(p: Promise<R>): Promise<NonNullable<
   if (!response.ok) throw new ApiError(response.status, detailOf(error, response.status))
   return data as NonNullable<R['data']>
 }
+
+/** Worth retrying a read: a network error, a timeout or a server-side failure. A 4xx (401 above all) never is. */
+export function isRetryable(err: unknown): boolean {
+  if (err instanceof ApiError) return err.status >= 500 || err.status === 408 || err.status === 429
+  if (err instanceof DOMException && err.name === 'AbortError') return false
+  return true // fetch's TypeError: no connection
+}
