@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient, type QueryKey } from '@tanstack/react-query'
+import { keyGeneration } from '../offline/crypto'
 import { cacheEntry, cachePut } from '../offline/db'
 import { getIdentity } from '../offline/identity'
 import { useSession } from '../session/SessionProvider'
@@ -74,10 +75,12 @@ export function useCachedQuery<T>(
   const q = useQuery({
     queryKey: key,
     queryFn: async ({ signal }) => {
+      // Captured before the fetch and the digest: a wipe (sign-out) during either drops the write.
+      const gen = keyGeneration()
       const data = await fetcher(signal)
       if (household) {
         // A racing wipe wins; nothing to persist.
-        void cacheKeyFor(household, key).then((storeKey) => cachePut(storeKey, data)).catch(() => {})
+        void cacheKeyFor(household, key).then((storeKey) => cachePut(storeKey, data, gen)).catch(() => {})
       }
       return data
     },

@@ -49,9 +49,13 @@ async function evictOld(): Promise<void> {
   await db.cache.filter((row) => row.updatedAt < cutoff).delete().catch(() => {})
 }
 
-export async function cachePut(key: string, value: unknown): Promise<void> {
+/**
+ * Seal and store `value`. `generation` is the key generation the caller's work started under (default:
+ * now); a wipe since then drops the write, so data fetched for a signed-out session never lands.
+ */
+export async function cachePut(key: string, value: unknown, generation?: number): Promise<void> {
   const { seal, keyGeneration } = await import('./crypto')
-  const gen = keyGeneration()
+  const gen = generation ?? keyGeneration()
   const sealed = await seal(value)
   await db.transaction('rw', db.cache, async () => {
     // A wipe since we started means this ciphertext's key is gone; do not resurrect data.

@@ -1,7 +1,7 @@
 import { renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it } from 'vitest'
 import { api } from '../api/client'
-import { cacheEntry, cachePut, db } from '../offline/db'
+import { cacheEntry, cachePut, db, wipe } from '../offline/db'
 import { setIdentity } from '../offline/identity'
 import { fakeApi, hang, reply } from '../test/fakeApi'
 import { day, entry } from '../test/fixtures'
@@ -99,4 +99,16 @@ it('the device cache key is a digest: no query-key text (search terms) is stored
   expect(stored[0]).toMatch(/^q:h1:[0-9a-f]{64}$/)
   expect(stored.join(' ')).not.toMatch(/cosmote|search|transactions/i)
   expect(stored[0]).toBe(await cacheKeyFor('h1', key))
+})
+
+it('a wipe (sign-out) while the fetch is in flight writes nothing to the cache', async () => {
+  let answer!: (r: Response) => void
+  fakeApi({ 'GET /api/v1/plan/upcoming': () => new Promise<Response>((r) => { answer = r }) })
+  const { result } = mount()
+  await waitFor(() => expect(answer).toBeTypeOf('function'))
+  await wipe()
+  answer(Response.json(fresh))
+  await waitFor(() => expect(result.current.data).toEqual(fresh))
+  await new Promise((r) => setTimeout(r, 100)) // let a (wrong) background cachePut finish
+  expect(await db.cache.count()).toBe(0)
 })
