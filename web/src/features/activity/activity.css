@@ -12,3 +12,8 @@
 .load-more { width: 100%; min-height: 44px; margin-top: 12px; }
 .option { min-height: 44px; }
 .option-note { margin: 0; padding: 0 4px 8px; font-size: 13px; color: var(--muted); }
+
+.filters { display: flex; flex-direction: column; gap: 14px; }
+.filters .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.filters__actions { display: flex; gap: 8px; justify-content: space-between; }
+.filters__actions .btn--primary { flex: 1; }

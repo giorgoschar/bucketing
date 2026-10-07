@@ -6,7 +6,7 @@ import { useCachedQuery } from '../../data/cachedQuery'
 import { ApiError, unwrap } from '../../data/http'
 import { affects, keys } from '../../data/keys'
 import { useCategories, useHousehold } from '../../data/reads'
-import type { Category, Member } from '../../data/types'
+import type { Category, Member, RecurringItemOut } from '../../data/types'
 import { toQuery, type TransactionFilter } from './filters'
 
 type S = components['schemas']
@@ -19,6 +19,7 @@ export type TxnUpdate = S['TransactionUpdate']
 export type TxnPatch = Partial<
   Pick<Txn, 'category_id' | 'bucket_id' | 'paid_by' | 'payer_mode' | 'payment_method' | 'notes' | 'exclude_from_forecast'>
 >
+export type RecurringItem = Pick<RecurringItemOut, 'id' | 'name' | 'direction'>
 export type RefData = {
   buckets: { id: string; name: string; kind: string; status: string; show_income: boolean; icon: string | null }[]
   categories: Pick<Category, 'id' | 'name' | 'icon'>[]

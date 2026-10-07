@@ -7,7 +7,9 @@ import { Feed } from './Feed'
 import {
   type FeedState, type TransactionFilter, activeFilterCount, fromSearch, monthLabel, monthRange, toSearch, toggle,
 } from './filters'
-import { useCounts } from './hooks'
+import { useRecurringItems } from '../../data/reads'
+import { FiltersSheet } from './FiltersSheet'
+import { useCounts, useRefData } from './hooks'
 import { OptionSheet } from './OptionSheet'
 import './activity.css'
 
@@ -32,6 +34,8 @@ export function Activity() {
   const f = state.filter
   const setFilter = (filter: TransactionFilter) => set({ ...state, filter })
   const counts = useCounts().data
+  const refData = useRefData()
+  const items = useRecurringItems().data
   const [sheet, setSheet] = useState<null | 'month' | 'filters'>(null)
   const clear = () => set({ filter: monthRange(new Date()), dups: false })
   const filters = activeFilterCount(f)
@@ -68,6 +72,14 @@ export function Activity() {
           const [from_date, to_date] = v.split('|')
           setFilter({ ...f, from_date, to_date })
         }}
+        onClose={() => setSheet(null)}
+      />
+      <FiltersSheet
+        open={sheet === 'filters'}
+        filter={f}
+        refData={refData}
+        items={items}
+        onApply={setFilter}
         onClose={() => setSheet(null)}
       />
     </>
