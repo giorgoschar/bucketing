@@ -558,6 +558,9 @@ def enroll_totp_submit(
     db.commit()
 
     security_logger.info("TOTP enrolled for '%s'", user.username)
+    from app.login_alerts import alert_sign_in
+
+    alert_sign_in(db, request, user, hh_id, method="a newly set-up 2FA app")
 
     # Upgrade to full session
     response = templates.TemplateResponse(
