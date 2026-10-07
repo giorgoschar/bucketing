@@ -1468,6 +1468,177 @@
         "title": "BucketIn",
         "type": "object"
       },
+      "BucketMonthRowOut": {
+        "properties": {
+          "bucket_id": {
+            "title": "Bucket Id",
+            "type": "string"
+          },
+          "budget": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budget"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "projected": {
+            "title": "Projected",
+            "type": "number"
+          },
+          "so_far": {
+            "title": "So Far",
+            "type": "number"
+          },
+          "still_to_come": {
+            "title": "Still To Come",
+            "type": "number"
+          }
+        },
+        "required": [
+          "so_far",
+          "still_to_come",
+          "projected",
+          "bucket_id",
+          "name",
+          "budget"
+        ],
+        "title": "BucketMonthRowOut",
+        "type": "object"
+      },
+      "BucketsMonthOut": {
+        "properties": {
+          "projected": {
+            "title": "Projected",
+            "type": "number"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/BucketMonthRowOut"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "so_far": {
+            "title": "So Far",
+            "type": "number"
+          },
+          "still_to_come": {
+            "title": "Still To Come",
+            "type": "number"
+          }
+        },
+        "required": [
+          "so_far",
+          "still_to_come",
+          "projected",
+          "rows"
+        ],
+        "title": "BucketsMonthOut",
+        "type": "object"
+      },
+      "BudgetRowOut": {
+        "properties": {
+          "archive_suggested": {
+            "title": "Archive Suggested",
+            "type": "boolean"
+          },
+          "bucket_id": {
+            "title": "Bucket Id",
+            "type": "string"
+          },
+          "budget": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budget"
+          },
+          "days_left": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days Left"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pct"
+          },
+          "period_end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period End"
+          },
+          "period_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Start"
+          },
+          "spent": {
+            "title": "Spent",
+            "type": "number"
+          }
+        },
+        "required": [
+          "bucket_id",
+          "name",
+          "kind",
+          "budget",
+          "spent",
+          "pct",
+          "period_start",
+          "period_end",
+          "days_left",
+          "archive_suggested"
+        ],
+        "title": "BudgetRowOut",
+        "type": "object"
+      },
       "CategoryIn": {
         "properties": {
           "color": {
@@ -1489,6 +1660,63 @@
           "name"
         ],
         "title": "CategoryIn",
+        "type": "object"
+      },
+      "CategoryUsualOut": {
+        "properties": {
+          "category_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "color": {
+            "title": "Color",
+            "type": "string"
+          },
+          "flagged": {
+            "title": "Flagged",
+            "type": "boolean"
+          },
+          "icon": {
+            "title": "Icon",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "this_month": {
+            "title": "This Month",
+            "type": "number"
+          },
+          "usual": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usual"
+          }
+        },
+        "required": [
+          "category_id",
+          "name",
+          "icon",
+          "color",
+          "this_month",
+          "usual",
+          "flagged"
+        ],
+        "title": "CategoryUsualOut",
         "type": "object"
       },
       "EntryAmountIn": {
@@ -1806,6 +2034,68 @@
         "title": "LogoutRequest",
         "type": "object"
       },
+      "MatchOut": {
+        "properties": {
+          "entry": {
+            "$ref": "#/components/schemas/EntryOut"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "merchant": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Merchant"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "transaction_amount": {
+            "title": "Transaction Amount",
+            "type": "number"
+          },
+          "transaction_date": {
+            "format": "date",
+            "title": "Transaction Date",
+            "type": "string"
+          },
+          "transaction_id": {
+            "title": "Transaction Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "transaction_id",
+          "transaction_date",
+          "transaction_amount",
+          "merchant",
+          "notes",
+          "entry"
+        ],
+        "title": "MatchOut",
+        "type": "object"
+      },
       "MeOut": {
         "properties": {
           "avatar_color": {
@@ -1856,6 +2146,74 @@
           "household_id"
         ],
         "title": "MeOut",
+        "type": "object"
+      },
+      "MonthPictureOut": {
+        "properties": {
+          "buckets": {
+            "$ref": "#/components/schemas/BucketsMonthOut"
+          },
+          "cash": {
+            "title": "Cash",
+            "type": "number"
+          },
+          "estimated": {
+            "title": "Estimated",
+            "type": "boolean"
+          },
+          "events_spent": {
+            "title": "Events Spent",
+            "type": "number"
+          },
+          "fixed": {
+            "$ref": "#/components/schemas/MonthRowOut"
+          },
+          "income": {
+            "$ref": "#/components/schemas/MonthRowOut"
+          },
+          "month": {
+            "title": "Month",
+            "type": "string"
+          },
+          "net_projected": {
+            "title": "Net Projected",
+            "type": "number"
+          }
+        },
+        "required": [
+          "month",
+          "income",
+          "fixed",
+          "buckets",
+          "net_projected",
+          "events_spent",
+          "cash",
+          "estimated"
+        ],
+        "title": "MonthPictureOut",
+        "type": "object"
+      },
+      "MonthRowOut": {
+        "properties": {
+          "projected": {
+            "title": "Projected",
+            "type": "number"
+          },
+          "so_far": {
+            "title": "So Far",
+            "type": "number"
+          },
+          "still_to_come": {
+            "title": "Still To Come",
+            "type": "number"
+          }
+        },
+        "required": [
+          "so_far",
+          "still_to_come",
+          "projected"
+        ],
+        "title": "MonthRowOut",
         "type": "object"
       },
       "MovementIn": {
@@ -1955,6 +2313,56 @@
           "amount"
         ],
         "title": "MovementIn",
+        "type": "object"
+      },
+      "PaceOut": {
+        "properties": {
+          "bucket_id": {
+            "title": "Bucket Id",
+            "type": "string"
+          },
+          "budget": {
+            "title": "Budget",
+            "type": "number"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "over_pace": {
+            "title": "Over Pace",
+            "type": "boolean"
+          },
+          "pace": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pace"
+          },
+          "pct": {
+            "title": "Pct",
+            "type": "number"
+          },
+          "spent": {
+            "title": "Spent",
+            "type": "number"
+          }
+        },
+        "required": [
+          "bucket_id",
+          "name",
+          "budget",
+          "spent",
+          "pct",
+          "pace",
+          "over_pace"
+        ],
+        "title": "PaceOut",
         "type": "object"
       },
       "PasswordIn": {
@@ -3169,6 +3577,33 @@
         "title": "TransactionUpdate",
         "type": "object"
       },
+      "UpcomingDayOut": {
+        "properties": {
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/EntryOut"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "net_this_month": {
+            "title": "Net This Month",
+            "type": "number"
+          }
+        },
+        "required": [
+          "date",
+          "entries",
+          "net_this_month"
+        ],
+        "title": "UpcomingDayOut",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -3207,6 +3642,60 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "YearMonthOut": {
+        "properties": {
+          "estimated": {
+            "title": "Estimated",
+            "type": "boolean"
+          },
+          "income": {
+            "title": "Income",
+            "type": "number"
+          },
+          "month": {
+            "title": "Month",
+            "type": "string"
+          },
+          "out": {
+            "title": "Out",
+            "type": "number"
+          }
+        },
+        "required": [
+          "month",
+          "income",
+          "out",
+          "estimated"
+        ],
+        "title": "YearMonthOut",
+        "type": "object"
+      },
+      "YearOut": {
+        "properties": {
+          "estimated": {
+            "title": "Estimated",
+            "type": "boolean"
+          },
+          "infrequent_monthly_average": {
+            "title": "Infrequent Monthly Average",
+            "type": "number"
+          },
+          "months": {
+            "items": {
+              "$ref": "#/components/schemas/YearMonthOut"
+            },
+            "title": "Months",
+            "type": "array"
+          }
+        },
+        "required": [
+          "months",
+          "infrequent_monthly_average",
+          "estimated"
+        ],
+        "title": "YearOut",
         "type": "object"
       }
     },
@@ -4584,6 +5073,183 @@
         ]
       }
     },
+    "/api/v1/insights/categories-vs-usual": {
+      "get": {
+        "description": "Each category this month against its usual (spec \u00a74.2); flagged ones first.",
+        "operationId": "categories_usual_api_v1_insights_categories_vs_usual_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "month",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Month"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CategoryUsualOut"
+                  },
+                  "title": "Response Categories Usual Api V1 Insights Categories Vs Usual Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Categories Usual",
+        "tags": [
+          "insights"
+        ]
+      }
+    },
+    "/api/v1/matches": {
+      "get": {
+        "description": "Open suggestions, for Needs attention.",
+        "operationId": "list_matches_api_v1_matches_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MatchOut"
+                  },
+                  "title": "Response List Matches Api V1 Matches Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Matches",
+        "tags": [
+          "matches"
+        ]
+      }
+    },
+    "/api/v1/matches/{match_id}/dismiss": {
+      "post": {
+        "operationId": "dismiss_api_v1_matches__match_id__dismiss_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "match_id",
+            "required": true,
+            "schema": {
+              "title": "Match Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Dismiss",
+        "tags": [
+          "matches"
+        ]
+      }
+    },
+    "/api/v1/matches/{match_id}/link": {
+      "post": {
+        "operationId": "link_api_v1_matches__match_id__link_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "match_id",
+            "required": true,
+            "schema": {
+              "title": "Match Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Link",
+        "tags": [
+          "matches"
+        ]
+      }
+    },
     "/api/v1/notifications": {
       "get": {
         "operationId": "list_notifications_api_v1_notifications_get",
@@ -4697,6 +5363,201 @@
         "summary": "Mark One Read",
         "tags": [
           "notifications"
+        ]
+      }
+    },
+    "/api/v1/plan/budgets": {
+      "get": {
+        "description": "Every active bucket against its budget: monthly per calendar month,\nevents over their dates with days left (spec \u00a74.1).",
+        "operationId": "budgets_api_v1_plan_budgets_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BudgetRowOut"
+                  },
+                  "title": "Response Budgets Api V1 Plan Budgets Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Budgets",
+        "tags": [
+          "plan"
+        ]
+      }
+    },
+    "/api/v1/plan/month": {
+      "get": {
+        "operationId": "month_api_v1_plan_month_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "month",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Month"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonthPictureOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Month",
+        "tags": [
+          "plan"
+        ]
+      }
+    },
+    "/api/v1/plan/pace": {
+      "get": {
+        "operationId": "pace_api_v1_plan_pace_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PaceOut"
+                  },
+                  "title": "Response Pace Api V1 Plan Pace Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Pace",
+        "tags": [
+          "plan"
+        ]
+      }
+    },
+    "/api/v1/plan/upcoming": {
+      "get": {
+        "operationId": "upcoming_days_api_v1_plan_upcoming_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 90,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UpcomingDayOut"
+                  },
+                  "title": "Response Upcoming Days Api V1 Plan Upcoming Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Upcoming Days",
+        "tags": [
+          "plan"
+        ]
+      }
+    },
+    "/api/v1/plan/year": {
+      "get": {
+        "operationId": "year_api_v1_plan_year_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/YearOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Year",
+        "tags": [
+          "plan"
         ]
       }
     },
@@ -6087,6 +6948,26 @@
             "schema": {
               "title": "Month",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "recurring_bill_id",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Recurring Bill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fixed",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Fixed",
+              "type": "boolean"
             }
           }
         ],

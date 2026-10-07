@@ -15,8 +15,10 @@ from app.api import (
     income,
     ingest,
     insights,
+    matches,
     notifications,
     personal_tokens,
+    plan,
     recurring,
     settings,
     stock,
@@ -44,3 +46,5 @@ router.include_router(stock.products_router)
 
 # Planning (spec §6.3)
 router.include_router(recurring.router)
+router.include_router(matches.router)
+router.include_router(plan.router)

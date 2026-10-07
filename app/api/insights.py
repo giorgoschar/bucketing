@@ -5,9 +5,12 @@ API insights / analytics route.
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+from app.api.plan import parse_month
+from app.api.planning_models import CategoryUsualOut
 from app.api_auth import require_api_auth
 from app.core.database import get_db
 from app.services import InsightFilters, build_insights
+from app.services.usual import categories_vs_usual
 
 router = APIRouter(prefix="/insights", tags=["insights"])
 
@@ -109,3 +112,15 @@ def insights(
         # Litres, spend and price per litre of fuel expenses; null without any.
         "fuel": data["fuel"],
     }
+
+
+@router.get("/categories-vs-usual", response_model=list[CategoryUsualOut])
+def categories_usual(
+    month: str | None = Query(default=None),
+    auth=Depends(require_api_auth),
+    db: Session = Depends(get_db),
+):
+    """Each category this month against its usual (spec §4.2); flagged ones first."""
+    user, hh_id = auth
+    year, mon = parse_month(month)
+    return categories_vs_usual(db, hh_id, year, mon)

@@ -415,6 +415,80 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/insights/categories-vs-usual": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Categories Usual
+         * @description Each category this month against its usual (spec §4.2); flagged ones first.
+         */
+        get: operations["categories_usual_api_v1_insights_categories_vs_usual_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/matches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Matches
+         * @description Open suggestions, for Needs attention.
+         */
+        get: operations["list_matches_api_v1_matches_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/matches/{match_id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dismiss */
+        post: operations["dismiss_api_v1_matches__match_id__dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/matches/{match_id}/link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Link */
+        post: operations["link_api_v1_matches__match_id__link_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/notifications": {
         parameters: {
             query?: never;
@@ -460,6 +534,95 @@ export interface paths {
         put?: never;
         /** Mark One Read */
         post: operations["mark_one_read_api_v1_notifications__notification_id__read_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plan/budgets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Budgets
+         * @description Every active bucket against its budget: monthly per calendar month,
+         *     events over their dates with days left (spec §4.1).
+         */
+        get: operations["budgets_api_v1_plan_budgets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plan/month": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Month */
+        get: operations["month_api_v1_plan_month_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plan/pace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Pace */
+        get: operations["pace_api_v1_plan_pace_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plan/upcoming": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Upcoming Days */
+        get: operations["upcoming_days_api_v1_plan_upcoming_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plan/year": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Year */
+        get: operations["year_api_v1_plan_year_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1893,6 +2056,55 @@ export interface components {
              */
             type: string;
         };
+        /** BucketMonthRowOut */
+        BucketMonthRowOut: {
+            /** Bucket Id */
+            bucket_id: string;
+            /** Budget */
+            budget: number | null;
+            /** Name */
+            name: string;
+            /** Projected */
+            projected: number;
+            /** So Far */
+            so_far: number;
+            /** Still To Come */
+            still_to_come: number;
+        };
+        /** BucketsMonthOut */
+        BucketsMonthOut: {
+            /** Projected */
+            projected: number;
+            /** Rows */
+            rows: components["schemas"]["BucketMonthRowOut"][];
+            /** So Far */
+            so_far: number;
+            /** Still To Come */
+            still_to_come: number;
+        };
+        /** BudgetRowOut */
+        BudgetRowOut: {
+            /** Archive Suggested */
+            archive_suggested: boolean;
+            /** Bucket Id */
+            bucket_id: string;
+            /** Budget */
+            budget: number | null;
+            /** Days Left */
+            days_left: number | null;
+            /** Kind */
+            kind: string;
+            /** Name */
+            name: string;
+            /** Pct */
+            pct: number | null;
+            /** Period End */
+            period_end: string | null;
+            /** Period Start */
+            period_start: string | null;
+            /** Spent */
+            spent: number;
+        };
         /** CategoryIn */
         CategoryIn: {
             /**
@@ -1907,6 +2119,23 @@ export interface components {
             icon: string;
             /** Name */
             name: string;
+        };
+        /** CategoryUsualOut */
+        CategoryUsualOut: {
+            /** Category Id */
+            category_id: string | null;
+            /** Color */
+            color: string;
+            /** Flagged */
+            flagged: boolean;
+            /** Icon */
+            icon: string;
+            /** Name */
+            name: string;
+            /** This Month */
+            this_month: number;
+            /** Usual */
+            usual: number | null;
         };
         /** EntryAmountIn */
         EntryAmountIn: {
@@ -2020,6 +2249,27 @@ export interface components {
             /** Refresh Token */
             refresh_token: string;
         };
+        /** MatchOut */
+        MatchOut: {
+            entry: components["schemas"]["EntryOut"];
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Merchant */
+            merchant: string | null;
+            /** Notes */
+            notes: string | null;
+            /** Transaction Amount */
+            transaction_amount: number;
+            /**
+             * Transaction Date
+             * Format: date
+             */
+            transaction_date: string;
+            /** Transaction Id */
+            transaction_id: string;
+        };
         /** MeOut */
         MeOut: {
             /** Avatar Color */
@@ -2034,6 +2284,31 @@ export interface components {
             id: string;
             /** Username */
             username: string;
+        };
+        /** MonthPictureOut */
+        MonthPictureOut: {
+            buckets: components["schemas"]["BucketsMonthOut"];
+            /** Cash */
+            cash: number;
+            /** Estimated */
+            estimated: boolean;
+            /** Events Spent */
+            events_spent: number;
+            fixed: components["schemas"]["MonthRowOut"];
+            income: components["schemas"]["MonthRowOut"];
+            /** Month */
+            month: string;
+            /** Net Projected */
+            net_projected: number;
+        };
+        /** MonthRowOut */
+        MonthRowOut: {
+            /** Projected */
+            projected: number;
+            /** So Far */
+            so_far: number;
+            /** Still To Come */
+            still_to_come: number;
         };
         /** MovementIn */
         MovementIn: {
@@ -2056,6 +2331,23 @@ export interface components {
             spend_bucket_id?: string | null;
             /** Stash Owner Id */
             stash_owner_id?: string | null;
+        };
+        /** PaceOut */
+        PaceOut: {
+            /** Bucket Id */
+            bucket_id: string;
+            /** Budget */
+            budget: number;
+            /** Name */
+            name: string;
+            /** Over Pace */
+            over_pace: boolean;
+            /** Pace */
+            pace: number | null;
+            /** Pct */
+            pct: number;
+            /** Spent */
+            spent: number;
         };
         /** PasswordIn */
         PasswordIn: {
@@ -2455,6 +2747,18 @@ export interface components {
             /** @default expense */
             type: components["schemas"]["TransactionType"];
         };
+        /** UpcomingDayOut */
+        UpcomingDayOut: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Entries */
+            entries: components["schemas"]["EntryOut"][];
+            /** Net This Month */
+            net_this_month: number;
+        };
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -2467,6 +2771,26 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /** YearMonthOut */
+        YearMonthOut: {
+            /** Estimated */
+            estimated: boolean;
+            /** Income */
+            income: number;
+            /** Month */
+            month: string;
+            /** Out */
+            out: number;
+        };
+        /** YearOut */
+        YearOut: {
+            /** Estimated */
+            estimated: boolean;
+            /** Infrequent Monthly Average */
+            infrequent_monthly_average: number;
+            /** Months */
+            months: components["schemas"]["YearMonthOut"][];
         };
     };
     responses: never;
@@ -3362,6 +3686,117 @@ export interface operations {
             };
         };
     };
+    categories_usual_api_v1_insights_categories_vs_usual_get: {
+        parameters: {
+            query?: {
+                month?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryUsualOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_matches_api_v1_matches_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MatchOut"][];
+                };
+            };
+        };
+    };
+    dismiss_api_v1_matches__match_id__dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                match_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    link_api_v1_matches__match_id__link_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                match_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EntryOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_notifications_api_v1_notifications_get: {
         parameters: {
             query?: {
@@ -3440,6 +3875,128 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    budgets_api_v1_plan_budgets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BudgetRowOut"][];
+                };
+            };
+        };
+    };
+    month_api_v1_plan_month_get: {
+        parameters: {
+            query?: {
+                month?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MonthPictureOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pace_api_v1_plan_pace_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaceOut"][];
+                };
+            };
+        };
+    };
+    upcoming_days_api_v1_plan_upcoming_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpcomingDayOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    year_api_v1_plan_year_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["YearOut"];
                 };
             };
         };
@@ -4378,6 +4935,8 @@ export interface operations {
                 type?: string;
                 year?: number;
                 month?: number;
+                recurring_bill_id?: string;
+                fixed?: boolean;
             };
             header?: never;
             path?: never;

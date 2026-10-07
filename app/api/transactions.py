@@ -63,6 +63,7 @@ def _txn_dict(t: Transaction) -> dict:
         "fuel_litres": t.fuel_litres,
         "exclude_from_forecast": t.exclude_from_forecast,
         "exclude_from_settlement": t.exclude_from_settlement,
+        "recurring_bill_id": t.recurring_bill_id,
         "created_at": t.created_at.isoformat() if t.created_at else None,
         "splits": [
             {"user_id": s.user_id, "amount": quantize(s.amount), "is_settled": s.is_settled}
@@ -85,11 +86,23 @@ def list_transactions(
     type: str = Query(default=""),
     year: int = Query(default=None),
     month: int = Query(default=None),
+    recurring_bill_id: str = Query(default=""),
+    fixed: bool = Query(default=False),
     auth=Depends(require_api_auth),
     db: Session = Depends(get_db),
 ):
     user, hh_id = auth
     q = db.query(Transaction).filter(Transaction.active(), Transaction.household_id == hh_id)
+    # Drill-downs from the planning figures (spec §5): one item's payments,
+    # or the Fixed costs (expenses linked to an item, with no bucket).
+    if recurring_bill_id:
+        q = q.filter(Transaction.recurring_bill_id == recurring_bill_id)
+    if fixed:
+        q = q.filter(
+            Transaction.type == TransactionType.expense,
+            Transaction.bucket_id.is_(None),
+            Transaction.recurring_bill_id.isnot(None),
+        )
 
     if bucket_id:
         q = q.filter(Transaction.bucket_id == bucket_id)
