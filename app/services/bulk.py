@@ -13,9 +13,11 @@ and its Fixed-cost rule is already mirrored by R7 in plan_row.
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+from itertools import combinations
 
 from fastapi import HTTPException
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Query, Session, joinedload
 
 from app.core.clock import local_today, utcnow_naive
@@ -29,6 +31,7 @@ from app.models import (
     BulkBatchRow,
     CashMovement,
     Category,
+    DuplicateDismissal,
     ItemDirection,
     PaymentMethod,
     RecurringBill,
@@ -52,6 +55,7 @@ from app.services.bulk_rules import (
 from app.services.fuel import fuel_category_id
 from app.services.insights import _month_range
 from app.services.money import base_amount_expr, to_base
+from app.services.transaction_filter import TransactionFilter, apply_filter
 from app.validators import household_member_ids
 
 BULK_MAX_ROWS = 1000
@@ -71,14 +75,18 @@ METHOD_LABELS = {
 
 @dataclass(frozen=True)
 class Selection:
-    """Exactly one of: hand-picked ids, or every active payment of an item."""
+    """Exactly one of: hand-picked ids, the feed's filter, or every active
+    payment of a recurring item."""
 
     ids: list[str] | None = None
+    filter: TransactionFilter | None = None
     bill_id: str | None = None
 
     @property
     def kind(self) -> str:
-        return "ids" if self.ids is not None else "bill"
+        if self.ids is not None:
+            return "ids"
+        return "filter" if self.filter is not None else "bill"
 
 
 def can_undo(batch: BulkBatch, now: datetime | None = None) -> bool:
@@ -150,13 +158,14 @@ def _check_move_bill(
 
 
 def _selected_query(db: Session, hh: str, select: Selection) -> Query:
-    """Active rows of the household matching a bill selection."""
+    """Active rows of the household matching a filter or bill selection."""
+    q = db.query(Transaction).filter(Transaction.household_id == hh, Transaction.active())
+    if select.filter is not None:
+        if select.filter.is_empty():
+            raise HTTPException(status_code=400, detail="Choose at least one filter.")
+        return apply_filter(q, select.filter, db, hh)
     bill = _bill(db, hh, select.bill_id)
-    return db.query(Transaction).filter(
-        Transaction.household_id == hh,
-        Transaction.active(),
-        Transaction.recurring_bill_id == bill.id,
-    )
+    return q.filter(Transaction.recurring_bill_id == bill.id)
 
 
 def _load(q: Query, lock: bool) -> list[Transaction]:
@@ -636,3 +645,50 @@ def bulk_history_events(db: Session, household_id: str, txn_id: str) -> list[dic
                 }
             )
     return events
+
+
+# ---------------------------------------------------------------- duplicates
+
+
+def dismiss_duplicates(db: Session, *, household_id: str, user_id: str, ids: list[str]) -> None:
+    """ "Keep both": store every pair of ``ids`` (smaller id first), once, for
+    the whole household. Every id must be an active transaction of it (404)."""
+    wanted = sorted(set(ids))
+    if len(wanted) < 2:
+        raise HTTPException(status_code=400, detail="Choose at least two transactions.")
+    found = {
+        i
+        for (i,) in db.query(Transaction.id).filter(
+            Transaction.id.in_(wanted),
+            Transaction.household_id == household_id,
+            Transaction.active(),
+        )
+    }
+    if len(found) != len(wanted):
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    # Twice at most: if another member's "Keep both" stored one of these pairs
+    # between our read and our commit, read again and add only what's missing,
+    # so no pair of a three-row group is lost to the race.
+    for _attempt in range(2):
+        existing = set(
+            db.query(DuplicateDismissal.first_id, DuplicateDismissal.second_id)
+            .filter(
+                DuplicateDismissal.first_id.in_(wanted), DuplicateDismissal.second_id.in_(wanted)
+            )
+            .all()
+        )
+        for first, second in combinations(wanted, 2):
+            if (first, second) not in existing:
+                db.add(
+                    DuplicateDismissal(
+                        household_id=household_id,
+                        first_id=first,
+                        second_id=second,
+                        created_by=user_id,
+                    )
+                )
+        try:
+            db.commit()
+            return
+        except IntegrityError:
+            db.rollback()

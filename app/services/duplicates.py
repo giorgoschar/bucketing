@@ -122,3 +122,22 @@ def find_household_duplicates(
 
     groups.sort(key=lambda g: max(t.transaction_date for t in g["transactions"]), reverse=True)
     return groups
+
+
+def drop_dismissed(db: Session, household_id: str, groups: list[dict]) -> list[dict]:
+    """``groups`` minus those whose every pair was dismissed ("Keep both").
+    A group of three with one dismissed pair still shows."""
+    from itertools import combinations
+
+    from app.models import DuplicateDismissal
+
+    pairs = set(
+        db.query(DuplicateDismissal.first_id, DuplicateDismissal.second_id)
+        .filter(DuplicateDismissal.household_id == household_id)
+        .all()
+    )
+    return [
+        g
+        for g in groups
+        if not all(p in pairs for p in combinations(sorted(t.id for t in g["transactions"]), 2))
+    ]

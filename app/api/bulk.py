@@ -8,19 +8,26 @@ app.api includes this router ahead of app.api.transactions, so the literal
 from datetime import date, datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy.orm import Session
 
 from app.api.planning_models import Money
 from app.api_auth import require_api_auth
 from app.core.database import get_db
-from app.services.bulk import Selection, recent_batches, run_bulk, undo_batch
+from app.services.bulk import (
+    Selection,
+    dismiss_duplicates,
+    recent_batches,
+    run_bulk,
+    undo_batch,
+)
 from app.services.bulk_rules import Changes, Payer
+from app.services.transaction_filter import StrictTransactionFilter
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
-SELECT_KEYS = ("ids", "bill_id")
+SELECT_KEYS = ("ids", "filter", "bill_id")
 
 
 class PayerIn(BaseModel):
@@ -60,6 +67,7 @@ class SelectIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     ids: list[str] | None = None
+    filter: StrictTransactionFilter | None = None
     bill_id: str | None = None
 
     @model_validator(mode="after")
@@ -70,7 +78,7 @@ class SelectIn(BaseModel):
         return self
 
     def to_selection(self) -> Selection:
-        return Selection(ids=self.ids, bill_id=self.bill_id)
+        return Selection(ids=self.ids, filter=self.filter, bill_id=self.bill_id)
 
 
 class BulkIn(BaseModel):
@@ -181,3 +189,18 @@ def undo_bulk(
     """Undo a batch within 24 hours, once. Rows changed since are left as they are."""
     user, hh_id = auth
     return undo_batch(db, household_id=hh_id, user_id=user.id, batch_id=batch_id)
+
+
+class DismissIn(BaseModel):
+    ids: list[str] = Field(min_length=2, max_length=20)
+
+
+@router.post("/duplicates/dismiss", status_code=status.HTTP_204_NO_CONTENT)
+def dismiss(
+    body: DismissIn,
+    auth=Depends(require_api_auth),
+    db: Session = Depends(get_db),
+):
+    """ "Keep both": never show these as possible duplicates again, for anyone."""
+    user, hh_id = auth
+    dismiss_duplicates(db, household_id=hh_id, user_id=user.id, ids=body.ids)
