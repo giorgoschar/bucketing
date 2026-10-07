@@ -23,8 +23,8 @@ export function FeedRow({ t, refData, onOpen, pending, selecting, selected }: Pr
     fixed && <Badge key="fx">Fixed</Badge>,
     pending && <Badge key="p" tone="warn">Waiting to sync</Badge>,
   ].filter(Boolean)
+  // TODO(Task 18): aria-selected on a plain div is not valid ARIA; give the row a role when selection lands.
   return (
-    {/* TODO(Task 18): aria-selected on a plain div is not valid ARIA; give the row a role when selection lands. */}
     <div className="feedrow" aria-selected={selecting ? !!selected : undefined} data-pending={pending || undefined}>
       {selecting && <Check checked={!!selected} />}
       <ListRow
