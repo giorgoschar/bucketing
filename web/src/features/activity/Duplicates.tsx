@@ -9,6 +9,7 @@ import { useToast } from '../../ui/Toast'
 import { dayLabel, gapLabel, METHOD_LABELS, rowTitle } from './format'
 import { useHeldDeletes } from './heldDeletes'
 import { type DuplicateGroup, type RefData, type Txn, dismissDuplicates, useDuplicates, useRefData } from './hooks'
+import { usePendingActivity } from './pending'
 import { useDeleteWithUndo } from './useDeleteWithUndo'
 
 const CLOSE_MINUTES = 10
@@ -100,6 +101,7 @@ export function Duplicates() {
   const q = useDuplicates()
   const refData = useRefData()
   const held = useHeldDeletes()
+  const queued = usePendingActivity().hidden
   if (!q.data) {
     if (q.noData) {
       return (
@@ -111,9 +113,9 @@ export function Duplicates() {
     }
     return <p className="screen__note" aria-busy="true">Loading…</p>
   }
-  // A pair with a held (swipe or "Delete this one") delete is resolved: drop it at once.
+  // A pair with a held or queued delete is resolved: drop it at once.
   const groups = q.data.groups
-    .map((g) => ({ ...g, transactions: g.transactions.filter((t) => !held.has(t.id)) }))
+    .map((g) => ({ ...g, transactions: g.transactions.filter((t) => !held.has(t.id) && !queued.has(t.id)) }))
     .filter((g) => g.transactions.length > 1)
   if (groups.length === 0) {
     return <div role="status"><EmptyState title="No possible duplicates in the last 90 days" /></div>

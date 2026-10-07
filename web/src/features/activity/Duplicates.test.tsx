@@ -1,7 +1,9 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
+import { setIdentity } from '../../offline/identity'
+import { enqueue } from '../../offline/queue'
 import { fakeApi } from '../../test/fakeApi'
-import { resetTestEnv, setOnline } from '../../test/render'
+import { resetTestEnv, setOnline, TEST_IDENTITY } from '../../test/render'
 import { Activity } from './Activity'
 import { _resetHeldForTests } from './heldDeletes'
 import { TODAY, makeTxn, refRoutes, renderActivity } from './testing'
@@ -60,6 +62,14 @@ describe('Duplicates mode', () => {
 
   it('empty state', async () => {
     setup([])
+    renderActivity(<Activity />, { route: '/activity?dups=1' })
+    expect(await screen.findByText('No possible duplicates in the last 90 days')).toBeInTheDocument()
+  })
+
+  it('a pair whose delete is queued offline is resolved', async () => {
+    setIdentity(TEST_IDENTITY)
+    await enqueue({ method: 'DELETE', path: '/api/v1/transactions/d2' })
+    setup()
     renderActivity(<Activity />, { route: '/activity?dups=1' })
     expect(await screen.findByText('No possible duplicates in the last 90 days')).toBeInTheDocument()
   })
