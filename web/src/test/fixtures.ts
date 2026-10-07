@@ -9,7 +9,7 @@ export function entry(over: Partial<EntryOut> = {}): EntryOut {
   return {
     id: 'e1', item_id: 'i1', name: 'Cosmote', direction: 'out', due_date: '2026-10-09', status: 'expected',
     amount: 38.9, estimated: false, currency: 'EUR', bucket_id: null, category_id: null, transaction_id: null,
-    overdue: false, infrequent: false, ...over,
+    overdue: false, infrequent: false, payment_method: 'card', ...over,
   }
 }
 
@@ -23,7 +23,7 @@ export function item(over: Partial<RecurringItemOut> = {}): RecurringItemOut {
     rule_kind: 'monthly_day', interval_months: 1, rule_day: 9, rule_month: null, rule_adjust: 'none', rule_days: null,
     rule_weekday: null, rule_interval_weeks: null, start_date: '2026-01-09', end_date: null, total_occurrences: null,
     contract_end_date: null, paid_by_default: 'u1', payer_mode: 'single', is_auto_pay: false, is_active: true,
-    notes: null, splits: [], next_entry: entry(), has_history: false, ...over,
+    notes: null, splits: [], next_entry: entry(), has_history: false, payment_method: 'card', ...over,
   }
 }
 

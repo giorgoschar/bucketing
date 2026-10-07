@@ -54,8 +54,8 @@ it('lists recent activity read-only, signed, with the bucket, and links to Activ
 
 it('offline with a saved month: shows it once with the banner', async () => {
   setIdentity(TEST_IDENTITY)
-  await cachePut(cacheKeyFor('h1', keys.plan.month('2026-10')), monthPicture())
-  await cachePut(cacheKeyFor('h1', keys.transactions.recent()), recent)
+  await cachePut(await cacheKeyFor('h1', keys.plan.month('2026-10')), monthPicture())
+  await cachePut(await cacheKeyFor('h1', keys.transactions.recent()), recent)
   fakeApi({}).down()
   setOnline(false)
   renderWithProviders(<Home />)

@@ -152,5 +152,6 @@ export function pendingItem(body: RecurringItemIn, id: string): RecurringItemOut
     splits: (body.splits ?? []).map((s) => ({ user_id: s.user_id, amount: Number(s.amount) })),
     next_entry: null,
     has_history: false,
+    payment_method: body.payment_method ?? (body.direction === 'in' ? 'transfer' : 'card'),
   }
 }
