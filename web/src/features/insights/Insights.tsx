@@ -80,7 +80,7 @@ export function Insights() {
         <Chips label="Period" options={PRESETS} value={period.preset} onChange={pickPreset} />
       </div>
       <section className="screen insights">
-        {members && meId && members.length > 1 && (
+        {members && meId && (
           <LensControl label="Whose spending" options={lensOptions(members, meId)} value={lens} onChange={setLens} />
         )}
         <QueryView
