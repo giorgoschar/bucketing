@@ -18,8 +18,9 @@ import { useDuplicateCheck } from './hooks/useDuplicateCheck'
 import { useReceiptUpload } from './hooks/useReceiptUpload'
 import { useSaveTransaction } from './hooks/useSaveTransaction'
 import { useUndoCreate } from './hooks/undo'
-import { firstProblem, isDirtyNew, moreDirty, toUpdateBody, validate } from './model'
+import { firstProblem, isDirtyNew, isFuel, moreDirty, toUpdateBody, validate } from './model'
 import { MoreSheet } from './MoreSheet'
+import { SplitSheet } from './SplitSheet'
 import { BucketSheet } from './pickers/BucketSheet'
 import { CategorySheet } from './pickers/CategorySheet'
 import { CurrencySheet } from './pickers/CurrencySheet'
@@ -31,7 +32,7 @@ import { type ComposerState, reduce, type Remembered, type TxnType } from './sta
 import type { Duplicate } from './types'
 import { useClose } from './useClose'
 
-type SheetName = 'bucket' | 'category' | 'payer' | 'method' | 'currency' | 'date' | 'more'
+type SheetName = 'bucket' | 'category' | 'payer' | 'method' | 'currency' | 'date' | 'more' | 'split' | 'own'
 
 const QUEUED = "Saved on this phone. It will sync when you're back online."
 const QUEUED_NO_RECEIPT = "Saved on this phone. The receipt wasn't attached: add it when you're back online."
@@ -119,6 +120,14 @@ export function ComposerForm({ initial, data, defaults }: { initial: ComposerSta
     }
   }
 
+  // Fuel prefill (spec §4.6), keyed on the category so a price the user cleared stays cleared.
+  useEffect(() => {
+    if (s.mode === 'new' && isFuel(s, ctx) && s.fuelPrice === '' && defaults.fuelPrice) {
+      dispatch({ type: 'setFuelPrice', value: defaults.fuelPrice })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [s.categoryId])
+
   async function onDelete() {
     setConfirmDelete(false)
     const r = await save.deleteEntry()
@@ -172,7 +181,7 @@ export function ComposerForm({ initial, data, defaults }: { initial: ComposerSta
     : income
       ? `Save income ${spokenMoney(cents, s.currency)}`
       : `Save ${spokenMoney(cents, s.currency)}${bucketName ? ` to ${bucketName}` : ''}`
-  const allowOwnShare = false // C4-3 enables "Each paid own share" together with the split sheet
+  const allowOwnShare = !income && data.members.length > 1 && s.tookFrom === 'none' && !s.cashMode
 
   const pillIcon = (glyph: string) => <span className="ck-pill__glyph">{glyph}</span>
   const budgetPill = s.fixedCost
@@ -288,7 +297,7 @@ export function ComposerForm({ initial, data, defaults }: { initial: ComposerSta
       {!s.cashMode && (
         <PayerSheet open={sheet === 'payer'} onClose={() => setSheet(null)} title={income ? 'Received by' : 'Payer'}
           members={data.members} selectedId={s.paidBy} ownShare={s.ownShare} allowOwnShare={allowOwnShare}
-          onPick={(id) => dispatch({ type: 'pickPayer', id })} onOwnShare={() => setSheet(null)} />
+          onPick={(id) => dispatch({ type: 'pickPayer', id })} onOwnShare={() => setSheet('own')} />
       )}
       <MethodSheet open={sheet === 'method'} onClose={() => setSheet(null)} selected={s.method}
         onPick={(m) => dispatch({ type: 'pickMethod', method: m })} />
@@ -299,8 +308,14 @@ export function ComposerForm({ initial, data, defaults }: { initial: ComposerSta
       <MoreSheet open={sheet === 'more'} onClose={() => setSheet(null)} s={s} dispatch={dispatch}
         ctx={{
           today, online, householdCurrency: data.householdCurrency, fuelCategoryId: data.fuelCategoryId,
-          members: data.members, meId: data.meId, problems: v.problems,
+          members: data.members, meId: data.meId, problems: v.problems, onOpenSplit: () => setSheet('split'),
         }} />
+      <SplitSheet open={sheet === 'split' || sheet === 'own'} variant={sheet === 'own' ? 'own' : 'split'} totalCents={cents}
+        currency={s.currency} members={data.members} payerId={s.paidBy} initial={{ mode: s.splitMode, shares: s.splits }}
+        onDone={(r) =>
+          dispatch(sheet === 'own' ? { type: 'setOwnShare', splits: r.shares } : { type: 'setSplit', on: true, mode: r.mode, splits: r.shares })
+        }
+        onClose={() => setSheet(sheet === 'split' ? 'more' : null)} />
       <ConfirmSheet open={blocker.state === 'blocked'} title="Discard this entry?" confirmLabel="Discard"
         cancelLabel="Keep editing" danger onConfirm={() => blocker.proceed?.()} onCancel={() => blocker.reset?.()} />
       <ConfirmSheet open={confirmDelete} title="Delete this entry?" confirmLabel="Delete" cancelLabel="Cancel" danger

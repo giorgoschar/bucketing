@@ -101,3 +101,12 @@
 .composer__menu { background: transparent; }
 .composer--gone { justify-content: center; gap: 20px; text-align: center; }
 .composer__gone { margin: 0; font-size: 17px; font-weight: 600; color: var(--ink-2); }
+
+/* More: fuel, currency and rate, split */
+.ck-more__num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.ck-more__figure { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.ck-more__fx { margin: 0; font-size: 16px; font-weight: 600; color: var(--ink); }
+.ck-more__shares {
+  align-self: flex-start; min-height: 44px; padding: 0; border: 0; background: transparent; color: var(--accent);
+  font: inherit; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; text-align: left; cursor: pointer;
+}

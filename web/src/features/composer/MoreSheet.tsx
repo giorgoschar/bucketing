@@ -1,7 +1,10 @@
 import { type Dispatch, type ReactNode, useState } from 'react'
 import { ToggleRow } from '../../ui/ToggleRow'
 import { type Member, Sheet } from './bridge'
-import type { Validation } from './model'
+import { convertCents, formatLitres, litresMilli, parseFuelPrice, parseRate, toCents } from './amount'
+import { formatCents } from './currencies'
+import { isFuel, type Validation } from './model'
+import { memberName } from './pickers/labels'
 import { DateChips } from './pickers/DateSheet'
 import { RECEIPT_ACCEPT, receiptProblem } from './receipt'
 import type { Action, ComposerState } from './state'
@@ -37,6 +40,11 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 /** The rest of the old edit form, in one scroll (mock screen 3). C4-3 adds fuel, currency and split. */
 export function MoreSheet({ open, onClose, s, dispatch, ctx }: MoreSheetProps) {
   const income = s.type === 'income'
+  const cents = toCents(s.amount)
+  const price = parseFuelPrice(s.fuelPrice)
+  const rate = parseRate(s.rate)
+  const others = ctx.members.filter((m) => m.user_id !== (s.paidBy ?? ctx.meId)).map((m) => memberName(m)).join(', ')
+  const canSplit = !income && ctx.members.length > 1 && !s.ownShare
   return (
     <Sheet open={open} onClose={onClose} title="More"
       footer={<button type="button" className="btn btn--primary btn--lg btn--block" onClick={onClose}>Done</button>}>
@@ -44,6 +52,28 @@ export function MoreSheet({ open, onClose, s, dispatch, ctx }: MoreSheetProps) {
         <Section title="Date">
           <DateChips value={s.date} today={ctx.today} onPick={(d) => dispatch({ type: 'setDate', value: d })} />
           {ctx.problems.date && <p className="ck-more__error">{ctx.problems.date}</p>}
+        </Section>
+      )}
+      {isFuel(s, ctx) && (
+        <Section title="Fuel">
+          <input className="ui-input ck-more__num" aria-label="Price per litre" inputMode="decimal" autoComplete="off"
+            placeholder="Price per litre" value={s.fuelPrice}
+            onChange={(e) => dispatch({ type: 'setFuelPrice', value: e.target.value })} />
+          {ctx.problems.fuel && <p className="ck-more__error">{ctx.problems.fuel}</p>}
+          {price !== null && cents > 0 && (
+            <p className="ck-more__note ck-more__figure">{`Litres: ${formatLitres(litresMilli(cents, price))} L`}</p>
+          )}
+        </Section>
+      )}
+      {s.currency !== ctx.householdCurrency && (
+        <Section title="Currency and rate">
+          <p className="ck-more__figure ck-more__fx">
+            {`${formatCents(cents, s.currency)} → ${rate !== null ? formatCents(convertCents(cents, rate), ctx.householdCurrency) : 'set a rate'}`}
+          </p>
+          <input className="ui-input ck-more__num" aria-label="Rate" inputMode="decimal" autoComplete="off" placeholder="Rate"
+            value={s.rate} onChange={(e) => dispatch({ type: 'setRate', value: e.target.value })} />
+          <p className="ck-more__note">{`Units of ${ctx.householdCurrency} per 1 ${s.currency}`}</p>
+          {ctx.problems.rate && <p className="ck-more__error">{ctx.problems.rate}</p>}
         </Section>
       )}
       <Section title="Notes">
@@ -54,6 +84,19 @@ export function MoreSheet({ open, onClose, s, dispatch, ctx }: MoreSheetProps) {
       <Section title="Receipt">
         <ReceiptField s={s} dispatch={dispatch} online={ctx.online} />
       </Section>
+      {canSplit && (
+        <Section title="Split">
+          <ToggleRow label={`Split with ${others}`} hint={s.splitOn ? undefined : 'Off · all of it is your share'}
+            checked={s.splitOn}
+            onChange={(on) => (on ? ctx.onOpenSplit?.() : dispatch({ type: 'setSplit', on: false, mode: s.splitMode, splits: [] }))} />
+          {s.splitOn && (
+            <button type="button" className="ck-more__shares" onClick={() => ctx.onOpenSplit?.()}>
+              {s.splits.map((x) => `${memberName(ctx.members.find((m) => m.user_id === x.user_id))} ${formatCents(toCents(x.amount), s.currency)}`).join(' · ')}
+            </button>
+          )}
+          {ctx.problems.split && <p className="ck-more__error">{ctx.problems.split}</p>}
+        </Section>
+      )}
       <Section title="Forecast">
         <ToggleRow label="Count in forecast" hint="Turn off for one-offs" checked={s.countInForecast}
           onChange={(on) => dispatch({ type: 'setForecast', on })} />
