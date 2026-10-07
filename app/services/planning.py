@@ -144,6 +144,36 @@ def _transactions_sum(db: Session, *filters) -> Decimal:
     )
 
 
+def _claimed_total(entries) -> Decimal:
+    """The old app's claim-only payments among ``entries``: done ``out``
+    entries of items with no bucket and no linked expense. They count as
+    Fixed costs paid (spec §6.2.4)."""
+    return _total(
+        e
+        for e in entries
+        if e.direction == ItemDirection.out.value
+        and e.status == "done"
+        and e.transaction_id is None
+        and e.bucket_id is None
+    )
+
+
+def _overdue_net(entries) -> Decimal:
+    """Overdue expected entries among ``entries``, in plus and out minus."""
+    return quantize(
+        sum(
+            (
+                (e.amount or ZERO)
+                if e.direction == ItemDirection.in_.value
+                else -(e.amount or ZERO)
+                for e in entries
+                if e.overdue
+            ),
+            ZERO,
+        )
+    )
+
+
 def _row(so_far: Decimal, still_to_come: Decimal) -> dict:
     return {
         "so_far": quantize(so_far),
@@ -190,16 +220,8 @@ def month_picture(
         Transaction.bucket_id.is_(None),
         Transaction.recurring_bill_id.isnot(None),
     )
-    claimed = _total(
-        e
-        for e in entries
-        if e.direction == out
-        and e.status == "done"
-        and e.transaction_id is None
-        and e.bucket_id is None
-    )
     fixed = _row(
-        fixed_paid + claimed,
+        fixed_paid + _claimed_total(entries),
         _total(e for e in expected if e.direction == out and e.bucket_id is None),
     )
 
@@ -271,18 +293,20 @@ def upcoming(
     """Plan › Upcoming (spec §5.2): the next ``days`` days of expected entries,
     day by day, with a running "net this month".
 
-    The running net starts from this month's income minus expenses so far and
-    adds each expected entry up to that day (in plus, out minus). Event-bucket
-    spend is left out, as it is from Net (§5.1). It restarts
-    at zero when the list crosses into the next month. It is a projection.
+    The running net starts from this month's income minus expenses so far,
+    minus the old app's claim-only payments, plus this month's overdue
+    entries (in plus, out minus), as the month picture counts them (§5.1).
+    It then adds each expected entry up to that day. Overdue entries are not
+    listed by day: they are in Needs attention. Event-bucket spend is left
+    out, as it is from Net (§5.1). It restarts at zero when the list crosses
+    into the next month. It is a projection.
     """
     today = today or local_today()
-    entries = [
-        e
-        for e in list_entries(db, household_id, today, today + timedelta(days=days), today=today)
-        if e.status == "expected"
-    ]
-    start, _ = _month_range(today.year, today.month)
+    start, month_end = _month_range(today.year, today.month)
+    last = today + timedelta(days=days)
+    listed = list_entries(db, household_id, start, max(last, month_end), today=today)
+    this_month = [e for e in listed if e.due_date <= month_end]
+    entries = [e for e in listed if today <= e.due_date <= last and e.status == "expected"]
     so_far = (
         Transaction.household_id == household_id,
         Transaction.transaction_date >= start,
@@ -301,6 +325,8 @@ def upcoming(
             Transaction.type == TransactionType.expense,
             Transaction.bucket_id.is_(None) | Transaction.bucket_id.notin_(event_ids),
         )
+        - _claimed_total(this_month)
+        + _overdue_net(this_month)
     }
     out_days: list[dict] = []
     for e in entries:

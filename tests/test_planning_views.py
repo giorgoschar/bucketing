@@ -144,11 +144,69 @@ def test_upcoming_runs_a_net_that_restarts_each_month(db, month):
         date(2026, 10, 26),
         date(2026, 11, 2),
     ]
-    # Oct so far: 590 in - 488.90 out (300 + 150 + 38.90); the 200 event spend is not in Net.
+    # Oct so far: 590 in - 488.90 out (300 + 150 + 38.90) - 25 (Gym, claimed by the old
+    # app, a Fixed cost paid as in the month picture) = 76.10; nothing overdue. The 200
+    # event spend is not in Net. Then -30 (Internet) = 46.10, -70 (DEH ≈) = -23.90,
+    # +1500 (Salary) = 1476.10; November restarts at 0: -30.
     assert [d["net_this_month"] for d in days] == [
-        D("71.10"),
-        D("1.10"),
-        D("1501.10"),
+        D("46.10"),
+        D("-23.90"),
+        D("1476.10"),
         D("-30.00"),
     ]
     assert all(e.status == "expected" for d in days for e in d["entries"])
+
+
+def _first_net_and_picture(db, hh):
+    days = upcoming(db, hh.household_id, today=TODAY)
+    pic = month_picture(db, hh.household_id, 2026, 10, today=TODAY)
+    return days, pic
+
+
+def test_upcoming_net_counts_this_months_overdue_entries(db, make_household, make_bill):
+    hh = make_household()
+    _, overdue = make_bill(
+        hh.household_id, None, amount=100, auto_pay=False, due=date(2026, 10, 5), name="Rent"
+    )
+    make_bill(hh.household_id, None, amount=50, auto_pay=False, due=date(2026, 10, 7))
+    days, pic = _first_net_and_picture(db, hh)
+    # The overdue entry is in Needs attention, not in the day list ...
+    assert [d["date"] for d in days] == [date(2026, 10, 7)]
+    assert overdue.id not in {e.id for d in days for e in d["entries"]}
+    # ... but in the net: 0 - 100 (overdue) - 50 = -150, the month picture's Net.
+    assert days[0]["net_this_month"] == D("-150.00")
+    assert pic["net_projected"] == days[0]["net_this_month"]
+
+
+def test_upcoming_net_counts_an_overdue_income_entry_as_in(db, make_household, make_bill):
+    hh = make_household()
+    salary, _ = make_bill(
+        hh.household_id, None, amount=1000, auto_pay=False, due=date(2026, 10, 1), name="Salary"
+    )
+    salary.direction = "in"
+    db.commit()
+    make_bill(hh.household_id, None, amount=50, auto_pay=False, due=date(2026, 10, 7))
+    days, pic = _first_net_and_picture(db, hh)
+    assert days[0]["net_this_month"] == D("950.00") == pic["net_projected"]
+
+
+def test_upcoming_net_counts_old_app_claim_only_payments(db, make_household, make_bill):
+    hh = make_household()
+    _, gym = make_bill(
+        hh.household_id, None, amount=25, auto_pay=False, due=date(2026, 10, 3), name="Gym"
+    )
+    claim_occurrence(db, gym, paid_by=hh.user_id, paid_on=utcnow_naive())
+    db.commit()
+    make_bill(hh.household_id, None, amount=50, auto_pay=False, due=date(2026, 10, 7))
+    days, pic = _first_net_and_picture(db, hh)
+    # 0 - 25 (claimed: a Fixed cost paid, with no expense row) - 50 = -75.
+    assert days[0]["net_this_month"] == D("-75.00")
+    assert pic["net_projected"] == days[0]["net_this_month"]
+
+
+def test_upcoming_net_leaves_out_last_months_overdue_entries(db, make_household, make_bill):
+    hh = make_household()
+    make_bill(hh.household_id, None, amount=100, auto_pay=False, due=date(2026, 9, 28))
+    make_bill(hh.household_id, None, amount=50, auto_pay=False, due=date(2026, 10, 7), name="X")
+    days, pic = _first_net_and_picture(db, hh)
+    assert days[0]["net_this_month"] == D("-50.00") == pic["net_projected"]
