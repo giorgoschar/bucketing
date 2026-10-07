@@ -18,6 +18,20 @@ describe('SearchField', () => {
     expect(onChange).toHaveBeenCalledExactlyOnceWith('cosmote')
   })
 
+  it('keeps a trailing space the user typed while the parent echoes the trimmed value', () => {
+    const onChange = vi.fn()
+    const { rerender } = render(<SearchField value="" onChange={onChange} />)
+    const input = screen.getByRole('searchbox') as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'foo ' } })
+    act(() => vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS))
+    expect(onChange).toHaveBeenLastCalledWith('foo')
+    rerender(<SearchField value="foo" onChange={onChange} />)
+    expect(input.value).toBe('foo ')
+    fireEvent.change(input, { target: { value: 'foo bar' } })
+    act(() => vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS))
+    expect(onChange).toHaveBeenLastCalledWith('foo bar')
+  })
+
   it('clears at once', () => {
     const onChange = vi.fn()
     render(<SearchField value="lidl" onChange={onChange} />)

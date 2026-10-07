@@ -17,10 +17,11 @@ export function SearchField({ value, onChange, placeholder = 'Search', label = '
   }, [value])
 
   useEffect(() => {
-    if (text === sent.current) return
+    const trimmed = text.trim()
+    if (trimmed === sent.current) return
     const t = setTimeout(() => {
-      sent.current = text
-      onChange(text)
+      sent.current = trimmed
+      onChange(trimmed)
     }, SEARCH_DEBOUNCE_MS)
     return () => clearTimeout(t)
   }, [text, onChange])
