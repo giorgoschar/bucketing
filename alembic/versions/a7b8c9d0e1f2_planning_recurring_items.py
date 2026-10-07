@@ -40,6 +40,7 @@ NEW_CHECK_SQL = "bucket_id IS NOT NULL OR type = 'income' OR recurring_bill_id I
 FK_NAME = "fk_transactions_recurring_bill_id"
 TXN_INDEX = "ix_transactions_recurring_bill_id"
 MATCH_INDEX = "ix_match_suggestions_household"
+MATCH_OCC_INDEX = "ix_match_suggestions_occurrence"
 RULE_COLUMNS = (
     "direction",
     "rule_kind",
@@ -129,10 +130,25 @@ def upgrade() -> None:
         sa.UniqueConstraint("transaction_id", "occurrence_id", name="uq_match_suggestion"),
     )
     op.create_index(MATCH_INDEX, "match_suggestions", ["household_id", "dismissed"])
+    op.create_index(MATCH_OCC_INDEX, "match_suggestions", ["occurrence_id"])
 
 
 def downgrade() -> None:
+    """Refuses rather than lose data. Production rollback = restore the
+    pre-migrate dump; this downgrade is for development databases."""
     conn = op.get_bind()
+    new_style = conn.execute(
+        sa.text(
+            "SELECT COUNT(*) FROM recurring_bills "
+            "WHERE direction <> 'out' OR rule_kind <> 'monthly_interval'"
+        )
+    ).scalar()
+    if new_style:
+        raise RuntimeError(
+            f"Cannot downgrade: {new_style} recurring item(s) are incoming or use a new "
+            "schedule rule; dropping the columns would turn them into plain monthly bills. "
+            "Delete them first, or restore the pre-migrate dump."
+        )
     fixed = conn.execute(
         sa.text("SELECT COUNT(*) FROM transactions WHERE bucket_id IS NULL AND type <> 'income'")
     ).scalar()
@@ -141,6 +157,7 @@ def downgrade() -> None:
             f"Cannot downgrade: {fixed} Fixed-cost expense(s) have no bucket. "
             "Give them a bucket first."
         )
+    op.drop_index(MATCH_OCC_INDEX, table_name="match_suggestions")
     op.drop_index(MATCH_INDEX, table_name="match_suggestions")
     op.drop_table("match_suggestions")
 

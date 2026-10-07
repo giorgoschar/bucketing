@@ -611,6 +611,7 @@ class MatchSuggestion(Base):
     __table_args__ = (
         UniqueConstraint("transaction_id", "occurrence_id", name="uq_match_suggestion"),
         Index("ix_match_suggestions_household", "household_id", "dismissed"),
+        Index("ix_match_suggestions_occurrence", "occurrence_id"),
     )
 
     id = Column(String, primary_key=True, default=gen_id)
@@ -621,7 +622,7 @@ class MatchSuggestion(Base):
     occurrence_id = Column(
         String, ForeignKey("bill_occurrences.id", ondelete="CASCADE"), nullable=False
     )
-    dismissed = Column(Boolean, default=False, nullable=False)
+    dismissed = Column(Boolean, default=False, server_default=text("false"), nullable=False)
     created_at = Column(DateTime, default=utcnow_naive)
 
     transaction = relationship("Transaction")

@@ -21,7 +21,20 @@ def _previous_revision() -> str:
 
 def _seed(conn) -> dict:
     ids = {
-        k: str(uuid.uuid4()) for k in ("hh", "user", "trip", "daily", "bill", "paid", "open", "txn")
+        k: str(uuid.uuid4())
+        for k in (
+            "hh",
+            "user",
+            "trip",
+            "daily",
+            "savings",
+            "custom",
+            "bill",
+            "paid",
+            "open",
+            "txn",
+            "loose",
+        )
     }
     conn.execute(
         text("INSERT INTO households (id, name, default_currency) VALUES (:i, 'H', 'EUR')"),
@@ -34,7 +47,12 @@ def _seed(conn) -> dict:
         ),
         {"i": ids["user"]},
     )
-    for key, kind in (("trip", "trip"), ("daily", "day2day")):
+    for key, kind in (
+        ("trip", "trip"),
+        ("daily", "day2day"),
+        ("savings", "savings"),
+        ("custom", "custom"),
+    ):
         conn.execute(
             text(
                 "INSERT INTO buckets (id, household_id, name, type, status, show_income, "
@@ -58,6 +76,16 @@ def _seed(conn) -> dict:
             "'2026-02-05', false, false)"
         ),
         {"i": ids["txn"], "b": ids["daily"], "h": ids["hh"], "u": ids["user"]},
+    )
+    # An ordinary expense that pays no bill: it must stay unlinked.
+    conn.execute(
+        text(
+            "INSERT INTO transactions (id, bucket_id, household_id, amount, currency, "
+            "exchange_rate, type, paid_by, transaction_date, exclude_from_forecast, "
+            "exclude_from_settlement) VALUES (:i, :b, :h, 5, 'EUR', 1, 'expense', :u, "
+            "'2026-02-06', false, false)"
+        ),
+        {"i": ids["loose"], "b": ids["daily"], "h": ids["hh"], "u": ids["user"]},
     )
     conn.execute(
         text(
@@ -92,13 +120,60 @@ def test_upgrade_backfills_and_keeps_every_row(tmp_path):
         ).one()
         assert tuple(bill) == ("out", "monthly_interval", "none", 1)
         kinds = dict(conn.execute(text("SELECT name, kind FROM buckets")).all())
-        assert kinds == {"trip": "event", "daily": "monthly"}
+        assert kinds == {
+            "trip": "event",
+            "daily": "monthly",
+            "savings": "monthly",
+            "custom": "monthly",
+        }
+        assert (
+            conn.execute(
+                text("SELECT recurring_bill_id FROM transactions WHERE id = :i"),
+                {"i": ids["loose"]},
+            ).scalar()
+            is None
+        )
         linked = conn.execute(
             text("SELECT recurring_bill_id FROM transactions WHERE id = :i"), {"i": ids["txn"]}
         ).scalar()
         assert linked == ids["bill"]
         assert conn.execute(text("SELECT COUNT(*) FROM bill_occurrences")).scalar() == 2
         assert conn.execute(text("SELECT COUNT(*) FROM match_suggestions")).scalar() == 0
+    engine.dispose()
+
+
+def test_old_app_inserts_without_the_new_columns_still_work(tmp_path):
+    db_url = _db_url(tmp_path, "oldapp.db")
+    assert _alembic(["upgrade", _previous_revision()], db_url).returncode == 0
+    engine = create_engine(db_url)
+    with engine.begin() as conn:
+        ids = _seed(conn)
+    assert _alembic(["upgrade", "head"], db_url).returncode == 0
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO buckets (id, household_id, name, type, status, show_income, "
+                "enable_settlement) VALUES (:b, :h, 'new', 'trip', 'active', true, false)"
+            ),
+            {"b": "b-new", "h": ids["hh"]},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO recurring_bills (id, household_id, bucket_id, name, amount, "
+                "currency, frequency, interval_months, start_date, is_active, is_auto_pay) "
+                "VALUES ('r-new', :h, :b, 'Rent', 500, 'EUR', 'monthly', 1, '2026-01-01', "
+                "true, false)"
+            ),
+            {"h": ids["hh"], "b": ids["daily"]},
+        )
+    with engine.connect() as conn:
+        assert (
+            conn.execute(text("SELECT kind FROM buckets WHERE id = 'b-new'")).scalar() == "monthly"
+        )
+        row = conn.execute(
+            text("SELECT direction, rule_kind, rule_adjust FROM recurring_bills WHERE id = 'r-new'")
+        ).one()
+        assert tuple(row) == ("out", "monthly_interval", "none")
     engine.dispose()
 
 
@@ -156,8 +231,34 @@ def test_downgrade_refuses_while_a_fixed_cost_exists_then_round_trips(tmp_path):
     assert "recurring_bill_id" not in {c["name"] for c in insp.get_columns("transactions")}
     assert "kind" not in {c["name"] for c in insp.get_columns("buckets")}
     with engine.connect() as conn:
-        assert conn.execute(text("SELECT COUNT(*) FROM transactions")).scalar() == 2
+        assert conn.execute(text("SELECT COUNT(*) FROM transactions")).scalar() == 3
 
     up = _alembic(["upgrade", "head"], db_url)
     assert up.returncode == 0, up.stderr
+    engine.dispose()
+
+
+@pytest.mark.parametrize(
+    "update",
+    [
+        "UPDATE recurring_bills SET direction = 'in'",
+        "UPDATE recurring_bills SET rule_kind = 'monthly_day', rule_day = 5",
+    ],
+)
+def test_downgrade_refuses_while_a_new_style_item_exists(tmp_path, update):
+    db_url = _db_url(tmp_path, "downitem.db")
+    assert _alembic(["upgrade", _previous_revision()], db_url).returncode == 0
+    engine = create_engine(db_url)
+    with engine.begin() as conn:
+        _seed(conn)
+    assert _alembic(["upgrade", "head"], db_url).returncode == 0
+    with engine.begin() as conn:
+        conn.execute(text(update))
+    down = _alembic(["downgrade", _previous_revision()], db_url)
+    assert down.returncode != 0 and "recurring item" in down.stderr
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE recurring_bills SET direction = 'out', rule_kind = 'monthly_interval'")
+        )
+    assert _alembic(["downgrade", _previous_revision()], db_url).returncode == 0
     engine.dispose()
