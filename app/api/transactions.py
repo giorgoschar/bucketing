@@ -10,7 +10,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import FileResponse
-from pydantic import Field
+from pydantic import BaseModel, Field
 from sqlalchemy import case, func
 from sqlalchemy.orm import Session, joinedload
 
@@ -31,8 +31,9 @@ from app.models import (
     Transaction,
     TransactionType,
 )
+from app.routes.scan import lookup_qr_receipt
 from app.schemas import TransactionCreate, TransactionUpdate
-from app.services import DeletedTransactionReplay, DuplicateTransaction
+from app.services import DeletedTransactionReplay, DuplicateTransaction, duplicate_check
 from app.services import create_transaction as create_transaction_service
 from app.services import delete_transaction as delete_transaction_soft
 from app.services import update_transaction as update_transaction_service
@@ -141,6 +142,35 @@ def _day_totals(filtered, dates: list[date]) -> dict[str, Decimal]:
     return totals
 
 
+class QrScanIn(BaseModel):
+    url: str = ""
+
+
+class QrReceiptOut(BaseModel):
+    amount: float | None
+    currency: str
+    date: str | None
+    merchant: str | None
+    category_hint: str | None
+    category_id: str | None
+
+
+class DuplicateOut(BaseModel):
+    id: str
+    amount: float
+    currency: str
+    date: str
+    notes: str | None
+    merchant: str | None
+    bucket: str | None
+    paid_by: str | None
+    same_bucket: bool
+
+
+class DuplicateCheckOut(BaseModel):
+    duplicates: list[DuplicateOut]
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -178,6 +208,42 @@ def list_transactions(
         "page_size": f.page_size,
         "items": [transaction_out(t, t.id in takes) for t in items],
         "day_totals": _day_totals(filtered, sorted({t.transaction_date for t in items})),
+    }
+
+
+@router.post("/scan/qr", response_model=QrReceiptOut)
+async def scan_qr(
+    body: QrScanIn,
+    auth=Depends(require_api_auth),
+    db: Session = Depends(get_db),
+):
+    """Read a receipt from the URL in its QR code (AADE lookup). Same rules,
+    messages and result as the web route ``POST /transactions/scan/qr``."""
+    user, hh_id = auth
+    return await lookup_qr_receipt(db, hh_id, body.url)
+
+
+@router.get("/check-duplicate", response_model=DuplicateCheckOut)
+def check_duplicate(
+    amount: str = Query(default=""),
+    transaction_date: str = Query(default=""),
+    bucket_id: str = Query(default=""),
+    exclude_id: str = Query(default=""),
+    auth=Depends(require_api_auth),
+    db: Session = Depends(get_db),
+):
+    """Expenses that look like the one being entered (same amount ±0.01,
+    within 3 days), at most 5. Advisory only: never blocks a save."""
+    user, hh_id = auth
+    return {
+        "duplicates": duplicate_check(
+            db,
+            hh_id,
+            amount=amount,
+            transaction_date=transaction_date,
+            bucket_id=bucket_id,
+            exclude_id=exclude_id,
+        )
     }
 
 

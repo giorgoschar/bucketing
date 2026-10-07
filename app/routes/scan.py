@@ -318,22 +318,16 @@ def _is_ip_literal(host: str) -> bool:
     return True
 
 
-@router.post("/scan/qr", response_class=JSONResponse)
-async def scan_qr(
-    request: Request,
-    db: Session = Depends(get_db),
-    auth=Depends(require_auth),
-):
+async def lookup_qr_receipt(db: Session, household_id: str, url: object) -> dict:
     """
     Read a receipt from the URL in its QR code: the AADE cash-register lookup,
     AADE's myDATA page, or an e-invoicing provider's page that links to the
     myDATA page. Only AADE pages are parsed; provider pages are fetched through
     an SSRF-hardened client just to find the AADE link.
-    """
-    user, hh_id = auth
 
-    body = await request.json()
-    url = body.get("url", "")
+    Shared by the web route and ``POST /api/v1/transactions/scan/qr``; raises
+    HTTPException 400/502/504 with the user-facing message.
+    """
     if not isinstance(url, str) or len(url) > 500:
         raise HTTPException(status_code=400, detail="Invalid URL")
 
@@ -372,7 +366,7 @@ async def scan_qr(
 
     category_id = resolve_category(
         db,
-        hh_id,
+        household_id,
         merchant=receipt["merchant"],
         hint=receipt["category_hint"],
     )
@@ -386,3 +380,15 @@ async def scan_qr(
         "category_hint": receipt["category_hint"],
         "category_id": category_id,
     }
+
+
+@router.post("/scan/qr", response_class=JSONResponse)
+async def scan_qr(
+    request: Request,
+    db: Session = Depends(get_db),
+    auth=Depends(require_auth),
+):
+    """Web route for the QR lookup; see ``lookup_qr_receipt``."""
+    user, hh_id = auth
+    body = await request.json()
+    return await lookup_qr_receipt(db, hh_id, body.get("url", ""))

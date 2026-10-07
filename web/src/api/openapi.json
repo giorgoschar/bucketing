@@ -215,17 +215,6 @@
             "title": "Payer Mode",
             "type": "string"
           },
-          "payment_method": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Payment Method"
-          },
           "splits": {
             "default": [],
             "items": {
@@ -255,48 +244,6 @@
           "start_date"
         ],
         "title": "BillIn",
-        "type": "object"
-      },
-      "BillMoveOut": {
-        "properties": {
-          "bucket_after": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Bucket After"
-          },
-          "bucket_before": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Bucket Before"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "bucket_before",
-          "bucket_after"
-        ],
-        "title": "BillMoveOut",
         "type": "object"
       },
       "BillSplitIn": {
@@ -1138,7 +1085,7 @@
             "type": "string"
           },
           "payment_method": {
-            "default": "",
+            "default": "card",
             "title": "Payment Method",
             "type": "string"
           }
@@ -1422,99 +1369,6 @@
         "title": "Body_verify_totp_submit_login_verify_post",
         "type": "object"
       },
-      "BucketEffectOut": {
-        "properties": {
-          "bucket_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Bucket Id"
-          },
-          "budget": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Budget"
-          },
-          "kind": {
-            "title": "Kind",
-            "type": "string"
-          },
-          "moved_in": {
-            "title": "Moved In",
-            "type": "number"
-          },
-          "moved_out": {
-            "title": "Moved Out",
-            "type": "number"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "outside_period": {
-            "title": "Outside Period",
-            "type": "integer"
-          },
-          "period_end": {
-            "anyOf": [
-              {
-                "format": "date",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Period End"
-          },
-          "period_start": {
-            "anyOf": [
-              {
-                "format": "date",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Period Start"
-          },
-          "spent_after": {
-            "title": "Spent After",
-            "type": "number"
-          },
-          "spent_before": {
-            "title": "Spent Before",
-            "type": "number"
-          }
-        },
-        "required": [
-          "bucket_id",
-          "name",
-          "kind",
-          "budget",
-          "period_start",
-          "period_end",
-          "spent_before",
-          "spent_after",
-          "moved_in",
-          "moved_out",
-          "outside_period"
-        ],
-        "title": "BucketEffectOut",
-        "type": "object"
-      },
       "BucketIn": {
         "properties": {
           "budget": {
@@ -1785,135 +1639,6 @@
         "title": "BudgetRowOut",
         "type": "object"
       },
-      "BulkIn": {
-        "additionalProperties": false,
-        "properties": {
-          "changes": {
-            "$ref": "#/components/schemas/ChangesIn"
-          },
-          "dry_run": {
-            "default": true,
-            "title": "Dry Run",
-            "type": "boolean"
-          },
-          "expected_count": {
-            "anyOf": [
-              {
-                "minimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Expected Count"
-          },
-          "move_bill": {
-            "default": false,
-            "title": "Move Bill",
-            "type": "boolean"
-          },
-          "select": {
-            "$ref": "#/components/schemas/SelectIn"
-          }
-        },
-        "required": [
-          "select",
-          "changes"
-        ],
-        "title": "BulkIn",
-        "type": "object"
-      },
-      "BulkResult": {
-        "properties": {
-          "batch_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Batch Id"
-          },
-          "bill": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/BillMoveOut"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "buckets": {
-            "items": {
-              "$ref": "#/components/schemas/BucketEffectOut"
-            },
-            "title": "Buckets",
-            "type": "array"
-          },
-          "changed": {
-            "title": "Changed",
-            "type": "integer"
-          },
-          "dry_run": {
-            "title": "Dry Run",
-            "type": "boolean"
-          },
-          "matched": {
-            "title": "Matched",
-            "type": "integer"
-          },
-          "skipped": {
-            "items": {
-              "$ref": "#/components/schemas/SkippedOut"
-            },
-            "title": "Skipped",
-            "type": "array"
-          },
-          "total_in": {
-            "title": "Total In",
-            "type": "number"
-          },
-          "total_out": {
-            "title": "Total Out",
-            "type": "number"
-          },
-          "unchanged": {
-            "title": "Unchanged",
-            "type": "integer"
-          },
-          "undo_until": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Undo Until"
-          }
-        },
-        "required": [
-          "dry_run",
-          "batch_id",
-          "matched",
-          "changed",
-          "unchanged",
-          "total_out",
-          "total_in",
-          "skipped",
-          "buckets",
-          "bill",
-          "undo_until"
-        ],
-        "title": "BulkResult",
-        "type": "object"
-      },
       "CategoryIn": {
         "properties": {
           "color": {
@@ -1994,74 +1719,101 @@
         "title": "CategoryUsualOut",
         "type": "object"
       },
-      "ChangesIn": {
-        "additionalProperties": false,
-        "description": "A key sent as null means \"none\"; an absent key leaves the field.",
+      "DuplicateCheckOut": {
         "properties": {
-          "bucket_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Bucket Id"
-          },
-          "category_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Category Id"
-          },
-          "payer": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PayerIn"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "payment_method": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Payment Method"
-          }
-        },
-        "title": "ChangesIn",
-        "type": "object"
-      },
-      "DismissIn": {
-        "additionalProperties": false,
-        "properties": {
-          "ids": {
+          "duplicates": {
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/DuplicateOut"
             },
-            "maxItems": 20,
-            "minItems": 2,
-            "title": "Ids",
+            "title": "Duplicates",
             "type": "array"
           }
         },
         "required": [
-          "ids"
+          "duplicates"
         ],
-        "title": "DismissIn",
+        "title": "DuplicateCheckOut",
+        "type": "object"
+      },
+      "DuplicateOut": {
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "number"
+          },
+          "bucket": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bucket"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "merchant": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Merchant"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "paid_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paid By"
+          },
+          "same_bucket": {
+            "title": "Same Bucket",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "amount",
+          "currency",
+          "date",
+          "notes",
+          "merchant",
+          "bucket",
+          "paid_by",
+          "same_bucket"
+        ],
+        "title": "DuplicateOut",
         "type": "object"
       },
       "EntryAmountIn": {
@@ -2103,15 +1855,9 @@
             "title": "Amount"
           },
           "payment_method": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Payment Method"
+            "default": "card",
+            "title": "Payment Method",
+            "type": "string"
           },
           "person": {
             "anyOf": [
@@ -2200,10 +1946,6 @@
             "title": "Overdue",
             "type": "boolean"
           },
-          "payment_method": {
-            "title": "Payment Method",
-            "type": "string"
-          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -2234,8 +1976,7 @@
           "category_id",
           "transaction_id",
           "overdue",
-          "infrequent",
-          "payment_method"
+          "infrequent"
         ],
         "title": "EntryOut",
         "type": "object"
@@ -2779,15 +2520,9 @@
             "title": "Payer Mode"
           },
           "payment_method": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Payment Method"
+            "default": "card",
+            "title": "Payment Method",
+            "type": "string"
           },
           "splits": {
             "default": [],
@@ -2799,35 +2534,6 @@
           }
         },
         "title": "PayOccurrenceIn",
-        "type": "object"
-      },
-      "PayerIn": {
-        "additionalProperties": false,
-        "properties": {
-          "mode": {
-            "enum": [
-              "single",
-              "own_share"
-            ],
-            "title": "Mode",
-            "type": "string"
-          },
-          "user_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "User Id"
-          }
-        },
-        "required": [
-          "mode"
-        ],
-        "title": "PayerIn",
         "type": "object"
       },
       "ProfileIn": {
@@ -2859,18 +2565,20 @@
         "title": "ProfileIn",
         "type": "object"
       },
-      "RecentBatchOut": {
+      "QrReceiptOut": {
         "properties": {
-          "can_undo": {
-            "title": "Can Undo",
-            "type": "boolean"
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
           },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "created_by": {
+          "category_hint": {
             "anyOf": [
               {
                 "type": "string"
@@ -2879,43 +2587,66 @@
                 "type": "null"
               }
             ],
-            "title": "Created By"
+            "title": "Category Hint"
           },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "row_count": {
-            "title": "Row Count",
-            "type": "integer"
-          },
-          "summary": {
-            "title": "Summary",
-            "type": "string"
-          },
-          "undone_at": {
+          "category_id": {
             "anyOf": [
               {
-                "format": "date-time",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Undone At"
+            "title": "Category Id"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date"
+          },
+          "merchant": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Merchant"
           }
         },
         "required": [
-          "id",
-          "created_at",
-          "created_by",
-          "summary",
-          "row_count",
-          "undone_at",
-          "can_undo"
+          "amount",
+          "currency",
+          "date",
+          "merchant",
+          "category_hint",
+          "category_id"
         ],
-        "title": "RecentBatchOut",
+        "title": "QrReceiptOut",
+        "type": "object"
+      },
+      "QrScanIn": {
+        "properties": {
+          "url": {
+            "default": "",
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "title": "QrScanIn",
         "type": "object"
       },
       "RecurringItemIn": {
@@ -3038,17 +2769,6 @@
             "default": "single",
             "title": "Payer Mode",
             "type": "string"
-          },
-          "payment_method": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Payment Method"
           },
           "rule_adjust": {
             "default": "none",
@@ -3271,10 +2991,6 @@
             "title": "Payer Mode",
             "type": "string"
           },
-          "payment_method": {
-            "title": "Payment Method",
-            "type": "string"
-          },
           "rule_adjust": {
             "title": "Rule Adjust",
             "type": "string"
@@ -3384,7 +3100,6 @@
           "contract_end_date",
           "paid_by_default",
           "payer_mode",
-          "payment_method",
           "is_auto_pay",
           "is_active",
           "notes",
@@ -3392,48 +3107,6 @@
           "next_entry"
         ],
         "title": "RecurringItemOut",
-        "type": "object"
-      },
-      "SelectIn": {
-        "additionalProperties": false,
-        "properties": {
-          "bill_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Bill Id"
-          },
-          "filter": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/StrictTransactionFilter"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "ids": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ids"
-          }
-        },
-        "title": "SelectIn",
         "type": "object"
       },
       "SettleIn": {
@@ -3499,29 +3172,6 @@
           }
         },
         "title": "SettleIn",
-        "type": "object"
-      },
-      "SkippedOut": {
-        "properties": {
-          "code": {
-            "title": "Code",
-            "type": "string"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "reason": {
-            "title": "Reason",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "code",
-          "reason"
-        ],
-        "title": "SkippedOut",
         "type": "object"
       },
       "SplitIn": {
@@ -3667,172 +3317,6 @@
           "delta"
         ],
         "title": "StockAdjust",
-        "type": "object"
-      },
-      "StrictTransactionFilter": {
-        "additionalProperties": false,
-        "description": "A bulk body's filter: an unknown key is a 422, never silently dropped,\nso a typo can't widen what a bulk change touches.",
-        "properties": {
-          "bucket_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Bucket Id"
-          },
-          "category_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Category Id"
-          },
-          "fixed": {
-            "default": false,
-            "title": "Fixed",
-            "type": "boolean"
-          },
-          "from_date": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "From Date"
-          },
-          "max_amount": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Max Amount"
-          },
-          "min_amount": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Min Amount"
-          },
-          "missing_payer": {
-            "default": false,
-            "title": "Missing Payer",
-            "type": "boolean"
-          },
-          "month": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Month"
-          },
-          "no_bucket": {
-            "default": false,
-            "title": "No Bucket",
-            "type": "boolean"
-          },
-          "paid_by": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Paid By"
-          },
-          "payment_method": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Payment Method"
-          },
-          "q": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Q"
-          },
-          "recurring_bill_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Recurring Bill Id"
-          },
-          "to_date": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "To Date"
-          },
-          "type": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Type"
-          },
-          "year": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Year"
-          }
-        },
-        "title": "StrictTransactionFilter",
         "type": "object"
       },
       "TokenIn": {
@@ -4272,32 +3756,6 @@
           "amount"
         ],
         "title": "TransactionUpdate",
-        "type": "object"
-      },
-      "UndoResult": {
-        "properties": {
-          "bill_restored": {
-            "title": "Bill Restored",
-            "type": "boolean"
-          },
-          "restored": {
-            "title": "Restored",
-            "type": "integer"
-          },
-          "skipped": {
-            "items": {
-              "$ref": "#/components/schemas/SkippedOut"
-            },
-            "title": "Skipped",
-            "type": "array"
-          }
-        },
-        "required": [
-          "restored",
-          "skipped",
-          "bill_restored"
-        ],
-        "title": "UndoResult",
         "type": "object"
       },
       "UpcomingDayOut": {
@@ -7767,117 +7225,48 @@
         ]
       }
     },
-    "/api/v1/transactions/bulk": {
+    "/api/v1/transactions/check-duplicate": {
       "get": {
-        "description": "The household's latest bulk changes, newest first (\"Recent bulk changes\").",
-        "operationId": "recent_bulk_api_v1_transactions_bulk_get",
+        "description": "Expenses that look like the one being entered (same amount \u00b10.01,\nwithin 3 days), at most 5. Advisory only: never blocks a save.",
+        "operationId": "check_duplicate_api_v1_transactions_check_duplicate_get",
         "parameters": [
           {
             "in": "query",
-            "name": "limit",
+            "name": "amount",
             "required": false,
             "schema": {
-              "default": 10,
-              "maximum": 50,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/RecentBatchOut"
-                  },
-                  "title": "Response Recent Bulk Api V1 Transactions Bulk Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Recent Bulk",
-        "tags": [
-          "transactions"
-        ]
-      },
-      "post": {
-        "description": "Preview (``dry_run``, the default) or apply one change to a selection.\nApply re-checks ``expected_count`` (409 on drift) and writes all or nothing.",
-        "operationId": "bulk_change_api_v1_transactions_bulk_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/BulkIn"
-              }
+              "default": "",
+              "title": "Amount",
+              "type": "string"
             }
           },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BulkResult"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
           {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Bulk Change",
-        "tags": [
-          "transactions"
-        ]
-      }
-    },
-    "/api/v1/transactions/bulk/{batch_id}/undo": {
-      "post": {
-        "description": "Undo a batch within 24 hours, once. Rows changed since are left as they are.",
-        "operationId": "undo_bulk_api_v1_transactions_bulk__batch_id__undo_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "batch_id",
-            "required": true,
+            "in": "query",
+            "name": "transaction_date",
+            "required": false,
             "schema": {
-              "title": "Batch Id",
+              "default": "",
+              "title": "Transaction Date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "bucket_id",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Bucket Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "exclude_id",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Exclude Id",
               "type": "string"
             }
           }
@@ -7887,7 +7276,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UndoResult"
+                  "$ref": "#/components/schemas/DuplicateCheckOut"
                 }
               }
             },
@@ -7909,47 +7298,7 @@
             "HTTPBearer": []
           }
         ],
-        "summary": "Undo Bulk",
-        "tags": [
-          "transactions"
-        ]
-      }
-    },
-    "/api/v1/transactions/duplicates/dismiss": {
-      "post": {
-        "description": "\"Keep both\": never show these as possible duplicates again, for anyone.",
-        "operationId": "dismiss_api_v1_transactions_duplicates_dismiss_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DismissIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Dismiss",
+        "summary": "Check Duplicate",
         "tags": [
           "transactions"
         ]
@@ -7997,6 +7346,53 @@
           }
         ],
         "summary": "Scan Parse",
+        "tags": [
+          "transactions"
+        ]
+      }
+    },
+    "/api/v1/transactions/scan/qr": {
+      "post": {
+        "description": "Read a receipt from the URL in its QR code (AADE lookup). Same rules,\nmessages and result as the web route ``POST /transactions/scan/qr``.",
+        "operationId": "scan_qr_api_v1_transactions_scan_qr_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QrScanIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QrReceiptOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Scan Qr",
         "tags": [
           "transactions"
         ]
