@@ -17,7 +17,6 @@ from app.models import (
     BucketKind,
     BucketStatus,
     BucketType,
-    ItemDirection,
     RecurringBill,
     Transaction,
 )
@@ -32,6 +31,7 @@ from app.services import (
     record_household_settlement,
     settlement_fingerprint,
 )
+from app.services.budgets import EVENT_BLOCKED_BY_BILLS, blocks_event_change
 from app.validators import parse_amount, parse_color, validate_split_users
 
 router = APIRouter(prefix="/buckets", tags=["buckets"])
@@ -178,24 +178,8 @@ def update_bucket(
         raise HTTPException(status_code=404, detail="Bucket not found")
 
     new_type = _type_for(body)
-    if new_type == BucketType.trip and bucket.type != BucketType.trip:
-        # An event's budget is a total over its dates; a bill is a monthly
-        # cost. Don't silently strand bills inside an event (ruling 15).
-        has_bills = (
-            db.query(RecurringBill.id)
-            .filter(
-                RecurringBill.bucket_id == bucket.id,
-                RecurringBill.is_active.is_(True),
-                RecurringBill.direction == ItemDirection.out.value,
-            )
-            .first()
-        )
-        if has_bills:
-            raise HTTPException(
-                status_code=409,
-                detail="This bucket has active recurring bills, so it can't become an "
-                "event. Move or stop those bills first.",
-            )
+    if blocks_event_change(db, bucket, new_type):
+        raise HTTPException(status_code=409, detail=EVENT_BLOCKED_BY_BILLS)
     bucket.name = body.name.strip()
     bucket.type = new_type
     bucket.color = parse_color(body.color)

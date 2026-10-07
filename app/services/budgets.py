@@ -14,9 +14,40 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.money import percent, quantize
-from app.models import Bucket, BucketKind, BucketStatus, Transaction, TransactionType
+from app.models import (
+    Bucket,
+    BucketKind,
+    BucketStatus,
+    BucketType,
+    ItemDirection,
+    RecurringBill,
+    Transaction,
+    TransactionType,
+)
 from app.services.insights import _month_range
 from app.services.money import base_amount_expr
+
+EVENT_BLOCKED_BY_BILLS = (
+    "This bucket has active recurring bills, so it can't become an event. "
+    "Move or stop those bills first."
+)
+
+
+def blocks_event_change(db: Session, bucket: Bucket, new_type: BucketType) -> bool:
+    """True when turning the bucket into an event would strand active out items
+    in it (ruling 15). Only a non-event to event change is checked."""
+    if new_type != BucketType.trip or bucket.type == BucketType.trip:
+        return False
+    return (
+        db.query(RecurringBill.id)
+        .filter(
+            RecurringBill.bucket_id == bucket.id,
+            RecurringBill.is_active.is_(True),
+            RecurringBill.direction == ItemDirection.out.value,
+        )
+        .first()
+        is not None
+    )
 
 
 def bucket_period(bucket: Bucket, today: date) -> tuple[date | None, date | None]:

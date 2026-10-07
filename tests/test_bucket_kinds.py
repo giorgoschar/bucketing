@@ -6,6 +6,7 @@ from decimal import Decimal
 import pytest
 
 from app.core.clock import local_today
+from app.core.money import quantize
 from app.models import Bucket, BucketType, Notification, NotificationType, Transaction
 from app.services.budgets import bucket_spent, budget_rows
 from tests.test_api import api  # noqa: F401  (fixture)
@@ -183,3 +184,28 @@ def test_bucket_with_active_bills_cannot_become_an_event(client, db, api, make_b
         json={"name": "Main", "kind": "event"},
     )
     assert r.status_code == 200, r.text
+
+
+def test_old_edit_form_cannot_make_a_bucket_with_bills_an_event(client, db, authed, make_bill):
+    make_bill(authed.household_id, authed.bucket_id)
+    r = client.post(
+        f"/buckets/{authed.bucket_id}/edit",
+        data={"name": "Main", "type": "trip"},
+        headers=authed.headers,
+    )
+    assert r.status_code == 409
+    db.expire_all()
+    b = db.get(Bucket, authed.bucket_id)
+    assert b.type != BucketType.trip and b.kind == "monthly"
+
+
+def test_monthly_bucket_spent_matches_the_scheduler_month_spend(db, make_household):
+    from app.services import get_bucket_spend_this_month
+
+    hh = make_household()
+    _spend(db, hh, hh.bucket_id, 12.5, date(2026, 10, 2))
+    _spend(db, hh, hh.bucket_id, 7, date(2026, 10, 5))
+    _spend(db, hh, hh.bucket_id, 99, date(2026, 9, 5))
+    b = db.get(Bucket, hh.bucket_id)
+    month = get_bucket_spend_this_month(db, hh.household_id, 2026, 10)
+    assert bucket_spent(db, b, TODAY) == quantize(month[b.id])
