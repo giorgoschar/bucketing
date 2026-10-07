@@ -110,7 +110,9 @@ export function validate(s: ComposerState, c: ValidateCtx): Validation {
   if (s.type === 'expense' && !s.bucketId && !s.fixedCost) p.bucket = 'Choose a budget'
   if (s.date > c.today) p.date = "Date can't be in the future"
   if (s.currency !== c.householdCurrency && parseRate(s.rate) === null) p.rate = 'Enter the rate'
-  if (isFuel(s, c) && s.fuelPrice.trim() !== '' && parseFuelPrice(s.fuelPrice) === null) p.fuel = 'Price must be above 0'
+  if (isFuel(s, c) && s.fuelPrice.trim() !== '' && parseFuelPrice(s.fuelPrice) === null) {
+    p.fuel = /[.,]\d{4,}$/.test(s.fuelPrice.trim()) ? 'Use at most 3 decimals' : 'Price must be above 0'
+  }
   if (s.type === 'expense' && (s.splitOn || s.ownShare)) {
     const sum = s.splits.reduce((a, x) => a + toCents(x.amount), 0)
     const negative = s.splits.some((x) => x.amount.trim().startsWith('-'))

@@ -110,6 +110,11 @@ describe('validate', () => {
     expect(validate(expense({ currency: 'USD', rate: '' }), V).problems.rate).toBe('Enter the rate')
     expect(validate(expense({ currency: 'USD', rate: '0.92' }), V).ok).toBe(true)
   })
+  it('a fuel price with more than 3 decimals says so', () => {
+    expect(validate(expense({ categoryId: 'c-fuel', fuelPrice: '1.7891' }), V).problems.fuel).toBe('Use at most 3 decimals')
+    expect(validate(expense({ categoryId: 'c-fuel', fuelPrice: '1,7891' }), V).problems.fuel).toBe('Use at most 3 decimals')
+    expect(validate(expense({ categoryId: 'c-fuel', fuelPrice: '1,789' }), V).ok).toBe(true)
+  })
   it('a fuel price, if entered, is above 0', () => {
     expect(validate(expense({ categoryId: 'c-fuel', fuelPrice: '0' }), V).problems.fuel).toBe('Price must be above 0')
     expect(validate(expense({ categoryId: 'c-fuel', fuelPrice: '' }), V).ok).toBe(true)
