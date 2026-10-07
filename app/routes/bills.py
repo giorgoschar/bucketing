@@ -25,6 +25,8 @@ from app.schemas import parse_payment_method, payer_choice
 from app.services import full_ctx, get_overdue_bills, get_upcoming_bills
 from app.services.bills import (
     BILL_HAS_HISTORY_MSG,
+    PAST_NONE,
+    PAST_SKIPPED,
     backfill_bill_payer,
     bill_has_payment_history,
     delete_future_occurrences,
@@ -228,7 +230,8 @@ async def create_bill(
     for uid, split_amount in splits:
         db.add(RecurringBillSplit(bill_id=bill.id, user_id=uid, amount=split_amount))
 
-    generate_occurrences(db, bill)
+    # Nothing before today becomes an expected entry (spec §3.4.4).
+    generate_occurrences(db, bill, past=PAST_SKIPPED)
     db.commit()
 
     return RedirectResponse("/bills", status_code=302)
@@ -454,9 +457,9 @@ async def edit_bill(
     for uid, split_amount in splits:
         db.add(RecurringBillSplit(bill_id=bill.id, user_id=uid, amount=split_amount))
 
-    # Regenerate future occurrences
+    # Regenerate the future entries nobody touched (spec §3.4.3-4).
     delete_future_occurrences(db, bill.id)
-    generate_occurrences(db, bill)
+    generate_occurrences(db, bill, past=PAST_SKIPPED)
 
     # Optionally repair past payments saved without a payer, using the payer
     # (or own-share splits) just set.
@@ -485,6 +488,9 @@ def toggle_bill(
     if not bill or bill.household_id != hh_id:
         raise HTTPException(status_code=404)
     bill.is_active = not bill.is_active
+    if bill.is_active:
+        # Resumed: fill the horizon now rather than at the next nightly run.
+        generate_occurrences(db, bill, past=PAST_NONE)
     db.commit()
     return RedirectResponse("/bills", status_code=302)
 

@@ -1,6 +1,6 @@
 """
-Generate BillOccurrence rows for a RecurringBill.
-Called when a bill is created or updated.
+Recurring items: generating their expected entries (BillOccurrence rows) and
+paying, receiving, undoing and skipping them.
 """
 
 from datetime import date, datetime
@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.clock import local_today
+from app.core.schedule import MAX_INTERVAL_MONTHS, Rule, RuleKind, iter_dates
 from app.models import (
     BillOccurrence,
     HouseholdMember,
@@ -24,10 +25,17 @@ from app.models import (
     TransactionType,
 )
 
-# Guard rails for open-ended bills.
-MAX_INTERVAL_MONTHS = 120  # 10 years between occurrences
-MAX_OCCURRENCES = 600  # hard ceiling on rows generated per bill
-HORIZON_YEARS = 10
+# Entries exist from start_date to this many months from today; the daily
+# planning job tops the window up (spec §3.3). Rows beyond it, left by the old
+# 10-year generation, are kept.
+HORIZON_MONTHS = 13
+
+# What generate_occurrences does with a rule date before today:
+PAST_UNPAID = "unpaid"  # an expected entry (the old behaviour; direct callers)
+PAST_SKIPPED = "skipped"  # a skipped placeholder (the old app's forms)
+PAST_NONE = "none"  # nothing (the new API and the daily top-up)
+
+MAX_OCCURRENCES = 600  # hard ceiling on rows created per call
 
 
 def normalise_interval_months(value: int | None) -> int:
@@ -46,68 +54,112 @@ def normalise_interval_months(value: int | None) -> int:
     return min(value, MAX_INTERVAL_MONTHS)
 
 
-def generate_occurrences(db: Session, bill: RecurringBill) -> None:
-    """
-    Create all BillOccurrence rows for a bill from start_date going forward.
-    Respects end_date and total_occurrences limits.
-    Skips dates that already have an occurrence.
+def horizon_end(today: date) -> date:
+    """The last date the rolling horizon generates entries for."""
+    return today + relativedelta(months=HORIZON_MONTHS)
+
+
+def item_rule(bill: RecurringBill) -> Rule:
+    """The schedule rule stored on ``bill`` (app.core.schedule)."""
+    return Rule(
+        kind=bill.rule_kind or "monthly_interval",
+        interval_months=normalise_interval_months(bill.interval_months),
+        day=bill.rule_day,
+        month=bill.rule_month,
+        adjust=bill.rule_adjust or "none",
+        days=bill.rule_days,
+        weekday=bill.rule_weekday,
+        interval_weeks=bill.rule_interval_weeks or 1,
+    )
+
+
+def generate_occurrences(
+    db: Session, bill: RecurringBill, *, today: date | None = None, past: str = PAST_UNPAID
+) -> int:
+    """Create the missing entries of ``bill`` from start_date to the horizon.
+
+    Dates come from the shared rule engine, so both apps and the scheduler
+    agree. end_date and total_occurrences count from start_date, whether or
+    not a past date gets a row. A date that already has a row is left alone.
+    ``past`` decides what a date before today becomes (PAST_UNPAID,
+    PAST_SKIPPED or PAST_NONE); only PAST_UNPAID, kept for direct callers,
+    creates expected entries before today. At most MAX_OCCURRENCES rows are
+    created per call. Returns the rows created.
 
     Does not commit — the caller owns the transaction so that a bill and its
-    occurrences are persisted atomically.
+    occurrences are persisted atomically. Raises RuleError for a bad rule.
     """
     bill.interval_months = normalise_interval_months(bill.interval_months)
-
+    today = today or local_today()
+    rule = item_rule(bill)
+    dates = list(
+        iter_dates(
+            rule,
+            bill.start_date,
+            end=bill.end_date,
+            total=bill.total_occurrences,
+            until=horizon_end(today),
+        )
+    )
     existing_dates = {
         row.due_date for row in db.query(BillOccurrence.due_date).filter_by(bill_id=bill.id).all()
     }
-
-    horizon = date(local_today().year + HORIZON_YEARS, 12, 31)
-    current = bill.start_date
-    count = 0
-
-    while count < MAX_OCCURRENCES:
-        # Stop conditions
-        if bill.total_occurrences and count >= bill.total_occurrences:
+    # A row the rule no longer produces (a done, skipped or amount-set entry
+    # an edit kept) still stands for its month, or its ISO week for a weekly
+    # rule: that period gets no second entry, so a day change cannot pay a
+    # salary twice. A row on a current rule date blocks nothing, since an
+    # adjusted rule can put two dates in one month (1 Dec and 31 Dec).
+    period = _iso_week if rule.kind == RuleKind.weekly.value else _month
+    rule_dates = set(dates)
+    blocked = {period(d) for d in existing_dates if d not in rule_dates}
+    created = 0
+    for due in dates:
+        if created >= MAX_OCCURRENCES:
             break
-        if bill.end_date and current > bill.end_date:
-            break
-        # Don't generate more than HORIZON_YEARS out for open-ended bills
-        if current > horizon:
-            break
+        if due in existing_dates or period(due) in blocked:
+            continue
+        status = OccurrenceStatus.unpaid
+        if due < today:
+            if past == PAST_NONE:
+                continue
+            if past == PAST_SKIPPED:
+                status = OccurrenceStatus.skipped
+        # A SAVEPOINT keeps a duplicate-date collision from rolling back the
+        # caller's whole transaction — a plain db.rollback() here used to
+        # discard the not-yet-committed bill these rows point at.
+        try:
+            with db.begin_nested():
+                db.add(BillOccurrence(bill_id=bill.id, due_date=due, amount=None, status=status))
+                db.flush()
+            created += 1
+        except IntegrityError:
+            pass
+        existing_dates.add(due)
+    return created
 
-        if current not in existing_dates:
-            # A SAVEPOINT keeps a duplicate-date collision from rolling back the
-            # caller's whole transaction — a plain db.rollback() here used to
-            # discard the not-yet-committed bill these rows point at.
-            try:
-                with db.begin_nested():
-                    db.add(
-                        BillOccurrence(
-                            bill_id=bill.id,
-                            due_date=current,
-                            amount=None,  # will use bill.amount unless variable
-                            status=OccurrenceStatus.unpaid,
-                        )
-                    )
-                    db.flush()
-            except IntegrityError:
-                pass
-            existing_dates.add(current)
 
-        count += 1
-        current = current + relativedelta(months=bill.interval_months)
+def _month(d: date) -> tuple[int, int]:
+    return d.year, d.month
+
+
+def _iso_week(d: date) -> tuple[int, int]:
+    return d.isocalendar()[:2]
 
 
 def delete_future_occurrences(db: Session, bill_id: str) -> None:
-    """Remove all unpaid future occurrences (used when editing a bill).
+    """Remove the future entries an edit may regenerate (spec §3.4.3).
 
-    Does not commit — the caller owns the transaction.
+    Only expected entries after today with no amount set and nothing linked:
+    done and skipped entries, and entries whose amount the user set, are
+    never touched. Does not commit — the caller owns the transaction.
     """
     today = local_today()
     db.query(BillOccurrence).filter(
         BillOccurrence.bill_id == bill_id,
         BillOccurrence.due_date > today,
         BillOccurrence.status == OccurrenceStatus.unpaid,
+        BillOccurrence.amount.is_(None),
+        BillOccurrence.transaction_id.is_(None),
     ).delete(synchronize_session=False)
 
 

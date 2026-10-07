@@ -194,27 +194,3 @@ def test_monthly_interval_reproduces_the_old_generator(start, interval, limits):
         )
     )
     assert new == _old_generator_dates(start, interval, **limits)
-
-
-def test_frozen_copy_matches_the_live_generator(db, make_household, monkeypatch):
-    """Proves the frozen copy above is the generator as shipped. Task 3 deletes
-    this test when generate_occurrences moves onto the rule engine."""
-    import app.services.bills as bills
-    from app.models import BillOccurrence, RecurringBill
-
-    monkeypatch.setattr(bills, "local_today", lambda: TODAY)
-    hh = make_household()
-    for i, (start, interval) in enumerate((s, n) for s in STARTS for n in (1, 3, 12)):
-        bill = RecurringBill(
-            household_id=hh.household_id,
-            name=f"Bill {i}",
-            amount=1,
-            currency="EUR",
-            start_date=start,
-            interval_months=interval,
-        )
-        db.add(bill)
-        db.flush()
-        bills.generate_occurrences(db, bill)
-        got = sorted(d for (d,) in db.query(BillOccurrence.due_date).filter_by(bill_id=bill.id))
-        assert got == _old_generator_dates(start, interval)

@@ -25,6 +25,7 @@ from app.schemas import parse_payer_mode, parse_payment_method
 from app.services import get_overdue_bills, get_upcoming_bills
 from app.services.bills import (
     BILL_HAS_HISTORY_MSG,
+    PAST_SKIPPED,
     backfill_bill_payer,
     bill_has_payment_history,
     delete_future_occurrences,
@@ -256,7 +257,7 @@ def create_bill(
         for s in body.splits:
             db.add(RecurringBillSplit(bill_id=bill.id, user_id=s.user_id, amount=s.amount))
 
-    generate_occurrences(db, bill)
+    generate_occurrences(db, bill, past=PAST_SKIPPED)
     db.commit()
     db.refresh(bill)
     return _bill_dict(bill)
@@ -327,7 +328,7 @@ def update_bill(
     for s in body.splits:
         db.add(RecurringBillSplit(bill_id=bill.id, user_id=s.user_id, amount=s.amount))
 
-    generate_occurrences(db, bill)
+    generate_occurrences(db, bill, past=PAST_SKIPPED)
     backfilled = None
     if body.apply_to_past:
         db.flush()

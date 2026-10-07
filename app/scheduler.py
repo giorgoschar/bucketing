@@ -664,6 +664,59 @@ def _purge_trash(db, today: date, uploads_dir: str | None = None) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Planning (spec §3.3)
+# ---------------------------------------------------------------------------
+
+
+def _top_up_entries(db, today: date) -> int:
+    """Extend every active item's entries to the rolling horizon.
+
+    Never creates an entry dated before today. A bad rule on one item is
+    logged and skipped; the others still get their entries.
+    """
+    from app.models import RecurringBill
+    from app.services.bills import PAST_NONE, generate_occurrences
+
+    bill_ids = [
+        bill_id for (bill_id,) in db.query(RecurringBill.id).filter(RecurringBill.active_filter())
+    ]
+    created = 0
+    for bill_id in bill_ids:
+        try:
+            created += generate_occurrences(
+                db, db.get(RecurringBill, bill_id), today=today, past=PAST_NONE
+            )
+            db.commit()
+        except Exception:
+            logger.exception("Could not top up entries for recurring item %s", bill_id)
+            db.rollback()
+    if created:
+        logger.info("Created %d expected entries", created)
+    return created
+
+
+def _planning_stages():
+    return (_top_up_entries,)
+
+
+def planning_daily_job() -> None:
+    """Daily planning job: top up expected entries. Each stage is isolated."""
+    from app.core.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        today = today_local()
+        for stage in _planning_stages():
+            try:
+                stage(db, today)
+            except Exception:
+                logger.exception("Planning job stage %s failed", stage.__name__)
+                db.rollback()
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
 # Job entry point
 # ---------------------------------------------------------------------------
 
@@ -781,6 +834,23 @@ def start_scheduler() -> None:
     scheduler.add_job(
         auto_mark_paid_job,
         id="auto_mark_paid_startup",
+        replace_existing=True,
+        max_instances=1,
+    )
+    # Expected entries before auto-pay looks at them; a separate job so the
+    # bills job (and its tests) only ever see entries that already exist.
+    scheduler.add_job(
+        planning_daily_job,
+        CronTrigger(hour=0, minute=1, timezone=_tz()),
+        id="planning_daily",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+        misfire_grace_time=3600,
+    )
+    scheduler.add_job(
+        planning_daily_job,
+        id="planning_startup",
         replace_existing=True,
         max_instances=1,
     )
