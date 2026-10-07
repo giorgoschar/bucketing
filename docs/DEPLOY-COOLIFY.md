@@ -75,7 +75,7 @@ Do these **before** pressing Deploy:
 After the deploy, **everyone has to log in again once** — web sessions and the
 mobile app's refresh tokens from v1 are no longer accepted.
 
-**Rollback = restore the pre-migrate dump**, never `alembic downgrade`: the
+**Rollback = restore the pre-migrate dump**, never `alembic downgrade` (the one exception is the additive Phase 2 revisions, see section 9): the
 downgrades drop the v2 columns and tables (soft-deleted transactions, archived
 buckets, cash/settlement data), i.e. they destroy data entered since the upgrade.
 Redeploy the previous release and restore `/backups/pre-migrate-<date>.sql.gz`
@@ -218,7 +218,8 @@ docker compose exec backup /app/scripts/backup.sh
 
 This is also the **rollback** procedure after a failed upgrade: restore the
 `pre-migrate-*.sql.gz` taken just before it. Do not use `alembic downgrade`
-(it drops data, see section 0).
+(it drops data, see section 0), except for the additive Phase 2 revisions, where
+section 9's targeted downgrade inside the running container is the preferred path.
 
 ```sh
 # Stop the app so nothing writes during the restore.
@@ -312,12 +313,13 @@ again). The service worker is served at `/app/sw.js` with scope `/app/`; the old
 
 **Rolling the image back past P2** (to a P1 or older image): the older image does not know
 revisions `c9d0e1f2a3b4` and `d0e1f2a3b4c5`, so its `alembic upgrade head` at boot fails
-against a P2 database. Before switching images, run the downgrade **from the P2 (or P3)
-image**, which still has those migration files:
+against a P2 database. Before switching images, run the downgrade **inside the running
+P2 (or P3) container**, which has those migration files and the full production
+environment (`alembic/env.py` loads the app settings, so a bare `docker run` with only
+`DATABASE_URL` fails on `APP_BASE_URL` and the OIDC variables):
 
 ```sh
-docker run --rm --entrypoint alembic -e DATABASE_URL=<production url> \
-  -e APP_SECRET_KEY=<the production value> <P2 or P3 image> downgrade b8c9d0e1f2a3
+docker exec <running P2/P3 app container> alembic downgrade b8c9d0e1f2a3
 ```
 
 This drops `bulk_batches`, `bulk_batch_rows` (bulk-change undo history),
