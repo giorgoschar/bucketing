@@ -73,3 +73,14 @@
 .insights__filtergroup .ui-field__label { margin: 0; }
 .insights__chipwrap .chips { flex-wrap: wrap; overflow: visible; }
 .insights__sheetbtns { display: grid; grid-template-columns: 1fr 2fr; gap: 8px; }
+
+.insights__headline--split { flex-direction: row; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; }
+.insights__avg { margin: 0; font-size: 14px; color: var(--ink-2); }
+.insights__rules { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.insights__rule {
+  display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border-radius: var(--r-pill);
+  background: var(--surface-2); color: var(--ink-2); font: 500 12.5px/1 var(--font-num);
+}
+.insights__pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.insights__pair .insights__card { padding: 12px; min-width: 0; }
+.insights__pair svg { width: 100%; height: auto; }
