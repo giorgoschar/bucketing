@@ -18,6 +18,8 @@ export { Badge } from '../../ui/Badge'
 export { CheckIcon, ChevronDownIcon, ClockIcon, XIcon } from '../../ui/icons'
 export { Segmented } from '../../ui/Segmented'
 export { Sheet } from '../../ui/Sheet'
+// Plan › Pantry §4.6: after a new expense saves, offer to add ticked shopping-list items to the pantry.
+export { useOfferTickedPrompt } from '../plan/pantry/tickedOffer'
 export { toast, Toaster }
 
 export interface ToastInput { text: string; action?: { label: string; onPress: () => void }; durationMs?: number }

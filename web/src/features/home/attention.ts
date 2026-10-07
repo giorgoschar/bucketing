@@ -7,6 +7,7 @@ export type AttentionItem =
   | { kind: 'overdue'; key: string; entry: EntryOut }
   | { kind: 'missingAmount'; key: string; entry: EntryOut }
   | { kind: 'cash'; key: string; amount: number }
+  | { kind: 'pantry'; key: string; count: number }
   | { kind: 'budget'; key: string; row: BudgetRowOut }
   | { kind: 'category'; key: string; row: CategoryUsualOut }
   | { kind: 'failed'; key: string; change: FailedQueueRow }
@@ -21,6 +22,8 @@ export interface AttentionInput {
   categories?: CategoryUsualOut[]
   /** The viewer's own not-yet-logged cash this month (GET /cash/wallets); undefined when not cached. */
   cashNotLogged?: number
+  /** Pantry items running low (GET /stock/summary); undefined when not cached. Never holds back "All clear". */
+  pantryLow?: number
   failed: FailedQueueRow[]
 }
 
@@ -51,6 +54,9 @@ export function buildAttention(i: AttentionInput): AttentionItem[] {
     ...missing.map((entry): AttentionItem => ({ kind: 'missingAmount', key: `amount:${entry.id}`, entry })),
     ...(i.cashNotLogged !== undefined && i.cashNotLogged > CASH_EPS
       ? [{ kind: 'cash', key: 'cash', amount: i.cashNotLogged } satisfies AttentionItem]
+      : []),
+    ...(i.pantryLow !== undefined && i.pantryLow > 0
+      ? [{ kind: 'pantry', key: 'pantry', count: i.pantryLow } satisfies AttentionItem]
       : []),
     ...(i.budgets ?? [])
       .filter((b) => b.pct !== null && b.pct >= BUDGET_WARN_PCT)

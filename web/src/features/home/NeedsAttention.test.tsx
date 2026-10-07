@@ -167,3 +167,36 @@ it('the wallets query failing or not cached shows no cash row and no error', asy
   expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   expect(screen.queryByText(/cash/)).not.toBeInTheDocument()
 })
+
+// ---- Plan › Pantry §4.7
+const pantryRoute = (summary: { low_count: number; ticked_count: number } | Response): Routes =>
+  ({ 'GET /api/v1/stock/summary': () => summary })
+
+it('pantry: "3 pantry items running low" with List, after cash and before budget', async () => {
+  fakeApi(routes({ ...cashRoute(cashWallets()), ...pantryRoute({ low_count: 3, ticked_count: 0 }) }))
+  const { router } = renderWithProviders(<NeedsAttention />)
+  await waitFor(() => expect(kinds()).toEqual(['match', 'overdue', 'missingAmount', 'cash', 'pantry', 'budget', 'category']))
+  const row = document.querySelector('[data-attn="pantry"]') as HTMLElement
+  expect(row).toHaveTextContent('3 pantry items running low')
+  fireEvent.click(within(row).getByRole('button', { name: 'List' }))
+  expect(router.state.location.pathname).toBe('/plan/pantry/list')
+})
+
+it('pantry: one item reads in the singular', async () => {
+  fakeApi(routes(pantryRoute({ low_count: 1, ticked_count: 0 })))
+  renderWithProviders(<NeedsAttention />)
+  await waitFor(() => expect(kinds()).toContain('pantry'))
+  expect(document.querySelector('[data-attn="pantry"]')).toHaveTextContent('1 pantry item running low')
+})
+
+it.each([
+  ['nothing is low', pantryRoute({ low_count: 0, ticked_count: 2 })],
+  ['the summary fails', pantryRoute(reply(500, { detail: 'boom' }))],
+  ['there is no summary at all', {}],
+])('no pantry row and no error when %s', async (_why, extra) => {
+  fakeApi(routes(extra))
+  renderWithProviders(<NeedsAttention />)
+  await waitFor(() => expect(kinds()).toEqual(['match', 'overdue', 'missingAmount', 'budget', 'category']))
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  expect(screen.queryByText(/pantry/)).not.toBeInTheDocument()
+})

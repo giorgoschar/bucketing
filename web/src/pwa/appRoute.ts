@@ -8,6 +8,9 @@ export function appRoute(link: string | null | undefined): string {
     return '/app/'
   }
   const under = (prefix: string) => path === prefix || path.startsWith(`${prefix}/`)
+  // Plan › Pantry (pantry spec §4.9): stock_low links to /stock/shopping, price_drop to /stock.
+  if (under('/stock/shopping')) return '/app/plan/pantry/list'
+  if (under('/stock')) return '/app/plan/pantry'
   if (under('/bills') || under('/buckets')) return '/app/plan'
   if (under('/transactions') || under('/search')) return '/app/activity'
   if (under('/settings')) return '/app/settings'

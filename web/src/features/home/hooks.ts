@@ -9,6 +9,7 @@ import type { EntryOut, MatchOut } from '../../data/types'
 import { useFailedQueueRows } from '../../offline/useQueue'
 import { todayISO } from '../../ui/format'
 import { useCashWallets } from '../plan/cash/hooks'
+import { useStockSummary } from '../plan/pantry/shoppingHooks'
 import { patchEntryEverywhere } from '../plan/entryPatch'
 import { useBudgets, useCategoriesVsUsual, usePlanUpcoming } from '../plan/hooks'
 import { attentionReady, buildAttention, overdueWindow, type AttentionInput, type AttentionItem } from './attention'
@@ -65,7 +66,8 @@ export function useAttention(): { items: AttentionItem[]; ready: boolean } {
   const categories = useCategoriesVsUsual(today.slice(0, 7)).data
   const wallets = useCashWallets(today.slice(0, 7)).data
   const cashNotLogged = wallets?.members.find((m) => m.is_me)?.wallet.not_yet_logged
+  const pantryLow = useStockSummary().data?.low_count
   const failed = useFailedQueueRows()
-  const input: AttentionInput = { today, matches, overdue, upcoming, budgets, categories, cashNotLogged, failed }
+  const input: AttentionInput = { today, matches, overdue, upcoming, budgets, categories, cashNotLogged, pantryLow, failed }
   return { items: buildAttention(input), ready: attentionReady(input) }
 }

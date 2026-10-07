@@ -5,7 +5,7 @@ import { AmountDisplay } from '../../ui/AmountDisplay'
 import { Keypad } from '../../ui/Keypad'
 import { Pill } from '../../ui/Pill'
 import { type AmountKey, centsToString, convertCents, displayAmount, parseRate, toApiAmount, toCents } from './amount'
-import { Segmented, type ToastInput, useComposerToast, useOnline } from './bridge'
+import { Segmented, type ToastInput, useComposerToast, useOfferTickedPrompt, useOnline } from './bridge'
 import { CashControls } from './CashControls'
 import { ConfirmSheet } from './ConfirmSheet'
 import { currencyName, currencySymbol, formatCents, spokenMoney } from './currencies'
@@ -49,6 +49,7 @@ export function ComposerForm({ initial, data, defaults }: { initial: ComposerSta
   const navigate = useNavigate()
   const close = useClose()
   const toast = useComposerToast()
+  const offerPantry = useOfferTickedPrompt()
   const ctx = { hh: data.hh, householdCurrency: data.householdCurrency, fuelCategoryId: data.fuelCategoryId, meId: data.meId }
   const save = useSaveTransaction(s, ctx, defaults, initial.mode === 'edit' && initial.method === 'cash')
   const checkDuplicate = useDuplicateCheck()
@@ -131,6 +132,8 @@ export function ComposerForm({ initial, data, defaults }: { initial: ComposerSta
         return
       }
       toast(savedToast(r.id))
+      // Pantry spec §4.6: a new expense saved online may prompt for ticked items. Fire and forget: never awaited.
+      if (s.mode === 'new' && s.type === 'expense') offerPantry()
       if (receipt) void uploadReceipt(r.id, receipt)
     } finally {
       submitting.current = false

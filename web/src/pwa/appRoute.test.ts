@@ -11,8 +11,11 @@ describe('appRoute', () => {
     ['/search?q=x', '/app/activity'],
     ['/settings', '/app/settings'],
     ['/settings/2fa/enroll', '/app/settings'],
-    ['/stock/shopping', '/app/'],
-    ['/stock', '/app/'],
+    // Plan › Pantry (pantry spec §4.9): stock_low links to /stock/shopping, price_drop to /stock.
+    ['/stock/shopping', '/app/plan/pantry/list'],
+    ['/stock', '/app/plan/pantry'],
+    ['/stock/3f2a', '/app/plan/pantry'],
+    ['/stockfoo', '/app/'],
     ['/', '/app/'],
     [null, '/app/'],
     ['', '/app/'],
