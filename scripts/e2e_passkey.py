@@ -22,6 +22,7 @@ import tempfile
 import time
 import urllib.request
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pyotp
 from playwright.sync_api import Page, sync_playwright
@@ -32,7 +33,9 @@ OUT.mkdir(parents=True, exist_ok=True)
 PROJECT = "tameio-e2e"
 POCKET = "http://localhost:1411"
 APP = os.environ.get("E2E_APP_ORIGIN", "http://127.0.0.1:8000")
-APP_PORT = APP.rsplit(":", 1)[1]
+_app = urlsplit(APP)
+APP_HOST = _app.hostname or "127.0.0.1"
+APP_PORT = str(_app.port or (443 if _app.scheme == "https" else 80))
 PASSWORD = "correct horse battery staple 42"
 COMPOSE_ENV = {**os.environ, "APP_SECRET_KEY": "x", "APP_BASE_URL": APP}
 
@@ -53,13 +56,16 @@ def wait_http(url: str, timeout: float = 90) -> None:
 
 
 def compose(*args: str) -> None:
-    subprocess.run(
+    done = subprocess.run(
         ["docker", "compose", "-p", PROJECT, "--profile", "pocketid", *args],
         cwd=ROOT,
         env=COMPOSE_ENV,
-        check=True,
         capture_output=True,
+        text=True,
     )
+    if done.returncode:
+        sys.stderr.write(done.stderr)
+        raise RuntimeError(f"docker compose {' '.join(args)} failed ({done.returncode})")
 
 
 def shot(page: Page, name: str) -> None:
@@ -233,7 +239,14 @@ def run(workdir: Path) -> None:
         used: set[str] = set()
         log(f"starting the app on {APP}")
         server = subprocess.Popen(
-            [str(ROOT / ".venv/bin/uvicorn"), "app.main:app", "--port", APP_PORT],
+            [
+                str(ROOT / ".venv/bin/uvicorn"),
+                "app.main:app",
+                "--host",
+                APP_HOST,
+                "--port",
+                APP_PORT,
+            ],
             cwd=ROOT,
             env=env,
             stdout=(OUT / "uvicorn.log").open("w"),

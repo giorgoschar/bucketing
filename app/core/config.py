@@ -1,5 +1,36 @@
+import ipaddress
+import re
+from functools import lru_cache
+from urllib.parse import urlsplit
+
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_HOSTNAME = re.compile(r"^[A-Za-z0-9.-]+$")
+
+
+@lru_cache(maxsize=8)
+def issuer_origin(issuer: str | None) -> str | None:
+    """The scheme://host[:port] origin of an OIDC issuer URL, or None if it isn't a clean
+    http(s) URL. Safe to put in a CSP header: no userinfo, path, query or stray characters."""
+    if not issuer or any(c.isspace() or c in ";,'\"" for c in issuer):
+        return None
+    try:
+        parts = urlsplit(issuer)
+        port = parts.port
+    except ValueError:
+        return None
+    host = parts.hostname
+    if parts.scheme not in ("http", "https") or not host:
+        return None
+    if ":" in host:
+        try:
+            host = f"[{ipaddress.IPv6Address(host).compressed}]"
+        except ValueError:
+            return None
+    elif not _HOSTNAME.match(host):
+        return None
+    return f"{parts.scheme}://{host}" + (f":{port}" if port is not None else "")
 
 
 class Settings(BaseSettings):
@@ -135,6 +166,10 @@ class Settings(BaseSettings):
                 raise RuntimeError(
                     "NEW_APP_ENABLED needs OIDC_ISSUER, OIDC_CLIENT_ID and OIDC_CLIENT_SECRET."
                 )
+            if self.new_app_enabled and not issuer_origin(self.oidc_issuer):
+                raise RuntimeError(
+                    "OIDC_ISSUER must be a plain http(s) URL such as https://id.example.com."
+                )
         return self
 
     @property
@@ -145,6 +180,11 @@ class Settings(BaseSettings):
     @property
     def oidc_enabled(self) -> bool:
         return bool(self.oidc_issuer and self.oidc_client_id and self.oidc_client_secret)
+
+    @property
+    def oidc_issuer_origin(self) -> str | None:
+        """Validated origin of OIDC_ISSUER (see issuer_origin); None when unusable."""
+        return issuer_origin(self.oidc_issuer)
 
     @property
     def cors_origins_list(self) -> list[str]:

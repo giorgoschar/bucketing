@@ -474,3 +474,58 @@ def test_link_form_is_a_real_navigation_the_csp_lets_reach_pocket_id(
     monkeypatch.setattr(settings, "new_app_enabled", False)
     csp = client.get("/settings").headers["content-security-policy"]
     assert csp.endswith("form-action 'self'")
+
+
+@pytest.mark.parametrize(
+    ("issuer", "origin"),
+    [
+        ("https://id.example.test", "https://id.example.test"),
+        ("https://id.example.test:8443/x?y=1#z", "https://id.example.test:8443"),
+        ("http://localhost:1411/", "http://localhost:1411"),
+        ("https://user:pw@id.example.test/", "https://id.example.test"),
+        ("https://[::1]:8443", "https://[::1]:8443"),
+        ("https://a.com; script-src *", None),
+        ("https://a.com/x;script-src", None),
+        ("https://a.com'", None),
+        ("id.example.test", None),
+        ("//id.example.test", None),
+        ("javascript://id.example.test", None),
+        ("https://exa_mple.test", None),
+        ("https://id.example.test:99999", None),
+        ("", None),
+        (None, None),
+    ],
+)
+def test_issuer_origin_is_a_clean_origin_or_none(issuer, origin):
+    from app.core.config import issuer_origin
+
+    assert issuer_origin(issuer) == origin
+
+
+def test_link_form_action_uses_only_the_issuer_origin(client, make_household, login, monkeypatch):
+    hh = make_household()
+    login(hh.username, hh.secret)
+    monkeypatch.setattr(settings, "oidc_issuer", "https://id.example.test:8443/x")
+    csp = client.get("/settings").headers["content-security-policy"]
+    assert csp.endswith("form-action 'self' https://id.example.test:8443")
+    monkeypatch.setattr(settings, "oidc_issuer", "https://a.com; script-src *")
+    csp = client.get("/settings").headers["content-security-policy"]
+    assert csp.endswith("form-action 'self'") and "script-src *" not in csp
+
+
+@pytest.mark.parametrize("issuer", ["https://a.com; script-src *", "id.example.test"])
+def test_production_refuses_a_malformed_issuer(issuer):
+    from app.core.config import Settings
+
+    base = dict(
+        _env_file=None,
+        debug=False,
+        app_secret_key="x" * 40,
+        app_base_url="https://a.example",
+        new_app_enabled=True,
+        oidc_client_id="cid",
+        oidc_client_secret="secret",
+    )
+    with pytest.raises(RuntimeError, match="OIDC_ISSUER"):
+        Settings(**base, oidc_issuer=issuer)
+    assert Settings(**base, oidc_issuer="https://id.example.test").oidc_issuer_origin

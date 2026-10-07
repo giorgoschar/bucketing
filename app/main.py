@@ -1,7 +1,6 @@
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
-from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -158,9 +157,9 @@ async def security_headers(request: Request, call_next):
         # The Link-passkey form on /settings posts to /app/auth/link, which redirects
         # to Pocket ID; browsers check form-action on every redirect hop.
         form_action = "'self'"
-        if settings.new_app_enabled and settings.oidc_enabled:
-            issuer = urlsplit(settings.oidc_issuer)
-            form_action += f" {issuer.scheme}://{issuer.netloc}"
+        # oidc_issuer_origin is validated (None for anything but a clean http(s) origin).
+        if settings.new_app_enabled and settings.oidc_enabled and settings.oidc_issuer_origin:
+            form_action += f" {settings.oidc_issuer_origin}"
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
             "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "

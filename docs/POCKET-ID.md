@@ -155,6 +155,8 @@ APP_SECRET_KEY=x APP_BASE_URL=http://127.0.0.1:8000 \
    OIDC_ISSUER=http://localhost:1411 OIDC_CLIENT_ID=… OIDC_CLIENT_SECRET=… \
      .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
    ```
+   `DEBUG=true` creates the tables in that SQLite file on startup (no Alembic run needed);
+   the first visit to `/login` redirects to `/setup` to create the first user.
 4. Sign in at <http://127.0.0.1:8000/login> with password + 2FA → Settings → Link passkey,
    then <http://127.0.0.1:8000/app/> → Sign in with Face ID.
 
