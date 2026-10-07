@@ -21,7 +21,8 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.core.clock import local_today, utcnow_naive
 from app.core.money import ZERO, quantize, to_decimal
-from app.integrations.posokanei import valid_product_id
+from app.integrations import posokanei
+from app.integrations.posokanei import PosokaneiUnavailable, valid_product_id
 from app.models import PriceSnapshot, Product, StockItem, StockMovement, StockReason
 
 MAX_QUANTITY = Decimal("100000")
@@ -90,6 +91,21 @@ def get_stock_item(db: Session, hh_id: str, item_id: str) -> StockItem | None:
     if item is None or item.household_id != hh_id:
         return None
     return item
+
+
+def stock_summary(db: Session, hh_id: str) -> dict:
+    """Home's pantry counts: count queries only (no prices, no run-out)."""
+    low_count = (
+        db.query(func.count(StockItem.id))
+        .join(Product, Product.id == StockItem.product_id)
+        .filter(
+            StockItem.household_id == hh_id,
+            Product.archived_at.is_(None),
+            StockItem.quantity <= StockItem.min_quantity,
+        )
+        .scalar()
+    )
+    return {"low_count": int(low_count or 0), "ticked_count": 0}
 
 
 # ---------------------------------------------------------------------------
@@ -243,6 +259,19 @@ def archive_product(db: Session, hh_id: str, item_id: str) -> StockItem | None:
 # ---------------------------------------------------------------------------
 # Price snapshots
 # ---------------------------------------------------------------------------
+
+
+def snapshot_now(db: Session, product: Product) -> bool:
+    """Fetch and store today's prices for a linked product. False if the
+    product is not linked to PosoKanei or PosoKanei is unavailable."""
+    if not product.posokanei_id:
+        return False
+    try:
+        summary = posokanei.get(product.posokanei_id)
+    except PosokaneiUnavailable:
+        return False
+    record_snapshots(db, product, summary, local_today())
+    return True
 
 
 def record_snapshots(db: Session, product: Product, summary, day: date) -> int:
