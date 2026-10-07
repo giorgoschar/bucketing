@@ -50,3 +50,11 @@ export async function cacheGet<T>(key: string): Promise<T | undefined> {
   const { open } = await import('./crypto')
   return open<T>(row)
 }
+
+/** Like cacheGet, plus when the value was stored (the "updated HH:MM" of the offline banner). */
+export async function cacheEntry<T>(key: string): Promise<{ value: T; updatedAt: number } | undefined> {
+  const row = await db.cache.get(key)
+  if (!row) return undefined
+  const { open } = await import('./crypto')
+  return { value: await open<T>(row), updatedAt: row.updatedAt }
+}
