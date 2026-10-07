@@ -119,6 +119,7 @@ export function Detail() {
   const [picker, setPicker] = useState<Picker>(null)
   const [entryOpen, setEntryOpen] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [undoing, setUndoing] = useState<string | null>(null)
   const file = useRef<HTMLInputElement>(null)
 
   // Back to where the user came from (keeps the feed's filters); a cold deep link goes to the feed.
@@ -152,6 +153,16 @@ export function Detail() {
   const sign = t.type === 'income' ? 1 : t.type === 'expense' ? -1 : 0
   const icon = ref?.categories.find((c) => c.id === t.category_id)?.icon ?? '•'
   const method = METHOD_LABELS[t.payment_method] ?? t.payment_method
+
+  const undoOnce = async (batchId: string) => {
+    if (undoing) return
+    setUndoing(batchId)
+    try {
+      await undo(batchId)
+    } finally {
+      setUndoing(null)
+    }
+  }
 
   const attach = async (f: File) => {
     const problem = receiptProblem(f)
@@ -249,7 +260,12 @@ export function Detail() {
           <HistoryList
             id={t.id}
             renderAction={(e) => e.kind === 'bulk_change' && e.can_undo && e.batch_id
-              ? <button type="button" className="btn btn--ghost btn--sm" disabled={!online} onClick={() => void undo(e.batch_id!)}>Undo this change</button>
+              ? (
+                <button type="button" className="btn btn--ghost btn--sm" disabled={!online || undoing !== null}
+                  onClick={() => void undoOnce(e.batch_id!)}>
+                  {undoing === e.batch_id ? 'Undoing…' : 'Undo this change'}
+                </button>
+              )
               : null}
           />
         )}

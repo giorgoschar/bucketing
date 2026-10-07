@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import { fakeApi, reply } from '../../test/fakeApi'
+import { fakeApi, hang, reply } from '../../test/fakeApi'
 import { resetTestEnv } from '../../test/render'
 import { Activity } from './Activity'
 import { RecentBulk } from './RecentBulk'
@@ -90,5 +90,25 @@ describe('undo from the apply toast', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'More' }))
     fireEvent.click(screen.getByRole('button', { name: /^Recent bulk changes/ }))
     expect(await screen.findByText('Bucket → Bills · 12 transactions')).toBeInTheDocument()
+  })
+})
+
+describe('undo busy guard', () => {
+  it('"Undo this change" is disabled while its undo is in flight, so a double tap sends one', async () => {
+    const row = makeTxn({ id: 'h2', merchant: 'Cosmote' })
+    const fake = fakeApi({
+      ...refRoutes(),
+      'GET /api/v1/transactions/{txn_id}': () => row,
+      'GET /api/v1/recurring/entries': () => [],
+      'GET /api/v1/transactions/{txn_id}/history': () =>
+        ({ events: [{ at: '2026-10-07T09:00:00', kind: 'bulk_change', by: 'Giorgos', text: 'Bucket: Day to day → Bills', batch_id: 'b2', can_undo: true }] }) as never,
+      [UNDO]: () => hang(),
+    })
+    renderActivity(<Detail />, { route: '/activity/h2', path: '/activity/:id' })
+    const button = await screen.findByRole('button', { name: /Undo this change|Undoing/ })
+    fireEvent.click(button)
+    fireEvent.click(button)
+    await waitFor(() => expect(button).toBeDisabled())
+    expect(fake.callsTo(UNDO)).toHaveLength(1)
   })
 })
