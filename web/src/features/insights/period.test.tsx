@@ -1,7 +1,8 @@
 import { act, cleanup, renderHook } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { MemoryRouter, useLocation } from 'react-router'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { useMemoryStorage } from '../../test/storage'
 import {
   PERIOD_STORAGE_KEY,
   parsePeriod,
@@ -15,20 +16,7 @@ import {
 
 afterEach(cleanup)
 
-/** Node 26 ships a half-working global `localStorage` that shadows jsdom's; use a plain in-memory one. */
-function memoryStorage(): Storage {
-  const m = new Map<string, string>()
-  return {
-    get length() { return m.size },
-    clear: () => m.clear(),
-    getItem: (k) => m.get(k) ?? null,
-    key: (i) => [...m.keys()][i] ?? null,
-    removeItem: (k) => void m.delete(k),
-    setItem: (k, v) => void m.set(k, String(v)),
-  }
-}
-beforeEach(() => { vi.stubGlobal('localStorage', memoryStorage()) })
-afterEach(() => { vi.unstubAllGlobals() })
+useMemoryStorage()
 
 const q = (s: string) => new URLSearchParams(s)
 

@@ -1,25 +1,13 @@
 import { act, cleanup, renderHook } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { MemoryRouter, useLocation } from 'react-router'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { useMemoryStorage } from '../../test/storage'
 import { HOUSEHOLD, LENS_STORAGE_KEY, insightsSearch, lensOptions, lensQuery, resolveLens, useLens } from './lens'
 
 afterEach(cleanup)
 
-/** Node 26 ships a half-working global `localStorage` that shadows jsdom's; use a plain in-memory one. */
-function memoryStorage(): Storage {
-  const m = new Map<string, string>()
-  return {
-    get length() { return m.size },
-    clear: () => m.clear(),
-    getItem: (k) => m.get(k) ?? null,
-    key: (i) => [...m.keys()][i] ?? null,
-    removeItem: (k) => void m.delete(k),
-    setItem: (k, v) => void m.set(k, String(v)),
-  }
-}
-beforeEach(() => { vi.stubGlobal('localStorage', memoryStorage()) })
-afterEach(() => { vi.unstubAllGlobals() })
+useMemoryStorage()
 
 const members = [
   { user_id: 'me', display_name: 'Giorgos Charitidis', username: 'giorgos' },
@@ -45,7 +33,13 @@ describe('resolveLens', () => {
     expect(resolveLens('gone', members)).toBe(HOUSEHOLD)
     expect(resolveLens('m', members)).toBe('m')
     expect(resolveLens(null, members)).toBe(HOUSEHOLD)
-    expect(resolveLens('m', undefined)).toBe('m') // members not loaded yet: trust it
+    // members not loaded yet: only household, me or a UUID-shaped id pass
+    expect(resolveLens('junk', undefined)).toBe(HOUSEHOLD)
+    expect(resolveLens('me', undefined)).toBe('me')
+    const uuid = '3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6b'
+    expect(resolveLens(uuid, undefined)).toBe(uuid)
+    // once loaded, only real members
+    expect(resolveLens(uuid, members)).toBe(HOUSEHOLD)
   })
   it('maps to paid_by', () => {
     expect(lensQuery(HOUSEHOLD)).toEqual({})
@@ -53,7 +47,7 @@ describe('resolveLens', () => {
   })
   it('builds drill-down search strings', () => {
     expect(insightsSearch({ preset: 'last_month' }, 'm')).toBe('?p=last_month&lens=m')
-    expect(insightsSearch({ preset: 'this_month' }, HOUSEHOLD)).toBe('?p=this_month')
+    expect(insightsSearch({ preset: 'this_month' }, HOUSEHOLD)).toBe('?p=this_month&lens=household')
   })
 })
 
@@ -72,5 +66,11 @@ describe('useLens', () => {
     expect(localStorage.getItem(LENS_STORAGE_KEY)).toBe('k')
     act(() => result.current.l[1](HOUSEHOLD))
     expect(result.current.loc.search).toBe('')
+  })
+
+  it('an explicit lens=household in the URL beats a stored member', () => {
+    localStorage.setItem(LENS_STORAGE_KEY, 'm')
+    const { result } = renderHook(() => useLens(members), { wrapper: wrapper('/insights?lens=household') })
+    expect(result.current[0]).toBe(HOUSEHOLD)
   })
 })

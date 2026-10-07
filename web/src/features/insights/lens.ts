@@ -21,10 +21,13 @@ export function lensOptions(members: LensMember[], meId: string): { value: strin
   return [{ value: HOUSEHOLD, label: 'Household' }, { value: meId, label: 'Me' }, ...labelled]
 }
 
-/** A lens for someone no longer in the household (old link, stale storage) falls back to Household. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** A lens for someone no longer in the household (old link, stale storage) falls back to Household.
+ *  Until members load only `household`, `me` or a UUID-shaped id is accepted; after, only real members. */
 export function resolveLens(raw: string | null, members?: LensMember[]): Lens {
   if (!raw || raw === HOUSEHOLD) return HOUSEHOLD
-  if (!members) return raw
+  if (!members) return raw === 'me' || UUID.test(raw) ? raw : HOUSEHOLD
   return members.some((m) => m.user_id === raw) ? raw : HOUSEHOLD
 }
 
@@ -35,7 +38,7 @@ export function lensQuery(lens: Lens): { paid_by?: string } {
 /** Search string carrying the view into a drill-down link. */
 export function insightsSearch(period: Period, lens: Lens): string {
   const params = writePeriod(new URLSearchParams(), period)
-  if (lens !== HOUSEHOLD) params.set('lens', lens)
+  params.set('lens', lens) // household is written too, so a stored member lens cannot override it
   return `?${params.toString()}`
 }
 
