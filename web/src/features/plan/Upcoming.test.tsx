@@ -1,7 +1,7 @@
-import { act, fireEvent, screen, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, it } from 'vitest'
 import { markPending } from '../../data/pending'
-import { fakeApi } from '../../test/fakeApi'
+import { fakeApi, hang, reply } from '../../test/fakeApi'
 import { day, entry, readRoutes } from '../../test/fixtures'
 import { renderWithProviders, resetTestEnv, setOnline } from '../../test/render'
 import { Upcoming } from './Upcoming'
@@ -52,4 +52,31 @@ it('offline with nothing saved', async () => {
   setOnline(false)
   renderWithProviders(<Upcoming />)
   expect(await screen.findByText('No saved data yet. Connect once to load Plan.')).toBeInTheDocument()
+})
+
+it('Skip in the Entry sheet updates the row and the net at once, then rolls both back on a 409', async () => {
+  let answer!: (r: Response) => void
+  let reads = 0
+  fakeApi({
+    ...readRoutes(),
+    // Later reads (the invalidation after the 409) never answer: what the screen shows is the rollback.
+    'GET /api/v1/plan/upcoming': () => (++reads === 1 ? days : hang()),
+    'POST /api/v1/recurring/entries/{entry_id}/skip': () => new Promise<Response>((r) => { answer = r }),
+  })
+  renderWithProviders(<Upcoming />)
+  const oct9 = await screen.findByRole('region', { name: 'Fri 9 Oct' })
+  expect(oct9).toHaveTextContent('Net this month +€1,161.10')
+  fireEvent.click(within(oct9).getByRole('button', { name: /Cosmote/ }))
+  fireEvent.click(within(screen.getByRole('dialog', { name: 'Cosmote' })).getByRole('button', { name: 'Skip' }))
+
+  // Optimistic, before the server answers: the row is Skipped and its €38.90 is out of the net.
+  await waitFor(() => expect(within(oct9).getByRole('button', { name: /Cosmote/ })).toHaveTextContent('Skipped'))
+  expect(oct9).toHaveTextContent('Net this month +€1,200.00')
+  expect(screen.getByRole('region', { name: 'Mon 26 Oct' })).toHaveTextContent('Net this month +€2,700.00')
+
+  act(() => answer(reply(409, { detail: 'This entry is already done.' })))
+  expect(await within(screen.getByRole('dialog')).findByRole('alert')).toHaveTextContent('This entry is already done.')
+  expect(within(oct9).getByRole('button', { name: /Cosmote/ })).not.toHaveTextContent('Skipped')
+  expect(oct9).toHaveTextContent('Net this month +€1,161.10')
+  expect(screen.getByRole('region', { name: 'Mon 26 Oct' })).toHaveTextContent('Net this month +€2,661.10')
 })
