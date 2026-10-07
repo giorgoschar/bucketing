@@ -6,6 +6,7 @@ import { Chip } from '../../../ui/Chip'
 import { EmptyState } from '../../../ui/EmptyState'
 import { CloudOffIcon, PlusIcon } from '../../../ui/icons'
 import { QueryView } from '../../../ui/QueryView'
+import { AddSheet } from './AddSheet'
 import { usePantryShoppingCount, useStockList } from './hooks'
 import { CartIcon, SearchIcon } from './icons'
 import { PantryRow } from './PantryRow'
@@ -37,6 +38,7 @@ export function Pantry() {
       <QueryView result={list} showBanner={false} noDataText="No saved pantry yet. Connect once to load Pantry.">
         {(items) => <PantryBody items={items} onAdd={() => setAdding(true)} adding={adding} />}
       </QueryView>
+      {adding && <AddSheet open onClose={() => setAdding(false)} />}
     </div>
   )
 }

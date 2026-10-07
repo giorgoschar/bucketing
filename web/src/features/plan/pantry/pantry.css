@@ -78,3 +78,59 @@
   .pantry-row, .pantry-step__btn { transition: none; }
   .pantry-add:active, .pantry-step__btn:active { transform: none; }
 }
+
+/* ---- Add sheet, lookup sheet (spec §4.3) ---- */
+.pantry-add { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.pantry-search--strong { background: var(--surface); border: 1px solid var(--line); }
+.pantry-add__scan { border: 1px solid var(--line); background: transparent; color: var(--ink); }
+.pantry-add__typed { display: flex; gap: 8px; }
+.pantry-add__typed .ui-input { flex: 1; min-width: 0; font-family: var(--font-num); letter-spacing: .02em; }
+.pantry-add__typed .btn { flex: none; }
+.pantry-add__nocam { margin: -4px 0 0; padding: 10px 12px; border-radius: var(--r-md); background: var(--warn-soft); color: var(--ink-2); font-size: 13.5px; }
+.pantry-add__nocam b { display: block; color: var(--warn); }
+.pantry-add__src { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 8px; margin: 4px 2px 0; font-size: 12px; font-weight: 600; color: var(--muted); }
+.pantry-add__asof { font-weight: 500; }
+.pantry-add__note { margin: 0; padding: 6px 2px; font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
+.pantry-add__manual { margin: 0; font-size: 14px; color: var(--muted); text-align: center; }
+.pantry-link {
+  min-height: 44px; padding: 0 4px; border: 0; background: none; color: var(--accent); font: inherit; font-weight: 650; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
+.pantry-offline { margin: 0; font-size: 12.5px; font-weight: 600; color: var(--muted); text-align: center; }
+
+.pantry-results { list-style: none; margin: 0; padding: 0; border: var(--card-border); border-radius: var(--r-lg); overflow: hidden; }
+.pantry-result { position: relative; display: flex; align-items: center; gap: 10px; min-height: 60px; padding: 8px 8px 8px 12px; }
+.pantry-result + .pantry-result::before { content: ""; position: absolute; top: 0; left: 58px; right: 0; height: 1px; background: var(--line); }
+.pantry-result__main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pantry-result__name { font-weight: 600; font-size: 14.5px; overflow-wrap: anywhere; }
+.pantry-result__sub { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+.pantry-result__end { flex: none; display: flex; flex-direction: column; align-items: flex-end; font-size: 14.5px; }
+.pantry-result__store { font-size: 11.5px; color: var(--muted); }
+.pantry-result__add { background: var(--accent-soft); color: var(--accent); }
+.pantry-result__add.is-added { background: var(--pos-soft); color: var(--pos); opacity: 1; }
+
+.pantry-manual { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.pantry-manual__size { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.pantry-manual__back { align-self: center; }
+.pantry-sheet__foot { display: flex; flex-direction: column; gap: 8px; }
+.pantry-sheet__acts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.pantry-sheet__acts .btn { min-width: 0; padding-inline: 10px; }
+
+.pantry-lookup { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.pantry-lookup__who { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.pantry-lookup__id { min-width: 0; }
+.pantry-lookup__brand { margin: 0 0 2px; font-weight: 600; color: var(--ink-2); overflow-wrap: anywhere; }
+.pantry-lookup__note { margin: 0; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.pantry-lookup__note .ui-num { white-space: normal; overflow-wrap: anywhere; }
+.pantry-lookup__have { color: var(--ink); }
+.pantry-lookup__msg { padding: 12px 14px; border-radius: var(--r-md); background: var(--surface-2); }
+.pantry-lookup__head { margin: 0 0 2px; font-weight: 650; color: var(--ink); }
+.pantry-lookup__others { margin: 0; font-size: 13px; line-height: 1.5; color: var(--muted); }
+.pantry-lookup__others .ui-num { white-space: normal; color: var(--ink-2); }
+.pantry-best {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px;
+  border-radius: var(--r-md); background: var(--surface-2);
+}
+.pantry-best__label { margin: 0; font-size: 12px; font-weight: 600; color: var(--muted); }
+.pantry-best__fig { margin: 2px 0 0; font-size: 14px; color: var(--ink-2); overflow-wrap: anywhere; }
+.pantry-best__price { font-size: 21px; color: var(--ink); white-space: normal; }

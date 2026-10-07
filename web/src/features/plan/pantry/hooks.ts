@@ -2,9 +2,11 @@ import type { QueryClient, QueryKey } from '@tanstack/react-query'
 import { api } from '../../../api/client'
 import { useAction } from '../../../data/action'
 import { useCachedQuery } from '../../../data/cachedQuery'
+import { useOnlineAction } from '../../../data/onlineAction'
+import type { RawResult } from '../../../data/rawJson'
 import { unwrap } from '../../../data/http'
 import { keys } from '../../../data/keys'
-import type { PantryShoppingCount, StockAdjustBody, StockDetail, StockItem } from './types'
+import type { PantryShoppingCount, ProductSummary, StockAddBody, StockAdjustBody, StockDetail, StockItem } from './types'
 
 /**
  * The shopping list's count, for "Shopping list (N)". Stream Wb owns keys.shopping; until the integration
@@ -68,4 +70,22 @@ export function useAdjustStock(item: { id: string }) {
     pendingId: item.id,
   })
   return { adjust: run, busy }
+}
+
+/** POST /stock: online only (spec §4.8). Failures are toasted; success invalidates the pantry. */
+export function useAddProduct() {
+  const act = useOnlineAction()
+  return (body: StockAddBody) =>
+    act<StockItem>(
+      () => api.POST('/api/v1/stock', { body: body as never }) as Promise<RawResult<StockItem>>,
+      { invalidates: PANTRY_INVALIDATES },
+    )
+}
+
+/** What a lookup result adds: the PosoKanei product, with a minimum of 1 (spec §4.3). */
+export function addBodyFor(p: ProductSummary): StockAddBody {
+  return {
+    name: p.name, brand: p.brand, barcode: p.barcode, posokanei_id: p.id, unit: p.unit, unit_quantity: p.unit_quantity,
+    image_url: p.image_url, quantity: 1, min_quantity: 1,
+  }
 }

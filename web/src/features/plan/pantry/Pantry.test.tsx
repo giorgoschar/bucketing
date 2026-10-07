@@ -158,3 +158,20 @@ it('offline with nothing saved says how to load it', async () => {
   renderWithProviders(<Pantry />)
   expect(await screen.findByText('No saved pantry yet. Connect once to load Pantry.')).toBeInTheDocument()
 })
+
+it('＋ opens Add to pantry', async () => {
+  fakeApi(pantryRoutes())
+  renderWithProviders(<Pantry />)
+  await screen.findByRole('listitem', { name: 'Milk' })
+  fireEvent.click(screen.getByRole('button', { name: 'Add to pantry' }))
+  expect(screen.getByRole('dialog', { name: 'Add to pantry' })).toBeInTheDocument()
+  fireEvent.click(within(screen.getByRole('dialog', { name: 'Add to pantry' })).getByRole('button', { name: 'Close' }))
+  expect(screen.queryByRole('dialog', { name: 'Add to pantry' })).not.toBeInTheDocument()
+})
+
+it('the empty state’s Add opens Add to pantry', async () => {
+  fakeApi(pantryRoutes({ items: [] }))
+  renderWithProviders(<Pantry />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Add a product' }))
+  expect(screen.getByRole('dialog', { name: 'Add to pantry' })).toBeInTheDocument()
+})
