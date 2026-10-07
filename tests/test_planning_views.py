@@ -210,3 +210,35 @@ def test_upcoming_net_leaves_out_last_months_overdue_entries(db, make_household,
     make_bill(hh.household_id, None, amount=50, auto_pay=False, due=date(2026, 10, 7), name="X")
     days, pic = _first_net_and_picture(db, hh)
     assert days[0]["net_this_month"] == D("-50.00") == pic["net_projected"]
+
+
+def test_upcoming_net_is_unchanged_by_paying_a_bill_early(db, make_household, make_bill):
+    hh = make_household()
+    _, early = make_bill(
+        hh.household_id, None, amount=70, auto_pay=False, due=date(2026, 10, 20), name="Early"
+    )
+    make_bill(hh.household_id, None, amount=50, auto_pay=False, due=date(2026, 10, 25), name="Late")
+    days, pic = _first_net_and_picture(db, hh)
+    assert days[-1]["net_this_month"] == D("-120.00") == pic["net_projected"]
+    # complete_entry dates the expense on the due day, ahead of today.
+    complete_entry(db, early, user_id=hh.user_id)
+    db.commit()
+    days, pic = _first_net_and_picture(db, hh)
+    assert [d["date"] for d in days] == [date(2026, 10, 25)]
+    assert days[0]["net_this_month"] == D("-120.00") == pic["net_projected"]
+
+
+def test_upcoming_net_is_unchanged_by_receiving_income_early(db, make_household, make_bill):
+    hh = make_household()
+    salary, occ = make_bill(
+        hh.household_id, None, amount=1000, auto_pay=False, due=date(2026, 10, 20), name="Salary"
+    )
+    salary.direction = "in"
+    db.commit()
+    make_bill(hh.household_id, None, amount=50, auto_pay=False, due=date(2026, 10, 25), name="Late")
+    days, pic = _first_net_and_picture(db, hh)
+    assert days[-1]["net_this_month"] == D("950.00") == pic["net_projected"]
+    complete_entry(db, occ, user_id=hh.user_id)
+    db.commit()
+    days, pic = _first_net_and_picture(db, hh)
+    assert days[0]["net_this_month"] == D("950.00") == pic["net_projected"]

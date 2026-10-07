@@ -43,3 +43,12 @@ it('a variable entry (amount null) counts as zero, never NaN', () => {
   const out = patchUpcoming([day('2026-10-09', [variable], 100)], variable, { kind: 'amount', amount: 80 })
   expect(out[0].net_this_month).toBe(20)
 })
+
+it('paid early, a later entry of this month keeps its net; one due next month only gives its expected amount back', () => {
+  const late = entry({ id: 'l', due_date: '2026-10-25', amount: 50 })
+  const next = entry({ id: 'n', due_date: '2026-11-02', amount: 50 })
+  const d = [day('2026-10-20', [entry({ id: 'p', due_date: '2026-10-20', amount: 70 })], -70), day('2026-10-25', [late], -120), day('2026-11-02', [next], -50)]
+  const target = d[0].entries[0]
+  expect(nets(patchUpcoming(d, target, { kind: 'done', amount: null, today: '2026-10-08' }))).toEqual([-70, -120, -50])
+  expect(nets(patchUpcoming(d, next, { kind: 'done', amount: null, today: '2026-10-08' }))).toEqual([-70, -120, 0])
+})

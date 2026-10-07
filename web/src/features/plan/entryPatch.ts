@@ -3,7 +3,7 @@ import { keys } from '../../data/keys'
 import type { EntryOut, RecurringItemOut, UpcomingDayOut } from '../../data/types'
 
 export type EntryChange =
-  /** Paid / Received: creates a transaction dated today. */
+  /** Paid / Received: creates a transaction dated on the entry's due day (as the server does). */
   | { kind: 'done'; amount: number | null; today: string }
   /** A confirmed match: done, and its transaction already counts. */
   | { kind: 'linked' }
@@ -37,8 +37,11 @@ export function netDelta(day: string, target: EntryOut, change: EntryChange): nu
     case 'amount':
       return counted ? signed(target, change.amount) - expected : 0
     case 'done': {
-      // The new transaction is dated today, so it counts on every listed day of today's month.
-      const paid = monthOf(day) === monthOf(change.today) ? signed(target, change.amount ?? target.amount) : 0
+      // The new transaction is dated on the due day and the server seeds this month's net with the
+      // whole month, so it counts on every listed day of today's month when it is due this month.
+      const thisMonth = monthOf(change.today)
+      const paid = monthOf(day) === thisMonth && monthOf(target.due_date) === thisMonth
+        ? signed(target, change.amount ?? target.amount) : 0
       return paid - (counted ? expected : 0)
     }
     case 'undo':

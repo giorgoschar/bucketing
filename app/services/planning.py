@@ -296,8 +296,8 @@ def upcoming(
     """Plan › Upcoming (spec §5.2): the next ``days`` days of expected entries,
     day by day, with a running "net this month".
 
-    The running net starts from this month's income minus expenses so far,
-    minus the old app's claim-only payments, plus this month's overdue
+    The running net starts from this month's income minus expenses (the whole
+    month, including payments dated ahead of today), minus the old app's claim-only payments, plus this month's overdue
     entries (in plus, out minus), as the month picture counts them (§5.1).
     It then adds each expected entry up to that day. Overdue entries are not
     listed by day: they are in Needs attention. Event-bucket spend is left
@@ -310,21 +310,23 @@ def upcoming(
     listed = list_entries(db, household_id, start, max(last, month_end), today=today)
     this_month = [e for e in listed if e.due_date <= month_end]
     entries = [e for e in listed if today <= e.due_date <= last and e.status == "expected"]
-    so_far = (
+    # The whole month, as month_picture counts it: complete_entry dates a payment
+    # on its due day, so an early payment is ahead of today.
+    in_month = (
         Transaction.household_id == household_id,
         Transaction.transaction_date >= start,
-        Transaction.transaction_date <= today,
+        Transaction.transaction_date <= month_end,
     )
     event_ids = db.query(Bucket.id).filter(
         Bucket.household_id == household_id, Bucket.kind == BucketKind.event.value
     )
     running = {
         (today.year, today.month): _transactions_sum(
-            db, *so_far, Transaction.type == TransactionType.income
+            db, *in_month, Transaction.type == TransactionType.income
         )
         - _transactions_sum(
             db,
-            *so_far,
+            *in_month,
             Transaction.type == TransactionType.expense,
             Transaction.bucket_id.is_(None) | Transaction.bucket_id.notin_(event_ids),
         )
