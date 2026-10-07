@@ -4,12 +4,9 @@ Settings routes: household, members, invites, profile, categories, 2FA.
 
 import base64
 import io
-import json
 import secrets
 from datetime import timedelta
 
-import bcrypt as _bcrypt
-import pyotp
 import qrcode
 from cryptography.fernet import InvalidToken
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -48,6 +45,7 @@ from app.models import (
 from app.seed import seed_categories
 from app.services import base_ctx, revoke_user_tokens
 from app.services.category_rules import learn_rule, list_rules
+from app.services.totp import new_backup_codes, otpauth_uri, pending_secret, turn_off_totp
 from app.templates import templates
 from app.validators import parse_color, require_unlocked
 
@@ -405,28 +403,8 @@ def delete_category(
 
 
 def _pending_secret(db: Session, user: User) -> str:
-    """Return the user's in-progress TOTP secret, creating one if needed.
-
-    A secret stored while totp_enabled is False is an enrollment in progress:
-    it grants nothing until a valid code confirms it.
-    """
-    secret = None
-    if user.totp_secret:
-        try:
-            secret = user.get_totp_secret()
-        except InvalidToken:
-            # Unreadable pending secret (key changed): safe to replace only while
-            # not enrolled — an enabled secret is never overwritten here.
-            if user.totp_enabled:
-                raise
-            security_logger.error(
-                "Pending TOTP secret for user_id=%s is unreadable; restarting enrollment", user.id
-            )
-    if not secret:
-        secret = pyotp.random_base32()
-        user.set_totp_secret(secret)
-        db.commit()
-    return secret
+    """The user's in-progress TOTP secret (see app.services.totp)."""
+    return pending_secret(db, user)
 
 
 def _generate_qr_base64(totp_uri: str) -> str:
@@ -486,9 +464,7 @@ def enroll_totp_page(request: Request, db: Session = Depends(get_db)):
     # QR code the user already scanned.
     secret = _pending_secret(db, user)
 
-    totp_uri = pyotp.totp.TOTP(secret).provisioning_uri(
-        name=user.username, issuer_name=settings.app_name
-    )
+    totp_uri = otpauth_uri(user, secret)
     qr_b64 = _generate_qr_base64(totp_uri)
 
     return templates.TemplateResponse(
@@ -538,10 +514,9 @@ def enroll_totp_submit(
         # No enrollment in progress (e.g. a stale form) — start a fresh one.
         return RedirectResponse("/settings/2fa/enroll", status_code=302)
 
-    totp = pyotp.TOTP(secret)
     if not verify_totp(db, user, code):
         # Re-render the QR for the same secret so the user can retry
-        totp_uri = totp.provisioning_uri(name=user.username, issuer_name=settings.app_name)
+        totp_uri = otpauth_uri(user, secret)
         qr_b64 = _generate_qr_base64(totp_uri)
         return templates.TemplateResponse(
             "auth/enroll_totp.html",
@@ -555,12 +530,11 @@ def enroll_totp_submit(
         )
 
     # Generate 8 one-time backup codes
-    plain_codes = [secrets.token_hex(5).upper() for _ in range(8)]
-    hashed_codes = [_bcrypt.hashpw(c.encode(), _bcrypt.gensalt()).decode() for c in plain_codes]
+    plain_codes, hashed_json = new_backup_codes()
 
     # secret is already on the row; confirming it is what flips enrollment on.
     user.totp_enabled = True
-    user.totp_backup_codes = json.dumps(hashed_codes)
+    user.totp_backup_codes = hashed_json
     db.commit()
 
     security_logger.info("TOTP enrolled for '%s'", user.username)
@@ -610,14 +584,7 @@ def disable_totp(
         ctx.update({"request": request, "user": user, "totp_error": "Invalid authenticator code."})
         return templates.TemplateResponse("settings/index.html", ctx)
 
-    user.totp_secret = None
-    user.totp_enabled = False
-    user.totp_backup_codes = None
-    # The step counter belongs to the old secret; keeping it would reject the
-    # new secret's first codes as "replays".
-    user.last_totp_step = None
-    invalidate_user_sessions(db, user)
-    revoke_user_tokens(db, user.id)
+    turn_off_totp(db, user)
     db.commit()
 
     security_logger.info("TOTP disabled for '%s'", user.username)

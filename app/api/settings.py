@@ -91,6 +91,9 @@ def update_profile(
     db: Session = Depends(get_db),
 ):
     user, hh_id = auth
+    name = body.display_name.strip()
+    if not 1 <= len(name) <= 100:
+        raise HTTPException(status_code=400, detail="Name must be 1 to 100 characters.")
     email_clean = body.email.strip().lower() if body.email else None
     if email_clean:
         conflict = db.query(User).filter(User.email == email_clean, User.id != user.id).first()
@@ -98,7 +101,7 @@ def update_profile(
             raise HTTPException(
                 status_code=409, detail="Email already registered to another account"
             )
-    user.display_name = body.display_name.strip()
+    user.display_name = name
     user.email = email_clean
     user.avatar_color = parse_color(body.avatar_color, field="Avatar colour")
     db.commit()
