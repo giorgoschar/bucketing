@@ -1719,6 +1719,61 @@
         "title": "CategoryUsualOut",
         "type": "object"
       },
+      "CountsOut": {
+        "properties": {
+          "duplicate_groups": {
+            "title": "Duplicate Groups",
+            "type": "integer"
+          },
+          "no_payer": {
+            "title": "No Payer",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "no_payer",
+          "duplicate_groups"
+        ],
+        "title": "CountsOut",
+        "type": "object"
+      },
+      "DuplicateGroupOut": {
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "number"
+          },
+          "transactions": {
+            "items": {
+              "$ref": "#/components/schemas/TransactionOut"
+            },
+            "title": "Transactions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "amount",
+          "transactions"
+        ],
+        "title": "DuplicateGroupOut",
+        "type": "object"
+      },
+      "DuplicatesOut": {
+        "properties": {
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/DuplicateGroupOut"
+            },
+            "title": "Groups",
+            "type": "array"
+          }
+        },
+        "required": [
+          "groups"
+        ],
+        "title": "DuplicatesOut",
+        "type": "object"
+      },
       "EntryAmountIn": {
         "properties": {
           "amount": {
@@ -1906,6 +1961,74 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HistoryEventOut": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "batch_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Id"
+          },
+          "by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "By"
+          },
+          "can_undo": {
+            "default": false,
+            "title": "Can Undo",
+            "type": "boolean"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "at",
+          "kind",
+          "by",
+          "text"
+        ],
+        "title": "HistoryEventOut",
+        "type": "object"
+      },
+      "HistoryOut": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryEventOut"
+            },
+            "title": "Events",
+            "type": "array"
+          }
+        },
+        "required": [
+          "events"
+        ],
+        "title": "HistoryOut",
         "type": "object"
       },
       "HouseholdIn": {
@@ -3379,6 +3502,292 @@
           "amount"
         ],
         "title": "TransactionCreate",
+        "type": "object"
+      },
+      "TransactionOut": {
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "number"
+          },
+          "bucket_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bucket Id"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "exchange_rate": {
+            "title": "Exchange Rate",
+            "type": "number"
+          },
+          "exclude_from_forecast": {
+            "title": "Exclude From Forecast",
+            "type": "boolean"
+          },
+          "exclude_from_settlement": {
+            "title": "Exclude From Settlement",
+            "type": "boolean"
+          },
+          "fuel_litres": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fuel Litres"
+          },
+          "fuel_price_per_litre": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fuel Price Per Litre"
+          },
+          "has_take": {
+            "title": "Has Take",
+            "type": "boolean"
+          },
+          "household_id": {
+            "title": "Household Id",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "merchant": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Merchant"
+          },
+          "missing_payer": {
+            "title": "Missing Payer",
+            "type": "boolean"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "paid_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paid By"
+          },
+          "payer_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payer Mode"
+          },
+          "payment_method": {
+            "title": "Payment Method",
+            "type": "string"
+          },
+          "receipt_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Receipt Path"
+          },
+          "recurring_bill_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recurring Bill Id"
+          },
+          "splits": {
+            "items": {
+              "$ref": "#/components/schemas/TransactionSplitOut"
+            },
+            "title": "Splits",
+            "type": "array"
+          },
+          "transaction_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transaction Date"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "bucket_id",
+          "household_id",
+          "amount",
+          "currency",
+          "exchange_rate",
+          "type",
+          "paid_by",
+          "payer_mode",
+          "category_id",
+          "notes",
+          "transaction_date",
+          "receipt_path",
+          "payment_method",
+          "merchant",
+          "fuel_price_per_litre",
+          "fuel_litres",
+          "exclude_from_forecast",
+          "exclude_from_settlement",
+          "recurring_bill_id",
+          "created_at",
+          "splits",
+          "has_take",
+          "missing_payer"
+        ],
+        "title": "TransactionOut",
+        "type": "object"
+      },
+      "TransactionPage": {
+        "properties": {
+          "day_totals": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Day Totals",
+            "type": "object"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TransactionOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "page",
+          "page_size",
+          "items",
+          "day_totals"
+        ],
+        "title": "TransactionPage",
+        "type": "object"
+      },
+      "TransactionSplitOut": {
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "number"
+          },
+          "is_settled": {
+            "title": "Is Settled",
+            "type": "boolean"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "amount",
+          "is_settled"
+        ],
+        "title": "TransactionSplitOut",
         "type": "object"
       },
       "TransactionType": {
@@ -6877,8 +7286,247 @@
     },
     "/api/v1/transactions": {
       "get": {
+        "description": "The Activity feed (2c spec \u00a75.1): the shared TransactionFilter, 50 a\npage (max 200), newest first, with each shown day's net.",
         "operationId": "list_transactions_api_v1_transactions_get",
         "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "category_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "bucket_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Bucket Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "no_bucket",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "No Bucket",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "paid_by",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Paid By"
+            }
+          },
+          {
+            "in": "query",
+            "name": "missing_payer",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Missing Payer",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "payment_method",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Payment Method"
+            }
+          },
+          {
+            "in": "query",
+            "name": "recurring_bill_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Recurring Bill Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fixed",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Fixed",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From Date"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To Date"
+            }
+          },
+          {
+            "in": "query",
+            "name": "min_amount",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Min Amount"
+            }
+          },
+          {
+            "in": "query",
+            "name": "max_amount",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Max Amount"
+            }
+          },
+          {
+            "in": "query",
+            "name": "year",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Year"
+            }
+          },
+          {
+            "in": "query",
+            "name": "month",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Month"
+            }
+          },
           {
             "in": "query",
             "name": "page",
@@ -6901,81 +7549,15 @@
               "title": "Page Size",
               "type": "integer"
             }
-          },
-          {
-            "in": "query",
-            "name": "bucket_id",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Bucket Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "category_id",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Category Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "type",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Type",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "year",
-            "required": false,
-            "schema": {
-              "title": "Year",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "month",
-            "required": false,
-            "schema": {
-              "title": "Month",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "recurring_bill_id",
-            "required": false,
-            "schema": {
-              "default": "",
-              "title": "Recurring Bill Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "fixed",
-            "required": false,
-            "schema": {
-              "default": false,
-              "title": "Fixed",
-              "type": "boolean"
-            }
           }
         ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionPage"
+                }
               }
             },
             "description": "Successful Response"
@@ -7039,6 +7621,60 @@
           }
         ],
         "summary": "Create Transaction",
+        "tags": [
+          "transactions"
+        ]
+      }
+    },
+    "/api/v1/transactions/counts": {
+      "get": {
+        "description": "The Activity chips' counts: expenses with no payer, and possible\nduplicate groups (90 days, \u00b13 days).",
+        "operationId": "transaction_counts_api_v1_transactions_counts_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CountsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Transaction Counts",
+        "tags": [
+          "transactions"
+        ]
+      }
+    },
+    "/api/v1/transactions/duplicates": {
+      "get": {
+        "description": "Possible duplicates over the last 90 days (find_household_duplicates).",
+        "operationId": "duplicate_groups_api_v1_transactions_duplicates_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DuplicatesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Duplicate Groups",
         "tags": [
           "transactions"
         ]
@@ -7147,7 +7783,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -7228,7 +7866,93 @@
         ]
       }
     },
+    "/api/v1/transactions/{txn_id}/history": {
+      "get": {
+        "operationId": "get_history_api_v1_transactions__txn_id__history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "txn_id",
+            "required": true,
+            "schema": {
+              "title": "Txn Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get History",
+        "tags": [
+          "transactions"
+        ]
+      }
+    },
     "/api/v1/transactions/{txn_id}/receipt": {
+      "get": {
+        "description": "The receipt file, with API auth (the old /transactions/files/ uses the\nold app's cookie). 404 for no receipt, deleted, another household or a\nmissing file.",
+        "operationId": "get_receipt_api_v1_transactions__txn_id__receipt_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "txn_id",
+            "required": true,
+            "schema": {
+              "title": "Txn Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Receipt",
+        "tags": [
+          "transactions"
+        ]
+      },
       "post": {
         "description": "Upload or replace a receipt image/PDF for a transaction.",
         "operationId": "upload_receipt_api_v1_transactions__txn_id__receipt_post",

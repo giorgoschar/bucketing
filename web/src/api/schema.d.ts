@@ -1066,11 +1066,56 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Transactions */
+        /**
+         * List Transactions
+         * @description The Activity feed (2c spec §5.1): the shared TransactionFilter, 50 a
+         *     page (max 200), newest first, with each shown day's net.
+         */
         get: operations["list_transactions_api_v1_transactions_get"];
         put?: never;
         /** Create Transaction */
         post: operations["create_transaction_api_v1_transactions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/transactions/counts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Transaction Counts
+         * @description The Activity chips' counts: expenses with no payer, and possible
+         *     duplicate groups (90 days, ±3 days).
+         */
+        get: operations["transaction_counts_api_v1_transactions_counts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/transactions/duplicates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Duplicate Groups
+         * @description Possible duplicates over the last 90 days (find_household_duplicates).
+         */
+        get: operations["duplicate_groups_api_v1_transactions_duplicates_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1121,6 +1166,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/transactions/{txn_id}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get History */
+        get: operations["get_history_api_v1_transactions__txn_id__history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/transactions/{txn_id}/receipt": {
         parameters: {
             query?: never;
@@ -1128,7 +1190,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Get Receipt
+         * @description The receipt file, with API auth (the old /transactions/files/ uses the
+         *     old app's cookie). 404 for no receipt, deleted, another household or a
+         *     missing file.
+         */
+        get: operations["get_receipt_api_v1_transactions__txn_id__receipt_get"];
         put?: never;
         /**
          * Upload Receipt
@@ -2137,6 +2205,25 @@ export interface components {
             /** Usual */
             usual: number | null;
         };
+        /** CountsOut */
+        CountsOut: {
+            /** Duplicate Groups */
+            duplicate_groups: number;
+            /** No Payer */
+            no_payer: number;
+        };
+        /** DuplicateGroupOut */
+        DuplicateGroupOut: {
+            /** Amount */
+            amount: number;
+            /** Transactions */
+            transactions: components["schemas"]["TransactionOut"][];
+        };
+        /** DuplicatesOut */
+        DuplicatesOut: {
+            /** Groups */
+            groups: components["schemas"]["DuplicateGroupOut"][];
+        };
         /** EntryAmountIn */
         EntryAmountIn: {
             /** Amount */
@@ -2200,6 +2287,32 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HistoryEventOut */
+        HistoryEventOut: {
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Batch Id */
+            batch_id?: string | null;
+            /** By */
+            by: string | null;
+            /**
+             * Can Undo
+             * @default false
+             */
+            can_undo: boolean;
+            /** Kind */
+            kind: string;
+            /** Text */
+            text: string;
+        };
+        /** HistoryOut */
+        HistoryOut: {
+            /** Events */
+            events: components["schemas"]["HistoryEventOut"][];
         };
         /** HouseholdIn */
         HouseholdIn: {
@@ -2669,6 +2782,81 @@ export interface components {
             transaction_date?: string | null;
             /** @default expense */
             type: components["schemas"]["TransactionType"];
+        };
+        /** TransactionOut */
+        TransactionOut: {
+            /** Amount */
+            amount: number;
+            /** Bucket Id */
+            bucket_id: string | null;
+            /** Category Id */
+            category_id: string | null;
+            /** Created At */
+            created_at: string | null;
+            /** Currency */
+            currency: string | null;
+            /** Exchange Rate */
+            exchange_rate: number;
+            /** Exclude From Forecast */
+            exclude_from_forecast: boolean;
+            /** Exclude From Settlement */
+            exclude_from_settlement: boolean;
+            /** Fuel Litres */
+            fuel_litres: number | null;
+            /** Fuel Price Per Litre */
+            fuel_price_per_litre: number | null;
+            /** Has Take */
+            has_take: boolean;
+            /** Household Id */
+            household_id: string;
+            /** Id */
+            id: string;
+            /** Merchant */
+            merchant: string | null;
+            /** Missing Payer */
+            missing_payer: boolean;
+            /** Notes */
+            notes: string | null;
+            /** Paid By */
+            paid_by: string | null;
+            /** Payer Mode */
+            payer_mode: string | null;
+            /** Payment Method */
+            payment_method: string;
+            /** Receipt Path */
+            receipt_path: string | null;
+            /** Recurring Bill Id */
+            recurring_bill_id: string | null;
+            /** Splits */
+            splits: components["schemas"]["TransactionSplitOut"][];
+            /** Transaction Date */
+            transaction_date: string | null;
+            /** Type */
+            type: string;
+        };
+        /** TransactionPage */
+        TransactionPage: {
+            /** Day Totals */
+            day_totals: {
+                [key: string]: number;
+            };
+            /** Items */
+            items: components["schemas"]["TransactionOut"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
+        };
+        /** TransactionSplitOut */
+        TransactionSplitOut: {
+            /** Amount */
+            amount: number;
+            /** Is Settled */
+            is_settled: boolean;
+            /** User Id */
+            user_id: string;
         };
         /**
          * TransactionType
@@ -4928,15 +5116,24 @@ export interface operations {
     list_transactions_api_v1_transactions_get: {
         parameters: {
             query?: {
+                q?: string | null;
+                type?: string | null;
+                category_id?: string | null;
+                bucket_id?: string | null;
+                no_bucket?: boolean;
+                paid_by?: string | null;
+                missing_payer?: boolean;
+                payment_method?: string | null;
+                recurring_bill_id?: string | null;
+                fixed?: boolean;
+                from_date?: string | null;
+                to_date?: string | null;
+                min_amount?: string | null;
+                max_amount?: string | null;
+                year?: number | null;
+                month?: number | null;
                 page?: number;
                 page_size?: number;
-                bucket_id?: string;
-                category_id?: string;
-                type?: string;
-                year?: number;
-                month?: number;
-                recurring_bill_id?: string;
-                fixed?: boolean;
             };
             header?: never;
             path?: never;
@@ -4950,7 +5147,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["TransactionPage"];
                 };
             };
             /** @description Validation Error */
@@ -4993,6 +5190,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    transaction_counts_api_v1_transactions_counts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CountsOut"];
+                };
+            };
+        };
+    };
+    duplicate_groups_api_v1_transactions_duplicates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DuplicatesOut"];
                 };
             };
         };
@@ -5049,7 +5286,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["TransactionOut"];
                 };
             };
             /** @description Validation Error */
@@ -5111,6 +5348,66 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_history_api_v1_transactions__txn_id__history_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                txn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_receipt_api_v1_transactions__txn_id__receipt_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                txn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
