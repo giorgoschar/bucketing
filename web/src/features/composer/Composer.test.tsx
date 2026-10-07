@@ -48,7 +48,8 @@ it('a double tap on Save, or Enter pressed twice, sends one POST (Review Focus 1
   })
   await ready()
   fireEvent.keyDown(document.body, { key: '3' })
-  const save = screen.getByRole('button', { name: 'Save 3 euro to Day to day' })
+  // Wait for the typed amount to reach the Save button instead of racing the re-render.
+  const save = await screen.findByRole('button', { name: 'Save 3 euro to Day to day' })
   fireEvent.click(save)
   fireEvent.click(save)
   fireEvent.keyDown(document.body, { key: 'Enter' })
