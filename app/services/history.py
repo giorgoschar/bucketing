@@ -1,12 +1,13 @@
 """A transaction's history, derived from what the database already holds
-(2c spec §5.2). There is no audit log and no "Added by". Task 10 adds the
-bulk changes."""
+(2c spec §5.2). There is no audit log and no "Added by". The bulk changes
+come from app.services.bulk."""
 
 from datetime import date, datetime
 
 from sqlalchemy.orm import Session
 
 from app.models import BillOccurrence, CashMovement, ItemDirection, Transaction, User
+from app.services.bulk import bulk_history_events
 
 _NEVER = datetime.combine(date.min, datetime.min.time())
 
@@ -38,5 +39,6 @@ def transaction_history(db: Session, txn: Transaction) -> list[dict]:
         source = "their stash" if mv.stash_owner_id else "the bank"
         text = f"Cash taken from {source}" + (" (since removed)" if mv.deleted_at else "")
         events.append(event(mv.created_at, "cash_taken", name(mv.user_id), text))
+    events.extend(bulk_history_events(db, txn.household_id, txn.id))
     events.sort(key=lambda e: e["at"] or _NEVER, reverse=True)
     return events

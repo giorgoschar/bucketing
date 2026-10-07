@@ -37,7 +37,7 @@ from app.services import DeletedTransactionReplay, DuplicateTransaction, duplica
 from app.services import create_transaction as create_transaction_service
 from app.services import delete_transaction as delete_transaction_soft
 from app.services import update_transaction as update_transaction_service
-from app.services.duplicates import find_household_duplicates
+from app.services.duplicates import drop_dismissed, find_household_duplicates
 from app.services.history import transaction_history
 from app.services.money import base_amount_expr
 from app.services.receipt_parser import match_category, parse_receipt_text
@@ -301,7 +301,10 @@ def transaction_counts(
         )
         .scalar()
     )
-    return {"no_payer": no_payer, "duplicate_groups": len(find_household_duplicates(db, hh_id))}
+    return {
+        "no_payer": no_payer,
+        "duplicate_groups": len(drop_dismissed(db, hh_id, find_household_duplicates(db, hh_id))),
+    }
 
 
 @router.get("/duplicates", response_model=DuplicatesOut)
@@ -311,7 +314,7 @@ def duplicate_groups(
 ):
     """Possible duplicates over the last 90 days (find_household_duplicates)."""
     user, hh_id = auth
-    groups = find_household_duplicates(db, hh_id)
+    groups = drop_dismissed(db, hh_id, find_household_duplicates(db, hh_id))
     takes = _takes(db, [t.id for g in groups for t in g["transactions"]])
     return {
         "groups": [
