@@ -83,7 +83,8 @@ def generate_occurrences(
     not a past date gets a row. Every entry carries its rule period (the
     month, ISO week or year before business-day adjustment, see
     app.core.schedule.period_key), and a period that already has a row of
-    any status gets no second one. A rule edit therefore never doubles or
+    any status gets no second one (rows from before a change of rule kind
+    block nothing, see _row_period). A rule edit therefore never doubles or
     drops a salary: paid on the 26th, the rule now says the 28th, that month
     stays as it is and the next month gets the 28th.
     ``past`` decides what a date before today becomes (PAST_UNPAID,
@@ -97,12 +98,16 @@ def generate_occurrences(
     bill.interval_months = normalise_interval_months(bill.interval_months)
     today = today or local_today()
     rule = item_rule(bill)
+    # The old app's forms generate through this same function, so its rows
+    # get their period too; rows it wrote before the planning migration were
+    # backfilled with their due month.
     taken = {
         _row_period(rule.kind, period, due)
         for due, period in db.query(BillOccurrence.due_date, BillOccurrence.period)
         .filter_by(bill_id=bill.id)
         .all()
     }
+    taken.discard(None)  # rows of another kind's key format block nothing
     created = 0
     for due, period in iter_entries(
         rule,
@@ -139,23 +144,30 @@ def generate_occurrences(
     return created
 
 
-def _row_period(kind: str, period: str | None, due: date) -> str:
-    """An existing row's period, in the granularity of the current rule kind.
+def _key_format(kind_or_key: str) -> str:
+    """ "week", "year" or "month": the format of a period key, or of the keys
+    a rule kind produces (app.core.schedule.period_key)."""
+    if kind_or_key == RuleKind.weekly.value or "-W" in kind_or_key:
+        return "week"
+    if kind_or_key in (RuleKind.yearly.value, RuleKind.easter_offset.value):
+        return "year"
+    if len(kind_or_key) == 4 and kind_or_key.isdigit():
+        return "year"
+    return "month"
 
-    A row keeps the key it was created with; after a change of kind (monthly
-    to yearly, say) it is read at the new granularity. Rows the old app wrote
-    have no key: they are monthly_interval entries, never adjusted, so their
-    due date stands in for the nominal date.
+
+def _row_period(kind: str, period: str | None, due: date) -> str | None:
+    """The period an existing row blocks under a rule of ``kind``, or None.
+
+    Rows the old app wrote have no key: they are monthly_interval entries,
+    never adjusted, so their due month is their key. A row blocks only when
+    its key has the format of the rule's keys. After a change of kind
+    (monthly to yearly, weekly to monthly) the old rows block nothing: a
+    missing future entry would go unnoticed, while a double is visible and
+    can be skipped.
     """
-    if kind == RuleKind.weekly.value:
-        if period and "-W" in period:
-            return period
-        return period_key(kind, due)
-    if kind in (RuleKind.yearly.value, RuleKind.easter_offset.value):
-        return period[:4] if period else period_key(kind, due)
-    if period and len(period) == 7 and "-W" not in period:
-        return period
-    return period_key(kind, due)
+    key = period or period_key(RuleKind.monthly_interval.value, due)
+    return key if _key_format(key) == _key_format(kind) else None
 
 
 def delete_future_occurrences(db: Session, bill_id: str) -> None:

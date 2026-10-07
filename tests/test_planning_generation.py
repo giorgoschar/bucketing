@@ -440,3 +440,65 @@ def test_legacy_row_without_a_period_counts_for_its_month(db, make_household, fr
     got = _dates(db, bill)
     assert [d for d in got if (d.year, d.month) == (2026, 10)] == [date(2026, 10, 26)]
     assert date(2026, 11, 28) in got
+
+
+# A rule-kind change: only rows whose key has the new rule's format block a
+# period. A missing entry would be invisible; a double is visible and skippable.
+
+
+def test_monthly_to_yearly_still_gets_this_years_entry(db, make_household, frozen_today):
+    hh = make_household()
+    bill = _item(db, hh, start_date=date(2026, 8, 1), rule_kind="monthly_day", rule_day=5)
+    generate_occurrences(db, bill)
+    db.commit()
+    _paid(db, bill, date(2026, 9, 5))
+
+    _edit(db, bill, rule_kind="yearly", rule_month=12, rule_day=15)
+
+    assert date(2026, 12, 15) in _dates(db, bill)
+
+
+def test_weekly_to_monthly_still_gets_this_months_entry(db, make_household, frozen_today):
+    hh = make_household()
+    bill = _item(db, hh, start_date=date(2026, 9, 28), rule_kind="weekly", rule_weekday=0)
+    generate_occurrences(db, bill)
+    db.commit()
+    _paid(db, bill, date(2026, 10, 5))
+
+    _edit(db, bill, rule_kind="monthly_day", rule_day=20, rule_weekday=None)
+
+    assert date(2026, 10, 20) in _dates(db, bill)
+
+
+def test_monthly_to_weekly_starts_at_once(db, make_household, frozen_today):
+    # The week of the paid monthly row still gets its weekly entry: a
+    # documented double the user can skip, rather than a hidden gap.
+    hh = make_household()
+    bill = _item(db, hh, start_date=date(2026, 10, 7), rule_kind="monthly_day", rule_day=12)
+    generate_occurrences(db, bill, past=PAST_NONE)
+    db.commit()
+    _paid(db, bill, date(2026, 10, 12))
+
+    _edit(db, bill, rule_kind="weekly", rule_weekday=2, rule_day=None)
+
+    got = _dates(db, bill)
+    assert date(2026, 10, 7) in got and date(2026, 10, 14) in got
+
+
+def test_same_date_with_another_period_is_left_alone(db, make_household, frozen_today):
+    # 30 Oct paid as October's; the new rule (the 1st, moved back off the
+    # Sunday 1 Nov) wants 30 Oct for November. The unique date wins, inside a
+    # savepoint, and the rest of the edit goes through.
+    hh = make_household()
+    bill = _item(db, hh, start_date=date(2026, 10, 7), rule_kind="monthly_day", rule_day=30)
+    generate_occurrences(db, bill, past=PAST_NONE)
+    db.commit()
+    _paid(db, bill, date(2026, 10, 30))
+
+    _edit(db, bill, rule_day=1, rule_adjust="previous_business_day")
+
+    rows = db.query(BillOccurrence).filter_by(bill_id=bill.id, due_date=date(2026, 10, 30)).all()
+    assert [(r.status, r.period) for r in rows] == [(OccurrenceStatus.paid, "2026-10")]
+    got = _dates(db, bill)
+    assert date(2026, 12, 1) in got and date(2026, 12, 31) in got
+    assert db.get(RecurringBill, bill.id).rule_day == 1
