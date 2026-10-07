@@ -32,6 +32,7 @@ class EntryOut(BaseModel):
     transaction_id: str | None
     overdue: bool
     infrequent: bool
+    payment_method: str
 
 
 class SplitOut(BaseModel):
@@ -61,6 +62,7 @@ class RecurringItemOut(BaseModel):
     contract_end_date: date | None
     paid_by_default: str | None
     payer_mode: str
+    payment_method: str
     is_auto_pay: bool
     is_active: bool
     notes: str | None

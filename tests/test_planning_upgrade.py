@@ -327,3 +327,164 @@ def _as_date(value):
     from datetime import date
 
     return value if isinstance(value, date) else date.fromisoformat(str(value)[:10])
+
+
+# ---------------------------------------------------------------------------
+# 2d M: recurring_bills.payment_method, backfilled from history
+# ---------------------------------------------------------------------------
+
+PLANNING_REVISION = "a7b8c9d0e1f2"
+BILL_PM_REVISION = "b8c9d0e1f2a3"
+
+
+def _paid_occurrence(conn, ids, bill_key, *, due, method, deleted=False):
+    """A paid entry of ``bill_key`` with its expense. a7b8c9d0e1f2 links the two."""
+    from datetime import datetime, time
+
+    txn = str(uuid.uuid4())
+    conn.execute(
+        text(
+            "INSERT INTO transactions (id, bucket_id, household_id, amount, currency, "
+            "exchange_rate, type, paid_by, transaction_date, exclude_from_forecast, "
+            "exclude_from_settlement, payment_method, deleted_at) VALUES (:i, :b, :h, 38.90, "
+            "'EUR', 1, 'expense', :u, :d, false, false, :m, :x)"
+        ),
+        {
+            "i": txn,
+            "b": ids["daily"],
+            "h": ids["hh"],
+            "u": ids["user"],
+            "d": due,
+            "m": method,
+            "x": datetime.combine(due, time()) if deleted else None,
+        },
+    )
+    conn.execute(
+        text(
+            "INSERT INTO bill_occurrences (id, bill_id, due_date, status, transaction_id) "
+            "VALUES (:i, :b, :d, 'paid', :t)"
+        ),
+        {"i": str(uuid.uuid4()), "b": ids[bill_key], "d": due, "t": txn},
+    )
+
+
+def _item(conn, ids, name, *, direction):
+    """A recurring item written at a7b8c9d0e1f2 (direction exists from there on)."""
+    item = str(uuid.uuid4())
+    conn.execute(
+        text(
+            "INSERT INTO recurring_bills (id, household_id, bucket_id, name, amount, currency, "
+            "frequency, interval_months, start_date, is_active, is_auto_pay, direction) "
+            "VALUES (:i, :h, :b, :n, 100, 'EUR', 'monthly', 1, :s, true, false, :d)"
+        ),
+        {
+            "i": item,
+            "h": ids["hh"],
+            "b": None if direction == "in" else ids["daily"],
+            "n": name,
+            "s": local_today() - timedelta(days=60),
+            "d": direction,
+        },
+    )
+    return item
+
+
+def _linked(conn, ids, item, *, when, method, kind="expense", created_at=None):
+    """A transaction linked to ``item`` the way the new app links it (recurring_bill_id)."""
+    conn.execute(
+        text(
+            "INSERT INTO transactions (id, bucket_id, household_id, amount, currency, "
+            "exchange_rate, type, paid_by, transaction_date, exclude_from_forecast, "
+            "exclude_from_settlement, payment_method, recurring_bill_id, created_at) "
+            "VALUES (:i, :b, :h, 100, 'EUR', 1, :k, :u, :d, false, false, :m, :r, :c)"
+        ),
+        {
+            "i": str(uuid.uuid4()),
+            "b": None if kind == "income" else ids["daily"],
+            "h": ids["hh"],
+            "k": kind,
+            "u": ids["user"],
+            "d": when,
+            "m": method,
+            "r": item,
+            "c": created_at,
+        },
+    )
+
+
+def _methods(db_url) -> dict:
+    engine = create_engine(db_url)
+    try:
+        with engine.connect() as conn:
+            return dict(conn.execute(text("SELECT id, payment_method FROM recurring_bills")).all())
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize("revision", [PROD_REVISION, PRE_PHASE1_REVISION])
+def test_bill_payment_method_is_backfilled_from_history(tmp_path, revision):
+    from datetime import datetime
+
+    from sqlalchemy import inspect
+
+    db_url = _db_url(tmp_path, "pm.db")
+    assert _alembic(["upgrade", revision], db_url).returncode == 0
+    today = local_today()
+    engine = create_engine(db_url)
+    with engine.begin() as conn:
+        ids = _seed(conn)
+        # Cosmote: card 40 days ago (seeded), transfer 25 days ago, and a newer
+        # cash payment that was deleted. The latest *active* one is the transfer.
+        _paid_occurrence(conn, ids, "bill", due=today - timedelta(days=25), method="transfer")
+        _paid_occurrence(
+            conn, ids, "bill", due=today - timedelta(days=5), method="cash", deleted=True
+        )
+    engine.dispose()
+    up = _alembic(["upgrade", PLANNING_REVISION], db_url)
+    assert up.returncode == 0, up.stderr
+
+    engine = create_engine(db_url)
+    with engine.begin() as conn:
+        # Income items exist from a7b8c9d0e1f2 on. One received "by card" by mistake
+        # still becomes transfer: receive_occurrence always recorded transfer.
+        ids["salary"] = _item(conn, ids, "Salary", direction="in")
+        _linked(
+            conn, ids, ids["salary"], when=today - timedelta(days=3), method="card", kind="income"
+        )
+        # Two payments on one day: the one with a created_at is the newer (rows
+        # without one predate the column), whichever way the dialect sorts NULLs.
+        ids["rent"] = _item(conn, ids, "Rent", direction="out")
+        same_day = today - timedelta(days=2)
+        _linked(conn, ids, ids["rent"], when=same_day, method="other")
+        _linked(
+            conn,
+            ids,
+            ids["rent"],
+            when=same_day,
+            method="apple_pay",
+            created_at=datetime(2026, 1, 1, 9, 0),  # noqa: DTZ001
+        )
+    engine.dispose()
+
+    up = _alembic(["upgrade", BILL_PM_REVISION], db_url)
+    assert up.returncode == 0, up.stderr
+    expected = {
+        ids["bill"]: "transfer",  # latest active linked payment
+        ids["gym"]: "card",  # claim-only: no linked transaction
+        ids["paused"]: "card",  # nothing paid
+        ids["salary"]: "transfer",  # in items
+        ids["rent"]: "apple_pay",  # created_at breaks the same-day tie
+    }
+    assert _methods(db_url) == expected
+
+    # Round trip: down drops the column, up recomputes the same values.
+    down = _alembic(["downgrade", PLANNING_REVISION], db_url)
+    assert down.returncode == 0, down.stderr
+    engine = create_engine(db_url)
+    assert "payment_method" not in {
+        c["name"] for c in inspect(engine).get_columns("recurring_bills")
+    }
+    engine.dispose()
+    up = _alembic(["upgrade", BILL_PM_REVISION], db_url)
+    assert up.returncode == 0, up.stderr
+    assert _methods(db_url) == expected

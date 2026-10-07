@@ -274,7 +274,7 @@ async def mark_paid(
     request: Request,
     amount: str = Form(""),
     paid_by: str = Form(""),
-    payment_method: str = Form("card"),
+    payment_method: str = Form(""),
     db: Session = Depends(get_db),
     auth=Depends(require_auth),
 ):
@@ -309,8 +309,9 @@ async def mark_paid(
         payer_mode=chosen_mode if chosen_mode == PayerMode.own_share.value else None,
         fallback_user_id=user.id,
     )
+    # Blank = the bill's own method (2d §7.0).
     try:
-        pm = parse_payment_method(payment_method)
+        pm = parse_payment_method(payment_method) if payment_method.strip() else None
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
 

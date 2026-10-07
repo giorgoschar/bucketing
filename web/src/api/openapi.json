@@ -215,6 +215,17 @@
             "title": "Payer Mode",
             "type": "string"
           },
+          "payment_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Method"
+          },
           "splits": {
             "default": [],
             "items": {
@@ -1085,7 +1096,7 @@
             "type": "string"
           },
           "payment_method": {
-            "default": "card",
+            "default": "",
             "title": "Payment Method",
             "type": "string"
           }
@@ -1758,9 +1769,15 @@
             "title": "Amount"
           },
           "payment_method": {
-            "default": "card",
-            "title": "Payment Method",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Method"
           },
           "person": {
             "anyOf": [
@@ -1849,6 +1866,10 @@
             "title": "Overdue",
             "type": "boolean"
           },
+          "payment_method": {
+            "title": "Payment Method",
+            "type": "string"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -1879,7 +1900,8 @@
           "category_id",
           "transaction_id",
           "overdue",
-          "infrequent"
+          "infrequent",
+          "payment_method"
         ],
         "title": "EntryOut",
         "type": "object"
@@ -2423,9 +2445,15 @@
             "title": "Payer Mode"
           },
           "payment_method": {
-            "default": "card",
-            "title": "Payment Method",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Method"
           },
           "splits": {
             "default": [],
@@ -2588,6 +2616,17 @@
             "default": "single",
             "title": "Payer Mode",
             "type": "string"
+          },
+          "payment_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Method"
           },
           "rule_adjust": {
             "default": "none",
@@ -2810,6 +2849,10 @@
             "title": "Payer Mode",
             "type": "string"
           },
+          "payment_method": {
+            "title": "Payment Method",
+            "type": "string"
+          },
           "rule_adjust": {
             "title": "Rule Adjust",
             "type": "string"
@@ -2919,6 +2962,7 @@
           "contract_end_date",
           "paid_by_default",
           "payer_mode",
+          "payment_method",
           "is_auto_pay",
           "is_active",
           "notes",

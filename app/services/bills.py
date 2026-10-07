@@ -379,7 +379,7 @@ def pay_occurrence(
     paid_on: datetime,
     split_overrides: dict[str, Decimal] | None = None,
     note_prefix: str = "Bill",
-    payment_method: str = "card",
+    payment_method: str | None = None,
     payer_mode: str = PayerMode.single.value,
 ) -> Transaction | None:
     """Mark ``occ`` paid and create its expense transaction, in one DB transaction.
@@ -391,6 +391,8 @@ def pay_occurrence(
     is linked to the item (``recurring_bill_id``); with no bucket it is a
     Fixed cost (spec §3.4.2). The old app still goes through
     settle_occurrence, which only claims bucket-less bills (spec §6.2.4).
+
+    ``payment_method`` None records the item's own method (2d §7.0).
 
     ``payer_mode`` own_share records everyone as having paid their split (the
     overrides, else the bill's scaled defaults); the transaction and the
@@ -424,7 +426,7 @@ def pay_occurrence(
         payer_mode=PayerMode.own_share.value if own_share else PayerMode.single.value,
         category_id=bill.category_id,
         notes=f"{note_prefix}: {bill.name}",
-        payment_method=payment_method,
+        payment_method=payment_method or bill.payment_method or PaymentMethod.card.value,
         transaction_date=occ.due_date,
         recurring_bill_id=bill.id,
     )
@@ -445,6 +447,7 @@ def receive_occurrence(
     received_by: str | None,
     paid_on: datetime,
     fallback_user_id: str | None = None,
+    payment_method: str | None = None,
 ) -> Transaction | None:
     """Mark received: create the entry's income and link it (spec §3.3).
 
@@ -453,6 +456,7 @@ def receive_occurrence(
     still a member, then ``fallback_user_id``, then the owner (as for bill
     payers, :func:`resolve_bill_payer`). Returns None when the atomic claim
     fails (already done). Raises ValueError for an out item. Does not commit.
+    The method is ``payment_method``, else the item's (transfer unless changed).
     """
     bill = occ.bill
     if bill.direction != ItemDirection.in_.value:
@@ -470,7 +474,7 @@ def receive_occurrence(
         paid_by=person,
         category_id=bill.category_id,
         notes=f"Income: {bill.name}",
-        payment_method=PaymentMethod.transfer.value,
+        payment_method=payment_method or bill.payment_method or PaymentMethod.transfer.value,
         transaction_date=occ.due_date,
         recurring_bill_id=bill.id,
     )
@@ -487,7 +491,7 @@ def complete_entry(
     user_id: str,
     amount=None,
     person: str | None = None,
-    payment_method: str = PaymentMethod.card.value,
+    payment_method: str | None = None,
 ) -> Transaction:
     """Done, from the new app (spec §3.3): Pay for an out entry, which always
     creates an expense (a Fixed cost when the item has no bucket), Mark
@@ -498,7 +502,8 @@ def complete_entry(
     ``user_id``). A variable item's amount, or an explicit one, is stored on
     the entry so estimates and drift alerts see it. Raises EntryStateError
     when the entry is not expected and ValueError when no amount is known or
-    the payment cannot be recorded. Does not commit.
+    the payment cannot be recorded. Does not commit. ``payment_method`` None
+    uses the item's.
     """
     if occ.status != OccurrenceStatus.unpaid:
         raise EntryStateError("This entry is already done or skipped.")
@@ -510,7 +515,13 @@ def complete_entry(
     paid_on = utcnow_naive()
     if bill.direction == ItemDirection.in_.value:
         txn = receive_occurrence(
-            db, occ, amount=value, received_by=person, paid_on=paid_on, fallback_user_id=user_id
+            db,
+            occ,
+            amount=value,
+            received_by=person,
+            paid_on=paid_on,
+            fallback_user_id=user_id,
+            payment_method=payment_method,
         )
     else:
         payer, mode = resolve_bill_payment(db, bill, paid_by=person, fallback_user_id=user_id)

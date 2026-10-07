@@ -20,11 +20,11 @@ from app.models import (
     BucketKind,
     ItemDirection,
     PayerMode,
-    PaymentMethod,
     RecurringBill,
     RecurringBillSplit,
+    default_payment_method,
 )
-from app.schemas import parse_payer_mode, parse_payment_method
+from app.schemas import parse_payer_mode
 from app.services.bills import (
     BILL_HAS_HISTORY_MSG,
     PAST_NONE,
@@ -43,6 +43,7 @@ from app.services.planning import entry_for, list_entries
 from app.validators import (
     check_split_sum,
     parse_amount,
+    payment_method_or_400,
     require_bucket,
     require_category,
     require_member,
@@ -85,6 +86,7 @@ class RecurringItemIn(BaseModel):
     is_active: bool = True
     notes: str | None = None
     splits: list[SplitIn] = []
+    payment_method: str | None = None  # None: create → by direction; update → unchanged
 
     @field_validator("payer_mode", mode="before")
     @classmethod
@@ -95,12 +97,7 @@ class RecurringItemIn(BaseModel):
 class EntryDoneIn(BaseModel):
     amount: Decimal | None = None
     person: str | None = None  # payer (out) or recipient (in); None: the item's default
-    payment_method: str = PaymentMethod.card.value
-
-    @field_validator("payment_method", mode="before")
-    @classmethod
-    def _payment_method(cls, v):
-        return parse_payment_method(v)
+    payment_method: str | None = None  # None: the item's
 
 
 class EntryUndoIn(BaseModel):
@@ -118,6 +115,12 @@ def _apply(db: Session, item: RecurringBill, body: RecurringItemIn, hh_id: str) 
     except ValueError:
         raise HTTPException(status_code=400, detail="direction must be 'out' or 'in'.") from None
     income = direction == ItemDirection.in_.value
+    method = payment_method_or_400(body.payment_method)
+    if method is not None:
+        item.payment_method = method
+    elif not item.id or direction != item.direction:
+        # New item, or it changed direction: that direction's default.
+        item.payment_method = default_payment_method(direction)
     if income and (body.bucket_id or body.is_auto_pay or body.splits):
         raise HTTPException(status_code=400, detail="Income has no bucket, auto-pay or shares.")
     if income and body.payer_mode != PayerMode.single.value:
@@ -223,6 +226,7 @@ def _item_out(item: RecurringBill, next_entry) -> RecurringItemOut:
         contract_end_date=item.contract_end_date,
         paid_by_default=item.paid_by_default,
         payer_mode=item.payer_mode,
+        payment_method=item.payment_method,
         is_auto_pay=item.is_auto_pay,
         is_active=item.is_active is not False,
         notes=item.notes,
@@ -294,7 +298,7 @@ def entry_done(
             user_id=user.id,
             amount=amount,
             person=require_member(db, body.person, hh_id),
-            payment_method=body.payment_method,
+            payment_method=payment_method_or_400(body.payment_method),
         )
     except EntryStateError as exc:
         db.rollback()

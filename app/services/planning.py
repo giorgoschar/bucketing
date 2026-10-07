@@ -29,6 +29,7 @@ from app.models import (
     RuleKind,
     Transaction,
     TransactionType,
+    default_payment_method,
 )
 from app.services.bills import estimate_amount
 from app.services.budgets import bucket_spent
@@ -61,6 +62,7 @@ class Entry:
     transaction_id: str | None
     overdue: bool  # expected and due before today
     infrequent: bool  # the item recurs less than monthly (§5.3)
+    payment_method: str  # the item's: what Pay / Mark received records by default
 
 
 def _infrequent(bill: RecurringBill) -> bool:
@@ -99,6 +101,7 @@ def _entry(db: Session, occ: BillOccurrence, today: date, estimates: dict) -> En
         transaction_id=occ.transaction_id,
         overdue=status == "expected" and occ.due_date < today,
         infrequent=_infrequent(bill),
+        payment_method=bill.payment_method or default_payment_method(bill.direction),
     )
 
 
