@@ -189,9 +189,19 @@ def _cookie_kwargs(max_age: int) -> dict:
 
 
 def current_iat(request: Request) -> int | None:
-    """Original sign-in time of the request's session cookie (None if it has none)."""
-    iat = (get_current_session(request) or {}).get("iat")
-    return iat if isinstance(iat, int) else None
+    """Original sign-in time of the request's session cookie (None without a valid one).
+
+    A cookie from before iat existed falls back to its signature time: such cookies
+    were never rolled, so that is the original sign-in and a re-issue (switch,
+    create, leave, unlink) cannot restart the absolute cap."""
+    cookie = request.cookies.get(COOKIE_NAME)
+    if not cookie or get_current_session(request) is None:
+        return None
+    payload, signed_at = _serializer.loads(
+        cookie, max_age=settings.session_max_age_seconds, return_timestamp=True
+    )
+    iat = payload.get("iat")
+    return iat if isinstance(iat, int) else int(signed_at.timestamp())
 
 
 def set_session(

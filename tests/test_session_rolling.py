@@ -614,3 +614,35 @@ def test_switch_at_day_89_keeps_original_iat_and_day_91_is_rejected(
     assert client.get("/api/v1/auth/me").status_code == 401
     r = client.get("/dashboard")
     assert r.status_code == 302 and r.headers["location"].startswith("/login")
+
+
+def test_switch_on_a_pre_iat_cookie_carries_its_signing_time(
+    client, db, make_household, login, clock
+):
+    """A cookie from before iat existed cannot restart the 90-day cap by re-issue."""
+    hh, _ = _signed_in(client, make_household, login)
+    other = Household(name="Second", default_currency="EUR")
+    db.add(other)
+    db.flush()
+    db.add(HouseholdMember(household_id=other.id, user_id=hh.user_id, role="member"))
+    db.commit()
+    payload = _serializer.loads(_session_cookie_value(client))
+    del payload["iat"]
+    csrf = client.cookies.get(CSRF_COOKIE_NAME)
+    client.cookies.clear()
+    client.cookies.set(COOKIE_NAME, _serializer.dumps(payload))
+    client.cookies.set(CSRF_COOKIE_NAME, csrf)
+    signed_at = _serializer.loads(client.cookies.get(COOKIE_NAME), return_timestamp=True)[1]
+    clock["offset"] = 20 * DAY
+    r = client.post(
+        "/household/switch", data={"household_id": other.id}, headers={"X-CSRF-Token": csrf}
+    )
+    assert r.status_code == 302
+    issued = next(
+        h.split(";", 1)[0].split("=", 1)[1]
+        for h in r.headers.get_list("set-cookie")
+        if h.startswith(f"{COOKIE_NAME}=")
+    )
+    after = _serializer.loads(issued)
+    assert after["hh_id"] == other.id
+    assert after["iat"] == int(signed_at.timestamp())
