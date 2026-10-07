@@ -48,7 +48,8 @@ export interface EntryActions {
 /** Spec §4.6: POST /recurring/entries/{id}/done|skip|amount|undo, optimistic and queueable. */
 export function useEntryActions(entry: EntryOut): EntryActions {
   const base = `/api/v1/recurring/entries/${entry.id}`
-  const shared = { method: 'POST' as const, invalidates: affects.entry, pendingId: entry.id }
+  // Quiet rejections: the Entry sheet shows every rejection inline (role=alert), so no toast on top.
+  const shared = { method: 'POST' as const, invalidates: affects.entry, pendingId: entry.id, toastRejections: false }
   const patch = (change: EntryChange) => (qc: QueryClient) => patchEntryEverywhere(qc, entry, change)
 
   const done = useAction<EntryDoneIn, EntryOut>({
@@ -65,12 +66,12 @@ export function useEntryActions(entry: EntryOut): EntryActions {
     body: (a: string) => ({ amount: a }),
     optimistic: (qc, a) => patchEntryEverywhere(qc, entry, { kind: 'amount', amount: Number(a) }),
   })
-  // Quiet rejections: the sheet shows a Fixed-cost 409 inline next to "Delete the expense".
+  // The sheet shows a Fixed-cost 409 inline next to "Delete the expense".
   const undoKeep = useAction<void, EntryOut>({
-    ...shared, path: `${base}/undo`, body: { delete_transaction: false }, toastRejections: false, optimistic: patch({ kind: 'undo' }),
+    ...shared, path: `${base}/undo`, body: { delete_transaction: false }, optimistic: patch({ kind: 'undo' }),
   })
   const undoDelete = useAction<void, EntryOut>({
-    ...shared, path: `${base}/undo`, body: { delete_transaction: true }, toastRejections: false, optimistic: patch({ kind: 'undo' }),
+    ...shared, path: `${base}/undo`, body: { delete_transaction: true }, optimistic: patch({ kind: 'undo' }),
   })
 
   return {

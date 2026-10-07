@@ -128,3 +128,24 @@ it('an overdue entry says so in words', () => {
   renderWithProviders(<EntrySheet entry={entry({ overdue: true })} onClose={() => {}} />)
   expect(screen.getByRole('dialog')).toHaveTextContent('Overdue')
 })
+
+it.each([
+  ['Skip', SKIP, () => {}],
+  ['Mark paid €38.90', DONE, () => fireEvent.click(screen.getByRole('button', { name: 'Paid' }))],
+  ['Save amount', AMOUNT, () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Set amount' }))
+    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '40' } })
+  }],
+] as const)('a rejected %s shows the server message once, inline, with no toast on top', async (button, route, open) => {
+  const detail = 'This entry is already done.'
+  fakeApi(routes({ [route]: () => reply(409, { detail }) }))
+  renderWithProviders(<EntrySheet entry={entry()} onClose={() => {}} />)
+  open()
+  if (route === DONE) await waitFor(() => expect(screen.getByRole('button', { name: button })).toBeEnabled())
+  fireEvent.click(screen.getByRole('button', { name: button }))
+  const inline = await screen.findByRole('alert')
+  expect(inline).toHaveTextContent(detail)
+  expect(within(screen.getByRole('dialog')).getByRole('alert')).toBe(inline)
+  await new Promise((r) => setTimeout(r, 20))
+  expect(screen.getAllByRole('alert')).toHaveLength(1)
+})
