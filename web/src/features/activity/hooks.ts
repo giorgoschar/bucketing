@@ -166,3 +166,8 @@ export function useLinkedEntry(t: Txn | undefined): LinkedEntry | undefined {
   )
   return t?.recurring_bill_id ? q.data?.find((e) => e.transaction_id === t.id) : undefined
 }
+
+/** "Keep both": hide the pair from the duplicates list for good. Online only, never queued. */
+export async function dismissDuplicates(ids: string[]): Promise<void> {
+  await online(() => unwrap(api.POST('/api/v1/transactions/duplicates/dismiss', { body: { ids } })))
+}

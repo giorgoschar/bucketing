@@ -4,6 +4,7 @@ import { TopBar } from '../../shell/TopBar'
 import { Chip } from '../../ui/Chip'
 import { SwipeRow } from '../../ui/SwipeRow'
 import { SearchField } from '../../ui/SearchField'
+import { Duplicates } from './Duplicates'
 import { Feed } from './Feed'
 import {
   type FeedState, type TransactionFilter, activeFilterCount, fromSearch, monthLabel, monthRange, toSearch, toggle,
@@ -67,10 +68,18 @@ export function Activity() {
               onClick={() => setFilter(withoutDates(toggle(f, { missing_payer: true })))}
             />
           )}
+          {(state.dups || !!counts?.duplicate_groups) && (
+            <Chip
+              label="Duplicates?"
+              count={counts?.duplicate_groups || undefined}
+              pressed={state.dups}
+              onClick={() => set(state.dups ? { filter: monthRange(new Date()), dups: false } : { filter: {}, dups: true })}
+            />
+          )}
           <Chip label="Income" pressed={f.type === 'income'} disabled={state.dups} onClick={() => setFilter(toggle(f, { type: 'income' }))} />
           <Chip label="Cash" pressed={f.payment_method === 'cash'} disabled={state.dups} onClick={() => setFilter(toggle(f, { payment_method: 'cash' }))} />
         </div>
-        <Feed
+        {state.dups ? <Duplicates /> : <Feed
           filter={f}
           onClear={clear}
           hidden={held}
@@ -83,7 +92,7 @@ export function Activity() {
               {row}
             </SwipeRow>
           )}
-        />
+        />}
       </section>
       <OptionSheet
         open={sheet === 'month'}
