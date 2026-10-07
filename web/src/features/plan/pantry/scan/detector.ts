@@ -1,5 +1,6 @@
 // The decoder's wasm is emitted by our build and served from /app/assets (CSP: 'self' + 'wasm-unsafe-eval');
-// the package's default would fetch it from a CDN, which the CSP forbids.
+// the package's default would fetch it from a CDN, which the CSP forbids. zxing-wasm is pinned in package.json at
+// the exact version barcode-detector pins, so this wasm always matches the ponyfill's glue: bump them together.
 import zxingWasmUrl from 'zxing-wasm/reader/zxing_reader.wasm?url'
 
 export interface Detector { detect(source: HTMLVideoElement): Promise<{ rawValue: string }[]> }

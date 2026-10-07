@@ -98,11 +98,15 @@ export function useAddProduct() {
     )
 }
 
-/** What a lookup result adds: the PosoKanei product, with a minimum of 1 (spec §4.3). */
+/**
+ * What a lookup result adds: the PosoKanei product, with a minimum of 1 (spec §4.3) and none in stock. Adding
+ * tracks a product (it is then low, so on the shopping list); it never claims one is at home, which is also
+ * the server's default and what the old UI sent. The manual form keeps an editable "In stock".
+ */
 export function addBodyFor(p: ProductSummary): StockAddBody {
   return {
     name: p.name, brand: p.brand, barcode: p.barcode, posokanei_id: p.id, unit: p.unit, unit_quantity: p.unit_quantity,
-    image_url: p.image_url, quantity: 1, min_quantity: 1,
+    image_url: p.image_url, quantity: 0, min_quantity: 1,
   }
 }
 

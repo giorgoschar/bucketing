@@ -28,7 +28,9 @@ it('found: name and barcode, the best price, the other stores, Scan another and 
   expect(h.onScanAnother).toHaveBeenCalled()
   fireEvent.click(within(sheet).getByRole('button', { name: 'Add to pantry' }))
   await waitFor(() => expect(fake.callsTo(ADD)).toHaveLength(1))
-  expect(fake.callsTo(ADD)[0].body).toMatchObject({ name: 'Dodoni Feta PDO', barcode: '5201004021108', posokanei_id: 'pk-feta', min_quantity: 1 })
+  expect(fake.callsTo(ADD)[0].body).toMatchObject({
+    name: 'Dodoni Feta PDO', barcode: '5201004021108', posokanei_id: 'pk-feta', min_quantity: 1, quantity: 0,
+  })
   await waitFor(() => expect(h.onAdded).toHaveBeenCalled())
 })
 
@@ -69,4 +71,6 @@ it('offline: Add to pantry is disabled with the reason', async () => {
   setOnline(false)
   await waitFor(() => expect(within(sheet).getByRole('button', { name: 'Add to pantry' })).toBeDisabled())
   expect(sheet).toHaveTextContent('Connect to change the pantry')
+  // A scan needs the lookup, which needs a connection.
+  expect(within(sheet).getByRole('button', { name: 'Scan another' })).toBeDisabled()
 })

@@ -53,6 +53,8 @@ it('＋ on a result adds it with a minimum of 1 and says so', async () => {
   expect(fake.callsTo(ADD)[0].body).toMatchObject({
     name: 'Dodoni Feta PDO', brand: 'Dodoni', barcode: '5201004021108', posokanei_id: 'pk-feta', unit: 'g', unit_quantity: 400,
     min_quantity: 1,
+    // Adding tracks a product; it never claims one is at home (the server default, as the old UI did).
+    quantity: 0,
   })
   expect(await within(result).findByRole('button', { name: 'Added Dodoni Feta PDO' })).toBeDisabled()
   expect(await screen.findByText('Added Dodoni Feta PDO')).toBeInTheDocument()
@@ -140,4 +142,14 @@ it('offline: the add writes are disabled, with the reason', async () => {
   fireEvent.change(sheet().getByLabelText('Name'), { target: { value: 'Olive oil' } })
   expect(sheet().getByRole('button', { name: 'Add to pantry' })).toBeDisabled()
   expect(fake.callsTo(ADD)).toHaveLength(0)
+})
+
+it('going offline mid-search drops "Searching…" for the offline reason', async () => {
+  fakeApi({ ...routes(), [SEARCH]: () => new Promise<never>(() => {}) })
+  renderWithProviders(<AddSheet open onClose={() => {}} />)
+  fireEvent.change(sheet().getByRole('searchbox', { name: 'Search PosoKanei' }), { target: { value: 'feta' } })
+  expect(await sheet().findByText('Searching…')).toBeInTheDocument()
+  setOnline(false)
+  await waitFor(() => expect(sheet().queryByText('Searching…')).not.toBeInTheDocument())
+  expect(sheet().getByText('Connect to change the pantry')).toBeInTheDocument()
 })

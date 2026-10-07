@@ -69,7 +69,8 @@ export function AddSheet({ open, onClose }: { open: boolean; onClose: () => void
       ctrl.abort()
     }
   }, [q, online])
-  const shown: Search = q.length < MIN_QUERY ? { state: 'idle' } : search
+  // Offline nothing is searched (an in-flight search was aborted): the offline reason shows instead.
+  const shown: Search = q.length < MIN_QUERY || !online ? { state: 'idle' } : search
 
   // The camera can't be used: say so and put the cursor in the typed-barcode field.
   useEffect(() => { if (noCamera) typedRef.current?.focus() }, [noCamera])

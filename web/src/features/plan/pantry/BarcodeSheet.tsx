@@ -52,7 +52,7 @@ export function BarcodeSheet({ code, onClose, onScanAnother, onAddManually, onAd
 
   const title = result.state === 'found' ? result.product.name : `Barcode ${code}`
   const scanAnother = (
-    <button type="button" className="btn" onClick={onScanAnother}><ScanIcon />Scan another</button>
+    <button type="button" className="btn" disabled={!online} onClick={onScanAnother}><ScanIcon />Scan another</button>
   )
   return (
     <Sheet open onClose={onClose} title={title}
@@ -85,7 +85,7 @@ export function BarcodeSheet({ code, onClose, onScanAnother, onAddManually, onAd
             <p className="pantry-lookup__note">{result.message}</p>
           </div>
         )}
-        {result.state === 'found' && !online && !result.product.in_pantry && <p className="pantry-offline">{OFFLINE_WRITE}</p>}
+        {result.state !== 'loading' && !online && <p className="pantry-offline">{OFFLINE_WRITE}</p>}
       </div>
     </Sheet>
   )
