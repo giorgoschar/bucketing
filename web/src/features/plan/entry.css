@@ -1,0 +1,12 @@
+/* Entry sheet (spec §4.6). */
+.entry { display: flex; flex-direction: column; gap: 16px; }
+.entry__summary { display: flex; flex-direction: column; gap: 6px; }
+.entry__amount { font-size: 36px; }
+.entry__due { margin: 0; font-size: 14px; color: var(--muted); }
+.entry__badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.entry__actions, .entry__form { display: flex; flex-direction: column; gap: 10px; }
+.entry__question { margin: 0; color: var(--ink-2); }
+.entry__problem {
+  margin: 0; padding: 10px 12px; border-radius: var(--r-md);
+  background: var(--neg-soft); color: var(--neg); font-size: 14px; font-weight: 550;
+}

@@ -1,0 +1,51 @@
+/* Plan tab: the screen, Upcoming, Month, Year, Budgets. Kit classes come from ui/ui.css. */
+.plan { display: flex; flex-direction: column; gap: 16px; }
+.plan__seg { position: sticky; top: calc(env(safe-area-inset-top) + 60px); z-index: 3; }
+
+/* Upcoming */
+.plan-days { display: flex; flex-direction: column; gap: 18px; }
+.plan-day__head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 0 2px 6px; }
+.plan-day__title { margin: 0; font-size: 13px; font-weight: 650; color: var(--ink-2); }
+.plan-day__net { font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+.plan-day__net .ui-money { color: var(--ink-2); }
+
+/* Month */
+.plan-month { display: flex; flex-direction: column; gap: 14px; }
+.plan-switch { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.plan-switch__label { margin: 0; font-size: 16px; font-weight: 650; }
+.plan-net { display: flex; flex-direction: column; gap: 4px; }
+.plan-net__figure { font-size: 40px; }
+.plan-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.plan-table th, .plan-table td { padding: 9px 4px; text-align: right; border-bottom: 1px solid var(--line); }
+.plan-table thead th { font-size: 11.5px; font-weight: 600; color: var(--muted); }
+.plan-table th[scope="row"] { text-align: left; font-weight: 600; color: var(--ink-2); white-space: nowrap; }
+.plan-table .ui-money { font-size: 13px; }
+.plan-bucket__chev { display: grid; color: var(--muted); transition: transform .2s ease; }
+.plan-bucket button[aria-expanded="true"] .plan-bucket__chev { transform: rotate(180deg); }
+.plan-bucket__detail { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0; padding: 0 14px 12px; }
+.plan-bucket__detail dt { font-size: 11.5px; font-weight: 600; color: var(--muted); }
+.plan-bucket__detail dd { margin: 2px 0 0; font-size: 14px; }
+.plan-aside { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--ink-2); }
+.plan-aside__note { margin: 0; font-size: 12px; color: var(--muted); }
+.plan-usual__row--flagged { background: var(--warn-soft); }
+.plan-usual__icon { width: 36px; height: 36px; display: grid; place-items: center; border-radius: var(--r-sm); background: var(--surface-2); font-size: 18px; }
+
+/* Year */
+.plan-year__rows { list-style: none; margin: 0; padding: 0; }
+.plan-year__row { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.plan-year__month { font-size: 13px; font-weight: 650; color: var(--ink-2); }
+.plan-year__bars { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.plan-year__bar { display: block; height: 6px; border-radius: 3px; }
+.plan-year__bar--in { background: var(--pos); }
+.plan-year__bar--out { background: var(--c6); }
+.plan-year__vals { display: flex; flex-direction: column; align-items: flex-end; font-size: 11.5px; line-height: 1.35; color: var(--muted); }
+.plan-year__vals .ui-money { font-size: 12px; color: var(--ink-2); }
+.plan-year__foot { margin: 12px 0 0; font-size: 13px; color: var(--muted); }
+
+/* Budgets */
+.plan-budget { display: flex; flex-direction: column; gap: 10px; padding: 14px; }
+.plan-budget + .plan-budget { border-top: 1px solid var(--line); }
+.plan-budget__top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.plan-budget__name { min-width: 0; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plan-budget__fig { font-size: 13.5px; color: var(--ink-2); white-space: nowrap; }
+.plan-budget__foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 12.5px; color: var(--muted); }
