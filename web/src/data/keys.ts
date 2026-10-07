@@ -70,14 +70,23 @@ export const keys = {
 
 /** What each kind of change makes stale (useAction `invalidates`; the queue bridge uses `sync`). */
 export const affects = {
-  entry: [keys.plan.all, keys.home.all, keys.recurring.all, keys.matches(), keys.transactions.all, keys.insights.all],
+  // The cash reads too (cash spec §4.7): an entry marked done with cash, or a cash expense edited or deleted in
+  // Activity, changes the wallets (`logged`) and maybe the stash.
+  entry: [
+    keys.plan.all, keys.home.all, keys.recurring.all, keys.matches(), keys.transactions.all, keys.insights.all,
+    keys.cashAll(), keys.cashStash(),
+  ],
   item: [keys.plan.all, keys.home.all, keys.recurring.all],
   sync: [
     keys.plan.all, keys.home.all, keys.recurring.all, keys.matches(), keys.transactions.all, keys.insights.all,
     keys.buckets(), keys.cashAll(), keys.cashStash(),
   ],
-  /** A cash write, or a save/delete of a cash expense (cash spec §4.7): the cash reads, Home, Plan, Insights. */
-  cash: [keys.cashAll(), keys.cashStash(), keys.home.all, keys.plan.all, keys.insights.all],
+  /** A cash write, or a save/delete of a cash expense (cash spec §4.7): the cash reads, Home, Plan, Insights,
+   *  and the transaction feed (Home › Recent, Activity): a spend-take logs an expense, and deleting a take
+   *  changes how its linked expense shows. */
+  cash: [
+    keys.cashAll(), keys.cashStash(), keys.home.all, keys.plan.all, keys.insights.all, keys.transactions.all, keys.matches(),
+  ],
 } satisfies Record<string, readonly QueryKey[]>
 
 // ---- 2d: Insights and Settings ------------------------------------------------------------
