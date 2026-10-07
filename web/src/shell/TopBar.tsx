@@ -1,4 +1,5 @@
 import { useRef, type ReactNode } from 'react'
+import { Link, useInRouterContext } from 'react-router'
 import { useSession } from '../session/SessionProvider'
 import { LogOutIcon } from './icons'
 
@@ -13,6 +14,8 @@ function initials(name: string): string {
 /** `actions` (icon buttons for the screen) render before the account button. */
 export function TopBar({ title, actions }: { title: string; actions?: ReactNode }) {
   const { me, signOut } = useSession()
+  // Screens always render inside the router; the fallback keeps TopBar usable on its own (unit tests).
+  const inRouter = useInRouterContext()
   const sheet = useRef<HTMLDialogElement>(null)
   const cancel = useRef<HTMLButtonElement>(null)
   const name = me?.display_name || me?.username || ''
@@ -58,6 +61,11 @@ export function TopBar({ title, actions }: { title: string; actions?: ReactNode 
               {me?.email && <div className="sheet__sub">{me.email}</div>}
             </div>
           </div>
+          {inRouter ? (
+            <Link to="/settings" className="btn btn--block" onClick={close}>Settings</Link>
+          ) : (
+            <a href="/app/settings" className="btn btn--block">Settings</a>
+          )}
           <button type="button" className="btn btn--danger btn--block" onClick={() => { close(); void signOut() }}>
             <LogOutIcon />
             Sign out
