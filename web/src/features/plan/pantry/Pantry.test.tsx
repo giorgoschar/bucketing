@@ -2,10 +2,11 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, it } from 'vitest'
 import { db } from '../../../offline/db'
 import { open } from '../../../offline/crypto'
-import { fakeApi, hang } from '../../../test/fakeApi'
+import { fakeApi, hang, reply } from '../../../test/fakeApi'
 import { lowMilk, pantryRoutes, stockItem } from '../../../test/fixtures'
 import { renderWithProviders, resetTestEnv, setOnline } from '../../../test/render'
 import { Pantry } from './Pantry'
+import type { StockItem } from './types'
 
 afterEach(resetTestEnv)
 
@@ -174,4 +175,40 @@ it('the empty state’s Add opens Add to pantry', async () => {
   renderWithProviders(<Pantry />)
   fireEvent.click(await screen.findByRole('button', { name: 'Add a product' }))
   expect(screen.getByRole('dialog', { name: 'Add to pantry' })).toBeInTheDocument()
+})
+
+it('a rejected adjust (the item was archived meanwhile) rolls the count back and says why', async () => {
+  let reads = 0
+  const routes = pantryRoutes()
+  const fake = fakeApi({
+    ...routes,
+    // Only the first read answers: the refetch after the rejection fails, so what shows is the rollback itself.
+    'GET /api/v1/stock': (req) => (++reads === 1 ? (routes['GET /api/v1/stock']!(req) as StockItem[]) : reply(500)),
+    [ADJUST]: () => reply(404, { detail: 'Stock item not found' }),
+  })
+  renderWithProviders(<Pantry />)
+  const pasta = await screen.findByRole('listitem', { name: 'Barilla spaghetti' })
+  fireEvent.click(within(pasta).getByRole('button', { name: 'Increase Barilla spaghetti' }))
+  await waitFor(() => expect(fake.callsTo(ADJUST)).toHaveLength(1))
+  expect(await screen.findByText('Stock item not found')).toBeInTheDocument()
+  await waitFor(() => expect(fake.callsTo('GET /api/v1/stock').length).toBeGreaterThan(1))
+  expect(within(pasta).getByTestId('pantry-qty')).toHaveTextContent('3')
+  expect(pasta).toHaveTextContent('3 left')
+  expect(await db.queue.count()).toBe(0)
+})
+
+it('a network failure while online queues the very client_id that was sent (a lost reply replays once)', async () => {
+  const fake = fakeApi(pantryRoutes())
+  renderWithProviders(<Pantry />)
+  const milk = await screen.findByRole('listitem', { name: 'Milk' })
+  fake.down() // still "online": the send itself fails
+  fireEvent.click(within(milk).getByRole('button', { name: 'Increase Milk' }))
+  await waitFor(() => expect(fake.callsTo(ADJUST)).toHaveLength(1))
+  const sent = fake.callsTo(ADJUST)[0].body as { delta: number; client_id: string }
+  await waitFor(async () => expect(await db.queue.count()).toBe(1))
+  const [row] = await db.queue.toArray()
+  const queued = await open<{ path: string; body: { delta: number; client_id: string } }>(row)
+  expect(queued.path).toBe('/api/v1/stock/s2/adjust')
+  expect(queued.body).toEqual({ delta: 1, client_id: sent.client_id })
+  expect(await within(milk).findByText('Waiting to sync')).toBeInTheDocument()
 })
