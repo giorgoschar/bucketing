@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, render, screen, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import type { Session } from '../session/SessionProvider'
@@ -32,11 +32,11 @@ function at(url: string, status: Session['status']) {
 
 it('signed in: a passkey-link result shows as a dismissible status banner and leaves the URL', async () => {
   const router = at('/?linked=1', 'signedIn')
-  expect(screen.getByRole('status')).toHaveTextContent('Passkey linked. You can sign in with Face ID now.')
+  expect(within(screen.getByRole('main')).getByRole('status')).toHaveTextContent('Passkey linked. You can sign in with Face ID now.')
   expect(screen.getByText('home screen')).toBeInTheDocument()
   expect(router.state.location.search).toBe('')
   act(() => screen.getByRole('button', { name: 'Dismiss' }).click())
-  expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  expect(within(screen.getByRole('main')).queryByRole('status')).not.toBeInTheDocument()
 })
 
 it('signed in: an auth_error shows as an alert banner with the shared message', () => {

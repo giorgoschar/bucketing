@@ -2,12 +2,16 @@ import { readCsrf } from '../api/client'
 import { keyGeneration, open, seal } from './crypto'
 import { db, type QueueRow } from './db'
 import { getIdentity, type Identity } from './identity'
+import { notifyDrained, type ReplayResult } from './queueDrain'
+
+export { onQueueDrained } from './queueDrain'
+export type { ReplayResult } from './queueDrain'
 
 type Method = 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 interface Req { method: Method; path: string; body?: unknown }
 /** What is sealed into a row: the request plus who queued it, so another account never replays it. */
 interface Stored extends Req { owner: Identity }
-interface Result { sent: number; failed: number; stoppedOnAuth: boolean }
+type Result = ReplayResult
 
 const MAX_BACKOFF_MS = 5 * 60_000
 const MAX_ERROR_CHARS = 200
@@ -49,6 +53,7 @@ export function replay(opts: { force?: boolean } = {}): Promise<Result> {
         const next = await withLock(() => drain(true))
         r = { sent: r.sent + next.sent, failed: r.failed + next.failed, stoppedOnAuth: next.stoppedOnAuth }
       }
+      notifyDrained(r)
       return r
     } finally {
       rerunForced = false
