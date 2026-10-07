@@ -42,6 +42,25 @@ def test_callback_signs_in_and_redirects_home(client, db):
     assert client.get("/api/v1/auth/me").json()["id"] == u.id
 
 
+def test_passkey_sign_in_alerts_every_member(client, db):
+    from app.models import Notification
+
+    u, h = _member(db)
+    other = User(username="flatmate", email="f@x.t", display_name="F", password_hash="x")
+    db.add(other)
+    db.flush()
+    db.add(HouseholdMember(household_id=h.id, user_id=other.id, role="member"))
+    db.commit()
+    fake = _fake_client({"sub": "s1", "email": "g@x.t", "email_verified": True})
+    with patch("app.web_app.oidc_client", return_value=fake):
+        r = client.get("/app/auth/callback?code=c&state=s", follow_redirects=False)
+    assert r.headers["location"] == "/app/"
+    db.expire_all()
+    for uid in (u.id, other.id):
+        [alert] = db.query(Notification).filter_by(user_id=uid).all()
+        assert alert.title == "New sign-in: G" and "using a passkey" in alert.body
+
+
 def test_callback_unknown_sub_with_matching_verified_email_is_not_linked(client, db):
     u, _ = _member(db, sub=None)
     fake = _fake_client({"sub": "s9", "email": "g@x.t", "email_verified": True})
@@ -178,6 +197,12 @@ def test_link_flow_links_subject_and_keeps_session(client, db, make_household, l
     with patch("app.web_app.oidc_client", return_value=fake):
         r = client.get("/app/auth/callback?code=c&state=s", follow_redirects=False)
     assert r.headers["location"] == "/app/?linked=1"
+    # Linking is not a sign-in: no "new sign-in" alert for the passkey step.
+    from app.models import Notification
+
+    assert not any(
+        "passkey" in n.body for n in db.query(Notification).filter_by(user_id=hh.user_id)
+    )
     user = db.get(User, hh.user_id)
     db.refresh(user)
     assert user.oidc_subject == "new-sub"

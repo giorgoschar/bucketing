@@ -29,6 +29,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.oidc import oidc_client
 from app.core.ratelimit import limiter
+from app.login_alerts import alert_sign_in
 from app.models import HouseholdMember, User
 from app.services.identity import IdentityError, link_oidc_subject, resolve_oidc_user
 
@@ -186,6 +187,7 @@ async def callback(request: Request, db: Session = Depends(get_db)):
         return _fail("no_household")
     response = RedirectResponse("/app/", status_code=302)
     set_session(response, user.id, member.household_id, user.session_version, amr="oidc")
+    alert_sign_in(db, request, user, member.household_id, method="a passkey")
     return response
 
 
