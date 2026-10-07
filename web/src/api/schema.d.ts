@@ -783,6 +783,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/recurring/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview
+         * @description The next ``count`` dates of a rule (2a spec §6), from today or the start date, whichever is
+         *     later. Dates are generated from the start date, so monthly_interval and weekly keep their anchor.
+         *     Writes nothing.
+         */
+        post: operations["preview_api_v1_recurring_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/recurring/{item_id}": {
         parameters: {
             query?: never;
@@ -2524,6 +2546,54 @@ export interface components {
             start_date: string;
             /** Total Occurrences */
             total_occurrences: number | null;
+        };
+        /**
+         * RulePreviewIn
+         * @description The schedule fields of RecurringItemIn, plus how many dates to return.
+         */
+        RulePreviewIn: {
+            /**
+             * Count
+             * @default 3
+             */
+            count: number;
+            /** End Date */
+            end_date?: string | null;
+            /**
+             * Interval Months
+             * @default 1
+             */
+            interval_months: number;
+            /**
+             * Rule Adjust
+             * @default none
+             */
+            rule_adjust: string;
+            /** Rule Day */
+            rule_day?: number | null;
+            /** Rule Days */
+            rule_days?: number | null;
+            /** Rule Interval Weeks */
+            rule_interval_weeks?: number | null;
+            /**
+             * Rule Kind
+             * @default monthly_day
+             */
+            rule_kind: string;
+            /** Rule Month */
+            rule_month?: number | null;
+            /** Rule Weekday */
+            rule_weekday?: number | null;
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
+        };
+        /** RulePreviewOut */
+        RulePreviewOut: {
+            /** Dates */
+            dates: string[];
         };
         /** SettleIn */
         SettleIn: {
@@ -4271,6 +4341,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EntryOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_api_v1_recurring_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RulePreviewIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RulePreviewOut"];
                 };
             };
             /** @description Validation Error */
