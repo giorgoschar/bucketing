@@ -1,8 +1,8 @@
-import { screen } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, it } from 'vitest'
-import { fakeApi } from '../../test/fakeApi'
+import { fakeApi, reply } from '../../test/fakeApi'
 import { budgetRow, pace } from '../../test/fixtures'
-import { renderWithProviders, resetTestEnv } from '../../test/render'
+import { renderWithProviders, resetTestEnv, setOnline } from '../../test/render'
 import { Budgets } from './Budgets'
 
 afterEach(resetTestEnv)
@@ -57,4 +57,42 @@ it('event buckets show their dates, days left and the Archive? label', async () 
   expect(trip).toHaveTextContent('1 Oct – 12 Oct')
   expect(trip).toHaveTextContent('5 days left')
   expect(trip).toHaveTextContent('Archive?')
+})
+
+const ARCHIVE = 'POST /api/v1/buckets/{bucket_id}/archive' as const
+const trip = budgetRow({
+  bucket_id: 'trip1', name: 'Crete', kind: 'event', budget: 900, spent: 610, pct: 67.8,
+  period_start: '2026-09-01', period_end: '2026-09-12', days_left: 0, archive_suggested: true,
+})
+
+it('Archive (2d §5.6): asks first, says there is no undo, then archives online and refreshes', async () => {
+  const fake = fakeApi({ 'GET /api/v1/plan/budgets': () => [trip], 'GET /api/v1/plan/pace': () => [], [ARCHIVE]: () => reply(200, {}) })
+  renderWithProviders(<Budgets />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Archive Crete' }))
+  const sheet = screen.getByRole('dialog', { name: 'Archive budget' })
+  expect(within(sheet).getByText('Archive Crete? There is no undo: it leaves Plan and the new app.')).toBeInTheDocument()
+  const before = fake.callsTo('GET /api/v1/plan/budgets').length
+  fireEvent.click(within(sheet).getByRole('button', { name: 'Archive' }))
+  await waitFor(() => expect(fake.callsTo(ARCHIVE)).toHaveLength(1))
+  expect(fake.callsTo(ARCHIVE)[0].path).toBe('/api/v1/buckets/trip1/archive')
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  await waitFor(() => expect(fake.callsTo('GET /api/v1/plan/budgets').length).toBeGreaterThan(before))
+})
+
+it('Archive (2d §5.6): offline it is refused with the reason and nothing is sent or queued', async () => {
+  const fake = fakeApi({ 'GET /api/v1/plan/budgets': () => [trip], 'GET /api/v1/plan/pace': () => [] })
+  renderWithProviders(<Budgets />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Archive Crete' }))
+  setOnline(false)
+  fireEvent.click(within(screen.getByRole('dialog', { name: 'Archive budget' })).getByRole('button', { name: 'Archive' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent("You're offline. This change needs a connection.")
+  expect(fake.callsTo(ARCHIVE)).toHaveLength(0)
+  expect(screen.getByRole('dialog', { name: 'Archive budget' })).toBeInTheDocument()
+})
+
+it('Archive (2d §5.6): rows without the suggestion have no button', async () => {
+  fakeApi({ 'GET /api/v1/plan/budgets': () => [{ ...trip, archive_suggested: false }], 'GET /api/v1/plan/pace': () => [] })
+  renderWithProviders(<Budgets />)
+  await screen.findByText('Crete')
+  expect(screen.queryByRole('button', { name: /Archive/ })).toBeNull()
 })

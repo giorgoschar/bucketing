@@ -3,6 +3,7 @@ import { api } from '../../api/client'
 import { useAction, type ActionResult } from '../../data/action'
 import { useCachedQuery } from '../../data/cachedQuery'
 import { unwrap } from '../../data/http'
+import { useOnlineAction } from '../../data/onlineAction'
 import { affects, keys } from '../../data/keys'
 import type { EntryDoneIn, EntryOut } from '../../data/types'
 import { todayISO } from '../../ui/format'
@@ -81,4 +82,14 @@ export function useEntryActions(entry: EntryOut): EntryActions {
     undo: (deleteTransaction) => (deleteTransaction ? undoDelete : undoKeep).run(),
     busy: done.busy || skip.busy || amount.busy || undoKeep.busy || undoDelete.busy,
   }
+}
+
+/** Archive an event budget (2d §5.6): irreversible, so online only and never queued. */
+export function useArchiveBucket() {
+  const act = useOnlineAction()
+  return (bucketId: string) =>
+    act(() => api.POST('/api/v1/buckets/{bucket_id}/archive', { params: { path: { bucket_id: bucketId } } }), {
+      invalidates: [keys.plan.all, keys.buckets(), keys.insights.all],
+      success: 'Archived',
+    })
 }
