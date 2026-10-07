@@ -99,3 +99,21 @@ it('offline: no camera, Photo and Upload disabled', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Photo' }))
   expect(screen.getByLabelText('Take photo')).toBeDisabled()
 })
+
+it('a modal: Tab and Shift+Tab stay inside the scan screen', async () => {
+  fakeApi()
+  show()
+  const dialog = screen.getByRole('dialog', { name: 'Scan receipt' })
+  const close = screen.getByRole('button', { name: 'Close' })
+  expect(document.activeElement).toBe(close)
+  fireEvent.keyDown(document, { key: 'Tab', shiftKey: true })
+  const last = document.activeElement as HTMLElement
+  expect(dialog).toContainElement(last)
+  expect(last).not.toBe(close)
+  fireEvent.keyDown(document, { key: 'Tab' })
+  expect(document.activeElement).toBe(close)
+  // Focus that escaped (e.g. to the page behind) is pulled back in.
+  document.body.focus()
+  fireEvent.keyDown(document, { key: 'Tab' })
+  expect(dialog).toContainElement(document.activeElement as HTMLElement)
+})

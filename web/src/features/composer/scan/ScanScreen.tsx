@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CloseIcon } from '../../../shell/icons'
+import { trapTab } from '../../../ui/focusTrap'
 import { Segmented } from '../bridge'
 import { RECEIPT_ACCEPT, receiptProblem } from '../receipt'
 import type { QrReceipt } from '../types'
@@ -26,6 +27,7 @@ export function ScanScreen({ online, onResult, onPhoto, onClose }: ScanScreenPro
   const [fileProblem, setFileProblem] = useState<string | null>(null)
   const video = useRef<HTMLVideoElement>(null)
   const closeBtn = useRef<HTMLButtonElement>(null)
+  const root = useRef<HTMLDivElement>(null)
   const lookup = useQrLookup()
   const busy = useRef(false)
   const lastFailed = useRef<string | null>(null)
@@ -72,14 +74,14 @@ export function ScanScreen({ online, onResult, onPhoto, onClose }: ScanScreenPro
     }
   }, [mode, online, onDecode]) // onDecode is stable (lookup is a stable useCallback)
 
-  // A modal: focus starts on Close, Escape leaves.
+  // A modal: focus starts on Close, Tab stays inside, Escape leaves.
   useEffect(() => {
     closeBtn.current?.focus()
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault()
         onCloseRef.current()
-      }
+      } else if (root.current) trapTab(root.current, e)
     }
     document.addEventListener('keydown', onKey)
     const overflow = document.body.style.overflow
@@ -121,7 +123,7 @@ export function ScanScreen({ online, onResult, onPhoto, onClose }: ScanScreenPro
   )
 
   return (
-    <div className="scan" role="dialog" aria-modal="true" aria-label="Scan receipt">
+    <div ref={root} className="scan" role="dialog" aria-modal="true" aria-label="Scan receipt" tabIndex={-1}>
       <div className="scan__view">
         {mode === 'qr' && online && camera === 'ok' && (
           <>

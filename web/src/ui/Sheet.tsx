@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
+import { focusables, trapTab } from './focusTrap'
 import { XIcon } from './icons'
 
 export interface SheetProps {
@@ -14,10 +15,6 @@ export interface SheetProps {
   /** Where focus lands on open; defaults to the first focusable element (the Close button). */
   initialFocus?: RefObject<HTMLElement | null>
 }
-
-const FOCUSABLE =
-  'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'
-const focusables = (root: HTMLElement) => Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE))
 
 /** Open sheets, innermost last: only the top one handles Esc and Tab. */
 const stack: HTMLElement[] = []
@@ -41,22 +38,7 @@ export function Sheet({ open, onClose, title, children, footer, closeOnBackdrop 
         onCloseRef.current()
         return
       }
-      if (e.key !== 'Tab') return
-      const items = focusables(node)
-      if (items.length === 0) {
-        e.preventDefault()
-        node.focus()
-        return
-      }
-      const first = items[0]
-      const last = items[items.length - 1]
-      if (e.shiftKey && (document.activeElement === first || !node.contains(document.activeElement))) {
-        e.preventDefault()
-        last.focus()
-      } else if (!e.shiftKey && (document.activeElement === last || !node.contains(document.activeElement))) {
-        e.preventDefault()
-        first.focus()
-      }
+      trapTab(node, e)
     }
     document.addEventListener('keydown', onKey)
     const overflow = document.body.style.overflow
