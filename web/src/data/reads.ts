@@ -28,14 +28,16 @@ export function toHousehold(raw: unknown): Household {
 export function toBuckets(raw: unknown): Bucket[] {
   return list(raw).map((b) => {
     const d = asDict(b)
-    return { id: str(d.id), name: str(d.name), kind: str(d.kind, 'monthly'), status: str(d.status, 'active'), budget: numOrNull(d.budget) }
+    return { id: str(d.id), name: str(d.name), kind: str(d.kind, 'monthly'), status: str(d.status, 'active'), budget: numOrNull(d.budget),
+      start_date: strOrNull(d.start_date), end_date: strOrNull(d.end_date), show_income: d.show_income === true,
+    }
   })
 }
 
 export function toCategories(raw: unknown): Category[] {
   return list(raw).map((c) => {
     const d = asDict(c)
-    return { id: str(d.id), name: str(d.name), icon: strOrNull(d.icon), color: strOrNull(d.color) }
+    return { id: str(d.id), name: str(d.name), icon: strOrNull(d.icon), color: strOrNull(d.color), system_key: strOrNull(d.system_key) }
   })
 }
 
