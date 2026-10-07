@@ -220,3 +220,12 @@ All of these require `require_api_auth` (cookie or Bearer), apply household isol
 - Automatic linking without a tap.
 - Scheduling irregular (freelance) income.
 - Bulk move/edit and default payment method on bills: these are separate backlog items (`docs/redesign/backlog.md`). A default payment method fits naturally on recurring items and is a candidate for the same plan.
+
+## 9. Clarifications (2026-10-07, from the implementation pre-flight)
+
+- **§3.4.1, paused items.** Paused items are hidden from upcoming, overdue, totals and projections. They stay visible in the management lists (the old bills page and `GET /recurring`), so they can be resumed.
+- **§3.4.4, past dates.** The new API and the daily top-up never create entries dated before today. The old app's forms record past dates of a rule as *skipped* placeholders, which existing tests rely on. Skipped rows never count as owed, are never auto-paid and never appear in totals.
+- **§3.3, undo of a Fixed cost.** Undoing a Fixed-cost entry while keeping its expense is refused (409), because a bucket-less expense must stay linked to a recurring item. The app offers "delete the expense" or "give it a bucket".
+- **§3.3, regeneration.** Regeneration never creates a second entry in a month that already has a kept entry (done, skipped or amount set) for the same item. This keeps salaries from doubling after a day change.
+- **§5.4, pace.** One-off purchases (`exclude_from_forecast`) are added to pace at face value and never extrapolated.
+- **§4.1, bucket kind.** A bucket can't be switched to an event while recurring out items point at it (409).
