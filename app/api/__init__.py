@@ -18,6 +18,7 @@ from app.api import (
     ingest,
     insights,
     matches,
+    notification_prefs,
     notifications,
     personal_tokens,
     plan,
@@ -49,6 +50,7 @@ router.include_router(settings.router)
 router.include_router(category_rules.router)
 # 2d §7.5: 2FA set up, on and off from the new app.
 router.include_router(security.router)
+router.include_router(notification_prefs.router)
 router.include_router(stock.router)
 router.include_router(stock.products_router)
 
