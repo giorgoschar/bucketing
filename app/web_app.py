@@ -333,6 +333,23 @@ APP_CSP = (
     "frame-ancestors 'none'"
 )
 
+
+def form_action_sources() -> str:
+    """form-action for pages that post to /app/auth/link or /unlink. Those redirect to the
+    IdP and browsers check form-action on every redirect hop, so the issuer's origin is
+    allowed when OIDC is on. oidc_issuer_origin is validated (None for anything but a
+    clean http(s) origin)."""
+    sources = "'self'"
+    if settings.new_app_enabled and settings.oidc_enabled and settings.oidc_issuer_origin:
+        sources += f" {settings.oidc_issuer_origin}"
+    return sources
+
+
+def app_csp() -> str:
+    """APP_CSP with the IdP added to form-action (the Passkey form in Settings)."""
+    return APP_CSP.replace("form-action 'self';", f"form-action {form_action_sources()};")
+
+
 spa = APIRouter(include_in_schema=False)
 
 
