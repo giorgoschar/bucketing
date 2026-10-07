@@ -146,16 +146,35 @@ def _decode_token(token: str) -> dict:
 _UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
 
 
-def _origin_of(url: str) -> str:
-    parts = urlsplit(url)
-    return f"{parts.scheme}://{parts.netloc}".lower()
+_DEFAULT_PORTS = {"http": 80, "https": 443}
 
 
-def _app_origin(request: Request) -> str:
-    if settings.app_base_url:
-        return _origin_of(settings.app_base_url)
-    # Production refuses to start without APP_BASE_URL; this is the DEBUG fallback.
-    return f"{request.url.scheme}://{request.url.netloc}".lower()
+def _origin_of(url: str | None) -> str | None:
+    """Canonical scheme://host[:port] of a URL or Origin header, else None.
+
+    Lowercases scheme and host, drops a default port, path, query and userinfo, so
+    "https://Expenses.example:443/" and "https://expenses.example" compare equal.
+    "null", schemeless or malformed values give None (never equal to anything).
+    """
+    try:
+        parts = urlsplit((url or "").strip())
+        port = parts.port
+    except ValueError:
+        return None
+    scheme = parts.scheme.lower()
+    host = parts.hostname  # already lowercased, userinfo stripped
+    if scheme not in _DEFAULT_PORTS or not host:
+        return None
+    if ":" in host:
+        host = f"[{host}]"
+    if port is None or port == _DEFAULT_PORTS[scheme]:
+        return f"{scheme}://{host}"
+    return f"{scheme}://{host}:{port}"
+
+
+def _app_origin(request: Request) -> str | None:
+    # Production refuses to start without APP_BASE_URL; the request URL is the DEBUG fallback.
+    return _origin_of(settings.app_base_url or str(request.base_url))
 
 
 def _cookie_auth(request: Request, db: Session):
@@ -166,7 +185,9 @@ def _cookie_auth(request: Request, db: Session):
     # for the same-origin app only, so a cross-origin request never rides on it.
     # Same-origin fetches send Origin on POST and often omit it on GET: both pass.
     origin = request.headers.get("origin")
-    if origin is not None and origin.lower() != _app_origin(request):
+    if origin is not None and (
+        _origin_of(origin) is None or _origin_of(origin) != _app_origin(request)
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Cross-origin cookie requests are not allowed",

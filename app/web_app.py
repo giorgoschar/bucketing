@@ -122,7 +122,9 @@ async def link(
             request, _callback_url(request), prompt="login"
         )
     except _PROVIDER_ERRORS as exc:
-        security_logger.warning("OIDC provider unreachable: %s", type(exc).__name__)
+        security_logger.warning(
+            "OIDC provider error: %s: %s", type(exc).__name__, exc, exc_info=True
+        )
         _clear_link_state(request)
         return RedirectResponse("/settings?passkey_error=1", status_code=302)
 
@@ -159,7 +161,9 @@ async def login(request: Request):
             request, _callback_url(request), prompt="login"
         )
     except _PROVIDER_ERRORS as exc:
-        security_logger.warning("OIDC provider unreachable: %s", type(exc).__name__)
+        security_logger.warning(
+            "OIDC provider error: %s: %s", type(exc).__name__, exc, exc_info=True
+        )
         return _fail("provider")
 
 
@@ -180,8 +184,12 @@ async def callback(request: Request, db: Session = Depends(get_db)):
     except JoseError as exc:
         security_logger.warning("OIDC ID token rejected: %s", type(exc).__name__)
         return _fail("token")
-    except httpx.HTTPError as exc:
-        security_logger.warning("OIDC provider unreachable: %s", type(exc).__name__)
+    except _PROVIDER_ERRORS as exc:
+        # Token endpoint/JWKS fetch failed or returned garbage. Authlib/joserfc/httpx
+        # messages name the URL and the problem, never the code, token or secret.
+        security_logger.warning(
+            "OIDC provider error: %s: %s", type(exc).__name__, exc, exc_info=True
+        )
         return _fail("provider")
     claims = token.get("userinfo") or {}
 
@@ -195,12 +203,13 @@ async def callback(request: Request, db: Session = Depends(get_db)):
         if not user or user.id != link_user_id or not fresh:
             return _fail("link_requires_login")
         try:
-            link_oidc_subject(db, user, claims.get("sub"))
+            changed = link_oidc_subject(db, user, claims.get("sub"))
         except IdentityError as exc:
             security_logger.warning("OIDC link refused: %s", exc.code)
             return _fail(exc.code)
-        security_logger.info("OIDC passkey linked")
-        alert_passkey_linked(db, request, user, hh_id)
+        if changed:  # re-linking the same passkey is a no-op: no second alert
+            security_logger.info("OIDC passkey linked")
+            alert_passkey_linked(db, request, user, hh_id)
         return RedirectResponse("/app/?linked=1", status_code=302)
 
     try:

@@ -27,7 +27,8 @@ def resolve_oidc_user(db: Session, claims: dict) -> User:
     return user
 
 
-def link_oidc_subject(db: Session, user: User, sub: str | None) -> None:
+def link_oidc_subject(db: Session, user: User, sub: str | None) -> bool:
+    """Link `sub` to `user`. True if newly linked, False if it already was."""
     if not sub:
         raise IdentityError("not_linked")
     other = db.query(User).filter(User.oidc_subject == sub, User.id != user.id).first()
@@ -36,10 +37,11 @@ def link_oidc_subject(db: Session, user: User, sub: str | None) -> None:
     if user.oidc_subject:
         if user.oidc_subject != sub:
             raise IdentityError("subject_conflict")
-        return
+        return False
     user.oidc_subject = sub
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
         raise IdentityError("subject_conflict") from None
+    return True

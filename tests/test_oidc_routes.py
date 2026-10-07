@@ -755,3 +755,41 @@ def test_settings_hides_unlink_from_a_passkey_session(client, db):
     assert "Passkey linked" in page
     assert "/app/auth/unlink" not in page
     assert "Sign in with your password to unlink" in page
+
+
+def test_relinking_the_same_passkey_sends_no_second_alert(client, db, make_household, login):
+    from app.models import Notification
+
+    hh = make_household()
+    headers = login(hh.username, hh.secret)
+    user = db.get(User, hh.user_id)
+    user.oidc_subject = "same-sub"
+    db.commit()
+    fake = _redirecting_client({"sub": "same-sub"})
+    _start_link(client, hh, headers, fake)
+    with patch("app.web_app.oidc_client", return_value=fake):
+        r = client.get("/app/auth/callback?code=c&state=s", follow_redirects=False)
+    assert r.headers["location"] == "/app/?linked=1"
+    db.expire_all()
+    assert not any(
+        n.title.startswith("Passkey linked")
+        for n in db.query(Notification).filter_by(user_id=hh.user_id)
+    )
+
+
+@pytest.mark.parametrize("kind", ["bad_json", "status", "no_endpoint"])
+def test_callback_provider_garbage_is_handled(client, kind):
+    import httpx
+
+    errors = {
+        "bad_json": ValueError("Expecting value: line 1 column 1 (char 0)"),
+        "status": httpx.HTTPStatusError(
+            "502", request=httpx.Request("POST", "https://x/token"), response=httpx.Response(502)
+        ),
+        "no_endpoint": RuntimeError('Missing "token_endpoint" value'),
+    }
+    fake = _fake_client(exc=errors[kind])
+    with patch("app.web_app.oidc_client", return_value=fake):
+        r = client.get("/app/auth/callback?code=c&state=s", follow_redirects=False)
+    assert r.headers["location"] == "/app/?auth_error=provider"
+    assert client.get("/api/v1/auth/me").status_code == 401

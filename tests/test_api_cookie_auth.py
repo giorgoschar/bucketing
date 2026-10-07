@@ -1,3 +1,4 @@
+import pytest
 from starlette.responses import Response
 
 from app.auth import CSRF_COOKIE_NAME, set_session
@@ -254,3 +255,53 @@ def test_rejected_cookie_gets_no_csrf_cookie(client, db):
     r = client.get("/api/v1/auth/me")
     assert r.status_code == 403
     assert not any(c.startswith(f"{CSRF_COOKIE_NAME}=") for c in r.headers.get_list("set-cookie"))
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    ["https://expenses.gch.gr:443", " https://expenses.gch.gr ", "https://Expenses.gch.gr/"],
+)
+def test_app_base_url_is_normalised(client, db, monkeypatch, base_url):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "app_base_url", base_url)
+    u, h = _member(db)
+    _login(client, u, h, "pwd")
+    r = client.get("/api/v1/auth/me", headers={"Origin": "https://expenses.gch.gr"})
+    assert r.status_code == 200
+
+
+@pytest.mark.parametrize(
+    ("origin", "status"),
+    [
+        ("https://expenses.gch.gr", 200),
+        ("https://expenses.gch.gr:443", 200),
+        ("HTTPS://EXPENSES.GCH.GR", 200),
+        ("https://expenses.gch.gr:8443", 401),
+        ("http://expenses.gch.gr", 401),
+        ("https://evil.example", 401),
+        ("https://expenses.gch.gr.evil.example", 401),
+        ("null", 401),
+        ("expenses.gch.gr", 401),
+        ("https://expenses.gch.gr:99999", 401),
+    ],
+)
+def test_origin_header_is_normalised(client, db, monkeypatch, origin, status):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "app_base_url", "https://expenses.gch.gr")
+    u, h = _member(db)
+    _login(client, u, h, "pwd")
+    assert client.get("/api/v1/auth/me", headers={"Origin": origin}).status_code == status
+
+
+def test_non_default_port_in_app_base_url_is_kept(client, db, monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "app_base_url", "https://expenses.gch.gr:8443/")
+    u, h = _member(db)
+    _login(client, u, h, "pwd")
+    ok = client.get("/api/v1/auth/me", headers={"Origin": "https://expenses.gch.gr:8443"})
+    assert ok.status_code == 200
+    bad = client.get("/api/v1/auth/me", headers={"Origin": "https://expenses.gch.gr"})
+    assert bad.status_code == 401

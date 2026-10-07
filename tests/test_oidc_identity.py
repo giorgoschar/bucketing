@@ -42,14 +42,14 @@ def test_missing_sub_is_refused(db):
 
 def test_link_sets_subject(db):
     u = _user(db, "g", "g@x.t")
-    link_oidc_subject(db, u, "sub-1")
+    assert link_oidc_subject(db, u, "sub-1") is True
     db.refresh(u)
     assert u.oidc_subject == "sub-1"
 
 
 def test_link_is_idempotent(db):
     u = _user(db, "g", "g@x.t", sub="sub-1")
-    link_oidc_subject(db, u, "sub-1")
+    assert link_oidc_subject(db, u, "sub-1") is False
     assert u.oidc_subject == "sub-1"
 
 
