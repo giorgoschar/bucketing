@@ -1,8 +1,9 @@
+// @vitest-environment node
 /// <reference types="node" />
 import { readFileSync } from 'node:fs'
 import { expect, it } from 'vitest'
 
-const css = readFileSync(`${process.cwd()}/src/styles/tokens.css`, 'utf8')
+const css = readFileSync(new URL('./tokens.css', import.meta.url), 'utf8')
 
 // The manual P1 pass measured muted text at 4.35:1 on the light page and 4.01:1 on the segmented control.
 
