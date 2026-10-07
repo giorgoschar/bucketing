@@ -1,5 +1,5 @@
 import type { QueryClient } from '@tanstack/react-query'
-import { api } from '../../api/client'
+import { api, readCsrf } from '../../api/client'
 import type { components } from '../../api/schema'
 import { useAction } from '../../data/action'
 import { useCachedQuery } from '../../data/cachedQuery'
@@ -200,4 +200,16 @@ export function useRecentBulk() {
   return useCachedQuery(keys.bulkRecent(), (signal) =>
     unwrap(api.GET('/api/v1/transactions/bulk', { params: { query: { limit: 10 } }, signal })),
   )
+}
+
+/** The DELETE for a held swipe delete flushed while the page is going away (pagehide/hidden): a plain
+ * fetch with `keepalive`, so the browser finishes it after teardown. useAction's client can't set
+ * keepalive, so this adds the CSRF header itself. Rejects on a network failure. */
+export function deleteKeepalive(id: string): Promise<Response> {
+  return fetch(`/api/v1/transactions/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    keepalive: true,
+    credentials: 'same-origin',
+    headers: { 'X-CSRF-Token': readCsrf() },
+  })
 }
