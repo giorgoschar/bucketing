@@ -37,12 +37,11 @@
 @media (prefers-reduced-motion: reduce) { .amount__caret { animation: none; } }
 .amount__cur {
   position: relative; display: inline-flex; align-items: center; gap: 4px;
-  min-height: 32px; padding: 0 12px; border: 0; border-radius: var(--r-pill);
+  min-height: 44px; padding: 0 12px; border: 0; border-radius: var(--r-pill);
   background: var(--surface-2); color: var(--ink-2); font: 600 13px var(--font-body);
   touch-action: manipulation; user-select: none; -webkit-user-select: none;
 }
 button.amount__cur { cursor: pointer; }
-button.amount__cur::after { content: ""; position: absolute; inset: -6px; }
 .amount__cur .ui-icon { width: 14px; height: 14px; }
 .amount__converted {
   margin: 0; color: var(--muted); font: 500 14px var(--font-num); font-variant-numeric: tabular-nums;

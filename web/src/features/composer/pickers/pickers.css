@@ -45,7 +45,7 @@
 }
 .ck-chips::-webkit-scrollbar { display: none; }
 .ck-chip {
-  flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 14px;
+  flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 14px;
   border-radius: var(--r-pill); border: 1px solid var(--line); background: var(--surface); color: var(--ink-2);
   font: inherit; font-size: 13.5px; font-weight: 600; white-space: nowrap; cursor: pointer;
   touch-action: manipulation; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none;
@@ -56,6 +56,6 @@
 .ck-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .ck-date { align-items: center; }
 .ck-date__input {
-  flex: none; min-height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--r-pill);
+  flex: none; min-height: 44px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--r-pill);
   background: var(--surface); color: var(--ink-2); font: inherit; font-size: 16px;
 }
