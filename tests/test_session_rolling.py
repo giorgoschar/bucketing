@@ -1,4 +1,4 @@
-"""Quiet OIDC sign-in (prompt only after an explicit sign-out) and the rolling session."""
+"""Quiet OIDC sign-in (trusted-device cookie) and the rolling session."""
 
 import time
 from unittest.mock import AsyncMock, patch
@@ -9,8 +9,9 @@ from starlette.responses import RedirectResponse
 from app.auth import (
     COOKIE_NAME,
     CSRF_COOKIE_NAME,
-    SIGNED_OUT_COOKIE_NAME,
+    DEVICE_COOKIE_NAME,
     _csrf_serializer,
+    _device_serializer,
     _serializer,
 )
 from app.core.config import settings
@@ -56,48 +57,128 @@ def _callback(client, fake):
         return client.get("/app/auth/callback?code=c&state=s", follow_redirects=False)
 
 
-def test_login_sends_no_prompt_by_default(client):
+def _sign_in(client, fake):
+    """Full OIDC round trip through login then callback."""
+    _oidc_login(client, fake)
+    return _callback(client, fake)
+
+
+def _drop_session(client):
+    for name in (COOKIE_NAME, CSRF_COOKIE_NAME):
+        client.cookies.delete(name)
+
+
+def test_login_without_device_cookie_prompts(client):
     fake = _redirecting()
     _oidc_login(client, fake)
-    assert "prompt" not in fake.authorize_redirect.call_args.kwargs
+    assert fake.authorize_redirect.call_args.kwargs["prompt"] == "login"
 
 
-def test_logout_marker_forces_prompt_then_callback_clears_it(client, db):
+def test_callback_sets_device_cookie_and_next_login_is_quiet(client, db):
     _member(db)
     fake = _redirecting()
-    _callback(client, fake)
-    r = client.post("/app/auth/logout", headers={"X-CSRF-Token": client.cookies.get("csrf_token")})
-    assert r.status_code == 204
-    marker = r.headers["set-cookie"]
-    assert f"{SIGNED_OUT_COOKIE_NAME}=1" in marker
-    assert client.cookies.get(SIGNED_OUT_COOKIE_NAME) == "1"
+    r = _sign_in(client, fake)
+    assert r.headers["location"] == "/app/"
+    assert client.cookies.get(DEVICE_COOKIE_NAME)
+    _drop_session(client)
+    _oidc_login(client, fake)
+    assert "prompt" not in fake.authorize_redirect.call_args.kwargs
+    r = _callback(client, fake)
+    assert r.headers["location"] == "/app/"
+    assert client.get("/api/v1/auth/me").status_code == 200
 
+
+def test_stale_sv_in_device_cookie_is_refused_at_callback(client, db):
+    u, _ = _member(db)
+    fake = _redirecting()
+    _sign_in(client, fake)
+    u.session_version += 1  # e.g. sign-out everywhere from another device
+    db.commit()
+    _drop_session(client)
+    _oidc_login(client, fake)
+    assert "prompt" not in fake.authorize_redirect.call_args.kwargs
+    r = _callback(client, fake)
+    assert r.headers["location"] == "/app/auth/login"
+    assert client.get("/api/v1/auth/me").status_code == 401
+    assert client.cookies.get(DEVICE_COOKIE_NAME) is None
     _oidc_login(client, fake)
     assert fake.authorize_redirect.call_args.kwargs["prompt"] == "login"
 
-    r = _callback(client, fake)
-    assert r.headers["location"] == "/app/"
-    assert client.cookies.get(SIGNED_OUT_COOKIE_NAME) is None
+
+def test_device_cookie_of_another_user_is_refused(client, db):
+    u, _ = _member(db)
+    fake = _redirecting()
+    client.cookies.set(
+        DEVICE_COOKIE_NAME, _device_serializer.dumps({"user_id": "someone-else", "sv": 0})
+    )
     _oidc_login(client, fake)
     assert "prompt" not in fake.authorize_redirect.call_args.kwargs
+    r = _callback(client, fake)
+    assert r.headers["location"] == "/app/auth/login"
+    assert client.get("/api/v1/auth/me").status_code == 401
 
 
-def test_legacy_logout_sets_marker(client, make_household, login):
-    hh = make_household()
-    headers = login(hh.username, hh.secret)
-    r = client.post("/logout", headers=headers)
-    assert r.status_code == 302
-    assert client.cookies.get(SIGNED_OUT_COOKIE_NAME) == "1"
+def test_tampered_device_cookie_counts_as_absent(client, db):
+    u, _ = _member(db)
+    good = _device_serializer.dumps({"user_id": u.id, "sv": u.session_version})
+    client.cookies.set(DEVICE_COOKIE_NAME, good[:-2] + ("AA" if good[-2:] != "AA" else "BB"))
     fake = _redirecting()
     _oidc_login(client, fake)
     assert fake.authorize_redirect.call_args.kwargs["prompt"] == "login"
 
 
-def test_link_flow_still_prompts_login(client, make_household, login):
+def test_prompted_flow_does_not_need_device_cookie(client, db):
+    _member(db)
+    fake = _redirecting()
+    _oidc_login(client, fake)  # no cookie -> prompted
+    assert _callback(client, fake).headers["location"] == "/app/"
+
+
+def test_failed_callback_sets_no_device_cookie(client, db):
+    from authlib.integrations.base_client import OAuthError
+
+    _member(db)
+    fake = _redirecting()
+    fake.authorize_access_token.side_effect = OAuthError("bad")
+    r = _sign_in(client, fake)
+    assert "auth_error" in r.headers["location"]
+    assert client.cookies.get(DEVICE_COOKIE_NAME) is None
+    assert client.cookies.get(COOKIE_NAME) is None
+
+
+def test_app_logout_revokes_server_side_and_next_login_prompts(client, db):
+    u, _ = _member(db)
+    fake = _redirecting()
+    _sign_in(client, fake)
+    old_session = client.cookies.get(COOKIE_NAME)
+    r = client.post("/app/auth/logout", headers={"X-CSRF-Token": client.cookies.get("csrf_token")})
+    assert r.status_code == 204
+    assert client.cookies.get(DEVICE_COOKIE_NAME) is None
+    db.refresh(u)
+    assert u.session_version == 1
+    client.cookies.set(COOKIE_NAME, old_session)  # a copied cookie is dead now
+    assert client.get("/api/v1/auth/me").status_code == 401
+    _oidc_login(client, fake)
+    assert fake.authorize_redirect.call_args.kwargs["prompt"] == "login"
+
+
+def test_legacy_logout_deletes_device_cookie(client, make_household, login):
+    hh = make_household()
+    headers = login(hh.username, hh.secret)
+    assert client.cookies.get(DEVICE_COOKIE_NAME)  # password+2FA sign-in trusts the device too
+    r = client.post("/logout", headers=headers)
+    assert r.status_code == 302
+    assert client.cookies.get(DEVICE_COOKIE_NAME) is None
+    fake = _redirecting()
+    _oidc_login(client, fake)
+    assert fake.authorize_redirect.call_args.kwargs["prompt"] == "login"
+
+
+def test_link_flow_still_prompts_login(client, db, make_household, login):
     from tests.test_oidc_routes import _link_form
 
     hh = make_household()
-    headers = login(hh.username, hh.secret)
+    headers = login(hh.username, hh.secret)  # trusted device, yet link always prompts
     fake = _redirecting()
     with patch("app.web_app.oidc_client", return_value=fake):
         client.post("/app/auth/link", data=_link_form(hh), headers=headers, follow_redirects=False)
@@ -209,7 +290,7 @@ def test_pending_cookie_untouched(client, clock):
     client.cookies.set(
         PENDING_COOKIE_NAME, resp.headers["set-cookie"].split(";")[0].split("=", 1)[1]
     )
-    clock["offset"] = 100
+    clock["offset"] = 2 * DAY
     r = client.get("/api/v1/auth/me")
     assert PENDING_COOKIE_NAME not in _set_cookie_names(r)
     assert COOKIE_NAME not in _set_cookie_names(r)
@@ -238,3 +319,99 @@ def test_young_csrf_token_is_kept(client, make_household, login, clock):
     clock["offset"] = 3 * DAY
     client.get("/api/v1/auth/me")
     assert client.cookies.get(CSRF_COOKIE_NAME) == token
+
+
+def _hidden_csrf_values(html):
+    import re
+
+    return re.findall(r'name="_csrf_token" value="([^"]*)"', html)
+
+
+def test_rendered_forms_carry_the_replaced_csrf_token(client, make_household, login, clock):
+    """The CSRF cookie is replaced on the rolling request itself, before the page
+    renders, so a non-boosted form posted next still passes CSRF (no logout)."""
+    _signed_in(client, make_household, login)
+    old = client.cookies.get(CSRF_COOKIE_NAME)
+    clock["offset"] = 25 * DAY  # > 24 days old, still inside the 30-day life
+    r = client.get("/settings")
+    assert r.status_code == 200
+    new = client.cookies.get(CSRF_COOKIE_NAME)
+    assert new != old
+    tokens = _hidden_csrf_values(r.text)
+    assert tokens and set(tokens) == {new}
+    r = client.post("/app/auth/unlink", data={"_csrf_token": new})
+    assert "expired" not in r.headers.get("location", "")
+
+
+def test_iat_is_stamped_and_preserved(client, make_household, login, clock):
+    _signed_in(client, make_household, login)
+    iat = _serializer.loads(_session_cookie_value(client))["iat"]
+    clock["offset"] = 2 * DAY
+    client.get("/api/v1/auth/me")
+    assert _serializer.loads(_session_cookie_value(client))["iat"] == iat
+
+
+def test_cookie_past_absolute_cap_is_not_rolled(client, make_household, login, clock):
+    hh, _ = _signed_in(client, make_household, login)
+    payload = _serializer.loads(_session_cookie_value(client))
+    clock["offset"] = 2 * DAY
+    payload["iat"] = int(time.time()) - 91 * DAY  # original sign-in 91 days ago
+    client.cookies.clear()
+    client.cookies.set(COOKIE_NAME, _serializer.dumps(payload))
+    r = client.get("/api/v1/auth/me")
+    assert r.status_code == 200  # still within its own 30-day signature life
+    assert COOKIE_NAME not in _set_cookie_names(r)
+
+
+def test_cookie_without_iat_is_not_rolled(client, make_household, login, clock):
+    hh, _ = _signed_in(client, make_household, login)
+    payload = _serializer.loads(_session_cookie_value(client))
+    del payload["iat"]
+    client.cookies.clear()
+    client.cookies.set(COOKIE_NAME, _serializer.dumps(payload))
+    clock["offset"] = 2 * DAY
+    r = client.get("/api/v1/auth/me")
+    assert r.status_code == 200
+    assert COOKIE_NAME not in _set_cookie_names(r)
+
+
+def test_bearer_request_gets_no_session_or_csrf_cookie(client, make_household, login, clock):
+    from app.api_auth import create_access_token
+
+    hh, _ = _signed_in(client, make_household, login)
+    token = create_access_token(hh.user_id, hh.household_id, 0)
+    clock["offset"] = 25 * DAY
+    r = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
+    assert COOKIE_NAME not in _set_cookie_names(r)
+    assert CSRF_COOKIE_NAME not in _set_cookie_names(r)
+
+
+def test_household_switch_after_a_day_is_not_overwritten_by_roll(
+    client, db, make_household, login, clock
+):
+    hh, headers = _signed_in(client, make_household, login)
+    other = Household(name="Second", default_currency="EUR")
+    db.add(other)
+    db.flush()
+    db.add(HouseholdMember(household_id=other.id, user_id=hh.user_id, role="member"))
+    db.commit()
+    clock["offset"] = 2 * DAY
+    r = client.post("/household/switch", data={"household_id": other.id}, headers=headers)
+    assert r.status_code == 302
+    assert _set_cookie_names(r).count(COOKIE_NAME) == 1
+    assert _serializer.loads(_session_cookie_value(client))["hh_id"] == other.id
+
+
+def test_unlink_after_a_day_keeps_the_reissued_session(client, db, make_household, login, clock):
+    hh, headers = _signed_in(client, make_household, login)
+    user = db.get(User, hh.user_id)
+    user.oidc_subject = "sub-x"
+    db.commit()
+    clock["offset"] = 2 * DAY
+    r = client.post("/app/auth/unlink", headers=headers)
+    assert r.status_code == 302
+    assert _set_cookie_names(r).count(COOKIE_NAME) == 1
+    db.refresh(user)
+    assert _serializer.loads(_session_cookie_value(client))["sv"] == user.session_version
+    assert client.get("/api/v1/auth/me").status_code == 200

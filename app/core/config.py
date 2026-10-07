@@ -72,6 +72,8 @@ class Settings(BaseSettings):
     # Session lifetime, enforced server-side by the signed timestamp in the
     # cookie (not only by the browser's cookie expiry).
     session_max_age_seconds: int = 60 * 60 * 24 * 30
+    # Hard cap on a rolling session, counted from the original sign-in ("iat").
+    session_absolute_max_seconds: int = 60 * 60 * 24 * 90
 
     # Invitation links
     invite_expiry_days: int = 7

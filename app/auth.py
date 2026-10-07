@@ -197,11 +197,13 @@ def set_session(response, user_id: str, household_id: str, session_version: int,
             "sv": session_version,
             "state": "authenticated",
             "amr": amr,
+            "iat": int(time.time()),
         }
     )
     response.set_cookie(COOKIE_NAME, value, **_cookie_kwargs(settings.session_max_age_seconds))
     response.delete_cookie(PENDING_COOKIE_NAME)
     response.delete_cookie(PRE_CSRF_COOKIE_NAME)
+    set_device_cookie(response, user_id, session_version)
     # Non-httponly CSRF token cookie — JS reads it for double-submit validation
     csrf_val = generate_csrf_token(user_id)
     response.set_cookie(
@@ -231,25 +233,45 @@ def _expired_session_cookie() -> str:
     return f"{COOKIE_NAME}=; Max-Age=0; Path=/; HttpOnly; SameSite=lax"
 
 
-SIGNED_OUT_COOKIE_NAME = "tameio_signed_out"
+DEVICE_COOKIE_NAME = "tameio_device"
+DEVICE_MAX_AGE = 365 * 24 * 60 * 60
+_device_serializer = URLSafeTimedSerializer(settings.app_secret_key, salt="trusted-device")
 
 
-def mark_signed_out(response) -> None:
-    """Remember an explicit sign-out: the next OIDC sign-in then forces a fresh
-    passkey ceremony (prompt=login) instead of riding Pocket ID's own session."""
+def set_device_cookie(response, user_id: str, session_version: int) -> None:
+    """Mark this browser as one that signed in as `user_id` at `session_version`.
+
+    While it is valid, OIDC sign-in skips the forced passkey prompt; any
+    session_version bump (sign-out everywhere, 2FA change...) makes it stale, so
+    the next sign-in on this device must do a fresh passkey ceremony.
+    """
     response.set_cookie(
-        SIGNED_OUT_COOKIE_NAME,
-        "1",
+        DEVICE_COOKIE_NAME,
+        _device_serializer.dumps({"user_id": user_id, "sv": session_version}),
         httponly=True,
         samesite="lax",
         secure=not settings.debug,
         path="/",
-        max_age=settings.session_max_age_seconds,
+        max_age=DEVICE_MAX_AGE,
     )
 
 
-def clear_signed_out(response) -> None:
-    response.delete_cookie(SIGNED_OUT_COOKIE_NAME, path="/")
+def clear_device_cookie(response) -> None:
+    response.delete_cookie(DEVICE_COOKIE_NAME, path="/")
+
+
+def read_device_cookie(request: Request) -> dict | None:
+    """The verified trusted-device payload, or None (absent, tampered or expired)."""
+    raw = request.cookies.get(DEVICE_COOKIE_NAME)
+    if not raw:
+        return None
+    try:
+        data = _device_serializer.loads(raw, max_age=DEVICE_MAX_AGE)
+    except BadSignature:
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get("sv"), int):
+        return None
+    return data
 
 
 def clear_session(response):
@@ -278,21 +300,43 @@ def _age_seconds(signed_at: datetime) -> float:
     return time.time() - signed_at.timestamp()
 
 
+def csrf_for_request(request: Request) -> str:
+    """The CSRF token this request's forms should carry (call after auth succeeded).
+
+    Normally the incoming cookie. Once it is CSRF_REFRESH_AFTER old, a new token is
+    minted *here*, before any template renders, and queued on request.state.new_csrf
+    for the middleware to set as the cookie, so rendered forms and cookie agree.
+    """
+    token = request.cookies.get(CSRF_COOKIE_NAME, "")
+    if not token:
+        return ""
+    try:
+        _, signed_at = _csrf_serializer.loads(
+            token, max_age=settings.session_max_age_seconds, return_timestamp=True
+        )
+    except BadSignature:
+        return token  # rejected later by the CSRF check itself
+    if _age_seconds(signed_at) > CSRF_REFRESH_AFTER:
+        token = generate_csrf_token(request.state.user_id)
+        request.state.new_csrf = token
+    return token
+
+
 def roll_session(request: Request, response) -> None:
-    """Re-issue the session (and, when old, the CSRF) cookie of a fully validated request.
+    """Re-issue the session cookie of a fully validated cookie-authenticated request.
 
     Call only when request.state.user is set: the route's own auth already checked
     signature, age, session_version and membership. The payload is re-signed
-    unchanged (a missing "amr" stays missing). No-op when the route itself set or
-    cleared the session cookie, or when the cookie is under a day old.
+    unchanged (a missing "amr" stays missing, "iat" is preserved). No-op when the
+    request used a Bearer token, when the route itself set or cleared the session
+    cookie, when the cookie is under a day old, when it has no "iat" (issued before
+    rolling existed: it just runs out), or when the original sign-in is older than
+    settings.session_absolute_max_seconds.
     """
     cookie = request.cookies.get(COOKIE_NAME)
-    if not cookie or getattr(request.state, "user", None) is None:
+    if not cookie or "authorization" in request.headers:
         return
-    if any(
-        h.startswith((f"{COOKIE_NAME}=", f"{CSRF_COOKIE_NAME}="))
-        for h in response.headers.getlist("set-cookie")
-    ):
+    if any(h.startswith(f"{COOKIE_NAME}=") for h in response.headers.getlist("set-cookie")):
         return
     try:
         payload, signed_at = _serializer.loads(
@@ -300,31 +344,20 @@ def roll_session(request: Request, response) -> None:
         )
     except BadSignature:
         return
-    # (request.state.user may be detached by now, so its attributes are not read.)
-    if not isinstance(payload, dict) or payload.get("state") != "authenticated":
+    if (
+        not isinstance(payload, dict)
+        or payload.get("state") != "authenticated"
+        or payload.get("user_id") != getattr(request.state, "user_id", None)
+    ):
+        return
+    iat = payload.get("iat")
+    if not isinstance(iat, int) or time.time() - iat > settings.session_absolute_max_seconds:
         return
     if _age_seconds(signed_at) <= SESSION_REFRESH_AFTER:
         return
     response.set_cookie(
         COOKIE_NAME, _serializer.dumps(payload), **_cookie_kwargs(settings.session_max_age_seconds)
     )
-    csrf_cookie = request.cookies.get(CSRF_COOKIE_NAME)
-    if csrf_cookie:
-        try:
-            _, csrf_signed_at = _csrf_serializer.loads(
-                csrf_cookie, max_age=settings.session_max_age_seconds, return_timestamp=True
-            )
-        except BadSignature:
-            return  # the middleware's missing-cookie path / CSRF check deals with it
-        if _age_seconds(csrf_signed_at) > CSRF_REFRESH_AFTER:
-            response.set_cookie(
-                CSRF_COOKIE_NAME,
-                generate_csrf_token(payload["user_id"]),
-                httponly=False,
-                samesite="strict",
-                max_age=settings.session_max_age_seconds,
-                secure=not settings.debug,
-            )
 
 
 def get_current_session(request: Request) -> dict | None:
@@ -502,8 +535,9 @@ def require_auth(request: Request, db: Session = Depends(get_db)):
 
     # Expose CSRF token to templates via request.state; the security-headers
     # middleware only (re)issues a CSRF cookie for requests that got this far.
-    request.state.csrf_token = request.cookies.get(CSRF_COOKIE_NAME, "")
     request.state.user = user
+    request.state.user_id = user.id
+    request.state.csrf_token = csrf_for_request(request)
 
     return user, hh_id
 

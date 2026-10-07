@@ -10,6 +10,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.auth import (
+    clear_device_cookie,
     clear_failed_logins,
     clear_session,
     get_current_session,
@@ -18,7 +19,6 @@ from app.auth import (
     invalidate_user_sessions,
     is_locked,
     log_id,
-    mark_signed_out,
     register_failed_login,
     require_auth,
     require_csrf,
@@ -356,7 +356,7 @@ def logout(request: Request, db: Session = Depends(get_db)):
             security_logger.info("Logout for '%s'", user.username)
     response = RedirectResponse("/login", status_code=302)
     clear_session(response)
-    mark_signed_out(response)
+    clear_device_cookie(response)
     return response
 
 

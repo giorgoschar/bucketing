@@ -118,8 +118,8 @@ def test_login_redirects_to_provider(client):
     assert r.headers["location"].startswith("https://id.example.test/")
     redirect_uri = fake.authorize_redirect.call_args.args[1]
     assert str(redirect_uri).endswith("/app/auth/callback")
-    # Quiet by default; prompt=login only after an explicit sign-out (test_session_rolling).
-    assert "prompt" not in fake.authorize_redirect.call_args.kwargs
+    # No trusted-device cookie: a fresh passkey ceremony (quiet sign-in: test_session_rolling).
+    assert fake.authorize_redirect.call_args.kwargs["prompt"] == "login"
 
 
 def test_logout_clears_session(client, db):

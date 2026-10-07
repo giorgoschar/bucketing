@@ -13,15 +13,14 @@ from sqlalchemy.orm import Session
 
 from app.auth import (
     COOKIE_NAME,
-    SIGNED_OUT_COOKIE_NAME,
+    clear_device_cookie,
     clear_failed_logins,
     clear_session,
-    clear_signed_out,
     csrf_matches,
     decode_cookie,
     invalidate_user_sessions,
     is_locked,
-    mark_signed_out,
+    read_device_cookie,
     register_failed_login,
     require_csrf,
     set_session,
@@ -119,6 +118,7 @@ async def link(
     clear_failed_logins(db, user)
     request.session["link_user_id"] = user.id
     request.session["link_started_at"] = int(time.time())
+    request.session["oidc_prompted"] = True
     # prompt=login makes Pocket ID run a fresh passkey ceremony.
     try:
         return await oidc_client().authorize_redirect(
@@ -157,12 +157,14 @@ async def unlink(request: Request, db: Session = Depends(get_db)):
 @limiter.limit("20/minute")
 async def login(request: Request):
     _clear_link_state(request)
-    # By default Pocket ID may reuse its own session (no passkey prompt every time).
-    # After an explicit sign-out here (marker cookie) prompt=login forces a fresh
-    # passkey ceremony, so a sign-out on a shared device is not silently undone by
-    # Pocket ID signing the next person straight back in. A successful callback
-    # clears the marker.
-    extra = {"prompt": "login"} if request.cookies.get(SIGNED_OUT_COOKIE_NAME) else {}
+    # Pocket ID may reuse its own session (no passkey prompt) only on a browser
+    # holding a valid trusted-device cookie. Without one, prompt=login forces a
+    # fresh passkey ceremony, so a sign-out (which deletes the cookie) or a
+    # revocation (which makes its session_version stale) is not silently undone by
+    # Pocket ID signing the next person straight back in. Whether we prompted is
+    # remembered in the transaction session; the callback never infers it.
+    extra = {} if read_device_cookie(request) else {"prompt": "login"}
+    request.session["oidc_prompted"] = bool(extra)
     try:
         return await oidc_client().authorize_redirect(request, _callback_url(request), **extra)
     except _PROVIDER_ERRORS as exc:
@@ -179,6 +181,8 @@ async def callback(request: Request, db: Session = Depends(get_db)):
     # never turn a later sign-in in this browser into a link.
     link_user_id = request.session.pop("link_user_id", None)
     link_started_at = request.session.pop("link_started_at", None)
+    # Transactions started before this existed were all prompted (default True).
+    prompted = bool(request.session.pop("oidc_prompted", True))
     if request.query_params.get("error"):
         return _fail("denied")
     try:
@@ -231,22 +235,43 @@ async def callback(request: Request, db: Session = Depends(get_db)):
     if not member:
         security_logger.warning("OIDC sign-in refused: no_household")
         return _fail("no_household")
+    if not prompted:
+        # Quiet sign-in: only a device that signed in as this user, at the current
+        # session_version, may skip the passkey ceremony. Anything else (first
+        # visit, revoked, other user) goes round again with prompt=login.
+        device = read_device_cookie(request)
+        if (
+            not device
+            or device.get("user_id") != user.id
+            or device.get("sv") != user.session_version
+        ):
+            security_logger.info("OIDC quiet sign-in refused: untrusted device")
+            retry = RedirectResponse("/app/auth/login", status_code=302)
+            clear_device_cookie(retry)
+            return retry
     response = RedirectResponse("/app/", status_code=302)
     set_session(response, user.id, member.household_id, user.session_version, amr="oidc")
-    clear_signed_out(response)
     alert_sign_in(db, request, user, member.household_id, method="a passkey", remedy=UNLINK_PASSKEY)
     return response
 
 
 @router.post("/logout", dependencies=[Depends(_enabled)], status_code=204)
-async def logout(request: Request):
+async def logout(request: Request, db: Session = Depends(get_db)):
     raw = request.cookies.get(COOKIE_NAME)
     session = decode_cookie(raw) if raw else None
     if session and not csrf_matches(request, session.get("user_id", "")):
         raise HTTPException(status_code=403, detail="CSRF token missing or invalid")
+    if session and session.get("state") == "authenticated":
+        # Same as the legacy logout: bump session_version so this cookie, other
+        # devices' cookies and API tokens stop working server-side.
+        user = db.get(User, session.get("user_id"))
+        if user and session.get("sv", -1) == user.session_version:
+            invalidate_user_sessions(db, user)
+            db.commit()
+            security_logger.info("Logout for '%s'", user.username)
     response = Response(status_code=204)
     clear_session(response)
-    mark_signed_out(response)
+    clear_device_cookie(response)
     return response
 
 
