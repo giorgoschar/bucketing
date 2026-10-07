@@ -240,7 +240,12 @@ def test_has_history_follows_bill_has_payment_history(client, db, api):  # noqa:
     assert item["has_history"] is False
     assert client.get(f"{URL}/{item['id']}", headers=headers).json()["has_history"] is False
     # A skipped occurrence with an amount recorded counts, though no transaction exists.
-    occ = db.query(BillOccurrence).filter_by(bill_id=item["id"]).order_by(BillOccurrence.due_date).first()
+    occ = (
+        db.query(BillOccurrence)
+        .filter_by(bill_id=item["id"])
+        .order_by(BillOccurrence.due_date)
+        .first()
+    )
     occ.status = OccurrenceStatus.skipped
     occ.amount = Decimal("1500.00")
     db.commit()
