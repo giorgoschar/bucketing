@@ -180,3 +180,77 @@ def test_no_expected_account_header_is_unchanged(client, db):
     csrf = _login(client, u, h, "pwd")
     r = client.post("/api/v1/notifications/read-all", headers={"X-CSRF-Token": csrf})
     assert r.status_code == 200
+
+
+# --- cross-origin requests never ride on the cookie ------------------------
+
+
+def test_same_origin_post_with_origin_header_works(client, db):
+    u, h = _member(db)
+    csrf = _login(client, u, h, "pwd")
+    r = client.post(
+        "/api/v1/notifications/read-all",
+        headers={"X-CSRF-Token": csrf, "Origin": "http://testserver"},
+    )
+    assert r.status_code == 200
+
+
+def test_get_without_origin_header_works(client, db):
+    u, h = _member(db)
+    _login(client, u, h, "pwd")
+    assert client.get("/api/v1/auth/me").status_code == 200
+
+
+def test_foreign_origin_cookie_request_is_401(client, db):
+    u, h = _member(db)
+    csrf = _login(client, u, h, "pwd")
+    r = client.get("/api/v1/auth/me", headers={"Origin": "https://evil.example"})
+    assert r.status_code == 401
+    assert r.json()["detail"] == "Cross-origin cookie requests are not allowed"
+    r = client.post(
+        "/api/v1/notifications/read-all",
+        headers={"X-CSRF-Token": csrf, "Origin": "null"},
+    )
+    assert r.status_code == 401
+
+
+def test_origin_is_checked_against_app_base_url(client, db, monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "app_base_url", "https://expenses.example.com/")
+    u, h = _member(db)
+    _login(client, u, h, "pwd")
+    ok = client.get("/api/v1/auth/me", headers={"Origin": "https://expenses.example.com"})
+    assert ok.status_code == 200
+    # The request's own host no longer counts once APP_BASE_URL is set.
+    assert client.get("/api/v1/auth/me", headers={"Origin": "http://testserver"}).status_code == 401
+
+
+def test_bearer_requests_ignore_origin(client, db):
+    from app.api_auth import create_access_token
+
+    u, h = _member(db)
+    token = create_access_token(u.id, h.id, u.session_version)
+    r = client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {token}", "Origin": "capacitor://localhost"},
+    )
+    assert r.status_code == 200
+
+
+def test_cookie_auth_reissues_a_missing_csrf_cookie(client, db):
+    u, h = _member(db)
+    _login(client, u, h, "pwd")
+    client.cookies.delete(CSRF_COOKIE_NAME)
+    r = client.get("/api/v1/auth/me")
+    assert r.status_code == 200
+    assert any(c.startswith(f"{CSRF_COOKIE_NAME}=") for c in r.headers.get_list("set-cookie"))
+
+
+def test_rejected_cookie_gets_no_csrf_cookie(client, db):
+    u, h = _member(db, totp=False)
+    _login(client, u, h, "pwd")
+    client.cookies.delete(CSRF_COOKIE_NAME)
+    r = client.get("/api/v1/auth/me")
+    assert r.status_code == 403
+    assert not any(c.startswith(f"{CSRF_COOKIE_NAME}=") for c in r.headers.get_list("set-cookie"))

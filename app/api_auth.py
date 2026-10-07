@@ -20,6 +20,7 @@ import hashlib
 import hmac
 import secrets
 from datetime import UTC, datetime, timedelta
+from urllib.parse import urlsplit
 
 import jwt
 from fastapi import Depends, HTTPException, Request, status
@@ -145,9 +146,31 @@ def _decode_token(token: str) -> dict:
 _UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
 
 
+def _origin_of(url: str) -> str:
+    parts = urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}".lower()
+
+
+def _app_origin(request: Request) -> str:
+    if settings.app_base_url:
+        return _origin_of(settings.app_base_url)
+    # Production refuses to start without APP_BASE_URL; this is the DEBUG fallback.
+    return f"{request.url.scheme}://{request.url.netloc}".lower()
+
+
 def _cookie_auth(request: Request, db: Session):
     """Session-cookie auth for the new app at /app (same origin, no tokens in JS)."""
     from app.auth import COOKIE_NAME, csrf_matches, decode_cookie
+
+    # CORS allows some origins for Bearer clients (mobile/Capacitor); the cookie is
+    # for the same-origin app only, so a cross-origin request never rides on it.
+    # Same-origin fetches send Origin on POST and often omit it on GET: both pass.
+    origin = request.headers.get("origin")
+    if origin is not None and origin.lower() != _app_origin(request):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Cross-origin cookie requests are not allowed",
+        )
 
     unauth = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -173,6 +196,8 @@ def _cookie_auth(request: Request, db: Session):
     expected = request.headers.get("X-Expected-Account")
     if expected is not None and expected != f"{user.id}:{hh_id}":
         raise HTTPException(status_code=412, detail="Signed in as a different account")
+    # Fully validated: lets the security-headers middleware re-issue a missing CSRF cookie.
+    request.state.user = user
     return user, hh_id
 
 
