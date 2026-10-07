@@ -8,6 +8,11 @@ type DetectorClass = {
   getSupportedFormats?: () => Promise<readonly string[]>
 }
 
+/** Module-level, so it is `===` across calls (zxing compares overrides by identity before reusing its module). */
+const OVERRIDES = {
+  locateFile: (path: string, prefix: string) => (path.endsWith('.wasm') ? zxingWasmUrl : prefix + path),
+}
+
 const FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e']
 const NEEDED = ['ean_13', 'ean_8', 'upc_a']
 
@@ -23,8 +28,9 @@ export async function makeDetector(): Promise<Detector> {
     }
   }
   const { BarcodeDetector, prepareZXingModule } = await import('barcode-detector/ponyfill')
-  prepareZXingModule({
-    overrides: { locateFile: (path: string, prefix: string) => (path.endsWith('.wasm') ? zxingWasmUrl : prefix + path) },
-  })
+  // Load and compile the wasm now, not on the first detect(): a failed load rejects here, so the camera stops
+  // and the typed barcode takes over (instead of a live camera that never reads). The same overrides object
+  // every time, so zxing keeps its compiled module across Scan taps.
+  await prepareZXingModule({ overrides: OVERRIDES, fireImmediately: true })
   return new BarcodeDetector({ formats: FORMATS as never })
 }

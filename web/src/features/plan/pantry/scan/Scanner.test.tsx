@@ -4,18 +4,29 @@ import { fakeApi } from '../../../../test/fakeApi'
 import { pantryRoutes } from '../../../../test/fixtures'
 import { renderWithProviders, resetTestEnv } from '../../../../test/render'
 
-const det = vi.hoisted(() => ({ codes: [] as string[], made: 0, wasm: null as null | string }))
+const det = vi.hoisted(() => ({
+  codes: [] as string[], made: 0, dead: false, wasm: null as null | string, overrides: [] as object[], loadFails: false,
+  eager: [] as (boolean | undefined)[],
+}))
 vi.mock('barcode-detector/ponyfill', () => ({
-  prepareZXingModule: (o: { overrides: { locateFile: (p: string, prefix: string) => string } }) => {
+  prepareZXingModule: async (o: { overrides: { locateFile: (p: string, prefix: string) => string }; fireImmediately?: boolean }) => {
+    det.overrides.push(o.overrides)
+    det.eager.push(o.fireImmediately)
     det.wasm = o.overrides.locateFile('zxing_reader.wasm', 'https://fastly.jsdelivr.net/npm/zxing-wasm/dist/reader/')
+    if (det.loadFails) throw new Error('failed to asynchronously prepare wasm')
+    return {}
   },
   BarcodeDetector: class {
     constructor() { det.made += 1 }
-    async detect() { return det.codes.map((rawValue) => ({ rawValue, format: 'ean_13' })) }
+    async detect() {
+      if (det.dead) throw new DOMException('Barcode detection service unavailable.', 'NotSupportedError')
+      return det.codes.map((rawValue) => ({ rawValue, format: 'ean_13' }))
+    }
   },
 }))
 
 import { AddSheet } from '../AddSheet'
+import { makeDetector } from './detector'
 import { Scanner } from './Scanner'
 
 const track = { stop: vi.fn() }
@@ -25,6 +36,10 @@ const getUserMedia = vi.fn<(c: MediaStreamConstraints) => Promise<MediaStream>>(
 beforeEach(() => {
   det.codes = []
   det.made = 0
+  det.overrides = []
+  det.eager = []
+  det.loadFails = false
+  det.dead = false
   getUserMedia.mockReset()
   track.stop.mockReset()
   Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia } })
@@ -100,4 +115,34 @@ it('Esc on the camera closes only the camera, not the Add sheet under it', async
   await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Scan barcode' })).not.toBeInTheDocument())
   expect(onClose).not.toHaveBeenCalled()
   expect(screen.getByRole('dialog', { name: 'Add to pantry' })).toBeInTheDocument()
+})
+
+it('a decoder that fails to load stops the camera and falls back to the typed barcode', async () => {
+  getUserMedia.mockResolvedValue(stream)
+  det.loadFails = true
+  fakeApi(pantryRoutes())
+  renderWithProviders(<AddSheet open onClose={() => {}} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Scan barcode' }))
+  expect(await screen.findByText('Type the barcode instead')).toBeInTheDocument()
+  expect(screen.queryByRole('dialog', { name: 'Scan barcode' })).not.toBeInTheDocument()
+  expect(track.stop).toHaveBeenCalled()
+  expect(det.made).toBe(0)
+  await waitFor(() => expect(screen.getByRole('textbox', { name: 'Type barcode' })).toHaveFocus())
+})
+
+it('the decoder is loaded up front, and every Scan reuses the same module settings (no re-instantiation)', async () => {
+  await makeDetector()
+  await makeDetector()
+  expect(det.eager).toEqual([true, true])
+  expect(det.overrides).toHaveLength(2)
+  expect(det.overrides[0]).toBe(det.overrides[1])
+})
+
+it('a decoder that dies mid-scan (NotSupportedError) stops the camera and falls back', async () => {
+  getUserMedia.mockResolvedValue(stream)
+  det.dead = true
+  const onUnavailable = vi.fn()
+  render(<Scanner onDetect={() => {}} onUnavailable={onUnavailable} onClose={() => {}} />)
+  await waitFor(() => expect(onUnavailable).toHaveBeenCalledTimes(1))
+  expect(track.stop).toHaveBeenCalled()
 })

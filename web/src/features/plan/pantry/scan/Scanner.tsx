@@ -65,8 +65,14 @@ export function Scanner({ onDetect, onUnavailable, onClose }: ScannerProps) {
               return
             }
           }
-        } catch {
-          // A frame that can't be read yet; try the next one.
+        } catch (e) {
+          // The decoder itself is gone (zxing: "Barcode detection service unavailable"): fall back.
+          if (e instanceof DOMException && e.name === 'NotSupportedError') {
+            stop()
+            cb.current.onUnavailable()
+            return
+          }
+          // Otherwise a frame that can't be read yet; try the next one.
         }
         if (live) timer = setTimeout(() => void scan(), SCAN_EVERY_MS)
       }
