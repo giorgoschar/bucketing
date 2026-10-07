@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router'
 import type { CachedQuery } from '../../../data/cachedQuery'
 import { useOnline } from '../../../data/online'
 import { useHousehold } from '../../../data/reads'
-import { formatMonthLabel } from '../../../ui/format'
+import { formatMonthLabel, todayISO } from '../../../ui/format'
 import { CloudOffIcon, EyeIcon } from '../../../ui/icons'
 import { QueryView } from '../../../ui/QueryView'
 import { MonthStepper } from '../MonthStepper'
@@ -88,6 +88,7 @@ function CashBody({ stash, members, wallets, month, go, canWrite }: BodyProps) {
             <div className="cash-wallets">
               {w.members.map((m, i) => (
                 <WalletCard key={m.member_id} member={m} index={i} currency={currency} canWrite={canWrite}
+                  current={month === todayISO().slice(0, 7)}
                   onLogIt={(amount) => navigate(`/new?mode=cash&take=none&amount=${amount.toFixed(2)}`)}
                   onStillHave={() => setOpen({ kind: 'cash', mode: 'still_have' })} />
               ))}

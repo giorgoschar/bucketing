@@ -8,12 +8,14 @@ export interface WalletCardProps {
   index: number
   currency: string
   canWrite: boolean
+  /** Log it and Still have write into today's month, so they show only on this month's cards (review I5). */
+  current: boolean
   onLogIt: (amount: number) => void
   onStillHave: () => void
 }
 
 /** One member's month: household-visible. The viewer's own card also has Log it and Still have. */
-export function WalletCard({ member, index, currency, canWrite, onLogIt, onStillHave }: WalletCardProps) {
+export function WalletCard({ member, index, currency, canWrite, current, onLogIt, onStillHave }: WalletCardProps) {
   const { took, inHand, logged, notLogged } = walletSum(member)
   const open = notLogged > CENT_EPS
   const e = (v: number) => euros(v, currency)
@@ -21,12 +23,13 @@ export function WalletCard({ member, index, currency, canWrite, onLogIt, onStill
     `Took ${e(took)}${inHand !== null ? ` − In hand ${e(inHand)}` : ''} − Logged ${e(logged)}` +
     (open ? ` = ${e(notLogged)} not yet logged` : '')
   const own = member.is_me
+  const acts = own && current
   return (
     <article className="ui-card cash-wallet" aria-label={`${member.name}'s wallet`}>
       <div className="cash-wallet__head">
         <span className="cash-avatar" style={{ ['--tint' as string]: tint(index) }} aria-hidden="true">{initial(member.name)}</span>
         <span className="cash-wallet__name">{member.name}{own && <span className="cash-wallet__you"> (you)</span>}</span>
-        {open && own ? (
+        {open && acts ? (
           <button type="button" className="btn btn--sm btn--primary" disabled={!canWrite} onClick={() => onLogIt(notLogged)}>Log it</button>
         ) : !open ? (
           <Badge tone="pos" icon={<CheckIcon />}>All logged</Badge>
@@ -41,7 +44,7 @@ export function WalletCard({ member, index, currency, canWrite, onLogIt, onStill
         <Op>=</Op>
         <Cell k={open ? 'Not yet logged' : 'Left to log'} v={e(open ? notLogged : 0)} tone={open ? 'res' : 'ok'} />
       </div>
-      {own && (
+      {acts && (
         <div className="cash-wallet__foot">
           <button type="button" className="btn btn--sm" disabled={!canWrite} onClick={onStillHave}>Still have</button>
           {!canWrite && <span className="cash-offline-hint">Connect to change cash</span>}

@@ -264,3 +264,16 @@ it('M5: online, a failed refresh says so (not "Offline") and writes stay enabled
   expect(screen.queryByText(/Offline/)).not.toBeInTheDocument()
   expect(within(stashCard()).getByRole('button', { name: 'Take' })).toBeEnabled()
 })
+
+it('I5: a past month\'s card has no Log it and no Still have (they write into this month)', async () => {
+  fakeApi(cashRoutes({ wallets: cashWallets({ month: '2026-09' }) }))
+  renderWithProviders(<Cash />, { route: '/plan?view=cash&month=2026-09' })
+  const mine = await screen.findByRole('article', { name: "Giorgos's wallet" })
+  expect(mine).toHaveTextContent('= €45.00 not yet logged')
+  expect(within(mine).queryByRole('button', { name: 'Log it' })).not.toBeInTheDocument()
+  expect(within(mine).queryByRole('button', { name: 'Still have' })).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Next month' }))
+  const now = await screen.findByRole('article', { name: "Giorgos's wallet" })
+  await waitFor(() => expect(within(now).getByRole('button', { name: 'Log it' })).toBeInTheDocument())
+  expect(within(now).getByRole('button', { name: 'Still have' })).toBeInTheDocument()
+})
