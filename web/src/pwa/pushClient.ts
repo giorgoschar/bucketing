@@ -51,7 +51,18 @@ export async function enablePush(env: PushEnv = browserEnv()): Promise<RawResult
   if (!key.response.ok || !key.data) return key
   const reg = await env.registration()
   const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(key.data.public_key) })
-  return fetchJson('POST', '/push/subscribe', sub.toJSON())
+  // The server must know the subscription, or this device would look "on" and never get a push:
+  // when the POST fails, drop the browser subscription again (best effort) so the state stays "off".
+  const drop = () => sub.unsubscribe().catch(() => false)
+  let res: RawResult<unknown>
+  try {
+    res = await fetchJson('POST', '/push/subscribe', sub.toJSON())
+  } catch (err) {
+    await drop()
+    throw err
+  }
+  if (!res.response.ok) await drop()
+  return res
 }
 
 export async function disablePush(env: PushEnv = browserEnv()): Promise<RawResult<unknown>> {
