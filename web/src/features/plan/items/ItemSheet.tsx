@@ -8,6 +8,7 @@ import { List, ListRow } from '../../../ui/ListRow'
 import { Money } from '../../../ui/Money'
 import { Segmented } from '../../../ui/Segmented'
 import { Sheet } from '../../../ui/Sheet'
+import { PAYMENT_METHODS } from '../paymentMethods'
 import { emptyItemForm, formToBody, itemToForm, sharesNeedScaling, validateItemForm, type ItemForm } from './form'
 import { useItemActions } from './hooks'
 import { RulePicker } from './RulePicker'
@@ -134,6 +135,14 @@ function ItemBody({ item, onClose, onOpenEntry }: Omit<ItemSheetProps, 'open'>) 
             {buckets.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
         </label>
+      )}
+
+      {out && (
+        <div className="ui-field">
+          <span className="ui-field__label" aria-hidden="true">Payment method</span>
+          <Segmented label="Payment method" options={PAYMENT_METHODS} value={form.payment_method}
+            onChange={(m) => set('payment_method', m)} />
+        </div>
       )}
 
       <label className="ui-field">

@@ -1,4 +1,5 @@
-import type { RecurringItemIn, RecurringItemOut } from '../../../data/types'
+import type { PaymentMethod, RecurringItemIn, RecurringItemOut } from '../../../data/types'
+import { asPaymentMethod } from '../paymentMethods'
 import { parseAmount } from '../../../ui/format'
 import { defaultChoice, fromRuleFields, toRuleFields, type RuleChoice } from './rule'
 
@@ -17,6 +18,8 @@ export interface ItemForm {
   category_id: string
   paid_by_default: string
   is_auto_pay: boolean
+  /** Out items only (2d §5.6): how the bill is paid; in items never send it. */
+  payment_method: PaymentMethod
   is_active: boolean
   notes: string
   /** Not edited in this sheet; carried through so a PUT (which replaces the row) never drops them. */
@@ -26,7 +29,7 @@ export interface ItemForm {
 export function emptyItemForm(today: string, me: string | null): ItemForm {
   return {
     id: null, name: '', direction: 'out', amount: '', currency: 'EUR', rule: defaultChoice('monthly_day', today),
-    start_date: today, end_date: '', bucket_id: '', category_id: '', paid_by_default: me ?? '', is_auto_pay: false,
+    start_date: today, end_date: '', bucket_id: '', category_id: '', paid_by_default: me ?? '', is_auto_pay: false, payment_method: 'card',
     is_active: true, notes: '', keep: { payer_mode: 'single', splits: [], total_occurrences: null, contract_end_date: null },
   }
 }
@@ -45,6 +48,7 @@ export function itemToForm(item: RecurringItemOut): ItemForm {
     category_id: item.category_id ?? '',
     paid_by_default: item.paid_by_default ?? '',
     is_auto_pay: item.is_auto_pay,
+    payment_method: asPaymentMethod(item.payment_method),
     is_active: item.is_active,
     notes: item.notes ?? '',
     keep: {
@@ -108,6 +112,7 @@ export function formToBody(f: ItemForm): RecurringItemIn {
     category_id: f.category_id || null,
     paid_by_default: f.keep.payer_mode === 'own_share' ? null : f.paid_by_default || null,
     is_auto_pay: out && f.is_auto_pay,
+    ...(out ? { payment_method: f.payment_method } : {}),
     is_active: f.is_active,
     notes: f.notes.trim() || null,
     payer_mode: out ? f.keep.payer_mode : 'single',

@@ -150,3 +150,37 @@ it('the next entry opens the Entry sheet', () => {
   fireEvent.click(screen.getByRole('button', { name: /Next: 9 Oct/ }))
   expect(onOpenEntry).toHaveBeenCalledWith(entry())
 })
+
+it('payment method (2d §5.6): an out item offers it and an edit sends the change', async () => {
+  const fake = fakeApi(routes({ 'PUT /api/v1/recurring/{item_id}': () => item({ payment_method: 'transfer' }) }))
+  const onClose = vi.fn()
+  renderWithProviders(<ItemSheet open item={item({ payment_method: 'cash' })} onClose={onClose} />)
+  const group = screen.getByRole('group', { name: 'Payment method' })
+  expect(within(group).getByRole('button', { name: 'Cash' })).toHaveAttribute('aria-pressed', 'true')
+  fireEvent.click(within(group).getByRole('button', { name: 'Transfer' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(onClose).toHaveBeenCalled())
+  expect(fake.callsTo('PUT /api/v1/recurring/{item_id}')[0].body).toMatchObject({ payment_method: 'transfer' })
+})
+
+it('payment method (2d §5.6): a new out item defaults to card and sends it', async () => {
+  const fake = fakeApi(routes({ 'POST /api/v1/recurring': () => item({ id: 'i9' }) }))
+  const onClose = vi.fn()
+  renderWithProviders(<ItemSheet open item={null} onClose={onClose} />)
+  expect(within(screen.getByRole('group', { name: 'Payment method' })).getByRole('button', { name: 'Card' })).toHaveAttribute('aria-pressed', 'true')
+  fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Gym' } })
+  fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '40' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Add item' }))
+  await waitFor(() => expect(onClose).toHaveBeenCalled())
+  expect(fake.callsTo('POST /api/v1/recurring')[0].body).toMatchObject({ payment_method: 'card' })
+})
+
+it('payment method (2d §5.6): in items hide it and send nothing (the server keeps or defaults it)', async () => {
+  const fake = fakeApi(routes({ 'PUT /api/v1/recurring/{item_id}': () => item({ direction: 'in' }) }))
+  const onClose = vi.fn()
+  renderWithProviders(<ItemSheet open item={item({ direction: 'in', name: 'Salary', payment_method: 'transfer' })} onClose={onClose} />)
+  expect(screen.queryByRole('group', { name: 'Payment method' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(onClose).toHaveBeenCalled())
+  expect(fake.callsTo('PUT /api/v1/recurring/{item_id}')[0].body).not.toHaveProperty('payment_method')
+})
