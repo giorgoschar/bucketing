@@ -163,7 +163,12 @@ def _selected_query(db: Session, hh: str, select: Selection) -> Query:
     if select.filter is not None:
         if select.filter.is_empty():
             raise HTTPException(status_code=400, detail="Choose at least one filter.")
-        return apply_filter(q, select.filter, db, hh)
+        filtered = apply_filter(q, select.filter, db, hh)
+        if str(filtered.whereclause) == str(q.whereclause):
+            # Belt and braces: a filter that adds no condition would select
+            # the whole household.
+            raise HTTPException(status_code=400, detail="Choose what to change first.")
+        return filtered
     bill = _bill(db, hh, select.bill_id)
     return q.filter(Transaction.recurring_bill_id == bill.id)
 

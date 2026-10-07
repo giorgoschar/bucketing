@@ -50,9 +50,12 @@ class TransactionFilter(BaseModel):
     month: int | None = None
 
     def is_empty(self) -> bool:
+        """True when no field narrows the query. ``month`` only narrows
+        together with ``year`` (alone it is a 400), so it never counts."""
         return all(
             _blank(v) if not isinstance(v, bool) else not v
-            for v in self.model_dump(include=set(TransactionFilter.model_fields)).values()
+            for k, v in self.model_dump(include=set(TransactionFilter.model_fields)).items()
+            if k != "month"
         )
 
 
@@ -199,6 +202,9 @@ def apply_filter(q: Query, f: TransactionFilter, db: Session, household_id: str)
         q = q.filter(Transaction.amount <= hi)
 
     parse_year_month(f.year, f.month)
+    if f.month is not None and f.year is None:
+        # Alone, a month would narrow nothing (and select every row in bulk).
+        raise HTTPException(status_code=400, detail="Pick a year for the month.")
     if f.year and f.month:
         nxt_y, nxt_m = (f.year + 1, 1) if f.month == 12 else (f.year, f.month + 1)
         q = q.filter(

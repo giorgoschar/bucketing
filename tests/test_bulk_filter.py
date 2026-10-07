@@ -118,3 +118,48 @@ def test_drop_dismissed_hides_a_pair_but_not_a_partly_dismissed_group(env, db): 
     env.client.post(DISMISS, headers=env.headers, json={"ids": [x, y]})
     groups = drop_dismissed(db, env.hid, find_household_duplicates(db, env.hid))
     assert [sorted(t.id for t in g["transactions"]) for g in groups] == [sorted([x, y, z])]
+
+
+# ------------------------------------------------- fix round 1: unbounded filters
+
+
+def test_month_without_year_is_400_in_the_feed_filter(env, db):  # noqa: F811
+    import pytest
+    from fastapi import HTTPException
+
+    from app.services.transaction_filter import TransactionFilter, apply_filter
+
+    q = db.query(Transaction).filter(Transaction.household_id == env.hid)
+    with pytest.raises(HTTPException) as exc:
+        apply_filter(q, TransactionFilter(month=5), db, env.hid)
+    assert exc.value.status_code == 400 and exc.value.detail == "Pick a year for the month."
+    # With a year it is a real month range.
+    assert apply_filter(q, TransactionFilter(year=2026, month=5), db, env.hid).count() == 0
+
+
+def test_month_without_year_is_400_in_bulk_and_writes_nothing(env, db):  # noqa: F811
+    a = env.add()
+    r = env.bulk({"filter": {"month": 5}}, {"bucket_id": env.bills})
+    assert r.status_code == 400, r.text
+    assert env.row(a).bucket_id == env.day and db.query(BulkBatch).count() == 0
+
+
+def test_is_empty_counts_only_constraining_fields():
+    from app.services.transaction_filter import TransactionFilter
+
+    assert TransactionFilter(month=5).is_empty()
+    assert TransactionFilter(q="  ", no_bucket=False).is_empty()
+    assert not TransactionFilter(year=2026).is_empty()
+    assert not TransactionFilter(year=2026, month=5).is_empty()
+
+
+def test_filter_that_constrains_nothing_is_400(env, db, monkeypatch):  # noqa: F811
+    from app.services.transaction_filter import TransactionFilter
+
+    a = env.add()
+    assert env.bulk({"filter": {"q": "   "}}, {"bucket_id": env.bills}).status_code == 400
+    # Even if is_empty() missed a field, a filter that adds no WHERE clause is refused.
+    monkeypatch.setattr(TransactionFilter, "is_empty", lambda self: False)
+    r = env.bulk({"filter": {"q": "   "}}, {"bucket_id": env.bills})
+    assert r.status_code == 400 and r.json()["detail"] == "Choose what to change first."
+    assert env.row(a).bucket_id == env.day and db.query(BulkBatch).count() == 0
