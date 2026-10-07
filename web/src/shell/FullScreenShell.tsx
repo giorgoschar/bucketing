@@ -1,6 +1,5 @@
 import { useEffect } from 'react'
 import { Outlet } from 'react-router'
-import { clearPending } from '../data/pending'
 import { installQueueBridge } from '../data/queueBridge'
 import { startReplayTriggers } from '../offline/queue'
 import { queryClient } from '../queryClient'
@@ -22,7 +21,6 @@ export function FullScreenShell() {
     return () => {
       stopReplay()
       stopBridge()
-      clearPending() // as AppShell: this account's markers must not outlive it
     }
   }, [status])
   if (status === 'loading') return <div className="boot" aria-busy="true" />
