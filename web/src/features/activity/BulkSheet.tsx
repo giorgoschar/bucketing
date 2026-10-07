@@ -95,8 +95,11 @@ export function BulkSheet({ open, selection, rows, refData, items, initial, onAp
   const doApply = () =>
     run(async () => {
       const r = req()
+      // The guard is what the user saw: the preview's matched (the feed's total can differ, e.g. pending rows).
+      // After a 409 the re-preview below replaces `preview`, so the next apply sends the new count.
+      const expected = expectedCount(selection) === null ? null : (preview?.matched ?? null)
       try {
-        onApplied(await applyBulk(r, expectedCount(selection)), r)
+        onApplied(await applyBulk(r, expected), r)
       } catch (e) {
         // The selection changed under us: show the new numbers, keep the server's message.
         if (e instanceof ApiError && e.status === 409) setPreview(await previewBulk(r))

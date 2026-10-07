@@ -81,6 +81,56 @@ describe('BulkSheet', () => {
     await waitFor(() => expect(bodies.filter((b) => b.dry_run)).toHaveLength(2))
   })
 
+  it('apply guards with the preview\'s matched, not the feed total', async () => {
+    let matched = 3
+    const applies: { expected_count: unknown }[] = []
+    fakeApi({
+      [BULK]: (req) => {
+        const body = req.body as { dry_run: boolean; expected_count: number | null }
+        if (!body.dry_run) {
+          applies.push(body)
+          if (body.expected_count !== matched) return reply(409, { detail: `The selection changed: ${matched} now match. Preview again.` })
+          return { ...RESULT, matched, dry_run: false, batch_id: 'b1' } as never
+        }
+        return { ...RESULT, matched } as never
+      },
+    })
+    // The feed said 120 when "All" was tapped; the server matches 3.
+    const onApplied = renderSheet({ kind: 'filter', filter: { q: 'x' }, count: 120 })
+    pickBucket('b-bills')
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Apply to 2' }))
+    await waitFor(() => expect(onApplied).toHaveBeenCalledOnce())
+    expect(applies.map((a) => a.expected_count)).toEqual([3])
+  })
+
+  it('after a 409 the next apply uses the new matched and succeeds', async () => {
+    let matched = 3
+    const applies: { expected_count: unknown }[] = []
+    fakeApi({
+      [BULK]: (req) => {
+        const body = req.body as { dry_run: boolean; expected_count: number | null }
+        if (!body.dry_run) {
+          applies.push(body)
+          if (body.expected_count !== matched) return reply(409, { detail: 'The selection changed: 4 now match. Preview again.' })
+          return { ...RESULT, matched, dry_run: false, batch_id: 'b1' } as never
+        }
+        return { ...RESULT, matched } as never
+      },
+    })
+    const onApplied = renderSheet({ kind: 'filter', filter: { q: 'x' }, count: 3 })
+    pickBucket('b-bills')
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+    await screen.findByRole('button', { name: 'Apply to 2' })
+    matched = 4 // a row arrives between preview and apply
+    fireEvent.click(screen.getByRole('button', { name: 'Apply to 2' }))
+    expect(await screen.findByText('The selection changed: 4 now match. Preview again.')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Apply to 2' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: 'Apply to 2' }))
+    await waitFor(() => expect(onApplied).toHaveBeenCalledOnce())
+    expect(applies.map((a) => a.expected_count)).toEqual([3, 4])
+  })
+
   it('a 400 stays open with the server detail; a network failure says nothing changed', async () => {
     const fake = fakeApi({ [BULK]: () => reply(400, { detail: 'That bucket is archived. Choose an active one.' }) })
     renderSheet({ kind: 'picked', ids: ['t1'] })
