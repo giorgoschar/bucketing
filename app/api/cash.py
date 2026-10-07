@@ -9,6 +9,11 @@ to them (with other members' takes from it); others may take from it without
 seeing either, and a take bigger than it holds is refused without saying how
 much is there. Household owners get no special access. See app.services.cash
 for the model.
+
+Responses are typed (``*Out`` below). Money is a JSON number, as it was before
+the models (``planning_models.Money``); ``/summary`` keeps its older shape: a
+``labelled_out`` term, and no ``put_back`` key at all on another member's
+wallet (``/wallets`` sends it as null instead).
 """
 
 from datetime import date
@@ -19,11 +24,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, ValidationError, ValidationInfo, field_validator, model_validator
 from sqlalchemy.orm import Session
 
+from app.api.planning_models import Money
 from app.api_auth import require_api_auth
 from app.core.clock import local_today
 from app.core.database import get_db
 from app.core.money import quantize
-from app.models import CashMovement, Household
+from app.models import CashMovement, Household, HouseholdMember, User
 from app.schemas import _checked
 from app.services import (
     delete_own_movement,
@@ -32,6 +38,7 @@ from app.services import (
     record_movement,
     record_stash_count,
     stash_balance,
+    wallet_summaries,
     wallet_summary,
     withdraw_and_spend,
 )
@@ -95,6 +102,75 @@ class MovementIn(BaseModel):
         return self
 
 
+CashKindName = Literal["stash_in", "take", "put_back", "still_have", "out", "stash_count"]
+
+
+class CashMovementOut(BaseModel):
+    id: str
+    user_id: str
+    # ``out`` is legacy (read only); a ``stash_count`` amount is the signed
+    # correction, so it may be negative or zero.
+    kind: CashKindName
+    stash_owner_id: str | None
+    amount: Money
+    currency: str
+    category_id: str | None
+    note: str | None
+    movement_date: date
+    transaction_id: str | None
+    created_at: str | None  # ISO, naive UTC
+    # Only ever true on another member's take from the viewer's stash.
+    deleted: bool
+
+
+class CashMovementsOut(BaseModel):
+    items: list[CashMovementOut]
+    stash: Money  # the viewer's own
+
+
+class WalletOut(BaseModel):
+    """A member's wallet for a month (app.services.cash.wallet_summaries).
+    For anyone but the member, ``taken`` is net of put backs and
+    ``put_back`` is null."""
+
+    carried: Money
+    taken: Money
+    put_back: Money | None
+    still_have: Money | None  # null: none entered
+    spent: Money
+    logged: Money
+    outs: Money
+    not_yet_logged: Money
+
+
+class SummaryWalletOut(WalletOut):
+    """``/summary``'s wallet, in its pre-model shape: plus ``labelled_out``,
+    and ``put_back`` left out altogether (not null) for another member."""
+
+    put_back: Money | None = None
+    labelled_out: Money
+
+
+class CashSummaryOut(BaseModel):
+    month: str  # YYYY-MM
+    member_id: str
+    stash: Money  # the viewer's own
+    wallet: SummaryWalletOut
+
+
+class CashWalletMemberOut(BaseModel):
+    member_id: str
+    name: str
+    is_me: bool
+    wallet: WalletOut
+
+
+class CashWalletsOut(BaseModel):
+    month: str  # YYYY-MM
+    stash: Money  # the viewer's own
+    members: list[CashWalletMemberOut]
+
+
 def _dict(m: CashMovement) -> dict:
     return {
         "id": m.id,
@@ -113,7 +189,7 @@ def _dict(m: CashMovement) -> dict:
     }
 
 
-@router.get("/movements")
+@router.get("/movements", response_model=CashMovementsOut)
 def get_movements(
     member_id: str | None = Query(default=None),
     month: str | None = Query(default=None, description="YYYY-MM; omit for all time"),
@@ -140,7 +216,7 @@ def get_movements(
     }
 
 
-@router.post("/movements", status_code=status.HTTP_201_CREATED)
+@router.post("/movements", status_code=status.HTTP_201_CREATED, response_model=CashMovementOut)
 def create_movement(
     body: MovementIn,
     auth=Depends(require_api_auth),
@@ -219,7 +295,15 @@ def remove_movement(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.get("/summary")
+def _month_or_400(month: str | None) -> tuple[date, date, str]:
+    try:
+        return parse_month(month)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+
+# exclude_unset: another member's wallet has no put_back key (not null).
+@router.get("/summary", response_model=CashSummaryOut, response_model_exclude_unset=True)
 def summary(
     month: str | None = Query(default=None, description="YYYY-MM; default current month"),
     member_id: str | None = Query(default=None),
@@ -229,10 +313,7 @@ def summary(
     """A member's wallet for the month (anyone's: it is household-visible)
     and your own stash balance."""
     user, hh_id = auth
-    try:
-        start, end, norm = parse_month(month)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from None
+    start, end, norm = _month_or_400(month)
     target = require_member(db, member_id, hh_id) or user.id
     wallet = wallet_summary(db, hh_id, target, start, end, viewer_id=user.id)
     return {
@@ -241,3 +322,37 @@ def summary(
         "stash": stash_balance(db, hh_id, user.id),
         "wallet": {k: (quantize(v) if v is not None else None) for k, v in wallet.items()},
     }
+
+
+@router.get("/wallets", response_model=CashWalletsOut)
+def wallets(
+    month: str | None = Query(default=None, description="YYYY-MM; default current month"),
+    auth=Depends(require_api_auth),
+    db: Session = Depends(get_db),
+):
+    """Every household member's wallet for the month (household-visible):
+    you first, then the others by name; plus your own stash balance."""
+    user, hh_id = auth
+    start, end, norm = _month_or_400(month)
+    # The same members and names as the cash page's (services.context.full_ctx).
+    members = (
+        db.query(User.id, User.display_name)
+        .join(HouseholdMember, HouseholdMember.user_id == User.id)
+        .filter(HouseholdMember.household_id == hh_id)
+        .all()
+    )
+    members.sort(key=lambda m: (m.id != user.id, (m.display_name or "").casefold(), m.id))
+    found = wallet_summaries(db, hh_id, [m.id for m in members], start, end, viewer_id=user.id)
+    rows = []
+    for m in members:
+        wallet = dict(found[m.id])
+        wallet.setdefault("put_back", None)  # someone else's: stash activity
+        rows.append(
+            {
+                "member_id": m.id,
+                "name": m.display_name or "",
+                "is_me": m.id == user.id,
+                "wallet": {k: (quantize(v) if v is not None else None) for k, v in wallet.items()},
+            }
+        )
+    return {"month": norm, "stash": stash_balance(db, hh_id, user.id), "members": rows}

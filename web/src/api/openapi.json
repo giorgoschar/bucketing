@@ -1958,6 +1958,219 @@
         "title": "BulkResult",
         "type": "object"
       },
+      "CashMovementOut": {
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "number"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "deleted": {
+            "title": "Deleted",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "stash_in",
+              "take",
+              "put_back",
+              "still_have",
+              "out",
+              "stash_count"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "movement_date": {
+            "format": "date",
+            "title": "Movement Date",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "stash_owner_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stash Owner Id"
+          },
+          "transaction_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transaction Id"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "user_id",
+          "kind",
+          "stash_owner_id",
+          "amount",
+          "currency",
+          "category_id",
+          "note",
+          "movement_date",
+          "transaction_id",
+          "created_at",
+          "deleted"
+        ],
+        "title": "CashMovementOut",
+        "type": "object"
+      },
+      "CashMovementsOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CashMovementOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "stash": {
+            "title": "Stash",
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "stash"
+        ],
+        "title": "CashMovementsOut",
+        "type": "object"
+      },
+      "CashSummaryOut": {
+        "properties": {
+          "member_id": {
+            "title": "Member Id",
+            "type": "string"
+          },
+          "month": {
+            "title": "Month",
+            "type": "string"
+          },
+          "stash": {
+            "title": "Stash",
+            "type": "number"
+          },
+          "wallet": {
+            "$ref": "#/components/schemas/SummaryWalletOut"
+          }
+        },
+        "required": [
+          "month",
+          "member_id",
+          "stash",
+          "wallet"
+        ],
+        "title": "CashSummaryOut",
+        "type": "object"
+      },
+      "CashWalletMemberOut": {
+        "properties": {
+          "is_me": {
+            "title": "Is Me",
+            "type": "boolean"
+          },
+          "member_id": {
+            "title": "Member Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "wallet": {
+            "$ref": "#/components/schemas/WalletOut"
+          }
+        },
+        "required": [
+          "member_id",
+          "name",
+          "is_me",
+          "wallet"
+        ],
+        "title": "CashWalletMemberOut",
+        "type": "object"
+      },
+      "CashWalletsOut": {
+        "properties": {
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/CashWalletMemberOut"
+            },
+            "title": "Members",
+            "type": "array"
+          },
+          "month": {
+            "title": "Month",
+            "type": "string"
+          },
+          "stash": {
+            "title": "Stash",
+            "type": "number"
+          }
+        },
+        "required": [
+          "month",
+          "stash",
+          "members"
+        ],
+        "title": "CashWalletsOut",
+        "type": "object"
+      },
       "CategoryDetailOut": {
         "properties": {
           "avg_per_month": {
@@ -3185,7 +3398,8 @@
               "stash_in",
               "take",
               "put_back",
-              "still_have"
+              "still_have",
+              "stash_count"
             ],
             "title": "Kind",
             "type": "string"
@@ -4784,6 +4998,73 @@
         "title": "StrictTransactionFilter",
         "type": "object"
       },
+      "SummaryWalletOut": {
+        "description": "``/summary``'s wallet, in its pre-model shape: plus ``labelled_out``,\nand ``put_back`` left out altogether (not null) for another member.",
+        "properties": {
+          "carried": {
+            "title": "Carried",
+            "type": "number"
+          },
+          "labelled_out": {
+            "title": "Labelled Out",
+            "type": "number"
+          },
+          "logged": {
+            "title": "Logged",
+            "type": "number"
+          },
+          "not_yet_logged": {
+            "title": "Not Yet Logged",
+            "type": "number"
+          },
+          "outs": {
+            "title": "Outs",
+            "type": "number"
+          },
+          "put_back": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Put Back"
+          },
+          "spent": {
+            "title": "Spent",
+            "type": "number"
+          },
+          "still_have": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Still Have"
+          },
+          "taken": {
+            "title": "Taken",
+            "type": "number"
+          }
+        },
+        "required": [
+          "carried",
+          "taken",
+          "still_have",
+          "spent",
+          "logged",
+          "outs",
+          "not_yet_logged",
+          "labelled_out"
+        ],
+        "title": "SummaryWalletOut",
+        "type": "object"
+      },
       "TokenIn": {
         "properties": {
           "default_bucket_id": {
@@ -5649,6 +5930,69 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "WalletOut": {
+        "description": "A member's wallet for a month (app.services.cash.wallet_summaries).\nFor anyone but the member, ``taken`` is net of put backs and\n``put_back`` is null.",
+        "properties": {
+          "carried": {
+            "title": "Carried",
+            "type": "number"
+          },
+          "logged": {
+            "title": "Logged",
+            "type": "number"
+          },
+          "not_yet_logged": {
+            "title": "Not Yet Logged",
+            "type": "number"
+          },
+          "outs": {
+            "title": "Outs",
+            "type": "number"
+          },
+          "put_back": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Put Back"
+          },
+          "spent": {
+            "title": "Spent",
+            "type": "number"
+          },
+          "still_have": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Still Have"
+          },
+          "taken": {
+            "title": "Taken",
+            "type": "number"
+          }
+        },
+        "required": [
+          "carried",
+          "taken",
+          "put_back",
+          "still_have",
+          "spent",
+          "logged",
+          "outs",
+          "not_yet_logged"
+        ],
+        "title": "WalletOut",
         "type": "object"
       },
       "YearMonthOut": {
@@ -6650,7 +6994,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/CashMovementsOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -6692,7 +7038,9 @@
           "201": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/CashMovementOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -6803,7 +7151,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/CashSummaryOut"
+                }
               }
             },
             "description": "Successful Response"
@@ -6825,6 +7175,63 @@
           }
         ],
         "summary": "Summary",
+        "tags": [
+          "cash"
+        ]
+      }
+    },
+    "/api/v1/cash/wallets": {
+      "get": {
+        "description": "Every household member's wallet for the month (household-visible):\nyou first, then the others by name; plus your own stash balance.",
+        "operationId": "wallets_api_v1_cash_wallets_get",
+        "parameters": [
+          {
+            "description": "YYYY-MM; default current month",
+            "in": "query",
+            "name": "month",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "YYYY-MM; default current month",
+              "title": "Month"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CashWalletsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Wallets",
         "tags": [
           "cash"
         ]
