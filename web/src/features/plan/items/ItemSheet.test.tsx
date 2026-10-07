@@ -1,7 +1,7 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { fakeApi, reply, type Routes } from '../../../test/fakeApi'
-import { bucket, entry, item, page, readRoutes, txn } from '../../../test/fixtures'
+import { bucket, entry, item, page, readRoutes } from '../../../test/fixtures'
 import { renderWithProviders, resetTestEnv } from '../../../test/render'
 import { ItemSheet } from './ItemSheet'
 
@@ -68,12 +68,57 @@ it('saving an edit keeps shares, payer mode, contract end and occurrence count',
   })
 })
 
-it('an item with payments locks its direction and offers no Delete', async () => {
-  fakeApi(routes({ 'GET /api/v1/transactions': () => page([txn({ recurring_bill_id: 'i1' })]) }))
-  renderWithProviders(<ItemSheet open item={item()} onClose={() => {}} />)
-  expect(await screen.findByText("This item has payments, so its direction can't change.")).toBeInTheDocument()
+it('an item with history locks direction and currency and offers no Delete', () => {
+  fakeApi(routes())
+  renderWithProviders(<ItemSheet open item={item({ has_history: true })} onClose={() => {}} />)
+  expect(screen.getByText("This item has payments, so its direction and currency can't change.")).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'In' })).toBeDisabled()
+  expect(screen.getByLabelText('Currency')).toBeDisabled()
   expect(screen.queryByRole('button', { name: 'Delete item' })).toBeNull()
+})
+
+it('an item without history can change both and can be deleted', () => {
+  fakeApi(routes())
+  renderWithProviders(<ItemSheet open item={item({ has_history: false })} onClose={() => {}} />)
+  expect(screen.getByRole('button', { name: 'In' })).toBeEnabled()
+  expect(screen.getByLabelText('Currency')).toBeEnabled()
+  expect(screen.getByRole('button', { name: 'Delete item' })).toBeInTheDocument()
+})
+
+it('unknown history (stale cached item) is treated as locked', () => {
+  fakeApi(routes())
+  const stale = { ...item(), has_history: undefined } as unknown as ReturnType<typeof item>
+  renderWithProviders(<ItemSheet open item={stale} onClose={() => {}} />)
+  expect(screen.getByLabelText('Currency')).toBeDisabled()
+  expect(screen.queryByRole('button', { name: 'Delete item' })).toBeNull()
+})
+
+it('changing the amount of a shared item sends scaled shares and says so', async () => {
+  const shared = item({ amount: 100, splits: [{ user_id: 'u1', amount: 50 }, { user_id: 'u2', amount: 50 }] })
+  const fake = fakeApi(routes({ 'PUT /api/v1/recurring/{item_id}': () => shared }))
+  renderWithProviders(<ItemSheet open item={shared} onClose={() => {}} />)
+  expect(screen.queryByText('Shares are scaled to the new amount')).toBeNull()
+  fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '90' } })
+  expect(screen.getByText('Shares are scaled to the new amount')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(fake.callsTo('PUT /api/v1/recurring/{item_id}')).toHaveLength(1))
+  expect(fake.callsTo('PUT /api/v1/recurring/{item_id}')[0].body).toMatchObject({
+    splits: [{ user_id: 'u1', amount: 45 }, { user_id: 'u2', amount: 45 }],
+  })
+})
+
+it('an item whose budget is archived keeps it as an extra option', async () => {
+  fakeApi(routes())
+  renderWithProviders(<ItemSheet open item={item({ bucket_id: 'b8' })} onClose={() => {}} />)
+  await waitFor(() => expect(within(screen.getByLabelText('Budget')).getAllByRole('option')).toHaveLength(3))
+  expect(screen.getByLabelText('Budget')).toHaveValue('b8')
+  expect(within(screen.getByLabelText('Budget')).getByRole('option', { name: 'Old (archived)' })).toBeInTheDocument()
+})
+
+it('an item on an event budget shows it as not monthly', async () => {
+  fakeApi(routes())
+  renderWithProviders(<ItemSheet open item={item({ bucket_id: 'b9' })} onClose={() => {}} />)
+  expect(await screen.findByRole('option', { name: 'Naxos trip (not monthly)' })).toBeInTheDocument()
 })
 
 it('Delete without history deletes; a 409 offers Pause instead, which pauses the saved item', async () => {

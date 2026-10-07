@@ -8,8 +8,8 @@ import { List, ListRow } from '../../../ui/ListRow'
 import { Money } from '../../../ui/Money'
 import { Segmented } from '../../../ui/Segmented'
 import { Sheet } from '../../../ui/Sheet'
-import { emptyItemForm, formToBody, itemToForm, validateItemForm, type ItemForm } from './form'
-import { useItemActions, useItemHasHistory } from './hooks'
+import { emptyItemForm, formToBody, itemToForm, sharesNeedScaling, validateItemForm, type ItemForm } from './form'
+import { useItemActions } from './hooks'
 import { RulePicker } from './RulePicker'
 import './items.css'
 
@@ -37,13 +37,17 @@ function ItemBody({ item, onClose, onOpenEntry }: Omit<ItemSheetProps, 'open'>) 
   const set = <K extends keyof ItemForm>(key: K, value: ItemForm[K]) => setForm((f) => ({ ...f, [key]: value }))
   const [problem, setProblem] = useState<string | null>(null)
   const [deleteBlocked, setDeleteBlocked] = useState<string | null>(null)
-  const history = useItemHasHistory(item?.id ?? null)
-  const buckets = (useBuckets().data ?? []).filter((b) => b.kind === 'monthly' && b.status === 'active')
+  const allBuckets = useBuckets().data ?? []
+  const buckets = allBuckets.filter((b) => b.kind === 'monthly' && b.status === 'active')
+  // The item's own budget stays selectable when it is no longer offered (archived or an event), so saving keeps it.
+  const current = form.bucket_id ? allBuckets.find((b) => b.id === form.bucket_id) : undefined
+  const extra = current && !buckets.some((b) => b.id === current.id) ? current : undefined
   const categories = useCategories().data ?? []
   const members = useHousehold().data?.members ?? []
   const actions = useItemActions()
   const out = form.direction === 'out'
-  const directionLocked = item !== null && history === true
+  // The server refuses a direction or currency change once an item has payments (409). Unknown counts as locked.
+  const locked = item !== null && item.has_history !== false
   const next = item?.next_entry ?? null
 
   const save = async () => {
@@ -86,9 +90,9 @@ function ItemBody({ item, onClose, onOpenEntry }: Omit<ItemSheetProps, 'open'>) 
 
       <div className="ui-field">
         <span className="ui-field__label" aria-hidden="true">Direction</span>
-        <Segmented label="Direction" options={DIRECTIONS} value={form.direction} disabled={directionLocked}
+        <Segmented label="Direction" options={DIRECTIONS} value={form.direction} disabled={locked}
           onChange={(d) => set('direction', d)} />
-        {directionLocked && <p className="items-form__hint">This item has payments, so its direction can't change.</p>}
+        {locked && <p className="items-form__hint">This item has payments, so its direction and currency can't change.</p>}
       </div>
 
       <div className="items-form__row">
@@ -99,11 +103,12 @@ function ItemBody({ item, onClose, onOpenEntry }: Omit<ItemSheetProps, 'open'>) 
         </label>
         <label className="ui-field">
           <span className="ui-field__label">Currency</span>
-          <input className="ui-input" value={form.currency} maxLength={3} autoCapitalize="characters" autoComplete="off"
+          <input className="ui-input" value={form.currency} maxLength={3} disabled={locked} autoCapitalize="characters" autoComplete="off"
             onChange={(e) => set('currency', e.target.value.toUpperCase())} />
         </label>
       </div>
       <p className="items-form__hint">Leave the amount blank if it changes every time.</p>
+      {sharesNeedScaling(form) && <p className="items-form__hint">Shares are scaled to the new amount</p>}
 
       <RulePicker value={form.rule} startDate={form.start_date} endDate={form.end_date} onChange={(rule) => set('rule', rule)} />
 
@@ -123,6 +128,9 @@ function ItemBody({ item, onClose, onOpenEntry }: Omit<ItemSheetProps, 'open'>) 
           <span className="ui-field__label">Budget</span>
           <select className="ui-input" value={form.bucket_id} onChange={(e) => set('bucket_id', e.target.value)}>
             <option value="">No budget (a Fixed cost)</option>
+            {extra && (
+              <option value={extra.id}>{`${extra.name} (${extra.status === 'archived' ? 'archived' : 'not monthly'})`}</option>
+            )}
             {buckets.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
         </label>
@@ -175,7 +183,7 @@ function ItemBody({ item, onClose, onOpenEntry }: Omit<ItemSheetProps, 'open'>) 
       <button type="submit" className="btn btn--primary btn--block btn--lg" disabled={actions.busy}>
         {item ? 'Save' : 'Add item'}
       </button>
-      {item && history !== true && !deleteBlocked && (
+      {item && !locked && !deleteBlocked && (
         <button type="button" className="btn btn--danger btn--block" disabled={actions.busy} onClick={() => void remove()}>
           Delete item
         </button>

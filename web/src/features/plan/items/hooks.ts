@@ -2,11 +2,9 @@ import { useEffect, useState } from 'react'
 import { keepPreviousData, useQuery, type QueryClient } from '@tanstack/react-query'
 import { api } from '../../../api/client'
 import { useAction } from '../../../data/action'
-import { useCachedQuery } from '../../../data/cachedQuery'
 import { ApiError, unwrap } from '../../../data/http'
 import { affects, keys } from '../../../data/keys'
 import { useOnline } from '../../../data/online'
-import { toTransactionPage } from '../../../data/reads'
 import type { RecurringItemIn, RecurringItemOut } from '../../../data/types'
 import { pendingItem } from './form'
 import { toRuleFields, type RuleChoice } from './rule'
@@ -51,20 +49,6 @@ export function useRulePreview(rule: RuleChoice, startDate: string, endDate: str
   return { state: 'loading' }
 }
 
-/** Whether an item has payments (locks its direction, hides Delete). undefined until known. */
-export function useItemHasHistory(itemId: string | null): boolean | undefined {
-  const q = useCachedQuery(
-    keys.transactions.forItem(itemId ?? ''),
-    async (signal) =>
-      toTransactionPage(await unwrap(api.GET('/api/v1/transactions', {
-        params: { query: { recurring_bill_id: itemId ?? '', page_size: 1 } },
-        signal,
-      }))).total,
-    { enabled: itemId !== null },
-  )
-  return q.data === undefined ? undefined : q.data > 0
-}
-
 const editList = (qc: QueryClient, fn: (items: RecurringItemOut[]) => RecurringItemOut[]) =>
   qc.setQueryData<RecurringItemOut[]>(keys.recurring.list(), (old) => (old ? fn(old) : old))
 
@@ -86,7 +70,7 @@ export function useItemActions() {
     path: (v) => `/api/v1/recurring/${v.id}`,
     body: (v: UpdateVars) => v.body,
     optimistic: (qc, v) =>
-      editList(qc, (items) => items.map((i) => (i.id === v.id ? { ...pendingItem(v.body, v.id), next_entry: i.next_entry } : i))),
+      editList(qc, (items) => items.map((i) => (i.id === v.id ? { ...pendingItem(v.body, v.id), next_entry: i.next_entry, has_history: i.has_history } : i))),
     invalidates: affects.item,
     pendingId: (v) => v.id,
   })

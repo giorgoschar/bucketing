@@ -67,6 +67,32 @@ export function validateItemForm(f: ItemForm): string | null {
   return null
 }
 
+type Share = { user_id: string; amount: number | string }
+
+/**
+ * Shares scaled to a new total, each rounded to cents, the rounding remainder on the first share,
+ * so they sum to the amount exactly (the server's check_split_sum). Unchanged when already equal.
+ */
+export function scaleSplits(splits: Share[], amount: number): { user_id: string; amount: number }[] {
+  const cents = splits.map((s) => Math.round(Number(s.amount) * 100))
+  const oldTotal = cents.reduce((a, b) => a + b, 0)
+  const newTotal = Math.round(amount * 100)
+  if (splits.length === 0 || oldTotal === 0 || oldTotal === newTotal) {
+    return splits.map((s) => ({ user_id: s.user_id, amount: Number(s.amount) }))
+  }
+  const scaled = cents.map((c) => Math.round((c * newTotal) / oldTotal))
+  scaled[0] += newTotal - scaled.reduce((a, b) => a + b, 0)
+  return splits.map((s, i) => ({ user_id: s.user_id, amount: scaled[i] / 100 }))
+}
+
+/** True when saving this form would change the shares (the amount no longer matches their sum). */
+export function sharesNeedScaling(f: ItemForm): boolean {
+  const amount = parseAmount(f.amount)
+  if (f.direction !== 'out' || !amount || f.keep.splits.length === 0) return false
+  const sum = f.keep.splits.reduce((a, s) => a + Math.round(Number(s.amount) * 100), 0)
+  return sum !== Math.round(Number(amount) * 100)
+}
+
 /** The full RecurringItemIn (POST and PUT). Call validateItemForm first. */
 export function formToBody(f: ItemForm): RecurringItemIn {
   const out = f.direction === 'out'
@@ -85,10 +111,15 @@ export function formToBody(f: ItemForm): RecurringItemIn {
     is_active: f.is_active,
     notes: f.notes.trim() || null,
     payer_mode: out ? f.keep.payer_mode : 'single',
-    splits: out ? f.keep.splits : [],
+    splits: out ? scaleFormSplits(f) : [],
     total_occurrences: f.keep.total_occurrences ?? null,
     contract_end_date: f.keep.contract_end_date ?? null,
   }
+}
+
+function scaleFormSplits(f: ItemForm) {
+  const amount = parseAmount(f.amount)
+  return amount ? scaleSplits(f.keep.splits, Number(amount)) : f.keep.splits
 }
 
 /** The row Items shows while a create or edit waits in the queue. */
@@ -120,5 +151,6 @@ export function pendingItem(body: RecurringItemIn, id: string): RecurringItemOut
     notes: body.notes ?? null,
     splits: (body.splits ?? []).map((s) => ({ user_id: s.user_id, amount: Number(s.amount) })),
     next_entry: null,
+    has_history: false,
   }
 }

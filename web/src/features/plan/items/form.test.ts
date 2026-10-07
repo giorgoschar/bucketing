@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 import { item } from '../../../test/fixtures'
-import { emptyItemForm, formToBody, itemToForm, pendingItem, validateItemForm } from './form'
+import { emptyItemForm, formToBody, itemToForm, pendingItem, scaleSplits, validateItemForm } from './form'
 
 it('editing keeps the fields this sheet does not show (a PUT replaces the row)', () => {
   const existing = item({
@@ -47,4 +47,15 @@ it('pendingItem builds a complete row from a queued body', () => {
   expect(pendingItem(body, 'pending-1')).toMatchObject({
     id: 'pending-1', name: 'Salary', direction: 'in', amount: 1500, next_entry: null, is_active: true, splits: [],
   })
+})
+
+it('changing the amount of a shared item scales the shares to the cent', () => {
+  const split = (amount: number, shares: number[]) =>
+    formToBody({ ...itemToForm(item({ amount: 100, splits: shares.map((a, i) => ({ user_id: `u${i}`, amount: a })) })), amount: String(amount) })
+  expect(split(90, [50, 50]).splits).toEqual([{ user_id: 'u0', amount: 45 }, { user_id: 'u1', amount: 45 }])
+  const odd = split(50, [33.33, 33.33, 33.34]).splits!
+  expect(odd.reduce((a, s) => a + Math.round(Number(s.amount) * 100), 0)).toBe(5000)
+  expect(split(100, [50, 50]).splits).toEqual([{ user_id: 'u0', amount: 50 }, { user_id: 'u1', amount: 50 }])
+  expect(scaleSplits([{ user_id: 'a', amount: 1 }, { user_id: 'b', amount: 1 }, { user_id: 'c', amount: 1 }], 1).map((s) => s.amount))
+    .toEqual([0.34, 0.33, 0.33])
 })
