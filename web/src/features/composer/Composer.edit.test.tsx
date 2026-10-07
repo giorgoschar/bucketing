@@ -95,3 +95,13 @@ it('/new?from= copies an entry as a new one dated today with a fresh client_id',
     body: { amount: '64.20', merchant: 'Taverna', transaction_date: todayLocal(), client_id: expect.stringMatching(/^[0-9a-f-]{36}$/) },
   })
 })
+
+it('View opens the stored receipt through the API route', async () => {
+  await renderComposer('/edit/t9', {
+    routes: { 'GET /api/v1/transactions/t9': { ...TXN, receipt_path: 'h1/abc.jpg' }, 'PUT /api/v1/transactions/t9': TXN },
+  })
+  await screen.findByText('Amount 64.20 euro')
+  fireEvent.click(screen.getByRole('button', { name: /^More options/ }))
+  const more = await screen.findByRole('dialog', { name: 'More' })
+  expect(within(more).getByRole('link', { name: 'View' })).toHaveAttribute('href', '/api/v1/transactions/t9/receipt')
+})
