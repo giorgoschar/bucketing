@@ -254,6 +254,8 @@ def resolve_bill_payment(
     return paid_by or resolve_bill_payer(db, bill, fallback_user_id), mode
 
 
+EDIT_IN_NEW_APP_MSG = "This item uses a schedule the old app can't edit. Edit it in the new app."
+
 BILL_HAS_HISTORY_MSG = (
     "This bill has payment history, so it can't be deleted — deleting it would "
     "erase those payments. Deactivate it instead (the pause toggle on the bill)."
@@ -261,11 +263,19 @@ BILL_HAS_HISTORY_MSG = (
 
 
 def bill_has_payment_history(db: Session, bill_id: str) -> bool:
-    """True if any occurrence was paid, or skipped with an amount recorded.
+    """True if any occurrence was paid, or skipped with an amount recorded, or
+    any transaction (even a deleted one) is linked to the item.
 
     Deleting such a bill would cascade away the only record of those payments
-    (for bucketless bills the paid occurrence *is* the payment record).
+    (for bucketless bills the paid occurrence *is* the payment record). A
+    linked Fixed-cost expense has no bucket, so the FK's SET NULL would break
+    the transactions CHECK.
     """
+    if (
+        db.query(Transaction.id).filter(Transaction.recurring_bill_id == bill_id).first()
+        is not None
+    ):
+        return True
     return (
         db.query(BillOccurrence.id)
         .filter(

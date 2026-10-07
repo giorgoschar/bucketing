@@ -40,6 +40,7 @@ from app.models import (
     BucketType,
     Category,
     HouseholdMember,
+    ItemDirection,
     OccurrenceStatus,
     PaymentMethod,
     RecurringBill,
@@ -187,6 +188,8 @@ def get_bills_due_month_total(db: Session, household_id: str, year: int, month: 
         .options(joinedload(BillOccurrence.bill))
         .filter(
             RecurringBill.household_id == household_id,
+            RecurringBill.active_filter(),
+            RecurringBill.direction == ItemDirection.out.value,
             BillOccurrence.due_date >= start,
             BillOccurrence.due_date <= end,
             # A skipped occurrence will not be paid, so it is not due.
@@ -775,6 +778,8 @@ def get_insights_bills_due(
         .options(joinedload(BillOccurrence.bill))
         .filter(
             RecurringBill.household_id == household_id,
+            RecurringBill.active_filter(),
+            RecurringBill.direction == ItemDirection.out.value,
             # A skipped occurrence will not be paid, so it is not due.
             BillOccurrence.status != OccurrenceStatus.skipped,
         )

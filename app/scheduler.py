@@ -47,6 +47,10 @@ DRIFT_MIN_ABSOLUTE = 5.0  # household currency
 DRIFT_MIN_HISTORY = 3  # prior charges needed to form a baseline
 DRIFT_LOOKBACK_DAYS = 35  # only comment on a recently-landed charge
 
+# Auto-pay pays entries due today or in the last 3 days, never older ones
+# (spec §3.4.5): a bill created or resumed late is not backfilled.
+AUTO_PAY_WINDOW_DAYS = 3
+
 # Budget warnings, as percentages of a bucket's monthly budget.
 BUDGET_THRESHOLDS = (80, 100)
 
@@ -148,9 +152,11 @@ def _auto_pay_due_bills(db, today: date) -> int:
         .filter(
             BillOccurrence.status == OccurrenceStatus.unpaid,
             BillOccurrence.due_date <= today,
+            BillOccurrence.due_date >= today - timedelta(days=AUTO_PAY_WINDOW_DAYS),
             BillOccurrence.transaction_id.is_(None),
             RecurringBill.is_auto_pay.is_(True),
             RecurringBill.is_active.is_(True),
+            RecurringBill.direction == "out",
             # Fixed-amount bill OR occurrence has a pre-set amount (standing order)
             or_(RecurringBill.amount.isnot(None), BillOccurrence.amount.isnot(None)),
         )
@@ -248,6 +254,7 @@ def _notify_due_soon(db, today: date) -> None:
             BillOccurrence.status == OccurrenceStatus.unpaid,
             BillOccurrence.due_date == due_date,
             RecurringBill.is_active.is_(True),
+            RecurringBill.direction == "out",
         )
         .all()
     )
@@ -284,6 +291,7 @@ def _notify_overdue(db, today: date) -> None:
             BillOccurrence.status == OccurrenceStatus.unpaid,
             BillOccurrence.due_date.in_(list(milestone_dates)),
             RecurringBill.is_active.is_(True),
+            RecurringBill.direction == "out",
             RecurringBill.is_auto_pay.is_(False),
         )
         .all()
@@ -316,6 +324,7 @@ def _notify_contracts_expiring(db, today: date) -> None:
         .filter(
             RecurringBill.contract_end_date.in_(list(expiry_dates)),
             RecurringBill.is_active.is_(True),
+            RecurringBill.direction == "out",
         )
         .all()
     )
@@ -353,7 +362,11 @@ def _notify_bill_drift(db, today: date) -> None:
 
     lookback_start = today - timedelta(days=DRIFT_LOOKBACK_DAYS)
 
-    bills = db.query(RecurringBill).filter(RecurringBill.is_active.is_(True)).all()
+    bills = (
+        db.query(RecurringBill)
+        .filter(RecurringBill.is_active.is_(True), RecurringBill.direction == "out")
+        .all()
+    )
     members_by_hh = _members_by_household(db, {b.household_id for b in bills})
 
     for bill in bills:

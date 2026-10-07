@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.core.clock import local_today
 from app.models import (
     BillOccurrence,
+    ItemDirection,
     OccurrenceStatus,
     RecurringBill,
 )
@@ -65,6 +66,9 @@ def get_upcoming_bills(db: Session, household_id: str, days: int = 30) -> list:
         .options(joinedload(BillOccurrence.bill))
         .filter(
             RecurringBill.household_id == household_id,
+            # Paused items and income are not bills due (spec §3.4.1, §6.2.1).
+            RecurringBill.active_filter(),
+            RecurringBill.direction == ItemDirection.out.value,
             BillOccurrence.status == OccurrenceStatus.unpaid,
             BillOccurrence.due_date >= today,
             BillOccurrence.due_date <= cutoff,
@@ -83,6 +87,9 @@ def get_overdue_bills(db: Session, household_id: str) -> list:
         .options(joinedload(BillOccurrence.bill))
         .filter(
             RecurringBill.household_id == household_id,
+            # Paused items and income are not bills due (spec §3.4.1, §6.2.1).
+            RecurringBill.active_filter(),
+            RecurringBill.direction == ItemDirection.out.value,
             BillOccurrence.status == OccurrenceStatus.unpaid,
             BillOccurrence.due_date < today,
         )

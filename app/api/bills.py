@@ -16,6 +16,7 @@ from app.core.money import quantize
 from app.models import (
     BillFrequency,
     BillOccurrence,
+    ItemDirection,
     OccurrenceStatus,
     PayerMode,
     RecurringBill,
@@ -25,6 +26,7 @@ from app.schemas import parse_payer_mode, parse_payment_method
 from app.services import get_overdue_bills, get_upcoming_bills
 from app.services.bills import (
     BILL_HAS_HISTORY_MSG,
+    EDIT_IN_NEW_APP_MSG,
     PAST_SKIPPED,
     backfill_bill_payer,
     bill_has_payment_history,
@@ -182,7 +184,8 @@ def _occ_dict(o: BillOccurrence) -> dict:
 
 
 def _assert_bill_in_household(bill: RecurringBill | None, hh_id: str):
-    if not bill or bill.household_id != hh_id:
+    # Income items belong to /recurring; this older API only knows bills.
+    if not bill or bill.household_id != hh_id or bill.direction != ItemDirection.out.value:
         raise HTTPException(status_code=404, detail="Bill not found")
 
 
@@ -199,7 +202,11 @@ def list_bills(
     db: Session = Depends(get_db),
 ):
     user, hh_id = auth
-    q = db.query(RecurringBill).filter_by(household_id=hh_id).order_by(RecurringBill.created_at)
+    q = (
+        db.query(RecurringBill)
+        .filter_by(household_id=hh_id, direction=ItemDirection.out.value)
+        .order_by(RecurringBill.created_at)
+    )
     total = q.count()
     bills = q.offset((page - 1) * page_size).limit(page_size).all()
 
@@ -292,6 +299,8 @@ def update_bill(
     user, hh_id = auth
     bill = db.query(RecurringBill).filter_by(id=bill_id).first()
     _assert_bill_in_household(bill, hh_id)
+    if not bill.old_app_editable:
+        raise HTTPException(status_code=409, detail=EDIT_IN_NEW_APP_MSG)
     _validate_bill_refs(body, hh_id, db)
     amount = parse_amount(body.amount, field="Bill amount", allow_blank=True)
 
@@ -354,6 +363,8 @@ def delete_bill(
     user, hh_id = auth
     bill = db.query(RecurringBill).filter_by(id=bill_id).first()
     _assert_bill_in_household(bill, hh_id)
+    if not bill.old_app_editable:
+        raise HTTPException(status_code=409, detail=EDIT_IN_NEW_APP_MSG)
     if bill_has_payment_history(db, bill.id):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=BILL_HAS_HISTORY_MSG)
     db.delete(bill)
@@ -369,7 +380,7 @@ def pay_occurrence(
 ):
     user, hh_id = auth
     occ = db.get(BillOccurrence, occ_id)
-    if not occ or occ.bill.household_id != hh_id:
+    if not occ or occ.bill.household_id != hh_id or occ.bill.direction != ItemDirection.out.value:
         raise HTTPException(status_code=404, detail="Occurrence not found")
 
     bill = occ.bill
@@ -427,7 +438,7 @@ def skip_occurrence(
 ):
     user, hh_id = auth
     occ = db.get(BillOccurrence, occ_id)
-    if not occ or occ.bill.household_id != hh_id:
+    if not occ or occ.bill.household_id != hh_id or occ.bill.direction != ItemDirection.out.value:
         raise HTTPException(status_code=404, detail="Occurrence not found")
 
     if occ.status == OccurrenceStatus.paid:
