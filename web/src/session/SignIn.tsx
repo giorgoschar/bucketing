@@ -1,9 +1,12 @@
+import { useState } from 'react'
 import { ScanFaceIcon, WalletIcon } from '../shell/icons'
 import { authErrorMessage, LINKED_MESSAGE, LOGOUT_FAILED_MESSAGE, type AuthResult } from './authMessages'
+import { takeSignInNotice } from './notice'
 import { useSession } from './SessionProvider'
 
 export function SignIn({ result }: { result: AuthResult }) {
   const { logoutFailed, retryLogout } = useSession()
+  const [notice] = useState(takeSignInNotice)
   return (
     <main className="signin">
       <div className="signin__brand">
@@ -21,6 +24,7 @@ export function SignIn({ result }: { result: AuthResult }) {
           </div>
         )}
         {result.error && <p role="alert" className="notice notice--error">{authErrorMessage(result.error)}</p>}
+        {notice && <p role="status" className="notice notice--ok">{notice}</p>}
         {result.linked && <p role="status" className="notice notice--ok">{LINKED_MESSAGE}</p>}
         {/* A top-level navigation: it stays inside the PWA scope until the hop to Pocket ID. */}
         <a className="btn btn--primary btn--lg btn--block" href="/app/auth/login">
