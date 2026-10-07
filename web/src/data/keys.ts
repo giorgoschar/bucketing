@@ -58,3 +58,26 @@ export const affects = {
     keys.buckets(),
   ],
 } satisfies Record<string, readonly QueryKey[]>
+
+// ---- 2d: Insights and Settings ------------------------------------------------------------
+// Call sites pass the household id; 2d-only keys carry it, keys shared with 2a ignore it
+// (2a scopes the device cache by household) so both phases hit one cache entry.
+export const insightsKeys = {
+  all: (_hh: string) => keys.insights.all,
+  overview: (hh: string, period: string, lens: string, filters: string) => ['insights', 'overview', hh, period, lens, filters] as const,
+  person: (hh: string, period: string, userId: string) => ['insights', 'person', hh, period, userId] as const,
+  category: (hh: string, id: string, period: string, lens: string) => ['insights', 'category', hh, id, period, lens] as const,
+  vsUsual: (_hh: string, month: string) => keys.insights.categoriesVsUsual(month),
+  planMonth: (_hh: string, month: string) => keys.plan.month(month),
+}
+
+export const settingsKeys = {
+  profile: (hh: string) => ['settings', 'profile', hh] as const,
+  security: (hh: string) => ['settings', 'security', hh] as const,
+  tokens: (hh: string) => ['settings', 'tokens', hh] as const,
+  notifications: (hh: string) => ['settings', 'notifications', hh] as const,
+  household: (_hh: string) => keys.household(),
+  categories: (_hh: string) => keys.categories(),
+  rules: (_hh: string) => keys.categoryRules(),
+  buckets: (_hh: string) => keys.buckets(),
+}
