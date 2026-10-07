@@ -7,6 +7,7 @@ from datetime import date
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
 
 from app.api_auth import require_api_auth
@@ -18,6 +19,7 @@ from app.models import (
     Transaction,
     TransactionType,
 )
+from app.routes.scan import lookup_qr_receipt
 from app.schemas import TransactionCreate, TransactionUpdate
 from app.services import DeletedTransactionReplay, DuplicateTransaction
 from app.services import create_transaction as create_transaction_service
@@ -70,6 +72,19 @@ def _txn_dict(t: Transaction) -> dict:
             for s in (t.splits or [])
         ],
     }
+
+
+class QrScanIn(BaseModel):
+    url: str = ""
+
+
+class QrReceiptOut(BaseModel):
+    amount: float | None
+    currency: str
+    date: str | None
+    merchant: str | None
+    category_hint: str | None
+    category_id: str | None
 
 
 # ---------------------------------------------------------------------------
@@ -142,6 +157,18 @@ def list_transactions(
         "page_size": page_size,
         "items": [_txn_dict(t) for t in items],
     }
+
+
+@router.post("/scan/qr", response_model=QrReceiptOut)
+async def scan_qr(
+    body: QrScanIn,
+    auth=Depends(require_api_auth),
+    db: Session = Depends(get_db),
+):
+    """Read a receipt from the URL in its QR code (AADE lookup). Same rules,
+    messages and result as the web route ``POST /transactions/scan/qr``."""
+    user, hh_id = auth
+    return await lookup_qr_receipt(db, hh_id, body.url)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
