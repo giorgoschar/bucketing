@@ -11,8 +11,11 @@ import { router } from './router'
 import { queryClient } from './queryClient'
 import { registerSW } from 'virtual:pwa-register'
 import { setupPwaUpdates } from './pwa/update'
+import { listenForSwNavigation } from './pwa/swMessages'
 
 setupPwaUpdates({ register: (opts) => registerSW(opts) })
+// A notification tap on an open app window: the worker asks the page to navigate (src/sw.ts).
+if ('serviceWorker' in navigator) listenForSwNavigation(navigator.serviceWorker, (path) => void router.navigate(path))
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

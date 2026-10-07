@@ -32,19 +32,27 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close()
   const url = (event.notification.data as { url?: string } | null)?.url
   // Only ever open a page inside the app's scope.
-  const target = new URL(url && url.startsWith('/app/') ? url : '/app/', self.location.origin).href
+  const path = url && url.startsWith('/app/') && !url.startsWith('//') ? url : '/app/'
+  const target = new URL(path, self.location.origin).href
+  const inApp = (client: Client) => new URL(client.url).pathname.startsWith('/app/')
   event.waitUntil(
     (async () => {
-      const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
-      for (const client of windows) {
-        if (new URL(client.url).pathname.startsWith('/app/')) {
-          try {
-            const focused = await client.focus()
-            await focused.navigate(target)
-            return
-          } catch {
-            break // not controlled by this worker: open a fresh window instead
-          }
+      // An app window this worker controls navigates with its router (no reload): see src/pwa/swMessages.ts.
+      const controlled = (await self.clients.matchAll({ type: 'window' })).find(inApp) as WindowClient | undefined
+      if (controlled) {
+        controlled.postMessage({ type: 'navigate', url: path })
+        await controlled.focus()
+        return
+      }
+      // Any other app window (open before this worker took over): navigate it directly.
+      const other = (await self.clients.matchAll({ type: 'window', includeUncontrolled: true })).find(inApp) as WindowClient | undefined
+      if (other) {
+        try {
+          const focused = await other.focus()
+          await focused.navigate(target)
+          return
+        } catch {
+          // not navigable by this worker: open a fresh window instead
         }
       }
       await self.clients.openWindow(target)

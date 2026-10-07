@@ -85,15 +85,35 @@ describe('the /app/ service worker', () => {
       expect.objectContaining({ body: '€900', data: { url: '/app/plan' } }))
   })
 
-  it('a click focuses an open app window and navigates it', async () => {
-    const navigate = vi.fn(async () => null)
-    const client = { url: 'https://tameio.test/app/', focus: vi.fn(async () => ({ navigate })) }
-    sw.scope.clients.matchAll.mockResolvedValue([{ url: 'https://tameio.test/dashboard', focus: vi.fn() }, client])
+  it('a click tells an open app window to navigate (router, no reload) and focuses it', async () => {
+    const postMessage = vi.fn()
+    const focus = vi.fn(async () => client)
+    const client = { url: 'https://tameio.test/app/', postMessage, focus, navigate: vi.fn() }
+    sw.scope.clients.matchAll.mockImplementation(async (opts?: { includeUncontrolled?: boolean }) =>
+      opts?.includeUncontrolled ? [] : [{ url: 'https://tameio.test/dashboard', postMessage: vi.fn(), focus: vi.fn() }, client])
     const close = vi.fn()
     await sw.fire('notificationclick', { notification: { close, data: { url: '/app/plan' } } })
     expect(close).toHaveBeenCalled()
-    expect(navigate).toHaveBeenCalledWith('https://tameio.test/app/plan')
+    expect(postMessage).toHaveBeenCalledWith({ type: 'navigate', url: '/app/plan' })
+    expect(focus).toHaveBeenCalled()
+    expect(client.navigate).not.toHaveBeenCalled()
     expect(sw.scope.clients.openWindow).not.toHaveBeenCalled()
+  })
+
+  it('an app window this worker does not control is navigated directly', async () => {
+    const navigate = vi.fn(async () => null)
+    const other = { url: 'https://tameio.test/app/plan', focus: vi.fn(async () => ({ navigate })), navigate }
+    sw.scope.clients.matchAll.mockImplementation(async (opts?: { includeUncontrolled?: boolean }) => (opts?.includeUncontrolled ? [other] : []))
+    await sw.fire('notificationclick', { notification: { close: vi.fn(), data: { url: '/app/settings' } } })
+    expect(navigate).toHaveBeenCalledWith('https://tameio.test/app/settings')
+    expect(sw.scope.clients.openWindow).not.toHaveBeenCalled()
+  })
+
+  it('when navigating that window fails, a new one opens', async () => {
+    const other = { url: 'https://tameio.test/app/', focus: vi.fn(async () => ({ navigate: vi.fn(async () => { throw new TypeError('not controlled') }) })) }
+    sw.scope.clients.matchAll.mockImplementation(async (opts?: { includeUncontrolled?: boolean }) => (opts?.includeUncontrolled ? [other] : []))
+    await sw.fire('notificationclick', { notification: { close: vi.fn(), data: { url: '/app/activity' } } })
+    expect(sw.scope.clients.openWindow).toHaveBeenCalledWith('https://tameio.test/app/activity')
   })
 
   it('a click with no app window opens one, and never leaves the /app/ scope', async () => {

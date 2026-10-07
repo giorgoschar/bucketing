@@ -19,6 +19,7 @@ const checks = [
   ['no runtime caching strategies', !/NetworkFirst|CacheFirst|StaleWhileRevalidate|ExpirationPlugin/.test(sw)],
   ['a classic script (iOS registers it as classic)', !/^\s*(import|export)\s/m.test(sw)],
   ['push and notificationclick are handled', /[`"]push[`"]/.test(sw) && /[`"]notificationclick[`"]/.test(sw)],
+  ['a tap on an open app window asks the page to navigate (no reload)', /type:[`"]navigate[`"]/.test(sw)],
   ['the manifest keeps the /app/ scope', manifest.scope === '/app/' && manifest.start_url === '/app/' && manifest.id === '/app/'],
   ['the page links the manifest under /app/', entry.includes('/app/manifest.webmanifest')],
 ]
