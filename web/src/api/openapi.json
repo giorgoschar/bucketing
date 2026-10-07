@@ -257,6 +257,48 @@
         "title": "BillIn",
         "type": "object"
       },
+      "BillMoveOut": {
+        "properties": {
+          "bucket_after": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bucket After"
+          },
+          "bucket_before": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bucket Before"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "bucket_before",
+          "bucket_after"
+        ],
+        "title": "BillMoveOut",
+        "type": "object"
+      },
       "BillSplitIn": {
         "properties": {
           "amount": {
@@ -1380,6 +1422,99 @@
         "title": "Body_verify_totp_submit_login_verify_post",
         "type": "object"
       },
+      "BucketEffectOut": {
+        "properties": {
+          "bucket_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bucket Id"
+          },
+          "budget": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budget"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "moved_in": {
+            "title": "Moved In",
+            "type": "number"
+          },
+          "moved_out": {
+            "title": "Moved Out",
+            "type": "number"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "outside_period": {
+            "title": "Outside Period",
+            "type": "integer"
+          },
+          "period_end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period End"
+          },
+          "period_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Start"
+          },
+          "spent_after": {
+            "title": "Spent After",
+            "type": "number"
+          },
+          "spent_before": {
+            "title": "Spent Before",
+            "type": "number"
+          }
+        },
+        "required": [
+          "bucket_id",
+          "name",
+          "kind",
+          "budget",
+          "period_start",
+          "period_end",
+          "spent_before",
+          "spent_after",
+          "moved_in",
+          "moved_out",
+          "outside_period"
+        ],
+        "title": "BucketEffectOut",
+        "type": "object"
+      },
       "BucketIn": {
         "properties": {
           "budget": {
@@ -1650,6 +1785,135 @@
         "title": "BudgetRowOut",
         "type": "object"
       },
+      "BulkIn": {
+        "additionalProperties": false,
+        "properties": {
+          "changes": {
+            "$ref": "#/components/schemas/ChangesIn"
+          },
+          "dry_run": {
+            "default": true,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "expected_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Count"
+          },
+          "move_bill": {
+            "default": false,
+            "title": "Move Bill",
+            "type": "boolean"
+          },
+          "select": {
+            "$ref": "#/components/schemas/SelectIn"
+          }
+        },
+        "required": [
+          "select",
+          "changes"
+        ],
+        "title": "BulkIn",
+        "type": "object"
+      },
+      "BulkResult": {
+        "properties": {
+          "batch_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Id"
+          },
+          "bill": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BillMoveOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "buckets": {
+            "items": {
+              "$ref": "#/components/schemas/BucketEffectOut"
+            },
+            "title": "Buckets",
+            "type": "array"
+          },
+          "changed": {
+            "title": "Changed",
+            "type": "integer"
+          },
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "matched": {
+            "title": "Matched",
+            "type": "integer"
+          },
+          "skipped": {
+            "items": {
+              "$ref": "#/components/schemas/SkippedOut"
+            },
+            "title": "Skipped",
+            "type": "array"
+          },
+          "total_in": {
+            "title": "Total In",
+            "type": "number"
+          },
+          "total_out": {
+            "title": "Total Out",
+            "type": "number"
+          },
+          "unchanged": {
+            "title": "Unchanged",
+            "type": "integer"
+          },
+          "undo_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Undo Until"
+          }
+        },
+        "required": [
+          "dry_run",
+          "batch_id",
+          "matched",
+          "changed",
+          "unchanged",
+          "total_out",
+          "total_in",
+          "skipped",
+          "buckets",
+          "bill",
+          "undo_until"
+        ],
+        "title": "BulkResult",
+        "type": "object"
+      },
       "CategoryIn": {
         "properties": {
           "color": {
@@ -1728,6 +1992,75 @@
           "flagged"
         ],
         "title": "CategoryUsualOut",
+        "type": "object"
+      },
+      "ChangesIn": {
+        "additionalProperties": false,
+        "description": "A key sent as null means \"none\"; an absent key leaves the field.",
+        "properties": {
+          "bucket_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bucket Id"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "payer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PayerIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "payment_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Method"
+          }
+        },
+        "title": "ChangesIn",
+        "type": "object"
+      },
+      "DismissIn": {
+        "properties": {
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "minItems": 2,
+            "title": "Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ids"
+        ],
+        "title": "DismissIn",
         "type": "object"
       },
       "EntryAmountIn": {
@@ -2467,6 +2800,35 @@
         "title": "PayOccurrenceIn",
         "type": "object"
       },
+      "PayerIn": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "enum": [
+              "single",
+              "own_share"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "PayerIn",
+        "type": "object"
+      },
       "ProfileIn": {
         "properties": {
           "avatar_color": {
@@ -2494,6 +2856,65 @@
           "display_name"
         ],
         "title": "ProfileIn",
+        "type": "object"
+      },
+      "RecentBatchOut": {
+        "properties": {
+          "can_undo": {
+            "title": "Can Undo",
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "row_count": {
+            "title": "Row Count",
+            "type": "integer"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "undone_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Undone At"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "created_by",
+          "summary",
+          "row_count",
+          "undone_at",
+          "can_undo"
+        ],
+        "title": "RecentBatchOut",
         "type": "object"
       },
       "RecurringItemIn": {
@@ -2972,6 +3393,48 @@
         "title": "RecurringItemOut",
         "type": "object"
       },
+      "SelectIn": {
+        "additionalProperties": false,
+        "properties": {
+          "bill_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bill Id"
+          },
+          "filter": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StrictTransactionFilter"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ids"
+          }
+        },
+        "title": "SelectIn",
+        "type": "object"
+      },
       "SettleIn": {
         "properties": {
           "amount": {
@@ -3035,6 +3498,29 @@
           }
         },
         "title": "SettleIn",
+        "type": "object"
+      },
+      "SkippedOut": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "reason"
+        ],
+        "title": "SkippedOut",
         "type": "object"
       },
       "SplitIn": {
@@ -3180,6 +3666,172 @@
           "delta"
         ],
         "title": "StockAdjust",
+        "type": "object"
+      },
+      "StrictTransactionFilter": {
+        "additionalProperties": false,
+        "description": "A bulk body's filter: an unknown key is a 422, never silently dropped,\nso a typo can't widen what a bulk change touches.",
+        "properties": {
+          "bucket_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bucket Id"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "fixed": {
+            "default": false,
+            "title": "Fixed",
+            "type": "boolean"
+          },
+          "from_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Date"
+          },
+          "max_amount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Amount"
+          },
+          "min_amount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Amount"
+          },
+          "missing_payer": {
+            "default": false,
+            "title": "Missing Payer",
+            "type": "boolean"
+          },
+          "month": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Month"
+          },
+          "no_bucket": {
+            "default": false,
+            "title": "No Bucket",
+            "type": "boolean"
+          },
+          "paid_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paid By"
+          },
+          "payment_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Method"
+          },
+          "q": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Q"
+          },
+          "recurring_bill_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recurring Bill Id"
+          },
+          "to_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Date"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          }
+        },
+        "title": "StrictTransactionFilter",
         "type": "object"
       },
       "TokenIn": {
@@ -3619,6 +4271,32 @@
           "amount"
         ],
         "title": "TransactionUpdate",
+        "type": "object"
+      },
+      "UndoResult": {
+        "properties": {
+          "bill_restored": {
+            "title": "Bill Restored",
+            "type": "boolean"
+          },
+          "restored": {
+            "title": "Restored",
+            "type": "integer"
+          },
+          "skipped": {
+            "items": {
+              "$ref": "#/components/schemas/SkippedOut"
+            },
+            "title": "Skipped",
+            "type": "array"
+          }
+        },
+        "required": [
+          "restored",
+          "skipped",
+          "bill_restored"
+        ],
+        "title": "UndoResult",
         "type": "object"
       },
       "UpcomingDayOut": {
@@ -7083,6 +7761,194 @@
           }
         ],
         "summary": "Create Transaction",
+        "tags": [
+          "transactions"
+        ]
+      }
+    },
+    "/api/v1/transactions/bulk": {
+      "get": {
+        "description": "The household's latest bulk changes, newest first (\"Recent bulk changes\").",
+        "operationId": "recent_bulk_api_v1_transactions_bulk_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RecentBatchOut"
+                  },
+                  "title": "Response Recent Bulk Api V1 Transactions Bulk Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Recent Bulk",
+        "tags": [
+          "transactions"
+        ]
+      },
+      "post": {
+        "description": "Preview (``dry_run``, the default) or apply one change to a selection.\nApply re-checks ``expected_count`` (409 on drift) and writes all or nothing.",
+        "operationId": "bulk_change_api_v1_transactions_bulk_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Bulk Change",
+        "tags": [
+          "transactions"
+        ]
+      }
+    },
+    "/api/v1/transactions/bulk/{batch_id}/undo": {
+      "post": {
+        "description": "Undo a batch within 24 hours, once. Rows changed since are left as they are.",
+        "operationId": "undo_bulk_api_v1_transactions_bulk__batch_id__undo_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UndoResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Undo Bulk",
+        "tags": [
+          "transactions"
+        ]
+      }
+    },
+    "/api/v1/transactions/duplicates/dismiss": {
+      "post": {
+        "description": "\"Keep both\": never show these as possible duplicates again, for anyone.",
+        "operationId": "dismiss_api_v1_transactions_duplicates_dismiss_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DismissIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Dismiss",
         "tags": [
           "transactions"
         ]
