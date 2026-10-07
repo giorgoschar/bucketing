@@ -709,12 +709,22 @@ def _top_up_entries(db, today: date) -> int:
     return created
 
 
+def _suggest_recent_matches(db, today: date) -> int:
+    """Match suggestions for the last 14 days of transactions (spec §3.5)."""
+    from app.services.matching import suggest_recent
+
+    return suggest_recent(db, today)
+
+
 def _planning_stages():
-    return (_top_up_entries,)
+    return (_top_up_entries, _suggest_recent_matches)
 
 
 def planning_daily_job() -> None:
-    """Daily planning job: top up expected entries. Each stage is isolated."""
+    """Daily planning job: top up expected entries, then suggest matches.
+
+    Each stage is isolated so a failure in one does not discard the other.
+    """
     from app.core.database import SessionLocal
 
     db = SessionLocal()

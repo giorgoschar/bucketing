@@ -336,7 +336,25 @@ def create_transaction(
             _raise_if_replay()
         raise
     db.refresh(txn)
+    _suggest_match(db, txn)
     return txn
+
+
+def _suggest_match(db: Session, txn: Transaction) -> None:
+    """Look for an expected entry this new transaction may pay (spec §3.5).
+
+    Every source creates through create_transaction (forms, API, Apple Pay
+    ingest, offline replay, cash), so this is the one hook. A failure here
+    never fails the save.
+    """
+    from app.services.matching import suggest_for_transaction
+
+    try:
+        if suggest_for_transaction(db, txn) is not None:
+            db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("Match suggestion for transaction %s failed", txn.id)
 
 
 def update_transaction(
