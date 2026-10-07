@@ -10,6 +10,9 @@ import { HOUSEHOLD, type Lens, lensOptions, useLens } from './lens'
 import { type WidgetId, visibleWidgets } from './overview'
 import { type Period, type Preset, PRESETS, usePeriod } from './period'
 import { type InsightsData, NO_FILTERS } from './types'
+import {
+  Biggest, BudgetsCard, FuelCard, HowYouPaid, InOut, InOutMonths, OnTrack, SavingsRate, SpendTrend, VsUsual, WhereItWent,
+} from './widgets/cards'
 import { EmptyPeriod, Headline, Identity, ShareCard } from './widgets/summary'
 import './insights.css'
 
@@ -22,21 +25,20 @@ export interface WidgetCtx {
   setPeriod(p: Period): void
 }
 
-// F2.2 replaces the `() => null` entries.
 const RENDER: Record<Exclude<WidgetId, 'identity' | 'share'>, (ctx: WidgetCtx) => ReactNode> = {
   headline: ({ data }) => <Headline data={data} />,
   empty: ({ data, period, setPeriod }) => <EmptyPeriod data={data} period={period} onPeriod={setPeriod} />,
-  onTrack: () => null,
-  inOut: () => null,
-  where: () => null,
-  inOutMonths: () => null,
-  trend: () => null,
-  biggest: () => null,
-  method: () => null,
-  budgets: () => null,
-  savings: () => null,
-  vsUsual: () => null,
-  fuel: () => null,
+  onTrack: (c) => <OnTrack {...c} />,
+  inOut: (c) => <InOut {...c} />,
+  where: (c) => <WhereItWent {...c} />,
+  inOutMonths: (c) => <InOutMonths {...c} />,
+  trend: (c) => <SpendTrend {...c} />,
+  biggest: (c) => <Biggest {...c} />,
+  method: (c) => <HowYouPaid {...c} />,
+  budgets: (c) => <BudgetsCard {...c} />,
+  savings: (c) => <SavingsRate {...c} />,
+  vsUsual: (c) => <VsUsual {...c} />,
+  fuel: (c) => <FuelCard {...c} />,
 }
 
 export function Insights() {
