@@ -19,10 +19,11 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy import Enum as SAEnum
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, validates
 
 from app.core.clock import local_today, utcnow_naive
 from app.core.database import Base
+from app.core.schedule import RuleAdjust, RuleKind  # noqa: F401  (re-exported)
 
 
 def gen_id():
@@ -88,6 +89,28 @@ class BucketType(str, enum.Enum):
     bills = "bills"
     savings = "savings"
     custom = "custom"
+
+
+class BucketKind(str, enum.Enum):
+    """What a bucket's budget means (spec §4.1). Plain VARCHAR like PaymentMethod."""
+
+    monthly = "monthly"  # per calendar month, resets on the 1st
+    event = "event"  # a total over start_date..end_date
+
+
+def kind_for_type(bucket_type) -> str:
+    """The kind an old-app bucket type stands for: a trip is an event, every
+    other type is monthly."""
+    if BucketType(bucket_type) == BucketType.trip:
+        return BucketKind.event.value
+    return BucketKind.monthly.value
+
+
+class ItemDirection(str, enum.Enum):
+    """Which way a recurring item's money goes. Plain VARCHAR like PaymentMethod."""
+
+    out = "out"  # bills: DEH, Cosmote, rent paid
+    in_ = "in"  # salaries, rent received
 
 
 class BucketStatus(str, enum.Enum):
@@ -293,7 +316,20 @@ class Bucket(Base):
     start_date = Column(Date, nullable=True)
     end_date = Column(Date, nullable=True)
     goal_amount = Column(Numeric(12, 4), nullable=True)
+    # monthly or event (spec §4.1). Follows ``type`` (see kind_for_type), so
+    # the old app's forms keep it right without knowing about it.
+    kind = Column(
+        String(8),
+        default=BucketKind.monthly.value,
+        server_default=BucketKind.monthly.value,
+        nullable=False,
+    )
     created_at = Column(DateTime, default=utcnow_naive)
+
+    @validates("type")
+    def _kind_follows_type(self, _key, value):
+        self.kind = kind_for_type(value)
+        return value
 
     household = relationship("Household", back_populates="buckets")
     transactions = relationship("Transaction", back_populates="bucket")
@@ -304,9 +340,12 @@ class Bucket(Base):
 # Transactions
 # ---------------------------------------------------------------------------
 
-# Expenses and transfers need a bucket; income may have none. The enum is
+# Expenses and transfers need a bucket; income may have none, and neither may
+# an expense paid for a recurring item (a Fixed cost, spec §3.4). The enum is
 # stored by name ('income'), on SQLite and in the Postgres enum alike.
-BUCKET_UNLESS_INCOME_SQL = "bucket_id IS NOT NULL OR type = 'income'"
+BUCKET_UNLESS_INCOME_SQL = (
+    "bucket_id IS NOT NULL OR type = 'income' OR recurring_bill_id IS NOT NULL"
+)
 
 
 class Transaction(Base):
@@ -317,6 +356,7 @@ class Transaction(Base):
         Index("ix_transactions_deleted_at", "deleted_at"),
         Index("ix_transactions_paid_by", "paid_by"),
         Index("ix_transactions_category_id", "category_id"),
+        Index("ix_transactions_recurring_bill_id", "recurring_bill_id"),
         # NULLs do not collide, so only offline submissions are constrained.
         UniqueConstraint("household_id", "client_id", name="uq_transaction_client_id"),
         # Only income may go without a bucket (see TransactionCreate).
@@ -364,6 +404,15 @@ class Transaction(Base):
     # retried after the response was lost, so the server must recognise the
     # repeat instead of creating a second transaction.
     client_id = Column(String(64), nullable=True)
+    # The recurring item this expense pays or this income receives (spec
+    # §3.3): set by Pay, Mark received and Link. A bucket-less expense needs it.
+    recurring_bill_id = Column(
+        String,
+        ForeignKey(
+            "recurring_bills.id", ondelete="SET NULL", name="fk_transactions_recurring_bill_id"
+        ),
+        nullable=True,
+    )
     created_at = Column(DateTime, default=utcnow_naive)
     # Soft delete: set (naive UTC) instead of removing the row. Every read
     # query must filter with Transaction.active().
@@ -484,7 +533,45 @@ class RecurringBill(Base):
     notes = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True)
     is_auto_pay = Column(Boolean, default=False, nullable=False)
+    # Planning redesign (spec §3.1-3.2): which way the money goes and the
+    # schedule rule (app.core.schedule). Rows from before it are out +
+    # monthly_interval, whose dates are exactly the old generator's.
+    direction = Column(
+        String(8),
+        default=ItemDirection.out.value,
+        server_default=ItemDirection.out.value,
+        nullable=False,
+    )
+    rule_kind = Column(
+        String(24),
+        default=RuleKind.monthly_interval.value,
+        server_default=RuleKind.monthly_interval.value,
+        nullable=False,
+    )
+    rule_day = Column(Integer, nullable=True)  # monthly_day, yearly
+    rule_month = Column(Integer, nullable=True)  # yearly
+    rule_adjust = Column(
+        String(24),
+        default=RuleAdjust.none.value,
+        server_default=RuleAdjust.none.value,
+        nullable=False,
+    )
+    rule_days = Column(Integer, nullable=True)  # easter_offset: days from Easter Sunday
+    rule_weekday = Column(Integer, nullable=True)  # weekly: 0 = Monday
+    rule_interval_weeks = Column(Integer, nullable=True)  # weekly
     created_at = Column(DateTime, default=utcnow_naive)
+
+    @property
+    def old_app_editable(self) -> bool:
+        """The old app edits only out items on the legacy rule (spec §6.2)."""
+        return (self.direction or ItemDirection.out.value) == ItemDirection.out.value and (
+            self.rule_kind or RuleKind.monthly_interval.value
+        ) == RuleKind.monthly_interval.value
+
+    @classmethod
+    def active_filter(cls):
+        """Filter expression: not paused (spec §3.4.1). NULL counts as active."""
+        return cls.is_active.isnot(False)
 
     household = relationship("Household", back_populates="recurring_bills")
     bucket = relationship("Bucket", back_populates="recurring_bills")
@@ -513,6 +600,32 @@ class BillOccurrence(Base):
 
     bill = relationship("RecurringBill", back_populates="occurrences")
     transaction = relationship("Transaction", back_populates="bill_occurrence")
+
+
+class MatchSuggestion(Base):
+    """ "Looks like Cosmote · Oct": a transaction that may be an expected entry
+    (spec §3.5). Nothing is linked without a tap: Link marks the entry done,
+    Not this sets ``dismissed`` and the pair is never suggested again."""
+
+    __tablename__ = "match_suggestions"
+    __table_args__ = (
+        UniqueConstraint("transaction_id", "occurrence_id", name="uq_match_suggestion"),
+        Index("ix_match_suggestions_household", "household_id", "dismissed"),
+    )
+
+    id = Column(String, primary_key=True, default=gen_id)
+    household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False)
+    transaction_id = Column(
+        String, ForeignKey("transactions.id", ondelete="CASCADE"), nullable=False
+    )
+    occurrence_id = Column(
+        String, ForeignKey("bill_occurrences.id", ondelete="CASCADE"), nullable=False
+    )
+    dismissed = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=utcnow_naive)
+
+    transaction = relationship("Transaction")
+    occurrence = relationship("BillOccurrence")
 
 
 class CategoryRule(Base):
