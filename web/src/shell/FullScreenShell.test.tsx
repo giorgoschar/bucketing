@@ -1,4 +1,5 @@
-import { cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, render, screen } from '@testing-library/react'
+import { type JSX, lazy } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import type { Session } from '../session/SessionProvider'
@@ -49,4 +50,18 @@ it('signed out: the sign-in screen, never the composer', () => {
 it('loading: a blank boot screen', () => {
   at('loading')
   expect(screen.queryByText('composer')).not.toBeInTheDocument()
+})
+
+it('a lazy-loaded screen shows the boot screen while its code loads (the composer is code-split)', async () => {
+  session.status = 'signedIn'
+  let load!: (m: { default: () => JSX.Element }) => void
+  const Lazy = lazy(() => new Promise<{ default: () => JSX.Element }>((r) => { load = r }))
+  const router = createMemoryRouter(
+    [{ element: <FullScreenShell />, children: [{ path: '/new', element: <Lazy /> }] }],
+    { initialEntries: ['/new'] },
+  )
+  const { container } = render(<RouterProvider router={router} />)
+  expect(container.querySelector('.boot')).toBeInTheDocument()
+  await act(async () => load({ default: () => <p>composer</p> }))
+  expect(await screen.findByText('composer')).toBeInTheDocument()
 })

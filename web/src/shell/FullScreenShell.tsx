@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { Suspense, useEffect } from 'react'
 import { Outlet } from 'react-router'
 import { installQueueBridge } from '../data/queueBridge'
 import { startReplayTriggers } from '../offline/queue'
@@ -27,7 +27,10 @@ export function FullScreenShell() {
   if (status === 'signedOut') return <SignIn result={{ error: null, linked: false }} />
   return (
     <>
-      <Outlet />
+      {/* The composer is code-split (router.tsx): the boot screen covers its first load. */}
+      <Suspense fallback={<div className="boot" aria-busy="true" />}>
+        <Outlet />
+      </Suspense>
       <Toaster />
     </>
   )

@@ -1,4 +1,5 @@
 import { act, cleanup, render, screen } from '@testing-library/react'
+import { type JSX, lazy } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { isPending, markPending } from '../data/pending'
@@ -33,4 +34,19 @@ it('pending markers survive leaving for the composer (outside AppShell) and comi
   session.status = 'signedOut'
   await act(() => router.navigate('/?again')) // re-render AppShell with the new status
   expect(isPending('t1')).toBe(false)
+})
+
+it('a lazy-loaded tab (Plan) shows a loading placeholder inside the shell while its code loads', async () => {
+  session.status = 'signedIn'
+  let load!: (m: { default: () => JSX.Element }) => void
+  const Lazy = lazy(() => new Promise<{ default: () => JSX.Element }>((r) => { load = r }))
+  const router = createMemoryRouter(
+    [{ path: '/', element: <AppShell />, children: [{ index: true, element: <Lazy /> }] }],
+    { initialEntries: ['/'] },
+  )
+  render(<RouterProvider router={router} />)
+  expect(screen.getByRole('status', { name: 'Loading' })).toBeInTheDocument()
+  expect(screen.getByRole('navigation', { name: 'Main' })).toBeInTheDocument() // the tab bar stays
+  await act(async () => load({ default: () => <p>plan screen</p> }))
+  expect(await screen.findByText('plan screen')).toBeInTheDocument()
 })

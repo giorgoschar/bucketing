@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router'
 import { clearPending } from '../data/pending'
 import { installQueueBridge } from '../data/queueBridge'
@@ -68,7 +68,10 @@ export function AppShell() {
             </button>
           </div>
         )}
-        <Outlet />
+        {/* Plan and Items are code-split (router.tsx): a skeleton while their code loads, tab bar still there. */}
+        <Suspense fallback={<div className="ui-skeleton" role="status" aria-busy="true" aria-label="Loading" />}>
+          <Outlet />
+        </Suspense>
       </main>
       <TabBar />
       <Toaster />

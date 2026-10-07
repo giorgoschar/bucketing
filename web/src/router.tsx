@@ -1,12 +1,16 @@
+import { lazy } from 'react'
 import { createBrowserRouter, Navigate } from 'react-router'
 import { AppShell } from './shell/AppShell'
 import { FullScreenShell } from './shell/FullScreenShell'
 import { Home } from './screens/Home'
 import { Activity } from './screens/Activity'
-import { Compose } from './screens/Compose'
-import { Plan } from './screens/Plan'
-import { Items } from './features/plan/items/Items'
 import { Insights } from './screens/Insights'
+
+// Code-split so the main bundle stays under 500 kB: the composer (with the scan screen and its QR decoder)
+// loads on the first ＋, Plan and its items list on the first visit. Home stays in the main bundle.
+const Compose = lazy(() => import('./screens/Compose').then((m) => ({ default: m.Compose })))
+const Plan = lazy(() => import('./screens/Plan').then((m) => ({ default: m.Plan })))
+const Items = lazy(() => import('./features/plan/items/Items').then((m) => ({ default: m.Items })))
 
 export const router = createBrowserRouter(
   [
