@@ -114,8 +114,9 @@ textarea.ui-input { min-height: 88px; padding: 10px 14px; resize: vertical; }
 }
 
 /* ---------------- Sheet (ui/Sheet.tsx) ---------------- */
-.ui-sheet-layer { position: fixed; inset: 0; z-index: 20; display: flex; align-items: flex-end; justify-content: center; }
-.ui-sheet-scrim { position: absolute; inset: 0; background: var(--scrim); animation: ui-fade .2s ease; }
+/* The layer and scrim never hand a scroll or drag to the page behind (iOS ignores body overflow:hidden). */
+.ui-sheet-layer { position: fixed; inset: 0; z-index: 20; display: flex; align-items: flex-end; justify-content: center; overscroll-behavior: contain; }
+.ui-sheet-scrim { position: absolute; inset: 0; background: var(--scrim); animation: ui-fade .2s ease; touch-action: none; }
 .ui-sheet {
   position: relative; width: 100%; max-width: 480px; max-height: 88dvh; display: flex; flex-direction: column;
   background: var(--surface); color: var(--ink); border-radius: 26px 26px 0 0; box-shadow: var(--shadow-sheet);
