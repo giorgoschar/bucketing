@@ -13,7 +13,7 @@ from app.api.planning_models import CategoryUsualOut, Money
 from app.api_auth import require_api_auth
 from app.core.database import get_db
 from app.services import InsightFilters, build_insights
-from app.services.insights import resolve_insight_period
+from app.services.insights import get_category_detail, resolve_insight_period
 from app.services.person import get_person_summary
 from app.services.usual import categories_vs_usual
 from app.validators import household_member_ids
@@ -185,3 +185,73 @@ def person_share(
         shared_count=s["shared_count"],
         transaction_count=s["transaction_count"],
     )
+
+
+class CategoryRefOut(BaseModel):
+    id: str
+    name: str
+    icon: str | None
+    color: str | None
+
+
+class CategoryMonthOut(BaseModel):
+    year: int
+    month: int
+    label: str
+    total: Money
+
+
+class CategoryMerchantOut(BaseModel):
+    merchant: str  # "Other" groups expenses without one
+    count: int
+    total: Money
+
+
+class CategoryExpenseOut(BaseModel):
+    id: str
+    date: dt.date
+    merchant: str | None
+    notes: str | None
+    amount: Money  # the lens person's share under a member lens
+    paid_by: str | None
+
+
+class CategoryRuleRefOut(BaseModel):
+    id: str
+    pattern: str
+    match_count: int
+
+
+class CategoryDetailOut(BaseModel):
+    category: CategoryRefOut | None  # null: uncategorised
+    total: Money
+    count: int
+    avg_per_month: Money | None
+    months: list[CategoryMonthOut]
+    merchants: list[CategoryMerchantOut]
+    recent: list[CategoryExpenseOut]
+    rules: list[CategoryRuleRefOut]
+
+
+@router.get("/categories/{category_id}", response_model=CategoryDetailOut)
+def category_detail(
+    category_id: str,
+    preset: str = Query(default="this_month"),
+    start_date: str = Query(default=""),
+    end_date: str = Query(default=""),
+    paid_by: str = Query(default=""),
+    auth=Depends(require_api_auth),
+    db: Session = Depends(get_db),
+):
+    """One category over the period (2d §7.2). ``category_id`` may be
+    ``uncategorised``."""
+    user, hh_id = auth
+    if paid_by:
+        _member_or_404(db, hh_id, paid_by)
+    period = resolve_insight_period(preset, start_date, end_date)
+    data = get_category_detail(
+        db, hh_id, category_id, period["start"], period["end"], paid_by=paid_by or None
+    )
+    if data is None:
+        raise HTTPException(status_code=404, detail="Category not found")
+    return data
