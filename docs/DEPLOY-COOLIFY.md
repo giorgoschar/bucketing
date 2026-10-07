@@ -81,6 +81,35 @@ buckets, cash/settlement data), i.e. they destroy data entered since the upgrade
 Redeploy the previous release and restore `/backups/pre-migrate-<date>.sql.gz`
 (or `expenses-pre-v2.sql.gz`) as in section 5.
 
+## Planning redesign upgrade (migration a7b8c9d0e1f2)
+
+Production runs commit `8b01313` (alembic head `f0a1b2c3d4e5`, user_oidc_subject).
+A database restored from a pre-Phase-1 backup is at `e9f0a1b2c3d4` and upgrades
+through `f0a1b2c3d4e5` to head; `tests/test_planning_upgrade.py` covers both
+starting points. Run the manual check below once against a real dump before
+deploying.
+
+1. Dump production (the usual pre-migrate safety net; rollback = restore it):
+   `pg_dump "$DATABASE_URL" | gzip > expenses-pre-planning.sql.gz`
+2. Restore it into a scratch database on a Postgres 18 you control:
+   `createdb expenses_upgrade_check && gunzip -c expenses-pre-planning.sql.gz | psql expenses_upgrade_check`
+   No dump at hand? Build production's schema from the deployed code instead:
+   `git worktree add /tmp/expenses-8b01313 8b01313 && (cd /tmp/expenses-8b01313 && DATABASE_URL=postgresql://localhost/expenses_upgrade_check APP_SECRET_KEY=$(openssl rand -hex 32) DEBUG=true <repo>/.venv/bin/alembic upgrade head)`
+   (a pre-Phase-1 backup: use commit `67da44c`, head `e9f0a1b2c3d4`).
+3. Upgrade with this branch:
+   `DATABASE_URL=postgresql://localhost/expenses_upgrade_check .venv/bin/alembic upgrade head`
+4. Check the backfill:
+   - `psql expenses_upgrade_check -c "SELECT direction, rule_kind, count(*) FROM recurring_bills GROUP BY 1,2"` → only `out | monthly_interval`
+   - `psql expenses_upgrade_check -c "SELECT type, kind, count(*) FROM buckets GROUP BY 1,2"` → trip = event, the rest monthly
+   - `psql expenses_upgrade_check -c "SELECT count(*) FROM bill_occurrences o JOIN transactions t ON t.id = o.transaction_id WHERE o.status = 'paid' AND t.recurring_bill_id IS DISTINCT FROM o.bill_id"` → 0
+5. Old-app smoke test on the upgraded copy:
+   `DATABASE_URL=postgresql://localhost/expenses_upgrade_check APP_SECRET_KEY=<prod key> FIELD_ENCRYPTION_KEY=<prod key> DEBUG=true ENABLE_SCHEDULER=false .venv/bin/uvicorn app.main:app --port 8001`
+   Log in with password + TOTP. Open the dashboard (same month totals as production), Bills (same list, pay one occurrence), Insights, a trip bucket and Search.
+6. Round trip: `.venv/bin/alembic downgrade f0a1b2c3d4e5 && .venv/bin/alembic upgrade head` (`f0a1b2c3d4e5` is the revision this migration revises).
+7. Drop the scratch database.
+
+Then note the date and result in the PR description.
+
 ## 1. Environment variables
 
 Set these in Coolify → the resource → **Environment Variables** *before* the first
