@@ -476,6 +476,9 @@ def duplicate_transaction(
         transaction_date=local_today(),
         exclude_from_forecast=src.exclude_from_forecast,
         exclude_from_settlement=src.exclude_from_settlement,
+        # A Fixed cost has no bucket; the copy stays a Fixed cost of the
+        # same item rather than breaking the bucket CHECK.
+        recurring_bill_id=src.recurring_bill_id if src.bucket_id is None else None,
     )
     db.add(new_txn)
     db.flush()

@@ -341,6 +341,12 @@ class TransactionUpdate(TransactionCreate):
     transaction_date: date | None = None
     payer_mode: str | None = None
 
+    @model_validator(mode="after")
+    def _bucket_unless_income(self) -> "TransactionUpdate":
+        """Checked by update_transaction instead, which knows the stored row:
+        a Fixed-cost expense (linked to a recurring item) stays bucket-less."""
+        return self
+
     @field_validator("payer_mode", mode="before")
     @classmethod
     def _payer_mode(cls, v: Any) -> str | None:

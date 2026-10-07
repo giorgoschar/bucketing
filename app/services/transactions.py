@@ -374,8 +374,10 @@ def update_transaction(
             raise HTTPException(status_code=400, detail=problem)
         absorb_own_share_cent(data.amount, data.splits)
 
-    # Only income may go without a bucket.
-    if not data.bucket_id and data.type != TransactionType.income:
+    # Only income, and an expense paid for a recurring item (a Fixed cost,
+    # spec §3.4.2), may go without a bucket.
+    fixed_cost = txn.recurring_bill_id is not None and data.type == TransactionType.expense
+    if not data.bucket_id and data.type != TransactionType.income and not fixed_cost:
         raise HTTPException(status_code=400, detail=BUCKET_REQUIRED)
     bucket = require_bucket(db, data.bucket_id, household_id, optional=True)
     # Income moved into a bucket (or an entry turned into income) must land

@@ -11,7 +11,7 @@ from dateutil.relativedelta import relativedelta
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.clock import local_today
+from app.core.clock import local_today, utcnow_naive
 from app.core.schedule import MAX_INTERVAL_MONTHS, Rule, RuleKind, iter_entries, period_key
 from app.models import (
     BillOccurrence,
@@ -387,8 +387,10 @@ def pay_occurrence(
     Returns None when the atomic claim fails (already paid). Raises ValueError
     if ``split_overrides`` do not sum to ``amount``, or for an own-share payment
     with no splits to record. Does not commit: the claim, the transaction and
-    its splits succeed or fail together with the caller's commit. Bills without
-    a bucket have no transaction — use settle_occurrence.
+    its splits succeed or fail together with the caller's commit. The expense
+    is linked to the item (``recurring_bill_id``); with no bucket it is a
+    Fixed cost (spec §3.4.2). The old app still goes through
+    settle_occurrence, which only claims bucket-less bills (spec §6.2.4).
 
     ``payer_mode`` own_share records everyone as having paid their split (the
     overrides, else the bill's scaled defaults); the transaction and the
@@ -424,6 +426,7 @@ def pay_occurrence(
         notes=f"{note_prefix}: {bill.name}",
         payment_method=payment_method,
         transaction_date=occ.due_date,
+        recurring_bill_id=bill.id,
     )
     db.add(txn)
     db.flush()
@@ -474,6 +477,56 @@ def receive_occurrence(
     db.add(txn)
     db.flush()
     _link_transaction(db, occ, txn)
+    return txn
+
+
+def complete_entry(
+    db: Session,
+    occ: BillOccurrence,
+    *,
+    user_id: str,
+    amount=None,
+    person: str | None = None,
+    payment_method: str = PaymentMethod.card.value,
+) -> Transaction:
+    """Done, from the new app (spec §3.3): Pay for an out entry, which always
+    creates an expense (a Fixed cost when the item has no bucket), Mark
+    received for an in entry.
+
+    ``amount`` defaults to the entry's set amount, then the item's. ``person``
+    is the payer or recipient; None uses the item's default (then
+    ``user_id``). A variable item's amount, or an explicit one, is stored on
+    the entry so estimates and drift alerts see it. Raises EntryStateError
+    when the entry is not expected and ValueError when no amount is known or
+    the payment cannot be recorded. Does not commit.
+    """
+    if occ.status != OccurrenceStatus.unpaid:
+        raise EntryStateError("This entry is already done or skipped.")
+    bill = occ.bill
+    explicit = amount is not None
+    value = amount if explicit else (occ.amount if occ.amount is not None else bill.amount)
+    if value is None:
+        raise ValueError("Set the amount first: this item's amount varies.")
+    paid_on = utcnow_naive()
+    if bill.direction == ItemDirection.in_.value:
+        txn = receive_occurrence(
+            db, occ, amount=value, received_by=person, paid_on=paid_on, fallback_user_id=user_id
+        )
+    else:
+        payer, mode = resolve_bill_payment(db, bill, paid_by=person, fallback_user_id=user_id)
+        txn = pay_occurrence(
+            db,
+            occ,
+            amount=value,
+            paid_by=payer,
+            payer_mode=mode,
+            paid_on=paid_on,
+            payment_method=payment_method,
+        )
+    if txn is None:
+        raise EntryStateError("This entry is already done.")
+    if explicit or bill.amount is None:
+        occ.amount = _q(value)
     return txn
 
 
