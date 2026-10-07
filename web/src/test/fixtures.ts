@@ -119,8 +119,7 @@ export function readRoutes(): Routes {
   }
 }
 
-// ---- Plan › Cash (cash spec §3.2/§3.3). /cash/wallets is not in the generated schema until the
-// integration step, so these routes are cast to Routes (fakeApi matches them at runtime all the same).
+// ---- Plan › Cash (cash spec §3.2/§3.3).
 
 /** Giorgos (u1, the viewer) took €120 and logged €75: €45 not yet logged. */
 export function wallet(over: Partial<WalletOut> = {}): WalletOut {
@@ -161,5 +160,5 @@ export function cashRoutes(
     'GET /api/v1/cash/movements': () => ({ items: o.movements ?? [], stash: wallets.stash }),
     'POST /api/v1/cash/movements': () => Response.json(cashMovement({ id: 'new' }), { status: 201 }),
     'DELETE /api/v1/cash/movements/{movement_id}': () => null,
-  } as unknown as Routes
+  }
 }

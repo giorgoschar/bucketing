@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { db } from '../../offline/db'
 import { enqueue } from '../../offline/queue'
 import { fakeApi, hang, reply, type Routes } from '../../test/fakeApi'
+import type { CashWalletsOut } from '../plan/cash/types'
 import { budgetRow, cashWallets, categoryUsual, day, entry, match, readRoutes, wallet, walletMember } from '../../test/fixtures'
 import { renderWithProviders, resetTestEnv, setOnline, TEST_IDENTITY } from '../../test/render'
 import { setIdentity } from '../../offline/identity'
@@ -133,8 +134,7 @@ it('offline with nothing saved: no false "All clear"', async () => {
 })
 
 // Plan › Cash §4.6
-const cashRoute = (wallets: unknown): Routes =>
-  ({ 'GET /api/v1/cash/wallets': () => wallets }) as unknown as Routes
+const cashRoute = (wallets: CashWalletsOut | Response): Routes => ({ 'GET /api/v1/cash/wallets': () => wallets })
 
 it('cash not logged: "€45.00 cash not logged yet" with Log it, after missingAmount and before budget', async () => {
   const fake = fakeApi(routes(cashRoute(cashWallets())))

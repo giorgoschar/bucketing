@@ -5,24 +5,22 @@ import { useCachedQuery } from '../../../data/cachedQuery'
 import { unwrap } from '../../../data/http'
 import { affects, keys } from '../../../data/keys'
 import { type OnlineOutcome, runOnline } from '../../../data/onlineAction'
-import { fetchJson } from '../../../data/rawJson'
 import { useToast } from '../../../ui/Toast'
-import type { CashMovementOut, CashMovementsOut, CashWalletsOut, MovementBody } from './types'
+import type { CashMovementOut, MovementBody } from './types'
 
 /** Everything a cash write (or a composer save of a cash expense) makes stale (spec §4.7). */
 export const CASH_INVALIDATES: readonly QueryKey[] = affects.cash
 
-/** The month's wallets and the viewer's stash. /cash/wallets is not in the generated types until the
- *  integration step, so it goes through fetchJson (switch to api.GET then). */
+/** The month's wallets and the viewer's stash. */
 export function useCashWallets(month: string) {
-  return useCachedQuery(keys.cashWallets(month), () =>
-    unwrap(fetchJson<CashWalletsOut>('GET', `/api/v1/cash/wallets?month=${encodeURIComponent(month)}`)))
+  return useCachedQuery(keys.cashWallets(month), (signal) =>
+    unwrap(api.GET('/api/v1/cash/wallets', { params: { query: { month } }, signal })))
 }
 
 /** The viewer's movements in the month, plus others' takes from their stash; newest first. */
 export function useCashMovements(month: string) {
   return useCachedQuery(keys.cashMovements(month), async (signal) => {
-    const out = (await unwrap(api.GET('/api/v1/cash/movements', { params: { query: { month, limit: 500 } }, signal }))) as CashMovementsOut
+    const out = await unwrap(api.GET('/api/v1/cash/movements', { params: { query: { month, limit: 500 } }, signal }))
     return { ...out, items: newestFirst(out.items) }
   })
 }
@@ -49,8 +47,8 @@ export function useCashWrite() {
     [qc, toast],
   )
   return {
-    /** POST /cash/movements. `stash_count` is not in the generated MovementIn until integration. */
-    run: (body: MovementBody) => act(() => fetchJson<CashMovementOut>('POST', '/api/v1/cash/movements', body)),
+    /** POST /cash/movements. */
+    run: (body: MovementBody) => act(() => api.POST('/api/v1/cash/movements', { body })),
     remove: (id: string) =>
       act(() => api.DELETE('/api/v1/cash/movements/{movement_id}', { params: { path: { movement_id: id } } })),
   }
