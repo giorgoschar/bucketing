@@ -33,6 +33,10 @@ export function Activity() {
   const set = useCallback((next: FeedState) => setParams(toSearch(next), { replace: true }), [setParams])
   const f = state.filter
   const setFilter = (filter: TransactionFilter) => set({ ...state, filter })
+  const onSearch = useCallback(
+    (q: string) => set({ ...state, filter: { ...state.filter, q: q || undefined } }),
+    [set, state],
+  )
   const counts = useCounts().data
   const refData = useRefData()
   const items = useRecurringItems().data
@@ -44,8 +48,8 @@ export function Activity() {
     <>
       <TopBar title="Activity" />
       <section className="screen activity">
-        <SearchField value={f.q ?? ''} onChange={(q) => setFilter({ ...f, q: q || undefined })} />
-        <div className="chips" role="toolbar" aria-label="Quick filters">
+        <SearchField value={f.q ?? ''} onChange={onSearch} />
+        <div className="chips" role="group" aria-label="Quick filters">
           <Chip label="Filters" count={filters || undefined} pressed={filters > 0} disabled={state.dups} onClick={() => setSheet('filters')} />
           <Chip label={monthLabel(f)} pressed={!!(f.from_date || f.to_date)} disabled={state.dups} onClick={() => setSheet('month')} />
           {!!counts?.no_payer && (

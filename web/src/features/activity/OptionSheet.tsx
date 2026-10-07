@@ -16,12 +16,13 @@ export function OptionSheet({ open, title, options, value, note, onPick, onClose
   return (
     <Sheet open={open} onClose={onClose} title={title}>
       {note && <p className="option-note">{note}</p>}
-      <ul className="ui-list feed__list" role="listbox" aria-label={title}>
+      <ul className="ui-list feed__list" aria-label={title}>
         {options.map((o) => (
-          <li key={o.value} role="option" aria-selected={o.value === value}>
+          <li key={o.value}>
             <button
               type="button"
               className="ui-row option"
+              aria-pressed={o.value === value}
               onClick={() => {
                 onPick(o.value)
                 onClose()
