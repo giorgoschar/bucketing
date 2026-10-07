@@ -6,6 +6,7 @@ export type AttentionItem =
   | { kind: 'match'; key: string; match: MatchOut }
   | { kind: 'overdue'; key: string; entry: EntryOut }
   | { kind: 'missingAmount'; key: string; entry: EntryOut }
+  | { kind: 'cash'; key: string; amount: number }
   | { kind: 'budget'; key: string; row: BudgetRowOut }
   | { kind: 'category'; key: string; row: CategoryUsualOut }
   | { kind: 'failed'; key: string; change: FailedQueueRow }
@@ -18,8 +19,13 @@ export interface AttentionInput {
   upcoming?: UpcomingDayOut[]
   budgets?: BudgetRowOut[]
   categories?: CategoryUsualOut[]
+  /** The viewer's own not-yet-logged cash this month (GET /cash/wallets); undefined when not cached. */
+  cashNotLogged?: number
   failed: FailedQueueRow[]
 }
+
+/** Below half a cent is nothing to log (cash spec §4.6). */
+export const CASH_EPS = 0.005
 
 export const BUDGET_WARN_PCT = 80
 export const MAX_CATEGORIES = 3
@@ -43,6 +49,9 @@ export function buildAttention(i: AttentionInput): AttentionItem[] {
     ...(i.matches ?? []).map((match): AttentionItem => ({ kind: 'match', key: `match:${match.id}`, match })),
     ...overdue.map((entry): AttentionItem => ({ kind: 'overdue', key: `overdue:${entry.id}`, entry })),
     ...missing.map((entry): AttentionItem => ({ kind: 'missingAmount', key: `amount:${entry.id}`, entry })),
+    ...(i.cashNotLogged !== undefined && i.cashNotLogged > CASH_EPS
+      ? [{ kind: 'cash', key: 'cash', amount: i.cashNotLogged } satisfies AttentionItem]
+      : []),
     ...(i.budgets ?? [])
       .filter((b) => b.pct !== null && b.pct >= BUDGET_WARN_PCT)
       .map((row): AttentionItem => ({ kind: 'budget', key: `budget:${row.bucket_id}`, row })),

@@ -1,9 +1,9 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { db } from '../../offline/db'
 import { enqueue } from '../../offline/queue'
 import { fakeApi, hang, reply, type Routes } from '../../test/fakeApi'
-import { budgetRow, categoryUsual, day, entry, match, readRoutes } from '../../test/fixtures'
+import { budgetRow, cashWallets, categoryUsual, day, entry, match, readRoutes, wallet, walletMember } from '../../test/fixtures'
 import { renderWithProviders, resetTestEnv, setOnline, TEST_IDENTITY } from '../../test/render'
 import { setIdentity } from '../../offline/identity'
 import { NeedsAttention } from './NeedsAttention'
@@ -130,4 +130,40 @@ it('offline with nothing saved: no false "All clear"', async () => {
   await new Promise((r) => setTimeout(r, 50))
   expect(screen.queryByText('All clear')).toBeNull()
   expect(screen.queryByRole('heading', { name: /Needs attention/ })).toBeNull()
+})
+
+// Plan › Cash §4.6
+const cashRoute = (wallets: unknown): Routes =>
+  ({ 'GET /api/v1/cash/wallets': () => wallets }) as unknown as Routes
+
+it('cash not logged: "€45.00 cash not logged yet" with Log it, after missingAmount and before budget', async () => {
+  const fake = fakeApi(routes(cashRoute(cashWallets())))
+  const { router } = renderWithProviders(<NeedsAttention />)
+  await waitFor(() => expect(kinds()).toEqual(['match', 'overdue', 'missingAmount', 'cash', 'budget', 'category']))
+  expect(fake.calls.find((c) => c.path === '/api/v1/cash/wallets')?.query.get('month')).toBe('2026-10')
+  const row = document.querySelector('[data-attn="cash"]') as HTMLElement
+  expect(row).toHaveTextContent('€45.00 cash not logged yet')
+  fireEvent.click(within(row).getByRole('button', { name: 'Log it' }))
+  expect(router.state.location.pathname).toBe('/new')
+  expect(router.state.location.search).toBe('?mode=cash&take=none&amount=45.00')
+})
+
+it('no cash row at 0.004, and none for another member\'s not-logged cash', async () => {
+  const w = cashWallets({
+    members: [
+      walletMember({ wallet: wallet({ not_yet_logged: 0.004 }) }),
+      walletMember({ member_id: 'u2', name: 'Maria', is_me: false, wallet: wallet({ not_yet_logged: 80 }) }),
+    ],
+  })
+  fakeApi(routes(cashRoute(w)))
+  renderWithProviders(<NeedsAttention />)
+  await waitFor(() => expect(kinds()).toEqual(['match', 'overdue', 'missingAmount', 'budget', 'category']))
+})
+
+it('the wallets query failing or not cached shows no cash row and no error', async () => {
+  fakeApi(routes(cashRoute(reply(500, { detail: 'boom' }))))
+  renderWithProviders(<NeedsAttention />)
+  await waitFor(() => expect(kinds()).toEqual(['match', 'overdue', 'missingAmount', 'budget', 'category']))
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  expect(screen.queryByText(/cash/)).not.toBeInTheDocument()
 })

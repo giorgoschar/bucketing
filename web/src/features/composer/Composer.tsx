@@ -20,20 +20,25 @@ export function Composer() {
   if (id) return <EditLoader key={`edit:${id}`} id={id} copy={false} data={data} defaults={defaults} />
   const from = params.get('from')
   if (from) return <EditLoader key={`copy:${from}`} id={from} copy data={data} defaults={defaults} />
-  return <NewComposer data={data} defaults={defaults} cash={params.get('mode') === 'cash'} />
+  return (
+    <NewComposer data={data} defaults={defaults} cash={params.get('mode') === 'cash'}
+      amount={params.get('amount')} take={params.get('take')} />
+  )
 }
 
 export function ComposerSkeleton() {
   return <div className="composer composer--loading" aria-busy="true" aria-label="Loading" />
 }
 
-function NewComposer({ data, defaults, cash }: { data: ComposerData; defaults: DefaultsRecord; cash: boolean }) {
+interface NewProps { data: ComposerData; defaults: DefaultsRecord; cash: boolean; amount: string | null; take: string | null }
+
+function NewComposer({ data, defaults, cash, amount, take }: NewProps) {
   // One client_id per composer mount (spec §5.1).
   const [initial] = useState(() =>
     initialNew({
       defaults, buckets: data.buckets, categories: data.categories, memberIds: data.members.map((m) => m.user_id),
       meId: data.meId, householdCurrency: data.householdCurrency, type: 'expense', today: todayLocal(),
-      clientId: crypto.randomUUID(), cash,
+      clientId: crypto.randomUUID(), cash, amount, take,
     }),
   )
   return <ComposerForm initial={initial} data={data} defaults={defaults} />

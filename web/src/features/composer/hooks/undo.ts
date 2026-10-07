@@ -3,6 +3,7 @@ import { useAction } from '../../../data/action'
 import { isOnline } from '../../../data/online'
 import { toast } from '../../../ui/Toast'
 import { afterTxnWrite } from '../bridge'
+import { affects } from '../../../data/keys'
 import { pendingStore } from './pendingStore'
 
 const UNDO_FAILED = "Couldn't undo. Check the entry."
@@ -17,7 +18,8 @@ export function useUndoCreate(): (id: string) => Promise<void> {
   const { run } = useAction<string>({
     method: 'DELETE',
     path: (id) => `/api/v1/transactions/${id}`,
-    invalidates: afterTxnWrite,
+    // The undone entry may be a cash expense (cash spec §4.7): refresh the cash reads too.
+    invalidates: [...afterTxnWrite, ...affects.cash],
     queue: 'offline-only',
     toastRejections: false,
   })

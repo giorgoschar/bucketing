@@ -50,7 +50,7 @@ export function ComposerForm({ initial, data, defaults }: { initial: ComposerSta
   const close = useClose()
   const toast = useComposerToast()
   const ctx = { hh: data.hh, householdCurrency: data.householdCurrency, fuelCategoryId: data.fuelCategoryId, meId: data.meId }
-  const save = useSaveTransaction(s, ctx, defaults)
+  const save = useSaveTransaction(s, ctx, defaults, initial.mode === 'edit' && initial.method === 'cash')
   const checkDuplicate = useDuplicateCheck()
   const upload = useReceiptUpload()
   const undo = useUndoCreate()

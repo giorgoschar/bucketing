@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { affects } from '../../../data/keys'
 import { type ActionResult, afterTxnWrite, editKey, keys, toast, useAction } from '../bridge'
 import { type DefaultsRecord, learn, RULES_API_READY, saveDefaults, shouldOfferRemember } from '../defaults'
 import { type CreateBody, toCreateBody, toUpdateBody, type UpdateBody } from '../model'
@@ -13,16 +14,21 @@ export type SaveOutcome =
   | { status: 'failed'; detail: string }
   | { status: 'busy' }
 
-export function useSaveTransaction(state: ComposerState, ctx: SaveCtx, defaults: DefaultsRecord) {
+/** A cash expense also changes the wallet and maybe the stash (cash spec §4.7). For an edit or delete this is
+ *  the stored entry's method, or the one picked in this form: both are cash when either is. */
+const touchesCash = (s: ComposerState) => s.type === 'expense' && s.method === 'cash'
+
+export function useSaveTransaction(state: ComposerState, ctx: SaveCtx, defaults: DefaultsRecord, wasCash = false) {
   const id = state.editId ?? ''
+  const invalidates = touchesCash(state) || wasCash ? [...afterTxnWrite, ...affects.cash] : afterTxnWrite
   const create = useAction<CreateBody, Txn>({
-    method: 'POST', path: '/api/v1/transactions', body: (b: CreateBody) => b, invalidates: afterTxnWrite,
+    method: 'POST', path: '/api/v1/transactions', body: (b: CreateBody) => b, invalidates,
   })
   const update = useAction<UpdateBody, Txn>({
     method: 'PUT',
     path: `/api/v1/transactions/${id}`,
     body: (b: UpdateBody) => b,
-    invalidates: afterTxnWrite,
+    invalidates,
     pendingId: id,
     // Stays inside `invalidates` (editKey is under transactions.all), so 2a's rollback restores it.
     optimistic: (qc, b) =>
@@ -45,7 +51,7 @@ export function useSaveTransaction(state: ComposerState, ctx: SaveCtx, defaults:
   const remove = useAction<void, null>({
     method: 'DELETE',
     path: `/api/v1/transactions/${id}`,
-    invalidates: afterTxnWrite,
+    invalidates,
     pendingId: id,
     toastRejections: false, // a 404 means "already gone"; other rejections are toasted below
     // Queued when offline (spec §5.1). An online failure is ambiguous: if the server applied it, a replay

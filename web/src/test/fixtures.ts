@@ -4,6 +4,7 @@ import type {
 } from '../data/types'
 import type { components } from '../api/schema'
 import type { Routes } from './fakeApi'
+import type { CashMovementOut, CashWalletMemberOut, CashWalletsOut, WalletOut } from '../features/plan/cash/types'
 
 /** Cosmote, out, €38.90, due Fri 9 Oct 2026, expected. */
 export function entry(over: Partial<EntryOut> = {}): EntryOut {
@@ -116,4 +117,49 @@ export function readRoutes(): Routes {
     'GET /api/v1/buckets': () => [bucket()],
     'GET /api/v1/settings/categories': () => [category()],
   }
+}
+
+// ---- Plan › Cash (cash spec §3.2/§3.3). /cash/wallets is not in the generated schema until the
+// integration step, so these routes are cast to Routes (fakeApi matches them at runtime all the same).
+
+/** Giorgos (u1, the viewer) took €120 and logged €75: €45 not yet logged. */
+export function wallet(over: Partial<WalletOut> = {}): WalletOut {
+  return {
+    carried: 0, taken: 120, put_back: 0, still_have: null, spent: 120, logged: 75, outs: 0, not_yet_logged: 45, ...over,
+  }
+}
+export function walletMember(over: Partial<CashWalletMemberOut> = {}): CashWalletMemberOut {
+  return { member_id: 'u1', name: 'Giorgos', is_me: true, wallet: wallet(), ...over }
+}
+/** October 2026: stash €380; Giorgos €45 not logged, Maria all logged. */
+export function cashWallets(over: Partial<CashWalletsOut> = {}): CashWalletsOut {
+  return {
+    month: '2026-10',
+    stash: 380,
+    members: [
+      walletMember(),
+      walletMember({
+        member_id: 'u2', name: 'Maria', is_me: false,
+        wallet: wallet({ taken: 60, put_back: null, spent: 60, logged: 60, not_yet_logged: 0 }),
+      }),
+    ],
+    ...over,
+  }
+}
+export function cashMovement(over: Partial<CashMovementOut> = {}): CashMovementOut {
+  return {
+    id: 'm1', user_id: 'u1', kind: 'take', stash_owner_id: null, amount: 40, currency: 'EUR', category_id: null,
+    note: null, movement_date: '2026-10-04', transaction_id: null, created_at: '2026-10-04T10:00:00', deleted: false, ...over,
+  }
+}
+export function cashRoutes(
+  o: { wallets?: CashWalletsOut; movements?: CashMovementOut[] } = {},
+): Routes {
+  const wallets = o.wallets ?? cashWallets()
+  return {
+    'GET /api/v1/cash/wallets': () => wallets,
+    'GET /api/v1/cash/movements': () => ({ items: o.movements ?? [], stash: wallets.stash }),
+    'POST /api/v1/cash/movements': () => Response.json(cashMovement({ id: 'new' }), { status: 201 }),
+    'DELETE /api/v1/cash/movements/{movement_id}': () => null,
+  } as unknown as Routes
 }

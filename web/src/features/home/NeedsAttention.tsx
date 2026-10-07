@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router'
 import type { EntryOut, MatchOut } from '../../data/types'
 import { dismissFailed } from '../../offline/useQueue'
 import { Badge } from '../../ui/Badge'
-import { formatShortDate } from '../../ui/format'
-import { AlertIcon, CheckIcon, LinkIcon } from '../../ui/icons'
+import { formatMoney, formatShortDate } from '../../ui/format'
+import { AlertIcon, CheckIcon, LinkIcon, WalletIcon } from '../../ui/icons'
 import { ListRow } from '../../ui/ListRow'
 import { Money } from '../../ui/Money'
 import { EntrySheet, type EntryIntent } from '../plan/EntrySheet'
@@ -83,6 +83,17 @@ function AttentionRow({ item, onOpen }: { item: AttentionItem; onOpen: (e: Entry
           badges={<Badge tone="warn">above usual</Badge>} />
       )
     }
+    case 'cash':
+      return (
+        <div className="home-attn__item">
+          <span className="ui-ico ui-ico--warn" aria-hidden="true"><WalletIcon /></span>
+          <div className="home-attn__text">
+            <div className="ui-row__title home-attn__wrapnum"><span className="ui-num">{formatMoney(item.amount)}</span> cash not logged yet</div>
+          </div>
+          <button type="button" className="btn btn--sm btn--primary"
+            onClick={() => navigate(`/new?mode=cash&take=none&amount=${item.amount.toFixed(2)}`)}>Log it</button>
+        </div>
+      )
     case 'failed':
       return (
         <div className="home-attn__item">

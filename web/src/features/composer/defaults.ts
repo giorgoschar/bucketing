@@ -1,6 +1,6 @@
 import type { paths } from '../../api/schema'
 import { cacheGet, cachePut } from '../../offline/db'
-import { parseFuelPrice, parseRate } from './amount'
+import { centsToString, fromApiAmount, MAX_INT_DIGITS, parseCents, parseFuelPrice, parseRate } from './amount'
 import { blankState, type ComposerState, METHODS, type Remembered, reduce, type TxnType } from './state'
 import type { Bucket, Category, Rule } from './types'
 
@@ -71,6 +71,18 @@ export interface NewCtx {
   today: string
   clientId: string
   cash: boolean
+  /** ?amount=: a positive decimal pre-fills the keypad; anything else is ignored (cash spec §4.5). */
+  amount?: string | null
+  /** ?take=none with ?mode=cash: cash method, "Not tracked" (the cash already left the wallet). */
+  take?: string | null
+}
+
+/** "12.50" → "12.50", "45.00" → "45"; null unless a positive amount the keypad could have typed. */
+export function keypadAmount(v: string | null | undefined): string | null {
+  if (!v || !/^\d+(\.\d{1,2})?$/.test(v)) return null
+  const cents = parseCents(v)
+  if (!cents || cents <= 0 || Math.floor(cents / 100) >= 10 ** MAX_INT_DIGITS) return null
+  return fromApiAmount(centsToString(cents))
 }
 
 export function initialNew(c: NewCtx): ComposerState {
@@ -83,9 +95,11 @@ export function initialNew(c: NewCtx): ComposerState {
     paidBy: rem.paid_by ?? c.meId,
     method: rem.payment_method ?? (c.type === 'income' ? 'transfer' : 'card'),
   }
-  return c.cash && c.type === 'expense'
-    ? reduce(s, { type: 'setCashMode', on: true, meId: c.meId, defaultMethod: s.method })
-    : s
+  const amount = keypadAmount(c.amount)
+  const typed = amount === null ? s : { ...s, amount }
+  if (!c.cash || c.type !== 'expense') return typed
+  const cash = reduce(typed, { type: 'setCashMode', on: true, meId: c.meId, defaultMethod: s.method })
+  return c.take === 'none' ? reduce(cash, { type: 'setTookFrom', value: 'none' }) : cash
 }
 
 export interface LearnCtx { householdCurrency: string; fuelCategoryId: string | null }

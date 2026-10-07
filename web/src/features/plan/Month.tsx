@@ -2,45 +2,59 @@ import { useState } from 'react'
 import { useSearchParams } from 'react-router'
 import type { BucketMonthRowOut, CategoryUsualOut, MonthPictureOut, MonthRowOut } from '../../data/types'
 import { Badge } from '../../ui/Badge'
-import { formatMonthLabel, monthsBetween, shiftMonth, todayISO } from '../../ui/format'
-import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon } from '../../ui/icons'
+import { ChevronDownIcon } from '../../ui/icons'
 import { ListRow } from '../../ui/ListRow'
 import { Money } from '../../ui/Money'
 import { QueryView } from '../../ui/QueryView'
+import { Segmented } from '../../ui/Segmented'
 import { useCategoriesVsUsual, usePlanMonth } from './hooks'
+import { MonthStepper } from './MonthStepper'
+import { MAX_MONTH_SHIFT, useShownMonth } from './shownMonth'
+import { Year } from './Year'
 import './plan.css'
 
-export const MAX_MONTH_SHIFT = 11
-const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/
+export { MAX_MONTH_SHIFT }
 
+const SCALES = [
+  { value: 'month', label: 'Month' },
+  { value: 'year', label: 'Year' },
+] as const
+type Scale = (typeof SCALES)[number]['value']
+
+/** Plan › Month, with Year folded in as a scale (cash spec §4.1): ?view=month&scale=year. */
 export function Month() {
   const [params, setParams] = useSearchParams()
-  const current = todayISO().slice(0, 7)
-  const asked = params.get('month')
-  const month = asked && MONTH.test(asked) && Math.abs(monthsBetween(current, asked)) <= MAX_MONTH_SHIFT ? asked : current
-  const offset = monthsBetween(current, month)
-  const go = (by: number) => {
+  const scale: Scale = params.get('scale') === 'year' || params.get('view') === 'year' ? 'year' : 'month'
+  const choose = (v: Scale) => {
     const next = new URLSearchParams(params)
-    next.set('month', shiftMonth(month, by))
+    next.set('view', 'month')
+    if (v === 'year') next.set('scale', 'year')
+    else next.delete('scale')
     setParams(next, { replace: true })
   }
+  return (
+    <div className="plan-month">
+      <div className="plan-scale">
+        <Segmented label="Month or year" options={SCALES} value={scale} onChange={choose} />
+      </div>
+      {scale === 'year' ? <Year /> : <MonthScale />}
+    </div>
+  )
+}
+
+function MonthScale() {
+  const { month, go } = useShownMonth()
   const picture = usePlanMonth(month)
   const usual = useCategoriesVsUsual(month)
 
   return (
-    <div className="plan-month">
-      <div className="plan-switch">
-        <button type="button" className="ui-iconbtn ui-iconbtn--bare" aria-label="Previous month"
-          disabled={offset <= -MAX_MONTH_SHIFT} onClick={() => go(-1)}><ChevronLeftIcon /></button>
-        <h3 className="plan-switch__label" aria-live="polite">{formatMonthLabel(month)}</h3>
-        <button type="button" className="ui-iconbtn ui-iconbtn--bare" aria-label="Next month"
-          disabled={offset >= MAX_MONTH_SHIFT} onClick={() => go(1)}><ChevronRightIcon /></button>
-      </div>
+    <>
+      <MonthStepper month={month} onStep={go} />
       <QueryView result={picture} noDataText="No saved data yet. Connect once to load Plan.">
         {(p) => <MonthPicture picture={p} />}
       </QueryView>
       {usual.data && usual.data.length > 0 && <CategoriesVsUsual rows={usual.data} />}
-    </div>
+    </>
   )
 }
 
