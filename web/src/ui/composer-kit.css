@@ -1,0 +1,53 @@
+/* Composer kit: keypad, amount, pills, toggle rows. Vault tokens only (mock: composer.html, components.css). */
+
+.ck-visually-hidden {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+
+/* Keypad */
+.keypad--tight { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.keypad[hidden] { display: none; }
+.keypad__key {
+  min-height: 48px; border: 0; border-radius: var(--r-md); background: transparent; color: var(--ink);
+  font: var(--display-weight) 24px/1 var(--font-display); font-variant-numeric: tabular-nums;
+  display: grid; place-items: center; cursor: pointer;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  transition: background-color 100ms ease-out, transform 100ms ease-out;
+}
+.keypad__key:active { background: var(--surface-2); transform: scale(0.97); }
+.keypad__key:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.keypad__key svg { width: 24px; height: 24px; }
+
+/* Amount */
+.amount { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
+.amount__big {
+  font-family: var(--font-display); font-weight: var(--display-weight); font-size: 62px; line-height: 1;
+  font-variant-numeric: tabular-nums; letter-spacing: -0.02em; color: var(--ink); white-space: nowrap;
+}
+.amount__big--small { font-size: 44px; }
+.amount__symbol { color: var(--muted); margin-right: 2px; }
+.amount__caret {
+  display: inline-block; width: 3px; height: .8em; margin-left: 4px; vertical-align: -0.05em;
+  border-radius: 2px; background: var(--accent); animation: ck-blink 1s steps(1) infinite;
+}
+.amount--income .amount__caret { background: var(--pos); }
+@keyframes ck-blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .amount__caret { animation: none; } }
+.amount__cur {
+  position: relative; display: inline-flex; align-items: center; gap: 4px;
+  min-height: 32px; padding: 0 12px; border: 0; border-radius: var(--r-pill);
+  background: var(--surface-2); color: var(--ink-2); font: 600 13px var(--font-body);
+  touch-action: manipulation; user-select: none; -webkit-user-select: none;
+}
+button.amount__cur { cursor: pointer; }
+button.amount__cur::after { content: ""; position: absolute; inset: -6px; }
+.amount__cur .ui-icon { width: 14px; height: 14px; }
+.amount__converted {
+  margin: 0; color: var(--muted); font: 500 14px var(--font-num); font-variant-numeric: tabular-nums;
+}
+.amount__tag {
+  display: inline-block; padding: 2px 8px; border-radius: var(--r-pill);
+  background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 600;
+}
