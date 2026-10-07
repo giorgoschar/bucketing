@@ -66,6 +66,12 @@ export const keys = {
   cashWallets: (month: string) => ['cash', 'wallets', month] as const,
   /** CashMovementsOut: GET /cash/movements?month=YYYY-MM */
   cashMovements: (month: string) => ['cash', 'movements', month] as const,
+  // Plan › Pantry (pantry spec §4.8). Every pantry read sits under the ['stock'] prefix, so one invalidation
+  // of ['stock'] covers them all.
+  /** ShoppingOut: GET /stock/shopping */
+  shopping: () => ['stock', 'shopping'] as const,
+  /** StockSummary: GET /stock/summary (Home's pantry row, the post-save prompt) */
+  stockSummary: () => ['stock', 'summary'] as const,
 }
 
 /** What each kind of change makes stale (useAction `invalidates`; the queue bridge uses `sync`). */
@@ -80,6 +86,8 @@ export const affects = {
   sync: [
     keys.plan.all, keys.home.all, keys.recurring.all, keys.matches(), keys.transactions.all, keys.insights.all,
     keys.buckets(), keys.cashAll(), keys.cashStash(),
+    // Every pantry read (pantry spec §4.8): queued ticks, one-off lines and stock adjusts.
+    ['stock'] as const,
   ],
   /** A cash write, or a save/delete of a cash expense (cash spec §4.7): the cash reads, Home, Plan, Insights,
    *  and the transaction feed (Home › Recent, Activity): a spend-take logs an expense, and deleting a take

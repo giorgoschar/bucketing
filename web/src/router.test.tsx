@@ -30,4 +30,15 @@ describe('router', () => {
       'settings/automations', 'settings/notifications',
     ]))
   })
+
+  it('has the lazy shopping list at plan/pantry/list, before any plan/pantry/:id', () => {
+    const children = router.routes[0].children ?? []
+    const paths = children.map((r) => r.path ?? '(index)')
+    const list = paths.indexOf('plan/pantry/list')
+    expect(list).toBeGreaterThan(-1)
+    const el = children[list].element as ReactElement
+    expect((el.type as { $$typeof?: symbol }).$$typeof).toBe(Symbol.for('react.lazy'))
+    const detail = paths.indexOf('plan/pantry/:id')
+    if (detail !== -1) expect(list).toBeLessThan(detail)
+  })
 })

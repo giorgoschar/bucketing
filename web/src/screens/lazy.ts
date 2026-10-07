@@ -17,3 +17,6 @@ export const Household = lazy(() => import('../features/settings/Household').the
 export const Categories = lazy(() => import('../features/settings/Categories').then((m) => ({ default: m.Categories })))
 export const Automations = lazy(() => import('../features/settings/Automations').then((m) => ({ default: m.Automations })))
 export const Notifications = lazy(() => import('../features/settings/Notifications').then((m) => ({ default: m.Notifications })))
+
+// Plan › Pantry › Shopping list (pantry spec §4.5): loads on first visit.
+export const ShoppingList = lazy(() => import('../features/plan/pantry/ShoppingList').then((m) => ({ default: m.ShoppingList })))

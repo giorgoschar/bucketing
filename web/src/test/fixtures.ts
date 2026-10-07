@@ -3,8 +3,9 @@ import type {
   PaceOut, RecurringItemOut, TransactionRow, UpcomingDayOut, YearMonthOut, YearOut,
 } from '../data/types'
 import type { components } from '../api/schema'
-import type { Routes } from './fakeApi'
+import { reply, type Routes } from './fakeApi'
 import type { CashMovementOut, CashWalletMemberOut, CashWalletsOut, WalletOut } from '../features/plan/cash/types'
+import type { ShoppingItem, ShoppingOut } from '../features/plan/pantry/shoppingTypes'
 
 /** Cosmote, out, €38.90, due Fri 9 Oct 2026, expected. */
 export function entry(over: Partial<EntryOut> = {}): EntryOut {
@@ -160,5 +161,95 @@ export function cashRoutes(
     'GET /api/v1/cash/movements': () => ({ items: o.movements ?? [], stash: wallets.stash }),
     'POST /api/v1/cash/movements': () => Response.json(cashMovement({ id: 'new' }), { status: 201 }),
     'DELETE /api/v1/cash/movements/{movement_id}': () => null,
+  }
+}
+
+// ---- Plan › Pantry: the shopping list (pantry spec §3.2/§3.3), hand-typed until gen:api.
+
+/** Olive oil ×1 at Lidl, €8.49: low, 1 left. */
+export function shoppingItem(over: Partial<ShoppingItem> = {}): ShoppingItem {
+  return {
+    id: 's-oil', name: 'Olive oil', unit: null, need_qty: 1, quantity: 1, reason: 'low', runout_days_estimate: null,
+    retailer: 'lidl', retailer_name: 'Lidl', price: 8.49, line_total: 8.49, advice: 'neutral', advice_reason: null,
+    trend_pct_30d: null, ticked: false, tick_id: null, ...over,
+  }
+}
+
+/**
+ * Lidl: Olive oil ×1 €8.49 and Milk ×2 €2.18 (€10.67). Sklavenitis: Barilla ×2 €2.38, runs out in ~5 d.
+ * No price: Salt. Total €13.05; Lidl alone would be €15.45 (saves €2.40). One unchecked one-off line.
+ */
+export function shoppingOut(over: Partial<ShoppingOut> = {}): ShoppingOut {
+  const items = [
+    shoppingItem(),
+    shoppingItem({ id: 's-milk', name: 'Milk', need_qty: 2, quantity: 0, price: 1.09, line_total: 2.18 }),
+    shoppingItem({
+      id: 's-pasta', name: 'Barilla spaghetti', need_qty: 2, quantity: 3, reason: 'runout', runout_days_estimate: 5,
+      retailer: 'sklavenitis', retailer_name: 'Sklavenitis', price: 1.19, line_total: 2.38, advice: 'buy_now',
+    }),
+    shoppingItem({ id: 's-salt', name: 'Salt', quantity: 0, retailer: null, retailer_name: null, price: null, line_total: null }),
+  ]
+  return {
+    items,
+    groups: [
+      { retailer: 'lidl', retailer_name: 'Lidl', total: 10.67, item_ids: ['s-oil', 's-milk'] },
+      { retailer: 'sklavenitis', retailer_name: 'Sklavenitis', total: 2.38, item_ids: ['s-pasta'] },
+      { retailer: null, retailer_name: null, total: 0, item_ids: ['s-salt'] },
+    ],
+    best_single_store: { retailer: 'lidl', retailer_name: 'Lidl', total: 15.45, covers: 3, missing: 0 },
+    total: 13.05,
+    unpriced: 1,
+    lines: [{ id: 'l1', name: 'Batteries', quantity: null, checked: false }],
+    ticked_count: 0,
+    ...over,
+  }
+}
+
+/** A small stateful server: ticks, lines and apply-ticked change what the next GET returns. */
+export function shoppingRoutes(initial: ShoppingOut = shoppingOut()): Routes {
+  let data: ShoppingOut = structuredClone(initial)
+  let seq = 0
+  const count = () => data.items.filter((i) => i.ticked).length + data.lines.filter((l) => l.checked).length
+  const recount = () => { data = { ...data, ticked_count: count() } }
+  return {
+    'GET /api/v1/stock/shopping': () => structuredClone(data),
+    'GET /api/v1/stock/summary': () => ({ low_count: 3, ticked_count: data.ticked_count }),
+    'POST /api/v1/stock/shopping/ticks': (r) => {
+      const id = (r.body as { stock_item_id: string }).stock_item_id
+      const found = data.items.find((i) => i.id === id)
+      if (!found) return reply(404, { detail: 'Stock item not found' })
+      const tickId = found.tick_id ?? `tick-${++seq}`
+      data = { ...data, items: data.items.map((i) => (i.id === id ? { ...i, ticked: true, tick_id: tickId } : i)) }
+      recount()
+      return { id: tickId, stock_item_id: id, quantity: null }
+    },
+    'DELETE /api/v1/stock/shopping/ticks/{tick_id}': (r) => {
+      data = { ...data, items: data.items.map((i) => (i.tick_id === r.params.tick_id ? { ...i, ticked: false, tick_id: null } : i)) }
+      recount()
+      return null
+    },
+    'POST /api/v1/stock/shopping/lines': (r) => {
+      const b = r.body as { name: string; quantity?: number }
+      const line = { id: `l-new-${++seq}`, name: b.name, quantity: b.quantity ?? null, checked: false }
+      data = { ...data, lines: [...data.lines, line] }
+      return line
+    },
+    'PATCH /api/v1/stock/shopping/lines/{line_id}': (r) => {
+      const checked = (r.body as { checked: boolean }).checked
+      data = { ...data, lines: data.lines.map((l) => (l.id === r.params.line_id ? { ...l, checked } : l)) }
+      recount()
+      return data.lines.find((l) => l.id === r.params.line_id) ?? reply(404, { detail: 'Not found' })
+    },
+    'DELETE /api/v1/stock/shopping/lines/{line_id}': (r) => {
+      data = { ...data, lines: data.lines.filter((l) => l.id !== r.params.line_id) }
+      recount()
+      return null
+    },
+    'POST /api/v1/stock/shopping/apply-ticked': () => {
+      const applied = data.items.filter((i) => i.ticked).map((i) => ({ name: i.name, before: i.quantity ?? 0, after: (i.quantity ?? 0) + i.need_qty }))
+      const cleared = data.lines.filter((l) => l.checked).length
+      data = { ...data, items: data.items.map((i) => ({ ...i, ticked: false, tick_id: null })), lines: data.lines.filter((l) => !l.checked), ticked_count: 0 }
+      return { applied, cleared_lines: cleared }
+    },
   }
 }

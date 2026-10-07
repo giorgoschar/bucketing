@@ -1,0 +1,81 @@
+/* Plan › Pantry › Shopping list (pantry spec §4.5; mock docs/redesign/mocks/cash-pantry.html, Shopping list).
+   Kit classes come from ui/ui.css; the look follows Plan › Cash (features/plan/cash/cash.css). */
+.shop { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.shop .ui-banner { margin: 0; }
+.shop__body { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+/* Room under the last row for the pinned "Add to pantry" bar. */
+.shop__body[data-footer] { padding-bottom: 76px; }
+
+/* Header card: count, total, and the split-saving badge. */
+.shop-sum { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 12px; padding: 14px 16px; }
+.shop-sum__fig { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.shop-sum__count { margin: 0; font-size: 12.5px; font-weight: 600; color: var(--muted); }
+.shop-sum__total { font-size: 28px; letter-spacing: -.02em; white-space: normal; overflow-wrap: anywhere; }
+.shop-saves {
+  display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border-radius: 999px;
+  background: var(--pos-soft); color: var(--pos); font-size: 12.5px; font-weight: 650; overflow-wrap: anywhere;
+}
+.shop-saves .ui-icon, .shop-drop .ui-icon { width: 14px; height: 14px; flex: none; }
+
+/* A store: name with its subtotal, then its rows. */
+.shop-store { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.shop-store__head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 0 4px; }
+.shop-store__name { margin: 0; display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 15px; font-weight: 650; overflow-wrap: anywhere; }
+.shop-store__ico { width: 16px; height: 16px; flex: none; color: var(--muted); }
+.shop-store__sub { font-size: 14px; color: var(--ink-2); }
+
+/* A row is one big checkbox (44 px+ target); its title and reason may wrap at 390 px. */
+.shop-row { user-select: none; -webkit-user-select: none; }
+.shop-row:disabled { cursor: default; }
+.shop-row .check { transition: background-color 120ms ease-out, border-color 120ms ease-out; }
+.shop-row__title { display: block; font-weight: 600; font-size: 15px; overflow-wrap: anywhere; }
+.shop-row[data-on] .shop-row__title { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--line); }
+.shop-row__sub { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; margin-top: 2px; font-size: 12.5px; color: var(--muted); }
+.shop-row__price { align-self: center; }
+.shop-drop {
+  display: inline-flex; align-items: center; gap: 3px; padding: 1px 7px; border-radius: 999px;
+  background: var(--pos-soft); color: var(--pos); font-size: 11.5px; font-weight: 650;
+}
+.shop-wait { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
+.shop-wait .ui-icon { width: 12px; height: 12px; }
+
+/* One-off lines: the row and a Delete button (swipe left also deletes). */
+.shop-line { display: flex; align-items: center; background: var(--surface); }
+.shop-line .shop-row { flex: 1; min-width: 0; }
+.shop-line__del { margin-right: 6px; color: var(--muted); }
+.ui-list > .swipe + .swipe::before { content: ""; position: absolute; top: 0; left: 14px; right: 0; height: 1px; background: var(--line); z-index: 1; }
+.shop-add { align-self: flex-start; gap: 6px; padding-inline: 4px; }
+.shop-add .ui-icon { width: 18px; height: 18px; }
+
+.shop-note { margin: 0; padding: 0 4px; font-size: 12.5px; color: var(--muted); }
+
+.shop-form { display: flex; flex-direction: column; gap: 14px; }
+.shop-form .ui-input { font-size: 16px; } /* never under 16 px: iOS zooms into smaller inputs */
+
+/* The pinned "N ticked · Add to pantry" bar, above the tab bar and inside the safe area (like BulkBar). */
+.shop-bar {
+  position: fixed; left: 12px; right: 12px; z-index: 6;
+  bottom: calc(var(--tabbar-h, 64px) + env(safe-area-inset-bottom, 0px) + 8px);
+  max-width: 456px; margin-inline: auto;
+  display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 16px;
+  background: var(--ink); color: var(--bg); border-radius: var(--r-lg);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .28);
+  animation: shop-bar-in 260ms cubic-bezier(.2, .8, .2, 1);
+}
+.shop-bar__sum { flex: 1; min-width: 0; display: grid; font-size: 14px; font-weight: 600; line-height: 1.25; }
+.shop-bar__why { font-size: 11.5px; font-weight: 500; opacity: .75; }
+.shop-bar__btn {
+  min-height: 44px; padding: 0 16px; border: 0; border-radius: var(--r-sm);
+  font: inherit; font-size: 14.5px; font-weight: 650; cursor: pointer; white-space: nowrap;
+  background: var(--accent); color: var(--accent-ink);
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation; user-select: none; -webkit-user-select: none;
+  transition: transform 100ms ease-out;
+}
+.shop-bar__btn:active:not(:disabled) { transform: scale(.96); }
+.shop-bar__btn:disabled { opacity: .45; cursor: default; }
+.shop-bar__btn:focus-visible { outline: 2px solid var(--bg); outline-offset: 2px; }
+@keyframes shop-bar-in { from { transform: translateY(16px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .shop-bar { animation: none; }
+  .shop-bar__btn, .shop-row .check { transition: none; }
+}
