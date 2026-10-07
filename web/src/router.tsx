@@ -3,6 +3,7 @@ import { AppShell } from './shell/AppShell'
 import { FullScreenShell } from './shell/FullScreenShell'
 import { Home } from './screens/Home'
 import { Activity } from './screens/Activity'
+import { ActivityDetail } from './features/activity/Detail'
 import { Insights } from './screens/Insights'
 import { Compose, Items, Plan } from './screens/lazy'
 
@@ -14,6 +15,7 @@ export const router = createBrowserRouter(
       children: [
         { index: true, element: <Home /> },
         { path: 'activity', element: <Activity /> },
+        { path: 'activity/:id', element: <ActivityDetail /> },
         { path: 'plan', element: <Plan /> },
         { path: 'plan/items', element: <Items /> },
         { path: 'insights', element: <Insights /> },

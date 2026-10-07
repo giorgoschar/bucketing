@@ -133,7 +133,7 @@ function ReceiptField({ s, dispatch, online }: { s: ComposerState; dispatch: Dis
       ) : s.storedReceiptPath ? (
         <div className="ck-receipt__row">
           <span className="ck-receipt__name">Receipt attached</span>
-          <a className="btn btn--sm btn--ghost" href={`/transactions/files/${s.storedReceiptPath}`} target="_blank" rel="noopener">
+          <a className="btn btn--sm btn--ghost" href={`/api/v1/transactions/${encodeURIComponent(s.editId ?? '')}/receipt`} target="_blank" rel="noopener">
             View
           </a>
           {input('Replace')}

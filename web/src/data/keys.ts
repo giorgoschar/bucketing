@@ -41,10 +41,23 @@ export const keys = {
     one: (id: string) => ['transactions', 'one', id] as const,
     /** number: how many transactions an item has (its "history"), from GET /transactions?recurring_bill_id */
     forItem: (itemId: string) => ['transactions', 'item', itemId] as const,
+    /** TxnPage: one page of the Activity feed for a filter */
+    list: (filter: object, page: number) => ['transactions', 'list', filter, page] as const,
+    /** HistoryEvent[]: GET /transactions/{id}/history */
+    history: (id: string) => ['transactions', 'history', id] as const,
+    /** Counts: GET /transactions/counts (the chip badges) */
+    counts: () => ['transactions', 'counts'] as const,
   },
+  /** DuplicateGroup[]: GET /transactions/duplicates */
+  duplicates: () => ['duplicates'] as const,
+  /** RecentBatch[]: GET /transactions/bulk?limit=10 */
+  bulkRecent: () => ['bulk-recent'] as const,
   household: () => ['household'] as const,
   buckets: () => ['buckets'] as const,
   categories: () => ['categories'] as const,
+  /** The raw GET /buckets rows. keys.buckets() holds the narrowed Bucket[] (no show_income or icon), which the
+   *  bucket pickers need. It sits under the 'buckets' prefix, so invalidating keys.buckets() covers it too. */
+  bucketsFull: () => ['buckets', 'full'] as const,
   categoryRules: () => ['category-rules'] as const,
   cashStash: () => ['cash-stash'] as const,
 }

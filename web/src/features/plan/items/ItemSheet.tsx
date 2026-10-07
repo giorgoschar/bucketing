@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router'
 import { memberName, useBuckets, useCategories, useHousehold } from '../../../data/reads'
 import type { EntryOut, RecurringItemOut } from '../../../data/types'
 import { useSession } from '../../../session/SessionProvider'
@@ -183,6 +184,12 @@ function ItemBody({ item, onClose, onOpenEntry }: Omit<ItemSheetProps, 'open'>) 
       <button type="submit" className="btn btn--primary btn--block btn--lg" disabled={actions.busy}>
         {item ? 'Save' : 'Add item'}
       </button>
+      {item && (
+        // All time, by bill: "All" there selects by bill (2c spec §4.5).
+        <Link className="btn btn--ghost btn--block" to={`/activity?recurring_bill_id=${encodeURIComponent(item.id)}`}>
+          See payments
+        </Link>
+      )}
       {item && !locked && !deleteBlocked && (
         <button type="button" className="btn btn--danger btn--block" disabled={actions.busy} onClick={() => void remove()}>
           Delete item
