@@ -68,12 +68,6 @@ export function SwipeRow({ children, onDelete, onCopy, onLongPress, disabled }: 
 
   return (
     <div className="swipe" data-dragging={dx !== 0 || undefined}>
-      {!disabled && (onDelete || onCopy) && (
-        <div className="swipe__actions">
-          {onCopy && <button type="button" className="swipe__copy" onClick={onCopy}>Copy</button>}
-          {onDelete && <button type="button" className="swipe__delete" onClick={onDelete}>Delete</button>}
-        </div>
-      )}
       <div
         ref={content}
         className="swipe__content"
@@ -87,6 +81,12 @@ export function SwipeRow({ children, onDelete, onCopy, onLongPress, disabled }: 
       >
         {children}
       </div>
+      {!disabled && (onDelete || onCopy) && (
+        <div className="swipe__actions">
+          {onCopy && <button type="button" className="swipe__copy" onClick={onCopy}>Copy</button>}
+          {onDelete && <button type="button" className="swipe__delete" onClick={onDelete}>Delete</button>}
+        </div>
+      )}
     </div>
   )
 }

@@ -1,3 +1,4 @@
+import userEvent from '@testing-library/user-event'
 import { cleanup, act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { LONG_PRESS_MS, SwipeRow } from './SwipeRow'
@@ -51,6 +52,16 @@ describe('SwipeRow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Copy' }))
     expect(props.onDelete).toHaveBeenCalledOnce()
     expect(props.onCopy).toHaveBeenCalledOnce()
+  })
+
+  it('Tab goes row, then Copy, then Delete', async () => {
+    render(<SwipeRow onDelete={() => {}} onCopy={() => {}}><button type="button">Open</button></SwipeRow>)
+    await userEvent.tab()
+    expect(screen.getByRole('button', { name: 'Open' })).toHaveFocus()
+    await userEvent.tab()
+    expect(screen.getByRole('button', { name: 'Copy' })).toHaveFocus()
+    await userEvent.tab()
+    expect(screen.getByRole('button', { name: 'Delete' })).toHaveFocus()
   })
 
   it('long-press of 500 ms enters selection; moving cancels it', () => {

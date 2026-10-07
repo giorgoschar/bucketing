@@ -1,5 +1,6 @@
 /* 2c kit additions on tokens.css (mock: access-home.html §03). */
-.chips { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin-inline: -16px; padding-inline: 16px; }
+/* padding-block holds the chips' 44 pt hit area (chip::before), so overflow-x does not clip it; the margin cancels it. */
+.chips { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin-inline: -16px; padding-inline: 16px; padding-block: 6px; margin-block: -6px; }
 .chips::-webkit-scrollbar { display: none; }
 .chip {
   position: relative; flex: none; display: inline-flex; align-items: center; gap: 6px;
@@ -32,13 +33,15 @@
 .check svg { width: 14px; height: 14px; stroke-width: 3; }
 
 .swipe { position: relative; overflow: hidden; }
-.swipe__actions { position: absolute; inset: 0; display: flex; justify-content: space-between; visibility: hidden; }
-.swipe:focus-within .swipe__actions, .swipe[data-dragging] .swipe__actions { visibility: visible; }
+.swipe__actions { position: absolute; inset: 0; z-index: 0; display: flex; justify-content: space-between; clip-path: inset(50%); }
+/* Clipped, not display/visibility: none, so Tab and screen readers still reach Copy and Delete. */
+.swipe__actions:focus-within { z-index: 2; clip-path: none; }
+.swipe[data-dragging] .swipe__actions { clip-path: none; }
 .swipe__actions button { min-width: 88px; min-height: 44px; border: 0; font: inherit; font-weight: 650; cursor: pointer; }
 .swipe__copy { background: var(--accent-soft); color: var(--ink); }
 .swipe__delete { margin-left: auto; background: var(--neg); color: #fff; }
 .swipe__content {
-  position: relative; background: var(--surface); touch-action: pan-y;
+  position: relative; z-index: 1; background: var(--surface); touch-action: pan-y;
   -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
 }
 .swipe__content:not([data-dragging]) { transition: transform 220ms cubic-bezier(.2, .8, .2, 1); }
