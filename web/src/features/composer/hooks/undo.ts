@@ -1,24 +1,41 @@
-import { useQueryClient } from '@tanstack/react-query'
 import { useCallback } from 'react'
-import { api } from '../../../api/client'
-import { enqueue } from '../../../offline/queue'
+import { useAction } from '../../../data/action'
+import { isOnline } from '../../../data/online'
+import { toast } from '../../../ui/Toast'
 import { afterTxnWrite } from '../bridge'
 import { pendingStore } from './pendingStore'
 
-/** Undo of an online save (spec §4.12): DELETE the new row. Runs from a toast, after the composer closed. */
+const UNDO_FAILED = "Couldn't undo. Check the entry."
+const UNDO_OFFLINE = 'Undo needs a connection.'
+
+/**
+ * Undo of an online save (spec §4.12): DELETE the new row. Runs from a toast, after the composer closed.
+ * Online only (spec decision 8): never queued. A 404 means the row is already gone, so it counts as done;
+ * any other failure, ambiguous or not, brings the row back and says the undo failed.
+ */
 export function useUndoCreate(): (id: string) => Promise<void> {
-  const qc = useQueryClient()
+  const { run } = useAction<string>({
+    method: 'DELETE',
+    path: (id) => `/api/v1/transactions/${id}`,
+    invalidates: afterTxnWrite,
+    queue: 'offline-only',
+    toastRejections: false,
+  })
   return useCallback(
     async (id: string) => {
-      pendingStore.hide(id)
-      try {
-        const { response } = await api.DELETE('/api/v1/transactions/{txn_id}', { params: { path: { txn_id: id } } })
-        if (!response.ok && response.status !== 404) pendingStore.unhide(id)
-      } catch {
-        await enqueue({ method: 'DELETE', path: `/api/v1/transactions/${id}` }).catch(() => pendingStore.unhide(id))
+      if (!isOnline()) {
+        toast(UNDO_OFFLINE, { tone: 'error' })
+        return
       }
-      await Promise.all(afterTxnWrite.map((queryKey) => qc.invalidateQueries({ queryKey })))
+      pendingStore.hide(id)
+      const r = await run(id)
+      // 'queued' only if the browser went offline between the check and the send: the DELETE will replay
+      // (a replayed DELETE's 404 is done), so the row stays hidden.
+      if (r.status !== 'rejected' || r.code === 404) return
+      pendingStore.unhide(id)
+      if (r.code === 401) return // the session handler takes over
+      toast(UNDO_FAILED, { tone: 'error' })
     },
-    [qc],
+    [run],
   )
 }
