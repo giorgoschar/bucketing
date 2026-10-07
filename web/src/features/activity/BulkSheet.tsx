@@ -23,6 +23,8 @@ type Props = {
   items?: RecurringItem[]
   initial: BulkField
   onApplied: (result: BulkResult, req: BulkReq) => void
+  /** Every dry run's result, so the BulkBar can show its total for a filter or bill selection. */
+  onPreview?: (result: BulkResult) => void
   onClose: () => void
 }
 
@@ -39,7 +41,7 @@ function noBucketLabel(sel: Selection, rows: Txn[], items?: RecurringItem[]): st
   return null
 }
 
-export function BulkSheet({ open, selection, rows, refData, items, initial, onApplied, onClose }: Props) {
+export function BulkSheet({ open, selection, rows, refData, items, initial, onApplied, onPreview, onClose }: Props) {
   const isOnline = useOnline()
   const [values, setValues] = useState<Record<BulkField, string>>(LEAVE)
   const [moveBill, setMoveBill] = useState(false)
@@ -91,7 +93,11 @@ export function BulkSheet({ open, selection, rows, refData, items, initial, onAp
       setBusy(false)
     }
   }
-  const doPreview = () => run(async () => setPreview(await previewBulk(req())))
+  const showPreview = (r: BulkResult) => {
+    setPreview(r)
+    onPreview?.(r)
+  }
+  const doPreview = () => run(async () => showPreview(await previewBulk(req())))
   const doApply = () =>
     run(async () => {
       const r = req()
@@ -102,7 +108,7 @@ export function BulkSheet({ open, selection, rows, refData, items, initial, onAp
         onApplied(await applyBulk(r, expected), r)
       } catch (e) {
         // The selection changed under us: show the new numbers, keep the server's message.
-        if (e instanceof ApiError && e.status === 409) setPreview(await previewBulk(r))
+        if (e instanceof ApiError && e.status === 409) showPreview(await previewBulk(r))
         throw e
       }
     })

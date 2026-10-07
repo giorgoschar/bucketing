@@ -188,4 +188,17 @@ describe('BulkSheet from Activity', () => {
     expect(screen.queryByRole('toolbar', { name: /Bulk actions/ })).toBeNull()
     expect((fake.callsTo(BULK)[0].body as { select: unknown }).select).toEqual({ ids: [row.id] })
   })
+
+  it('a filter selection shows no total until a preview gives one', async () => {
+    fakeApi({ ...refRoutes(), 'GET /api/v1/transactions': () => pageOf([makeTxn({ notes: 'one' })], { total: 3 }), ...ECHO })
+    renderActivity(<Activity />, { route: '/activity?missing_payer=1' })
+    fireEvent.click(await screen.findByRole('button', { name: 'Select all 3' }))
+    const bar = () => screen.getByRole('toolbar', { name: 'Bulk actions for 3 selected' })
+    expect(bar()).not.toHaveTextContent('€')
+    fireEvent.click(screen.getByRole('button', { name: 'Bucket' }))
+    pickBucket('b-bills')
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+    await screen.findByRole('button', { name: 'Apply to 2' })
+    expect(bar()).toHaveTextContent('€90.00')
+  })
 })

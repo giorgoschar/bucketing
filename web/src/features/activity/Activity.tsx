@@ -22,7 +22,7 @@ import { ACTIVITY_WRITES, type Txn, useCounts, useRefData } from './hooks'
 import { useHeldDeletes } from './heldDeletes'
 import { OptionSheet } from './OptionSheet'
 import { RecentBulk } from './RecentBulk'
-import { OFF, isSelected, reduce, selectedCount } from './selection'
+import { OFF, type Selection, isSelected, reduce, selectedCount } from './selection'
 import { useDeleteWithUndo } from './useDeleteWithUndo'
 import { useUndoBulk } from './useUndoBulk'
 import './activity.css'
@@ -89,9 +89,13 @@ export function Activity() {
   const toast = useToast()
   const selecting = sel.kind !== 'off'
   const count = selectedCount(sel)
-  const pickedTotal = sel.kind === 'picked'
-    ? loaded.rows.filter((r) => sel.ids.includes(r.id)).reduce((sum, r) => sum + r.amount * (r.exchange_rate || 1), 0)
-    : null
+  // The BulkBar's "N · €X" (spec §4.5): money out, in base currency. Hand-picked rows are summed here; for a
+  // filter or bill selection only the server knows, so it shows once a preview of this selection gave it.
+  const [previewed, setPreviewed] = useState<{ sel: Selection; out: number } | null>(null)
+  const moneyOut = sel.kind === 'picked'
+    ? loaded.rows.filter((r) => sel.ids.includes(r.id) && r.type === 'expense')
+      .reduce((sum, r) => sum + r.amount * (r.exchange_rate || 1), 0)
+    : previewed?.sel === sel ? previewed.out : null
   // Select by filter needs a filter: the server refuses an empty one (400).
   const canSelectAll = loaded.total > 0 && !isEmpty(f)
   const selectAll = () => {
@@ -175,7 +179,7 @@ export function Activity() {
       {selecting && (
         <BulkBar
           count={count}
-          total={pickedTotal !== null && count > 0 ? <Money amount={pickedTotal} /> : undefined}
+          total={moneyOut ? <Money amount={moneyOut} /> : undefined}
           disabled={!online}
           disabledReason="Needs a connection"
           actions={BULK_ACTIONS.map((a) => ({ label: a.label, onClick: () => setBulk(a.field) }))}
@@ -189,6 +193,7 @@ export function Activity() {
         refData={refData}
         items={items}
         onClose={() => setBulk(null)}
+        onPreview={(r) => setPreviewed({ sel, out: r.total_out })}
         onApplied={(result, req) => {
           setBulk(null)
           dispatch({ type: 'cancel' })

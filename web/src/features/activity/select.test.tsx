@@ -82,4 +82,18 @@ describe('selection mode', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Select/ }))
     expect(await screen.findByRole('button', { name: 'All' })).toBeDisabled()
   })
+
+  it('the BulkBar total is the money out of the picked rows (income is not added in)', async () => {
+    const out = makeTxn({ notes: 'bread', amount: 10 })
+    const pay = makeTxn({ notes: 'salary', amount: 50, type: 'income', bucket_id: null })
+    fakeApi({ ...refRoutes(), 'GET /api/v1/transactions': () => pageOf([out, pay]) })
+    renderActivity(<Activity />)
+    fireEvent.click(await screen.findByRole('button', { name: 'More' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Select/ }))
+    fireEvent.click(await screen.findByText('bread'))
+    fireEvent.click(screen.getByText('salary'))
+    const bar = screen.getByRole('toolbar', { name: 'Bulk actions for 2 selected' })
+    expect(bar).toHaveTextContent('€10.00')
+    expect(bar).not.toHaveTextContent('€60.00')
+  })
 })
