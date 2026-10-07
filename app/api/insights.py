@@ -2,15 +2,21 @@
 API insights / analytics route.
 """
 
-from fastapi import APIRouter, Depends, Query
+import datetime as dt
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api.plan import parse_month
-from app.api.planning_models import CategoryUsualOut
+from app.api.planning_models import CategoryUsualOut, Money
 from app.api_auth import require_api_auth
 from app.core.database import get_db
 from app.services import InsightFilters, build_insights
+from app.services.insights import get_category_detail, resolve_insight_period
+from app.services.person import get_person_summary
 from app.services.usual import categories_vs_usual
+from app.validators import household_member_ids
 
 router = APIRouter(prefix="/insights", tags=["insights"])
 
@@ -84,6 +90,8 @@ def insights(
         "net": data["net"],
         # In / Out (logged + not-yet-logged cash) / Net for the period.
         "in_out": data["in_out"],
+        # Six calendar months to this one, oldest first; ignores the period (2d §7.3).
+        "monthly_in_out": data["monthly_in_out"],
         "paid_by": summary.get("paid_by", {}),
         "kpis": data["kpis"],
         "categories": data["categories"],
@@ -124,3 +132,126 @@ def categories_usual(
     user, hh_id = auth
     year, mon = parse_month(month)
     return categories_vs_usual(db, hh_id, year, mon)
+
+
+class PersonLargestOut(BaseModel):
+    amount: Money
+    notes: str | None
+    date: dt.date
+
+
+class PersonShareOut(BaseModel):
+    user_id: str
+    paid_out: Money
+    my_share: Money
+    balance: Money  # paid_out - my_share; positive: paid more than their share
+    share_pct: Money | None
+    household_total: Money
+    largest: PersonLargestOut | None
+    shared_count: int
+    transaction_count: int
+
+
+def _member_or_404(db: Session, hh_id: str, user_id: str) -> str:
+    if user_id not in household_member_ids(db, hh_id):
+        raise HTTPException(status_code=404, detail="Member not found")
+    return user_id
+
+
+@router.get("/person", response_model=PersonShareOut)
+def person_share(
+    user_id: str = Query(...),
+    preset: str = Query(default="this_month"),
+    start_date: str = Query(default=""),
+    end_date: str = Query(default=""),
+    auth=Depends(require_api_auth),
+    db: Session = Depends(get_db),
+):
+    """Paid out vs my share for one member over the period (2d §7.1). The
+    settle-up ``net`` and ``by_bucket`` of get_person_summary are left out:
+    there is no settle up in the new app."""
+    user, hh_id = auth
+    _member_or_404(db, hh_id, user_id)
+    period = resolve_insight_period(preset, start_date, end_date)
+    s = get_person_summary(db, hh_id, user_id, period["start"], period["end"])
+    return PersonShareOut(
+        user_id=user_id,
+        paid_out=s["paid_out"],
+        my_share=s["my_share"],
+        balance=s["balance"],
+        share_pct=s["share_pct"],
+        household_total=s["household_total"],
+        largest=s["largest"],
+        shared_count=s["shared_count"],
+        transaction_count=s["transaction_count"],
+    )
+
+
+class CategoryRefOut(BaseModel):
+    id: str
+    name: str
+    icon: str | None
+    color: str | None
+
+
+class CategoryMonthOut(BaseModel):
+    year: int
+    month: int
+    label: str
+    total: Money
+
+
+class CategoryMerchantOut(BaseModel):
+    merchant: str  # "Other" groups expenses without one
+    count: int
+    total: Money
+
+
+class CategoryExpenseOut(BaseModel):
+    id: str
+    date: dt.date
+    merchant: str | None
+    notes: str | None
+    amount: Money  # the lens person's share under a member lens
+    paid_by: str | None
+
+
+class CategoryRuleRefOut(BaseModel):
+    id: str
+    pattern: str
+    match_count: int
+
+
+class CategoryDetailOut(BaseModel):
+    category: CategoryRefOut | None  # null: uncategorised
+    total: Money
+    count: int
+    avg_per_month: Money | None
+    months: list[CategoryMonthOut]
+    merchants: list[CategoryMerchantOut]
+    recent: list[CategoryExpenseOut]
+    rules: list[CategoryRuleRefOut]
+
+
+@router.get("/categories/{category_id}", response_model=CategoryDetailOut)
+def category_detail(
+    category_id: str,
+    preset: str = Query(default="this_month"),
+    start_date: str = Query(default=""),
+    end_date: str = Query(default=""),
+    paid_by: str = Query(default=""),
+    auth=Depends(require_api_auth),
+    db: Session = Depends(get_db),
+):
+    """One category over the period (2d §7.2). ``category_id`` may be
+    ``uncategorised``."""
+    user, hh_id = auth
+    if paid_by:
+        _member_or_404(db, hh_id, paid_by)
+    period = resolve_insight_period(preset, start_date, end_date)
+    data = get_category_detail(
+        db, hh_id, category_id, period["start"], period["end"], paid_by=paid_by or None
+    )
+    if data is None:
+        raise HTTPException(status_code=404, detail="Category not found")
+    return data

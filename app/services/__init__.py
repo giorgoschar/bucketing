@@ -37,6 +37,7 @@ from app.services.dashboard import (  # noqa: F401
 from app.services.duplicates import (  # noqa: F401
     DUPLICATE_AMOUNT_TOLERANCE,
     DUPLICATE_WINDOW_DAYS,
+    duplicate_check,
     find_duplicate_candidates,
     find_household_duplicates,
 )

@@ -177,7 +177,7 @@ def _app_origin(request: Request) -> str | None:
     return _origin_of(settings.app_base_url or str(request.base_url))
 
 
-def _cookie_auth(request: Request, db: Session):
+def _cookie_auth(request: Request, db: Session, *, allow_unenrolled: bool = False):
     """Session-cookie auth for the new app at /app (same origin, no tokens in JS)."""
     from app.auth import COOKIE_NAME, csrf_matches, decode_cookie
 
@@ -210,7 +210,7 @@ def _cookie_auth(request: Request, db: Session):
         raise unauth
     if request.method in _UNSAFE and not csrf_matches(request, user.id):
         raise HTTPException(status_code=403, detail="CSRF token missing or invalid")
-    if not user.totp_enabled and session.get("amr") != "oidc":
+    if not allow_unenrolled and not user.totp_enabled and session.get("amr") != "oidc":
         raise HTTPException(status_code=403, detail="TOTP enrollment required")
     # The offline queue names the account it was saved under; the shared session cookie may have
     # flipped to someone else since, and a queued write must never land in their household.
@@ -226,23 +226,15 @@ def _cookie_auth(request: Request, db: Session):
     return user, hh_id
 
 
-def require_api_auth(
+def _api_auth(
     request: Request,
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
-    db: Session = Depends(get_db),
+    credentials: HTTPAuthorizationCredentials | None,
+    db: Session,
+    *,
+    allow_unenrolled: bool,
 ):
-    """
-    Full API auth dependency.  Validates the Bearer access token and enforces:
-      1. Token present, valid signature, not expired
-      2. scope == 'api' (not a pending 2FA token)
-      3. User exists in DB
-      4. session_version matches (invalidated on password/TOTP change)
-      5. TOTP enrolled
-
-    Returns (user, household_id).
-    """
     if not credentials:
-        return _cookie_auth(request, db)
+        return _cookie_auth(request, db, allow_unenrolled=allow_unenrolled)
 
     if credentials.credentials.startswith(PAT_PREFIX):
         # Personal ingest tokens only ever authenticate the ingest endpoint.
@@ -278,6 +270,7 @@ def require_api_auth(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    # allow_unenrolled is for the cookie session only; a Bearer token always needs 2FA.
     if not user.totp_enabled:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -285,6 +278,35 @@ def require_api_auth(
         )
 
     return user, claims["hh"]
+
+
+def require_api_auth(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    db: Session = Depends(get_db),
+):
+    """
+    Full API auth dependency.  Validates the Bearer access token and enforces:
+      1. Token present, valid signature, not expired
+      2. scope == 'api' (not a pending 2FA token)
+      3. User exists in DB
+      4. session_version matches (invalidated on password/TOTP change)
+      5. TOTP enrolled
+
+    Returns (user, household_id).
+    """
+    return _api_auth(request, credentials, db, allow_unenrolled=False)
+
+
+def require_api_auth_enrolling(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    db: Session = Depends(get_db),
+):
+    """require_api_auth without the "2FA enrolled" check: for the three
+    security endpoints a signed-in member needs to set 2FA up again after
+    turning it off (2d §7.5). Everything else uses require_api_auth."""
+    return _api_auth(request, credentials, db, allow_unenrolled=True)
 
 
 PAT_PREFIX = "pat_"

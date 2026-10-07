@@ -4,28 +4,45 @@ API transactions routes — full CRUD + receipt scan.
 
 import uuid
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
+from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session, joinedload
 
+from app.api.transaction_models import (
+    CountsOut,
+    DuplicatesOut,
+    HistoryOut,
+    TransactionOut,
+    TransactionPage,
+)
 from app.api_auth import require_api_auth
 from app.core.database import get_db
 from app.core.money import quantize
 from app.models import (
+    CashMovement,
     Category,
     PayerMode,
     Transaction,
     TransactionType,
 )
+from app.routes.scan import lookup_qr_receipt
 from app.schemas import TransactionCreate, TransactionUpdate
-from app.services import DeletedTransactionReplay, DuplicateTransaction
+from app.services import DeletedTransactionReplay, DuplicateTransaction, duplicate_check
 from app.services import create_transaction as create_transaction_service
 from app.services import delete_transaction as delete_transaction_soft
 from app.services import update_transaction as update_transaction_service
+from app.services.duplicates import drop_dismissed, find_household_duplicates
+from app.services.history import transaction_history
+from app.services.money import base_amount_expr
 from app.services.receipt_parser import match_category, parse_receipt_text
+from app.services.transaction_filter import TransactionFilter, apply_filter
 from app.validators import (
-    parse_year_month,
     require_bucket,
     require_receipt_content,
 )
@@ -72,75 +89,161 @@ def _txn_dict(t: Transaction) -> dict:
     }
 
 
+class FeedQuery(TransactionFilter):
+    """The feed's query string: the shared filter plus paging."""
+
+    page: int = Field(1, ge=1)
+    page_size: int = Field(50, ge=1, le=200)
+
+
+def _takes(db: Session, ids: list[str]) -> set[str]:
+    """Which of ``ids`` have an active linked cash take (one query)."""
+    if not ids:
+        return set()
+    return {
+        i
+        for (i,) in db.query(CashMovement.transaction_id).filter(
+            CashMovement.transaction_id.in_(ids), CashMovement.active()
+        )
+    }
+
+
+def transaction_out(t: Transaction, has_take: bool) -> dict:
+    d = _txn_dict(t)
+    d["has_take"] = has_take
+    d["missing_payer"] = (
+        t.type == TransactionType.expense
+        and (t.payer_mode or PayerMode.single.value) == PayerMode.single.value
+        and t.paid_by is None
+    )
+    return d
+
+
+def _day_totals(filtered, dates: list[date]) -> dict[str, Decimal]:
+    """Net per date over the whole filtered set, not just this page's rows."""
+    totals = {d.isoformat(): Decimal(0) for d in dates}
+    if not dates:
+        return totals
+    signed = case(
+        (Transaction.type == TransactionType.income, base_amount_expr()),
+        else_=-base_amount_expr(),
+    )
+    rows = (
+        filtered.filter(
+            Transaction.type != TransactionType.transfer,
+            Transaction.transaction_date.in_(dates),
+        )
+        .with_entities(Transaction.transaction_date, func.sum(signed))
+        .group_by(Transaction.transaction_date)
+        .all()
+    )
+    for day, total in rows:
+        totals[day.isoformat()] = quantize(total)
+    return totals
+
+
+class QrScanIn(BaseModel):
+    url: str = ""
+
+
+class QrReceiptOut(BaseModel):
+    amount: float | None
+    currency: str
+    date: str | None
+    merchant: str | None
+    category_hint: str | None
+    category_id: str | None
+
+
+class DuplicateOut(BaseModel):
+    id: str
+    amount: float
+    currency: str
+    date: str
+    notes: str | None
+    merchant: str | None
+    bucket: str | None
+    paid_by: str | None
+    same_bucket: bool
+
+
+class DuplicateCheckOut(BaseModel):
+    duplicates: list[DuplicateOut]
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
 
 
-@router.get("")
+@router.get("", response_model=TransactionPage)
 def list_transactions(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=200),
-    bucket_id: str = Query(default=""),
-    category_id: str = Query(default=""),
-    type: str = Query(default=""),
-    year: int = Query(default=None),
-    month: int = Query(default=None),
-    recurring_bill_id: str = Query(default=""),
-    fixed: bool = Query(default=False),
+    f: Annotated[FeedQuery, Query()],
     auth=Depends(require_api_auth),
     db: Session = Depends(get_db),
 ):
+    """The Activity feed (2c spec §5.1): the shared TransactionFilter, 50 a
+    page (max 200), newest first, with each shown day's net."""
     user, hh_id = auth
-    q = db.query(Transaction).filter(Transaction.active(), Transaction.household_id == hh_id)
-    # Drill-downs from the planning figures (spec §5): one item's payments,
-    # or the Fixed costs (expenses linked to an item, with no bucket).
-    if recurring_bill_id:
-        q = q.filter(Transaction.recurring_bill_id == recurring_bill_id)
-    if fixed:
-        q = q.filter(
-            Transaction.type == TransactionType.expense,
-            Transaction.bucket_id.is_(None),
-            Transaction.recurring_bill_id.isnot(None),
-        )
-
-    if bucket_id:
-        q = q.filter(Transaction.bucket_id == bucket_id)
-    if category_id:
-        q = q.filter(Transaction.category_id == category_id)
-    if type:
-        try:
-            q = q.filter(Transaction.type == TransactionType(type))
-        except ValueError:
-            raise HTTPException(
-                status_code=400, detail=f"Unknown transaction type '{type}'"
-            ) from None
-    parse_year_month(year, month)
-    if year and month:
-        start = date(year, month, 1)
-        end_m = month + 1 if month < 12 else 1
-        end_y = year if month < 12 else year + 1
-        end = date(end_y, end_m, 1)
-        q = q.filter(Transaction.transaction_date >= start, Transaction.transaction_date < end)
-    elif year:
-        q = q.filter(
-            Transaction.transaction_date >= date(year, 1, 1),
-            Transaction.transaction_date < date(year + 1, 1, 1),
-        )
-
-    total = q.count()
+    filtered = apply_filter(
+        db.query(Transaction).filter(Transaction.active(), Transaction.household_id == hh_id),
+        f,
+        db,
+        hh_id,
+    )
+    total = filtered.count()
     items = (
-        q.options(joinedload(Transaction.splits))
-        .order_by(Transaction.transaction_date.desc(), Transaction.created_at.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
+        filtered.options(joinedload(Transaction.splits))
+        .order_by(
+            Transaction.transaction_date.desc(), Transaction.created_at.desc(), Transaction.id
+        )
+        .offset((f.page - 1) * f.page_size)
+        .limit(f.page_size)
         .all()
     )
+    takes = _takes(db, [t.id for t in items])
     return {
         "total": total,
-        "page": page,
-        "page_size": page_size,
-        "items": [_txn_dict(t) for t in items],
+        "page": f.page,
+        "page_size": f.page_size,
+        "items": [transaction_out(t, t.id in takes) for t in items],
+        "day_totals": _day_totals(filtered, sorted({t.transaction_date for t in items})),
+    }
+
+
+@router.post("/scan/qr", response_model=QrReceiptOut)
+async def scan_qr(
+    body: QrScanIn,
+    auth=Depends(require_api_auth),
+    db: Session = Depends(get_db),
+):
+    """Read a receipt from the URL in its QR code (AADE lookup). Same rules,
+    messages and result as the web route ``POST /transactions/scan/qr``."""
+    user, hh_id = auth
+    return await lookup_qr_receipt(db, hh_id, body.url)
+
+
+@router.get("/check-duplicate", response_model=DuplicateCheckOut)
+def check_duplicate(
+    amount: str = Query(default=""),
+    transaction_date: str = Query(default=""),
+    bucket_id: str = Query(default=""),
+    exclude_id: str = Query(default=""),
+    auth=Depends(require_api_auth),
+    db: Session = Depends(get_db),
+):
+    """Expenses that look like the one being entered (same amount ±0.01,
+    within 3 days), at most 5. Advisory only: never blocks a save."""
+    user, hh_id = auth
+    return {
+        "duplicates": duplicate_check(
+            db,
+            hh_id,
+            amount=amount,
+            transaction_date=transaction_date,
+            bucket_id=bucket_id,
+            exclude_id=exclude_id,
+        )
     }
 
 
@@ -177,7 +280,54 @@ def create_transaction(
     return _txn_dict(txn)
 
 
-@router.get("/{txn_id}")
+# Literal paths: declared before /{txn_id}, or FastAPI reads "counts" as an id.
+
+
+@router.get("/counts", response_model=CountsOut)
+def transaction_counts(
+    auth=Depends(require_api_auth),
+    db: Session = Depends(get_db),
+):
+    """The Activity chips' counts: expenses with no payer, and possible
+    duplicate groups (90 days, ±3 days)."""
+    user, hh_id = auth
+    no_payer = (
+        db.query(func.count(Transaction.id))
+        .filter(
+            Transaction.household_id == hh_id,
+            Transaction.active(),
+            Transaction.missing_payer(),
+            Transaction.type == TransactionType.expense,
+        )
+        .scalar()
+    )
+    return {
+        "no_payer": no_payer,
+        "duplicate_groups": len(drop_dismissed(db, hh_id, find_household_duplicates(db, hh_id))),
+    }
+
+
+@router.get("/duplicates", response_model=DuplicatesOut)
+def duplicate_groups(
+    auth=Depends(require_api_auth),
+    db: Session = Depends(get_db),
+):
+    """Possible duplicates over the last 90 days (find_household_duplicates)."""
+    user, hh_id = auth
+    groups = drop_dismissed(db, hh_id, find_household_duplicates(db, hh_id))
+    takes = _takes(db, [t.id for g in groups for t in g["transactions"]])
+    return {
+        "groups": [
+            {
+                "amount": g["amount"],
+                "transactions": [transaction_out(t, t.id in takes) for t in g["transactions"]],
+            }
+            for g in groups
+        ]
+    }
+
+
+@router.get("/{txn_id}", response_model=TransactionOut)
 def get_transaction(
     txn_id: str,
     auth=Depends(require_api_auth),
@@ -193,7 +343,7 @@ def get_transaction(
     )
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found")
-    return _txn_dict(txn)
+    return transaction_out(txn, bool(_takes(db, [txn.id])))
 
 
 @router.put("/{txn_id}")
@@ -316,3 +466,45 @@ async def scan_parse(
         "category_hint": parsed["category_hint"],
         "category_id": category_id,
     }
+
+
+@router.get("/{txn_id}/receipt", response_class=FileResponse)
+def get_receipt(
+    txn_id: str,
+    auth=Depends(require_api_auth),
+    db: Session = Depends(get_db),
+):
+    """The receipt file, with API auth (the old /transactions/files/ uses the
+    old app's cookie). 404 for no receipt, deleted, another household or a
+    missing file."""
+    user, hh_id = auth
+    txn = (
+        db.query(Transaction)
+        .filter(Transaction.active())
+        .filter_by(id=txn_id, household_id=hh_id)
+        .first()
+    )
+    if txn is None or not txn.receipt_path:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+    path = Path(UPLOADS_DIR) / Path(txn.receipt_path).name
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Receipt not found")
+    return FileResponse(str(path))
+
+
+@router.get("/{txn_id}/history", response_model=HistoryOut)
+def get_history(
+    txn_id: str,
+    auth=Depends(require_api_auth),
+    db: Session = Depends(get_db),
+):
+    user, hh_id = auth
+    txn = (
+        db.query(Transaction)
+        .filter(Transaction.active())
+        .filter_by(id=txn_id, household_id=hh_id)
+        .first()
+    )
+    if txn is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return {"events": transaction_history(db, txn)}

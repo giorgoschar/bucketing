@@ -92,10 +92,23 @@ _PROVIDER_ERRORS = (httpx.HTTPError, OAuthError, OSError, ValueError, RuntimeErr
 
 LINK_MAX_AGE_SECONDS = 600
 
+# 2d §7.5: the new app's Profile screen posts return_to=app; only that literal
+# is honoured, so the redirect target can never come from the request.
+APP_RETURN = "app"
+APP_PROFILE = "/app/settings/profile"
+
+
+def _back(to_app: bool, outcome: str, legacy: str) -> RedirectResponse:
+    """Where a link or unlink ends: the app's Profile with ?passkey=<outcome>
+    when the form said return_to=app, else ``legacy`` (unchanged)."""
+    target = f"{APP_PROFILE}?passkey={outcome}" if to_app else legacy
+    return RedirectResponse(target, status_code=302)
+
 
 def _clear_link_state(request: Request) -> None:
     request.session.pop("link_user_id", None)
     request.session.pop("link_started_at", None)
+    request.session.pop("link_return", None)
 
 
 @router.post("/link", dependencies=[Depends(_enabled), Depends(require_csrf)])
@@ -104,15 +117,17 @@ async def link(
     request: Request,
     password: str = Form(""),
     totp_code: str = Form(""),
+    return_to: str = Form(""),
     db: Session = Depends(get_db),
 ):
+    to_app = return_to == APP_RETURN
     found = _password_session_user(request, db)
     if not found:
-        return _fail("link_requires_login")
+        return _back(True, "error", "") if to_app else _fail("link_requires_login")
     user, hh_id = found
     _clear_link_state(request)
     if is_locked(user):
-        return RedirectResponse("/settings?passkey_error=1", status_code=302)
+        return _back(to_app, "error", "/settings?passkey_error=1")
     # Fresh credentials every time; never say which factor was wrong.
     password_ok = verify_password_constant_time(password, user.password_hash)
     totp_ok = bool(user.totp_secret) and verify_totp(db, user, totp_code.strip())
@@ -122,7 +137,7 @@ async def link(
         if password_ok:
             # Same signal as the login path: someone knows the password.
             alert_failed_second_factor(db, request, user, hh_id)
-        return RedirectResponse("/settings?passkey_error=1", status_code=302)
+        return _back(to_app, "error", "/settings?passkey_error=1")
     clear_failed_logins(db, user)
     # Drop any other pending transaction (a quiet sign-in's state must not be able
     # to complete as a link), then start this one, always prompted.
@@ -130,6 +145,8 @@ async def link(
     state = secrets.token_urlsafe(32)
     request.session["link_user_id"] = user.id
     request.session["link_started_at"] = int(time.time())
+    if to_app:
+        request.session["link_return"] = APP_RETURN
     request.session[f"oidc_prompted:{state}"] = True
     # prompt=login makes Pocket ID run a fresh passkey ceremony.
     try:
@@ -141,16 +158,17 @@ async def link(
             "OIDC provider error: %s: %s", type(exc).__name__, exc, exc_info=True
         )
         _clear_link_state(request)
-        return RedirectResponse("/settings?passkey_error=1", status_code=302)
+        return _back(to_app, "error", "/settings?passkey_error=1")
 
 
 @router.post("/unlink", dependencies=[Depends(_enabled), Depends(require_csrf)])
 @limiter.limit("20/minute")
-async def unlink(request: Request, db: Session = Depends(get_db)):
+async def unlink(request: Request, return_to: str = Form(""), db: Session = Depends(get_db)):
+    to_app = return_to == APP_RETURN
     found = _password_session_user(request, db)
     if not found:
         # Back to Settings (where the form lives), not into the new app.
-        return RedirectResponse("/settings?passkey_error=1", status_code=302)
+        return _back(to_app, "error", "/settings?passkey_error=1")
     user, hh_id = found
     user.oidc_subject = None
     # Sessions opened with the passkey must not outlive it: bump session_version
@@ -160,7 +178,7 @@ async def unlink(request: Request, db: Session = Depends(get_db)):
     invalidate_user_sessions(db, user)
     db.commit()
     security_logger.info("OIDC passkey unlinked")
-    response = RedirectResponse("/settings?passkey=unlinked", status_code=302)
+    response = _back(to_app, "unlinked", "/settings?passkey=unlinked")
     set_session(response, user.id, hh_id, user.session_version, amr="pwd", iat=current_iat(request))
     return response
 
@@ -198,32 +216,41 @@ async def callback(request: Request, db: Session = Depends(get_db)):
     # never turn a later sign-in in this browser into a link.
     link_user_id = request.session.pop("link_user_id", None)
     link_started_at = request.session.pop("link_started_at", None)
+    link_to_app = request.session.pop("link_return", None) == APP_RETURN
+
+    def fail(code: str) -> RedirectResponse:
+        """A failed link started from the app goes back to its Profile screen."""
+        if link_user_id and link_to_app:
+            request.session.clear()
+            return _back(True, "error", "")
+        return _fail_clear(request, code)
+
     # Whether THIS transaction (keyed by its state) forced a passkey prompt. Missing
     # means unknown: treated as not prompted, so the trusted-device check applies.
     state = request.query_params.get("state")
     prompted = bool(state and request.session.pop(f"oidc_prompted:{state}", False))
     if request.query_params.get("error"):
-        return _fail_clear(request, "denied")
+        return fail("denied")
     try:
         token = await oidc_client().authorize_access_token(request)
     except OAuthError as exc:
         security_logger.warning("OIDC callback rejected: %s", type(exc).__name__)
-        return _fail_clear(request, "state")
+        return fail("state")
     except JoseError as exc:
         security_logger.warning("OIDC ID token rejected: %s", type(exc).__name__)
-        return _fail_clear(request, "token")
+        return fail("token")
     except _PROVIDER_ERRORS as exc:
         # Token endpoint/JWKS fetch failed or returned garbage. Authlib/joserfc/httpx
         # messages name the URL and the problem, never the code, token or secret.
         security_logger.warning(
             "OIDC provider error: %s: %s", type(exc).__name__, exc, exc_info=True
         )
-        return _fail_clear(request, "provider")
+        return fail("provider")
     claims = token.get("userinfo") or {}
 
     if link_user_id:
         if not prompted:
-            return _fail_clear(request, "link_requires_login")
+            return fail("link_requires_login")
         found = _password_session_user(request, db)
         user, hh_id = found if found else (None, None)
         fresh = (
@@ -231,22 +258,22 @@ async def callback(request: Request, db: Session = Depends(get_db)):
             and 0 <= time.time() - link_started_at <= LINK_MAX_AGE_SECONDS
         )
         if not user or user.id != link_user_id or not fresh:
-            return _fail_clear(request, "link_requires_login")
+            return fail("link_requires_login")
         try:
             changed = link_oidc_subject(db, user, claims.get("sub"))
         except IdentityError as exc:
             security_logger.warning("OIDC link refused: %s", exc.code)
-            return _fail_clear(request, exc.code)
+            return fail(exc.code)
         if changed:  # re-linking the same passkey is a no-op: no second alert
             security_logger.info("OIDC passkey linked")
             alert_passkey_linked(db, request, user, hh_id)
-        return RedirectResponse("/app/?linked=1", status_code=302)
+        return _back(link_to_app, "linked", "/app/?linked=1")
 
     try:
         user = resolve_oidc_user(db, claims)
     except IdentityError as exc:
         security_logger.warning("OIDC sign-in refused: %s", exc.code)
-        return _fail_clear(request, exc.code)
+        return fail(exc.code)
     member = (
         db.query(HouseholdMember)
         .filter_by(user_id=user.id)
@@ -255,7 +282,7 @@ async def callback(request: Request, db: Session = Depends(get_db)):
     )
     if not member:
         security_logger.warning("OIDC sign-in refused: no_household")
-        return _fail_clear(request, "no_household")
+        return fail("no_household")
     if not prompted:
         # Quiet sign-in: only a device that signed in as this user, at the current
         # session_version, may skip the passkey ceremony. Anything else (first

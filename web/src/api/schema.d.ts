@@ -435,6 +435,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/insights/categories/{category_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Category Detail
+         * @description One category over the period (2d §7.2). ``category_id`` may be
+         *     ``uncategorised``.
+         */
+        get: operations["category_detail_api_v1_insights_categories__category_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/insights/person": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Person Share
+         * @description Paid out vs my share for one member over the period (2d §7.1). The
+         *     settle-up ``net`` and ``by_bucket`` of get_person_summary are left out:
+         *     there is no settle up in the new app.
+         */
+        get: operations["person_share_api_v1_insights_person_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/matches": {
         parameters: {
             query?: never;
@@ -835,7 +878,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Categories */
+        /**
+         * List Categories
+         * @description Categories with how many active expenses and rules use each (2d §5.3:
+         *     the delete confirmation names both counts).
+         */
         get: operations["list_categories_api_v1_settings_categories_get"];
         put?: never;
         /** Create Category */
@@ -859,6 +906,53 @@ export interface paths {
         post?: never;
         /** Delete Category */
         delete: operations["delete_category_api_v1_settings_categories__category_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/category-rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Category Rules
+         * @description The household's rules, most used first.
+         */
+        get: operations["list_category_rules_api_v1_settings_category_rules_get"];
+        put?: never;
+        /**
+         * Upsert Category Rule
+         * @description Teach a rule, or re-point the one with the same folded pattern (kept
+         *     match_count). 201 when new, 200 when it existed.
+         */
+        post: operations["upsert_category_rule_api_v1_settings_category_rules_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/category-rules/{rule_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Category Rule
+         * @description Edit a rule's pattern and category; match_count is kept. A pattern
+         *     another rule already folds to is a 409 (no silent merge on edit).
+         */
+        put: operations["update_category_rule_api_v1_settings_category_rules__rule_id__put"];
+        post?: never;
+        /** Delete Category Rule */
+        delete: operations["delete_category_rule_api_v1_settings_category_rules__rule_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -919,6 +1013,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Prefs */
+        get: operations["get_prefs_api_v1_settings_notifications_get"];
+        /** Put Prefs */
+        put: operations["put_prefs_api_v1_settings_notifications_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings/profile": {
         parameters: {
             query?: never;
@@ -948,6 +1060,85 @@ export interface paths {
         put?: never;
         /** Change Password */
         post: operations["change_password_api_v1_settings_profile_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/security": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Security */
+        get: operations["security_api_v1_settings_security_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/security/totp/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Totp Disable
+         * @description Turn 2FA off: the same effects as the old route (secret and codes
+         *     cleared, every session and token revoked), then this browser's cookie is
+         *     reissued so the caller stays signed in, to set it up again.
+         */
+        post: operations["totp_disable_api_v1_settings_security_totp_disable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/security/totp/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Totp Enable
+         * @description Confirm the pending secret with a code; returns the 8 backup codes once.
+         */
+        post: operations["totp_enable_api_v1_settings_security_totp_enable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/security/totp/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Totp Setup
+         * @description The pending secret (reused across calls) and its otpauth:// link.
+         */
+        post: operations["totp_setup_api_v1_settings_security_totp_setup_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1088,11 +1279,142 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Transactions */
+        /**
+         * List Transactions
+         * @description The Activity feed (2c spec §5.1): the shared TransactionFilter, 50 a
+         *     page (max 200), newest first, with each shown day's net.
+         */
         get: operations["list_transactions_api_v1_transactions_get"];
         put?: never;
         /** Create Transaction */
         post: operations["create_transaction_api_v1_transactions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/transactions/bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Recent Bulk
+         * @description The household's latest bulk changes, newest first ("Recent bulk changes").
+         */
+        get: operations["recent_bulk_api_v1_transactions_bulk_get"];
+        put?: never;
+        /**
+         * Bulk Change
+         * @description Preview (``dry_run``, the default) or apply one change to a selection.
+         *     Apply re-checks ``expected_count`` (409 on drift) and writes all or nothing.
+         */
+        post: operations["bulk_change_api_v1_transactions_bulk_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/transactions/bulk/{batch_id}/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Undo Bulk
+         * @description Undo a batch within 24 hours, once. Rows changed since are left as they are.
+         */
+        post: operations["undo_bulk_api_v1_transactions_bulk__batch_id__undo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/transactions/check-duplicate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check Duplicate
+         * @description Expenses that look like the one being entered (same amount ±0.01,
+         *     within 3 days), at most 5. Advisory only: never blocks a save.
+         */
+        get: operations["check_duplicate_api_v1_transactions_check_duplicate_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/transactions/counts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Transaction Counts
+         * @description The Activity chips' counts: expenses with no payer, and possible
+         *     duplicate groups (90 days, ±3 days).
+         */
+        get: operations["transaction_counts_api_v1_transactions_counts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/transactions/duplicates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Duplicate Groups
+         * @description Possible duplicates over the last 90 days (find_household_duplicates).
+         */
+        get: operations["duplicate_groups_api_v1_transactions_duplicates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/transactions/duplicates/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dismiss
+         * @description "Keep both": never show these as possible duplicates again, for anyone.
+         */
+        post: operations["dismiss_api_v1_transactions_duplicates_dismiss_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1113,6 +1435,27 @@ export interface paths {
          * @description Parse raw OCR text from a receipt and return structured fields.
          */
         post: operations["scan_parse_api_v1_transactions_scan_parse_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/transactions/scan/qr": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Scan Qr
+         * @description Read a receipt from the URL in its QR code (AADE lookup). Same rules,
+         *     messages and result as the web route ``POST /transactions/scan/qr``.
+         */
+        post: operations["scan_qr_api_v1_transactions_scan_qr_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1143,6 +1486,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/transactions/{txn_id}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get History */
+        get: operations["get_history_api_v1_transactions__txn_id__history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/transactions/{txn_id}/receipt": {
         parameters: {
             query?: never;
@@ -1150,7 +1510,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Get Receipt
+         * @description The receipt file, with API auth (the old /transactions/files/ uses the
+         *     old app's cookie). 404 for no receipt, deleted, another household or a
+         *     missing file.
+         */
+        get: operations["get_receipt_api_v1_transactions__txn_id__receipt_get"];
         put?: never;
         /**
          * Upload Receipt
@@ -1167,6 +1533,17 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AlertTypeOut */
+        AlertTypeOut: {
+            /** Enabled */
+            enabled: boolean;
+            /** Group */
+            group: string;
+            /** Label */
+            label: string;
+            /** Type */
+            type: string;
+        };
         /** ApplePayIn */
         ApplePayIn: {
             /** Amount */
@@ -1183,6 +1560,11 @@ export interface components {
             notes?: string | null;
             /** Occurred At */
             occurred_at?: string | null;
+        };
+        /** BackupCodesOut */
+        BackupCodesOut: {
+            /** Backup Codes */
+            backup_codes: string[];
         };
         /** BillIn */
         BillIn: {
@@ -1243,6 +1625,17 @@ export interface components {
             start_date: string;
             /** Total Occurrences */
             total_occurrences?: number | null;
+        };
+        /** BillMoveOut */
+        BillMoveOut: {
+            /** Bucket After */
+            bucket_after: string | null;
+            /** Bucket Before */
+            bucket_before: string | null;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
         };
         /** BillSplitIn */
         BillSplitIn: {
@@ -2040,6 +2433,31 @@ export interface components {
             /** Code */
             code: string;
         };
+        /** BucketEffectOut */
+        BucketEffectOut: {
+            /** Bucket Id */
+            bucket_id: string | null;
+            /** Budget */
+            budget: number | null;
+            /** Kind */
+            kind: string;
+            /** Moved In */
+            moved_in: number;
+            /** Moved Out */
+            moved_out: number;
+            /** Name */
+            name: string;
+            /** Outside Period */
+            outside_period: number;
+            /** Period End */
+            period_end: string | null;
+            /** Period Start */
+            period_start: string | null;
+            /** Spent After */
+            spent_after: number;
+            /** Spent Before */
+            spent_before: number;
+        };
         /** BucketIn */
         BucketIn: {
             /** Budget */
@@ -2129,6 +2547,83 @@ export interface components {
             /** Spent */
             spent: number;
         };
+        /** BulkIn */
+        BulkIn: {
+            changes: components["schemas"]["ChangesIn"];
+            /**
+             * Dry Run
+             * @default true
+             */
+            dry_run: boolean;
+            /** Expected Count */
+            expected_count?: number | null;
+            /**
+             * Move Bill
+             * @default false
+             */
+            move_bill: boolean;
+            select: components["schemas"]["SelectIn"];
+        };
+        /** BulkResult */
+        BulkResult: {
+            /** Batch Id */
+            batch_id: string | null;
+            bill: components["schemas"]["BillMoveOut"] | null;
+            /** Buckets */
+            buckets: components["schemas"]["BucketEffectOut"][];
+            /** Changed */
+            changed: number;
+            /** Dry Run */
+            dry_run: boolean;
+            /** Matched */
+            matched: number;
+            /** Skipped */
+            skipped: components["schemas"]["SkippedOut"][];
+            /** Total In */
+            total_in: number;
+            /** Total Out */
+            total_out: number;
+            /** Unchanged */
+            unchanged: number;
+            /** Undo Until */
+            undo_until: string | null;
+        };
+        /** CategoryDetailOut */
+        CategoryDetailOut: {
+            /** Avg Per Month */
+            avg_per_month: number | null;
+            category: components["schemas"]["CategoryRefOut"] | null;
+            /** Count */
+            count: number;
+            /** Merchants */
+            merchants: components["schemas"]["CategoryMerchantOut"][];
+            /** Months */
+            months: components["schemas"]["CategoryMonthOut"][];
+            /** Recent */
+            recent: components["schemas"]["CategoryExpenseOut"][];
+            /** Rules */
+            rules: components["schemas"]["CategoryRuleRefOut"][];
+            /** Total */
+            total: number;
+        };
+        /** CategoryExpenseOut */
+        CategoryExpenseOut: {
+            /** Amount */
+            amount: number;
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Id */
+            id: string;
+            /** Merchant */
+            merchant: string | null;
+            /** Notes */
+            notes: string | null;
+            /** Paid By */
+            paid_by: string | null;
+        };
         /** CategoryIn */
         CategoryIn: {
             /**
@@ -2143,6 +2638,66 @@ export interface components {
             icon: string;
             /** Name */
             name: string;
+        };
+        /** CategoryMerchantOut */
+        CategoryMerchantOut: {
+            /** Count */
+            count: number;
+            /** Merchant */
+            merchant: string;
+            /** Total */
+            total: number;
+        };
+        /** CategoryMonthOut */
+        CategoryMonthOut: {
+            /** Label */
+            label: string;
+            /** Month */
+            month: number;
+            /** Total */
+            total: number;
+            /** Year */
+            year: number;
+        };
+        /** CategoryRefOut */
+        CategoryRefOut: {
+            /** Color */
+            color: string | null;
+            /** Icon */
+            icon: string | null;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /** CategoryRuleIn */
+        CategoryRuleIn: {
+            /** Category Id */
+            category_id: string;
+            /** Pattern */
+            pattern: string;
+        };
+        /** CategoryRuleOut */
+        CategoryRuleOut: {
+            /** Category Id */
+            category_id: string;
+            /** Created At */
+            created_at: string | null;
+            /** Id */
+            id: string;
+            /** Match Count */
+            match_count: number;
+            /** Pattern */
+            pattern: string;
+        };
+        /** CategoryRuleRefOut */
+        CategoryRuleRefOut: {
+            /** Id */
+            id: string;
+            /** Match Count */
+            match_count: number;
+            /** Pattern */
+            pattern: string;
         };
         /** CategoryUsualOut */
         CategoryUsualOut: {
@@ -2160,6 +2715,69 @@ export interface components {
             this_month: number;
             /** Usual */
             usual: number | null;
+        };
+        /**
+         * ChangesIn
+         * @description A key sent as null means "none"; an absent key leaves the field.
+         */
+        ChangesIn: {
+            /** Bucket Id */
+            bucket_id?: string | null;
+            /** Category Id */
+            category_id?: string | null;
+            payer?: components["schemas"]["PayerIn"] | null;
+            /** Payment Method */
+            payment_method?: string | null;
+        };
+        /** CountsOut */
+        CountsOut: {
+            /** Duplicate Groups */
+            duplicate_groups: number;
+            /** No Payer */
+            no_payer: number;
+        };
+        /** DismissIn */
+        DismissIn: {
+            /** Ids */
+            ids: string[];
+        };
+        /** DuplicateCheckOut */
+        DuplicateCheckOut: {
+            /** Duplicates */
+            duplicates: components["schemas"]["DuplicateOut"][];
+        };
+        /** DuplicateGroupOut */
+        DuplicateGroupOut: {
+            /** Amount */
+            amount: number;
+            /** Transactions */
+            transactions: components["schemas"]["TransactionOut"][];
+        };
+        /** DuplicateOut */
+        DuplicateOut: {
+            /** Amount */
+            amount: number;
+            /** Bucket */
+            bucket: string | null;
+            /** Currency */
+            currency: string;
+            /** Date */
+            date: string;
+            /** Id */
+            id: string;
+            /** Merchant */
+            merchant: string | null;
+            /** Notes */
+            notes: string | null;
+            /** Paid By */
+            paid_by: string | null;
+            /** Same Bucket */
+            same_bucket: boolean;
+        };
+        /** DuplicatesOut */
+        DuplicatesOut: {
+            /** Groups */
+            groups: components["schemas"]["DuplicateGroupOut"][];
         };
         /** EntryAmountIn */
         EntryAmountIn: {
@@ -2223,6 +2841,32 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HistoryEventOut */
+        HistoryEventOut: {
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Batch Id */
+            batch_id?: string | null;
+            /** By */
+            by: string | null;
+            /**
+             * Can Undo
+             * @default false
+             */
+            can_undo: boolean;
+            /** Kind */
+            kind: string;
+            /** Text */
+            text: string;
+        };
+        /** HistoryOut */
+        HistoryOut: {
+            /** Events */
+            events: components["schemas"]["HistoryEventOut"][];
         };
         /** HouseholdIn */
         HouseholdIn: {
@@ -2355,6 +2999,18 @@ export interface components {
             /** Stash Owner Id */
             stash_owner_id?: string | null;
         };
+        /** NotificationPrefsIn */
+        NotificationPrefsIn: {
+            /** Disabled */
+            disabled: string[];
+        };
+        /** NotificationPrefsOut */
+        NotificationPrefsOut: {
+            /** Push Devices */
+            push_devices: number;
+            /** Types */
+            types: components["schemas"]["AlertTypeOut"][];
+        };
         /** PaceOut */
         PaceOut: {
             /** Bucket Id */
@@ -2395,6 +3051,48 @@ export interface components {
              */
             splits: components["schemas"]["BillSplitIn"][];
         };
+        /** PayerIn */
+        PayerIn: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "single" | "own_share";
+            /** User Id */
+            user_id?: string | null;
+        };
+        /** PersonLargestOut */
+        PersonLargestOut: {
+            /** Amount */
+            amount: number;
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Notes */
+            notes: string | null;
+        };
+        /** PersonShareOut */
+        PersonShareOut: {
+            /** Balance */
+            balance: number;
+            /** Household Total */
+            household_total: number;
+            largest: components["schemas"]["PersonLargestOut"] | null;
+            /** My Share */
+            my_share: number;
+            /** Paid Out */
+            paid_out: number;
+            /** Share Pct */
+            share_pct: number | null;
+            /** Shared Count */
+            shared_count: number;
+            /** Transaction Count */
+            transaction_count: number;
+            /** User Id */
+            user_id: string;
+        };
         /** ProfileIn */
         ProfileIn: {
             /**
@@ -2406,6 +3104,49 @@ export interface components {
             display_name: string;
             /** Email */
             email?: string | null;
+        };
+        /** QrReceiptOut */
+        QrReceiptOut: {
+            /** Amount */
+            amount: number | null;
+            /** Category Hint */
+            category_hint: string | null;
+            /** Category Id */
+            category_id: string | null;
+            /** Currency */
+            currency: string;
+            /** Date */
+            date: string | null;
+            /** Merchant */
+            merchant: string | null;
+        };
+        /** QrScanIn */
+        QrScanIn: {
+            /**
+             * Url
+             * @default
+             */
+            url: string;
+        };
+        /** RecentBatchOut */
+        RecentBatchOut: {
+            /** Can Undo */
+            can_undo: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string | null;
+            /** Id */
+            id: string;
+            /** Row Count */
+            row_count: number;
+            /** Summary */
+            summary: string;
+            /** Undone At */
+            undone_at: string | null;
         };
         /** RecurringItemIn */
         RecurringItemIn: {
@@ -2599,6 +3340,27 @@ export interface components {
             /** Dates */
             dates: string[];
         };
+        /** SecurityOut */
+        SecurityOut: {
+            /** Backup Codes Remaining */
+            backup_codes_remaining: number;
+            /** Passkey Available */
+            passkey_available: boolean;
+            /** Passkey Linked */
+            passkey_linked: boolean;
+            /** Password Session */
+            password_session: boolean;
+            /** Totp Enabled */
+            totp_enabled: boolean;
+        };
+        /** SelectIn */
+        SelectIn: {
+            /** Bill Id */
+            bill_id?: string | null;
+            filter?: components["schemas"]["StrictTransactionFilter"] | null;
+            /** Ids */
+            ids?: string[] | null;
+        };
         /** SettleIn */
         SettleIn: {
             /** Amount */
@@ -2611,6 +3373,15 @@ export interface components {
             note?: string | null;
             /** To User Id */
             to_user_id?: string | null;
+        };
+        /** SkippedOut */
+        SkippedOut: {
+            /** Code */
+            code: string;
+            /** Id */
+            id: string;
+            /** Reason */
+            reason: string;
         };
         /** SplitIn */
         SplitIn: {
@@ -2654,6 +3425,54 @@ export interface components {
             /** Delta */
             delta: number | string;
         };
+        /**
+         * StrictTransactionFilter
+         * @description A bulk body's filter: an unknown key is a 422, never silently dropped,
+         *     so a typo can't widen what a bulk change touches.
+         */
+        StrictTransactionFilter: {
+            /** Bucket Id */
+            bucket_id?: string | null;
+            /** Category Id */
+            category_id?: string | null;
+            /**
+             * Fixed
+             * @default false
+             */
+            fixed: boolean;
+            /** From Date */
+            from_date?: string | null;
+            /** Max Amount */
+            max_amount?: string | null;
+            /** Min Amount */
+            min_amount?: string | null;
+            /**
+             * Missing Payer
+             * @default false
+             */
+            missing_payer: boolean;
+            /** Month */
+            month?: number | null;
+            /**
+             * No Bucket
+             * @default false
+             */
+            no_bucket: boolean;
+            /** Paid By */
+            paid_by?: string | null;
+            /** Payment Method */
+            payment_method?: string | null;
+            /** Q */
+            q?: string | null;
+            /** Recurring Bill Id */
+            recurring_bill_id?: string | null;
+            /** To Date */
+            to_date?: string | null;
+            /** Type */
+            type?: string | null;
+            /** Year */
+            year?: number | null;
+        };
         /** TokenIn */
         TokenIn: {
             /** Default Bucket Id */
@@ -2665,6 +3484,25 @@ export interface components {
         TokenRefreshRequest: {
             /** Refresh Token */
             refresh_token: string;
+        };
+        /** TotpCodeIn */
+        TotpCodeIn: {
+            /** Code */
+            code: string;
+        };
+        /** TotpDisableIn */
+        TotpDisableIn: {
+            /** Code */
+            code: string;
+            /** Current Password */
+            current_password: string;
+        };
+        /** TotpSetupOut */
+        TotpSetupOut: {
+            /** Otpauth Uri */
+            otpauth_uri: string;
+            /** Secret */
+            secret: string;
         };
         /** TotpVerifyRequest */
         TotpVerifyRequest: {
@@ -2744,6 +3582,81 @@ export interface components {
             /** @default expense */
             type: components["schemas"]["TransactionType"];
         };
+        /** TransactionOut */
+        TransactionOut: {
+            /** Amount */
+            amount: number;
+            /** Bucket Id */
+            bucket_id: string | null;
+            /** Category Id */
+            category_id: string | null;
+            /** Created At */
+            created_at: string | null;
+            /** Currency */
+            currency: string | null;
+            /** Exchange Rate */
+            exchange_rate: number;
+            /** Exclude From Forecast */
+            exclude_from_forecast: boolean;
+            /** Exclude From Settlement */
+            exclude_from_settlement: boolean;
+            /** Fuel Litres */
+            fuel_litres: number | null;
+            /** Fuel Price Per Litre */
+            fuel_price_per_litre: number | null;
+            /** Has Take */
+            has_take: boolean;
+            /** Household Id */
+            household_id: string;
+            /** Id */
+            id: string;
+            /** Merchant */
+            merchant: string | null;
+            /** Missing Payer */
+            missing_payer: boolean;
+            /** Notes */
+            notes: string | null;
+            /** Paid By */
+            paid_by: string | null;
+            /** Payer Mode */
+            payer_mode: string | null;
+            /** Payment Method */
+            payment_method: string;
+            /** Receipt Path */
+            receipt_path: string | null;
+            /** Recurring Bill Id */
+            recurring_bill_id: string | null;
+            /** Splits */
+            splits: components["schemas"]["TransactionSplitOut"][];
+            /** Transaction Date */
+            transaction_date: string | null;
+            /** Type */
+            type: string;
+        };
+        /** TransactionPage */
+        TransactionPage: {
+            /** Day Totals */
+            day_totals: {
+                [key: string]: number;
+            };
+            /** Items */
+            items: components["schemas"]["TransactionOut"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
+        };
+        /** TransactionSplitOut */
+        TransactionSplitOut: {
+            /** Amount */
+            amount: number;
+            /** Is Settled */
+            is_settled: boolean;
+            /** User Id */
+            user_id: string;
+        };
         /**
          * TransactionType
          * @enum {string}
@@ -2820,6 +3733,15 @@ export interface components {
             transaction_date?: string | null;
             /** @default expense */
             type: components["schemas"]["TransactionType"];
+        };
+        /** UndoResult */
+        UndoResult: {
+            /** Bill Restored */
+            bill_restored: boolean;
+            /** Restored */
+            restored: number;
+            /** Skipped */
+            skipped: components["schemas"]["SkippedOut"][];
         };
         /** UpcomingDayOut */
         UpcomingDayOut: {
@@ -3791,6 +4713,76 @@ export interface operations {
             };
         };
     };
+    category_detail_api_v1_insights_categories__category_id__get: {
+        parameters: {
+            query?: {
+                preset?: string;
+                start_date?: string;
+                end_date?: string;
+                paid_by?: string;
+            };
+            header?: never;
+            path: {
+                category_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    person_share_api_v1_insights_person_get: {
+        parameters: {
+            query: {
+                user_id: string;
+                preset?: string;
+                start_date?: string;
+                end_date?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonShareOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_matches_api_v1_matches_get: {
         parameters: {
             query?: never;
@@ -4603,6 +5595,132 @@ export interface operations {
             };
         };
     };
+    list_category_rules_api_v1_settings_category_rules_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryRuleOut"][];
+                };
+            };
+        };
+    };
+    upsert_category_rule_api_v1_settings_category_rules_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CategoryRuleIn"];
+            };
+        };
+        responses: {
+            /** @description The pattern had a rule; re-pointed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryRuleOut"];
+                };
+            };
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryRuleOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_category_rule_api_v1_settings_category_rules__rule_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CategoryRuleIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryRuleOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_category_rule_api_v1_settings_category_rules__rule_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_household_api_v1_settings_household_get: {
         parameters: {
             query?: never;
@@ -4705,6 +5823,59 @@ export interface operations {
             };
         };
     };
+    get_prefs_api_v1_settings_notifications_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationPrefsOut"];
+                };
+            };
+        };
+    };
+    put_prefs_api_v1_settings_notifications_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NotificationPrefsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationPrefsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_profile_api_v1_settings_profile_get: {
         parameters: {
             query?: never;
@@ -4785,6 +5956,110 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    security_api_v1_settings_security_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecurityOut"];
+                };
+            };
+        };
+    };
+    totp_disable_api_v1_settings_security_totp_disable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TotpDisableIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    totp_enable_api_v1_settings_security_totp_enable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TotpCodeIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupCodesOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    totp_setup_api_v1_settings_security_totp_setup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TotpSetupOut"];
                 };
             };
         };
@@ -5035,15 +6310,24 @@ export interface operations {
     list_transactions_api_v1_transactions_get: {
         parameters: {
             query?: {
+                q?: string | null;
+                type?: string | null;
+                category_id?: string | null;
+                bucket_id?: string | null;
+                no_bucket?: boolean;
+                paid_by?: string | null;
+                missing_payer?: boolean;
+                payment_method?: string | null;
+                recurring_bill_id?: string | null;
+                fixed?: boolean;
+                from_date?: string | null;
+                to_date?: string | null;
+                min_amount?: string | null;
+                max_amount?: string | null;
+                year?: number | null;
+                month?: number | null;
                 page?: number;
                 page_size?: number;
-                bucket_id?: string;
-                category_id?: string;
-                type?: string;
-                year?: number;
-                month?: number;
-                recurring_bill_id?: string;
-                fixed?: boolean;
             };
             header?: never;
             path?: never;
@@ -5057,7 +6341,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["TransactionPage"];
                 };
             };
             /** @description Validation Error */
@@ -5092,6 +6376,206 @@ export interface operations {
                 content: {
                     "application/json": unknown;
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recent_bulk_api_v1_transactions_bulk_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecentBatchOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bulk_change_api_v1_transactions_bulk_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    undo_bulk_api_v1_transactions_bulk__batch_id__undo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UndoResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_duplicate_api_v1_transactions_check_duplicate_get: {
+        parameters: {
+            query?: {
+                amount?: string;
+                transaction_date?: string;
+                bucket_id?: string;
+                exclude_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DuplicateCheckOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    transaction_counts_api_v1_transactions_counts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CountsOut"];
+                };
+            };
+        };
+    };
+    duplicate_groups_api_v1_transactions_duplicates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DuplicatesOut"];
+                };
+            };
+        };
+    };
+    dismiss_api_v1_transactions_duplicates_dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DismissIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -5139,6 +6623,39 @@ export interface operations {
             };
         };
     };
+    scan_qr_api_v1_transactions_scan_qr_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QrScanIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QrReceiptOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_transaction_api_v1_transactions__txn_id__get: {
         parameters: {
             query?: never;
@@ -5156,7 +6673,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["TransactionOut"];
                 };
             };
             /** @description Validation Error */
@@ -5218,6 +6735,66 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_history_api_v1_transactions__txn_id__history_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                txn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_receipt_api_v1_transactions__txn_id__receipt_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                txn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

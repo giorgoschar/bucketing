@@ -1,7 +1,8 @@
 import type {
   Bucket, BudgetRowOut, Category, CategoryUsualOut, EntryOut, Household, MatchOut, Member, MonthPictureOut,
-  PaceOut, RecurringItemOut, TransactionPage, TransactionRow, UpcomingDayOut, YearMonthOut, YearOut,
+  PaceOut, RecurringItemOut, TransactionRow, UpcomingDayOut, YearMonthOut, YearOut,
 } from '../data/types'
+import type { components } from '../api/schema'
 import type { Routes } from './fakeApi'
 
 /** Cosmote, out, €38.90, due Fri 9 Oct 2026, expected. */
@@ -87,8 +88,17 @@ export function txn(over: Partial<TransactionRow> = {}): TransactionRow {
     notes: null, bucket_id: 'b1', category_id: null, paid_by: 'u1', payment_method: 'card', recurring_bill_id: null, ...over,
   }
 }
-export function page(items: TransactionRow[]): TransactionPage {
-  return { total: items.length, page: 1, page_size: 10, items }
+// GET /transactions is the typed Activity feed since 2c-B2: each row is the full
+// TransactionOut and the page carries day_totals. The 2a reader ignores the extras.
+export function page(items: TransactionRow[]): components['schemas']['TransactionPage'] {
+  return {
+    total: items.length, page: 1, page_size: 10, day_totals: {},
+    items: items.map((r) => ({
+      household_id: 'h1', exchange_rate: 1, payer_mode: 'single', receipt_path: null, fuel_price_per_litre: null,
+      fuel_litres: null, exclude_from_forecast: false, exclude_from_settlement: false, created_at: null,
+      splits: [], has_take: false, missing_payer: false, ...r, payment_method: r.payment_method ?? 'card',
+    })),
+  }
 }
 
 export function bucket(over: Partial<Bucket> = {}): Bucket {

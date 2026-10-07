@@ -659,6 +659,92 @@ class MatchSuggestion(Base):
     occurrence = relationship("BillOccurrence")
 
 
+# ---------------------------------------------------------------------------
+# Bulk changes and dismissed duplicates (2c spec §5.3-5.5)
+# ---------------------------------------------------------------------------
+
+
+class BulkBatch(Base):
+    """One applied bulk change: what it set, on how many rows, and the
+    recurring item it moved. Undone at most once, within 24 hours of
+    ``created_at`` (app.services.bulk). Never purged."""
+
+    __tablename__ = "bulk_batches"
+    __table_args__ = (Index("ix_bulk_batches_household_created", "household_id", "created_at"),)
+
+    id = Column(String, primary_key=True, default=gen_id)
+    household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False)
+    created_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    undone_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=utcnow_naive, nullable=False)
+    undone_at = Column(DateTime, nullable=True)
+    selection = Column(String(8), nullable=False)  # ids | filter | bill
+    fields = Column(String(64), nullable=False)  # comma list: bucket,category,payer,method
+    summary = Column(String(200), nullable=False)
+    row_count = Column(Integer, nullable=False)
+    total_out = Column(Numeric(12, 4), nullable=False)
+    total_in = Column(Numeric(12, 4), nullable=False)
+    bill_id = Column(String, ForeignKey("recurring_bills.id", ondelete="SET NULL"), nullable=True)
+    bill_bucket_old = Column(String, nullable=True)
+    bill_bucket_new = Column(String, nullable=True)
+    bill_moved = Column(Boolean, default=False, server_default=text("false"), nullable=False)
+
+    rows = relationship("BulkBatchRow", back_populates="batch", cascade="all, delete-orphan")
+
+
+class BulkBatchRow(Base):
+    """The old and new values of one transaction in a batch. Plain strings
+    with no FKs, so the history reads the same after a bucket, category or
+    member is gone (undo then skips the row, U3)."""
+
+    __tablename__ = "bulk_batch_rows"
+    __table_args__ = (
+        UniqueConstraint("batch_id", "transaction_id", name="uq_bulk_batch_row"),
+        Index("ix_bulk_batch_rows_transaction_id", "transaction_id"),
+    )
+
+    id = Column(String, primary_key=True, default=gen_id)
+    batch_id = Column(String, ForeignKey("bulk_batches.id", ondelete="CASCADE"), nullable=False)
+    transaction_id = Column(
+        String, ForeignKey("transactions.id", ondelete="CASCADE"), nullable=False
+    )
+    old_bucket_id = Column(String, nullable=True)
+    new_bucket_id = Column(String, nullable=True)
+    old_category_id = Column(String, nullable=True)
+    new_category_id = Column(String, nullable=True)
+    old_paid_by = Column(String, nullable=True)
+    new_paid_by = Column(String, nullable=True)
+    old_payer_mode = Column(String(16), nullable=True)
+    new_payer_mode = Column(String(16), nullable=True)
+    old_payment_method = Column(String(16), nullable=True)
+    new_payment_method = Column(String(16), nullable=True)
+    # The bill entry whose paid_by followed a single payer (R18), and its old value.
+    occurrence_id = Column(String, nullable=True)
+    old_occurrence_paid_by = Column(String, nullable=True)
+    restored = Column(Boolean, default=False, server_default=text("false"), nullable=False)
+
+    batch = relationship("BulkBatch", back_populates="rows")
+
+
+class DuplicateDismissal(Base):
+    """ "Keep both": a pair the duplicate finder must not show again, for
+    every member. Stored smaller id first, once."""
+
+    __tablename__ = "duplicate_dismissals"
+    __table_args__ = (
+        UniqueConstraint("first_id", "second_id", name="uq_duplicate_dismissal"),
+        CheckConstraint("first_id < second_id", name="ck_duplicate_dismissals_order"),
+        Index("ix_duplicate_dismissals_household", "household_id"),
+    )
+
+    id = Column(String, primary_key=True, default=gen_id)
+    household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False)
+    first_id = Column(String, ForeignKey("transactions.id", ondelete="CASCADE"), nullable=False)
+    second_id = Column(String, ForeignKey("transactions.id", ondelete="CASCADE"), nullable=False)
+    created_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=utcnow_naive, nullable=False)
+
+
 class CategoryRule(Base):
     """User-defined "merchant contains X → category Y" mapping.
 
@@ -777,6 +863,19 @@ class PushSubscription(Base):
     created_at = Column(DateTime, default=utcnow_naive)
 
     user = relationship("User")
+
+
+class NotificationMute(Base):
+    """An alert type one member turned off in one household (2d §7.6). A row
+    means muted; the default is everything on. create_notification checks it,
+    so muting stops both the in-app notification and the push."""
+
+    __tablename__ = "notification_mutes"
+
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), primary_key=True)
+    # A NotificationType value as plain VARCHAR: never the native PG enum.
+    type = Column(String(32), primary_key=True)
 
 
 # ---------------------------------------------------------------------------

@@ -26,7 +26,7 @@ against Out = logged expenses + the not-yet-logged cash above.
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import and_, func, or_
@@ -39,6 +39,7 @@ from app.models import (
     Bucket,
     BucketType,
     Category,
+    CategoryRule,
     HouseholdMember,
     ItemDirection,
     OccurrenceStatus,
@@ -175,6 +176,55 @@ def in_out(income: Decimal, summary: dict) -> dict:
         "cash_not_logged": quantize(not_logged),
         "net": quantize(income - out),
     }
+
+
+def monthly_in_out(
+    db: Session,
+    household_id: str,
+    n_months: int = 6,
+    paid_by: str | None = None,
+    *,
+    today: date | None = None,
+) -> list[dict]:
+    """In, Out and Net for the last ``n_months`` calendar months, oldest first
+    (2d §7.3).
+
+    Ignores the insights period and every filter except the person
+    (``paid_by``: their income received and their share of spending, as
+    elsewhere). Each month is built exactly like :func:`in_out`: In from
+    :func:`get_insights_income`, Out from :func:`get_insights_summary` with
+    the not-yet-logged cash, over the same window, so the current month
+    (clipped to today, like ``this_month``) equals ``in_out`` for this month.
+    """
+    today = today or local_today()
+    person = paid_by or None
+    cash_for = make_cash_lookup(db, household_id, person=person)
+    split_members = settlement_members(db, household_id)
+    rows = []
+    for y, m in _recent_months(n_months, today):
+        start, end = _month_range(y, m)
+        end = min(end, today)
+        income = get_insights_income(db, household_id, start, end, paid_by=person)
+        out = get_insights_summary(
+            db,
+            household_id,
+            start,
+            end,
+            paid_by=person,
+            cash_for=cash_for,
+            split_members=split_members,
+        )["total_spent"]
+        rows.append(
+            {
+                "year": y,
+                "month": m,
+                "label": date(y, m, 1).strftime("%b"),
+                "in": quantize(income),
+                "out": quantize(out),
+                "net": quantize(income - out),
+            }
+        )
+    return rows
 
 
 def get_bills_due_month_total(db: Session, household_id: str, year: int, month: int) -> Decimal:
@@ -851,6 +901,8 @@ def get_insights_category_breakdown(
     for cat_id, amount in sorted(totals.items(), key=lambda x: -x[1])[:limit]:
         rows.append(
             {
+                # None: uncategorised; NOT_LOGGED_CASH: cash not logged yet.
+                "category_id": cat_id,
                 **_category_label(cat_id, cats),
                 "amount": quantize(amount),
                 "pct": quantize(amount / grand * 100, TENTH),
@@ -1361,6 +1413,10 @@ def build_insights(db: Session, household_id: str, filters: InsightFilters) -> d
     by_method, cash_share = get_insights_by_method(db, household_id, start, end, **with_cash)
     fuel = get_insights_fuel(db, household_id, start, end, **shares)
 
+    months_in_out = monthly_in_out(
+        db, household_id, 6, filters.paid_by or None, today=filters.today
+    )
+
     return {
         "period": period,
         "start": start,
@@ -1372,6 +1428,7 @@ def build_insights(db: Session, household_id: str, filters: InsightFilters) -> d
         "bills_due": bills_due,
         "net": quantize(income_total - summary["total_spent"]),
         "in_out": in_out(income_total, summary),
+        "monthly_in_out": months_in_out,
         "categories": categories,
         "budget_status": budget_status,
         "bucket_breakdown": bucket_breakdown,
@@ -1554,4 +1611,148 @@ def get_insights_kpis(
         "savings_rate": quantize((income - total) / income * 100, TENTH) if income > 0 else None,
         "range_start": range_start,
         "range_end": range_end,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Category drill-down (2d §7.2)
+# ---------------------------------------------------------------------------
+
+UNCATEGORISED = "uncategorised"
+OTHER_MERCHANT = "Other"
+
+
+def get_category_detail(
+    db: Session,
+    household_id: str,
+    category_key: str,
+    start: date | None,
+    end: date | None,
+    *,
+    paid_by: str | None = None,
+    today: date | None = None,
+) -> dict | None:
+    """One category for the Insights drill-down, or None when ``category_key``
+    is not one of this household's categories (``"uncategorised"`` is).
+
+    Amounts follow the lens exactly as /insights does (:func:`_amount_for`,
+    settle-up's split members), and labelled cash outs in the category count
+    like they do in the breakdown. ``months`` are the six calendar months
+    ending at the period end (today for all time); ``avg_per_month`` is the
+    mean of those that have ended. ``merchants`` group the period's expenses
+    by merchant (none → "Other"), top five by total; ``recent`` is the latest
+    ten.
+    """
+    today = today or local_today()
+    person = paid_by or None
+    if category_key == UNCATEGORISED:
+        category = None
+        matches = Transaction.category_id.is_(None)
+    else:
+        category = db.get(Category, category_key)
+        if category is None or category.household_id != household_id:
+            return None
+        matches = Transaction.category_id == category.id
+    split_members = settlement_members(db, household_id)
+    # Not-yet-logged cash has no category, so only labelled outs can join one.
+    cash_for = (
+        make_cash_lookup(db, household_id, person=person, category_ids=[category.id])
+        if category
+        else None
+    )
+
+    def rows(lo: date | None, hi: date | None) -> list[tuple[Transaction, Decimal]]:
+        q = _build_expense_query(
+            db, household_id, lo, hi, paid_by=person, split_members=split_members
+        ).filter(matches)
+        out = []
+        for t in q.options(joinedload(Transaction.splits)).all():
+            amount = _amount_for(t, person, split_members)
+            if amount:
+                out.append((t, amount))
+        return out
+
+    in_period = rows(start, end)
+    cash = cash_for(start, end) if cash_for else CashSpend()
+    total = sum((a for _, a in in_period), ZERO) + cash.total
+
+    months = _recent_months(6, end or today)
+    lo, hi = _month_range(*months[0])[0], _month_range(*months[-1])[1]
+    by_month: dict[tuple[int, int], Decimal] = defaultdict(Decimal)
+    for t, a in rows(lo, hi):
+        by_month[(t.transaction_date.year, t.transaction_date.month)] += a
+    if cash_for:
+        for key, a in cash_for(lo, hi).by_month().items():
+            by_month[key] += a
+    month_rows = [
+        {
+            "year": y,
+            "month": m,
+            "label": date(y, m, 1).strftime("%b"),
+            "total": quantize(by_month.get((y, m), ZERO)),
+        }
+        for y, m in months
+    ]
+    ended = [r["total"] for r in month_rows if _month_end(r["year"], r["month"]) < today]
+    avg = quantize(sum(ended, ZERO) / len(ended)) if ended else None
+
+    groups: dict[str, list] = defaultdict(lambda: [0, ZERO])
+    for t, a in in_period:
+        group = groups[(t.merchant or "").strip() or OTHER_MERCHANT]
+        group[0] += 1
+        group[1] += a
+    merchants = sorted(
+        (
+            {"merchant": name, "count": count, "total": quantize(value)}
+            for name, (count, value) in groups.items()
+        ),
+        key=lambda r: (-r["total"], r["merchant"]),
+    )[:5]
+
+    never = datetime.min  # noqa: DTZ901  (created_at is a naive UTC column)
+    latest = sorted(
+        in_period,
+        key=lambda pair: (pair[0].transaction_date, pair[0].created_at or never, pair[0].id),
+        reverse=True,
+    )[:10]
+    recent = [
+        {
+            "id": t.id,
+            "date": t.transaction_date,
+            "merchant": t.merchant,
+            "notes": t.notes,
+            "amount": quantize(a),
+            "paid_by": t.paid_by,
+        }
+        for t, a in latest
+    ]
+
+    rules = (
+        db.query(CategoryRule)
+        .filter_by(household_id=household_id, category_id=category.id)
+        .order_by(CategoryRule.match_count.desc(), CategoryRule.pattern)
+        .all()
+        if category
+        else []
+    )
+    return {
+        "category": (
+            {
+                "id": category.id,
+                "name": category.name,
+                "icon": category.icon,
+                "color": category.color,
+            }
+            if category
+            else None
+        ),
+        "total": quantize(total),
+        "count": len(in_period),
+        "avg_per_month": avg,
+        "months": month_rows,
+        "merchants": merchants,
+        "recent": recent,
+        "rules": [
+            {"id": r.id, "pattern": r.pattern, "match_count": r.match_count or 0} for r in rules
+        ],
     }

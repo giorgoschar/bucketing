@@ -110,7 +110,15 @@ def create_notification(
     ``None`` is returned if this user already has a notification with that key.
     That makes scheduler jobs safe to re-run: restarts, catch-up runs and extra
     uvicorn workers can no longer produce duplicate notifications.
+
+    Returns None, creating nothing, when the recipient muted this type in this
+    household (2d spec 7.6).
     """
+    from app.services.notification_prefs import is_muted
+
+    if is_muted(db, user_id=user_id, household_id=household_id, type=type):
+        return None
+
     notif = Notification(
         household_id=household_id,
         user_id=user_id,

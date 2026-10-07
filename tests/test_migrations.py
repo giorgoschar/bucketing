@@ -329,3 +329,26 @@ def test_stock_migration_tables_and_barcode_uniqueness(tmp_path):
     assert not {"products", "stock_items", "stock_movements", "price_snapshots"} & tables
     up = _alembic(["upgrade", "head"], db_url)
     assert up.returncode == 0, up.stderr
+
+
+def test_notification_mutes_migration_chain_and_round_trip(tmp_path):
+    """2d §7.6: d0e1f2a3b4c5 follows 2c's c9d0e1f2a3b4 and round-trips."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "mutes_mig", ROOT / "alembic" / "versions" / "d0e1f2a3b4c5_notification_mutes.py"
+    )
+    mig = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mig)
+    assert (mig.revision, mig.down_revision) == ("d0e1f2a3b4c5", "c9d0e1f2a3b4")
+
+    db_url = _db_url(tmp_path, "mutes.db")
+    up = _alembic(["upgrade", "head"], db_url)
+    assert up.returncode == 0, up.stderr
+    cols = {c["name"] for c in inspect(create_engine(db_url)).get_columns("notification_mutes")}
+    assert cols == {"user_id", "household_id", "type"}
+    down = _alembic(["downgrade", "c9d0e1f2a3b4"], db_url)
+    assert down.returncode == 0, down.stderr
+    assert "notification_mutes" not in inspect(create_engine(db_url)).get_table_names()
+    up = _alembic(["upgrade", "head"], db_url)
+    assert up.returncode == 0, up.stderr
