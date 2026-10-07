@@ -15,6 +15,8 @@ type Props = {
   onClear: () => void
   renderRow?: RenderRow
   hidden?: ReadonlySet<string>
+  /** Selection mode: each day's list becomes a multi-select listbox of option rows. */
+  selecting?: boolean
   rowProps?: (t: Txn) => { selecting?: boolean; selected?: boolean; onOpen?: (id: string) => void }
   onLoaded?: (rows: Txn[], total: number) => void
 }
@@ -42,7 +44,7 @@ function Empty({ title, action }: { title: string; action?: { label: string; onC
   )
 }
 
-function FeedList({ filter, onClear, renderRow, hidden, rowProps, onLoaded }: Props) {
+function FeedList({ filter, onClear, renderRow, hidden, selecting, rowProps, onLoaded }: Props) {
   const navigate = useNavigate()
   const refData: RefData | undefined = useRefData()
   const first = useFeedPage(filter, 1)
@@ -120,14 +122,24 @@ function FeedList({ filter, onClear, renderRow, hidden, rowProps, onLoaded }: Pr
             <span>{g.label}</span>
             <span className="num"><Money amount={g.net} signed /></span>
           </h3>
-          <ul className="ui-list feed__list">
+          <ul
+            className="ui-list feed__list"
+            role={selecting ? 'listbox' : undefined}
+            aria-multiselectable={selecting || undefined}
+            aria-labelledby={selecting ? `day-${g.date}` : undefined}
+          >
             {g.rows.map((t) => {
               const isPending = 'pending' in t
               const extraProps = isPending ? {} : rowProps?.(t) ?? {}
               const row = (
-                <FeedRow t={t} refData={refData} pending={isPending} onOpen={extraProps.onOpen ?? open} {...extraProps} />
+                <FeedRow t={t} refData={refData} pending={isPending} onOpen={extraProps.onOpen ?? open}
+                  {...extraProps} selecting={selecting || extraProps.selecting} />
               )
-              return <li key={t.id}>{renderRow ? renderRow(t, row, { pending: isPending }) : row}</li>
+              return (
+                <li key={t.id} role={selecting ? 'none' : undefined}>
+                  {renderRow ? renderRow(t, row, { pending: isPending }) : row}
+                </li>
+              )
             })}
           </ul>
         </section>

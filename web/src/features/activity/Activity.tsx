@@ -1,7 +1,11 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useReducer, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
+import { useOnline } from '../../data/online'
 import { TopBar } from '../../shell/TopBar'
+import { BulkBar } from '../../ui/BulkBar'
 import { Chip } from '../../ui/Chip'
+import { Money } from '../../ui/Money'
+import { Sheet } from '../../ui/Sheet'
 import { SwipeRow } from '../../ui/SwipeRow'
 import { SearchField } from '../../ui/SearchField'
 import { Duplicates } from './Duplicates'
@@ -11,9 +15,10 @@ import {
 } from './filters'
 import { useRecurringItems } from '../../data/reads'
 import { FiltersSheet } from './FiltersSheet'
-import { useCounts, useRefData } from './hooks'
+import { type Txn, useCounts, useRefData } from './hooks'
 import { useHeldDeletes } from './heldDeletes'
 import { OptionSheet } from './OptionSheet'
+import { OFF, isSelected, reduce, selectedCount } from './selection'
 import { useDeleteWithUndo } from './useDeleteWithUndo'
 import './activity.css'
 
@@ -21,6 +26,20 @@ export function withoutDates(f: TransactionFilter): TransactionFilter {
   const { from_date: _f, to_date: _t, ...rest } = f
   return rest
 }
+
+type BulkField = 'bucket' | 'category' | 'payer' | 'method'
+const BULK_ACTIONS: { field: BulkField; label: string }[] = [
+  { field: 'bucket', label: 'Bucket' },
+  { field: 'category', label: 'Category' },
+  { field: 'payer', label: 'Payer' },
+  { field: 'method', label: 'Method' },
+]
+
+const MoreIcon = () => (
+  <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
+    <circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" />
+  </svg>
+)
 
 function monthOptions(today = new Date()) {
   const opts = Array.from({ length: 6 }, (_, i) => {
@@ -34,7 +53,12 @@ function monthOptions(today = new Date()) {
 export function Activity() {
   const [params, setParams] = useSearchParams()
   const state = useMemo(() => fromSearch(params), [params])
-  const set = useCallback((next: FeedState) => setParams(toSearch(next), { replace: true }), [setParams])
+  const [sel, dispatch] = useReducer(reduce, OFF)
+  // A new filter is a new list: a selection made on the old one no longer means anything.
+  const set = useCallback((next: FeedState) => {
+    dispatch({ type: 'cancel' })
+    setParams(toSearch(next), { replace: true })
+  }, [setParams])
   const f = state.filter
   const setFilter = (filter: TransactionFilter) => set({ ...state, filter })
   const onSearch = useCallback(
@@ -50,11 +74,42 @@ export function Activity() {
   const held = useHeldDeletes()
   const deleteWithUndo = useDeleteWithUndo()
   const navigate = useNavigate()
+  const online = useOnline()
+  const [loaded, setLoaded] = useState<{ ids: string[]; rows: Txn[]; total: number }>({ ids: [], rows: [], total: 0 })
+  const onLoaded = useCallback((rows: Txn[], total: number) => setLoaded({ ids: rows.map((r) => r.id), rows, total }), [])
+  const [menu, setMenu] = useState(false)
+  const [, setBulk] = useState<null | BulkField>(null)
+  const selecting = sel.kind !== 'off'
+  const count = selectedCount(sel)
+  const pickedTotal = sel.kind === 'picked'
+    ? loaded.rows.filter((r) => sel.ids.includes(r.id)).reduce((sum, r) => sum + r.amount * (r.exchange_rate || 1), 0)
+    : null
+  const selectAll = () => {
+    dispatch({ type: 'enter' })
+    dispatch({ type: 'all', filter: f, total: loaded.total })
+  }
 
   return (
     <>
-      <TopBar title="Activity" />
-      <section className="screen activity">
+      {selecting ? (
+        <header className="selbar" role="toolbar" aria-label="Selection">
+          <button type="button" onClick={() => dispatch({ type: 'cancel' })}>Cancel</button>
+          <h1 className="selbar__title num" aria-live="polite">{count} selected</h1>
+          <button type="button" disabled={loaded.total === 0} onClick={() => dispatch({ type: 'all', filter: f, total: loaded.total })}>
+            All
+          </button>
+        </header>
+      ) : (
+        <TopBar
+          title="Activity"
+          actions={
+            <button type="button" className="ui-iconbtn" aria-label="More" aria-haspopup="dialog" onClick={() => setMenu(true)}>
+              <MoreIcon />
+            </button>
+          }
+        />
+      )}
+      <section className={selecting ? 'screen activity activity--selecting' : 'screen activity'}>
         <SearchField value={f.q ?? ''} onChange={onSearch} />
         <div className="chips" role="group" aria-label="Quick filters">
           <Chip label="Filters" count={filters || undefined} pressed={filters > 0} disabled={state.dups} onClick={() => setSheet('filters')} />
@@ -79,21 +134,56 @@ export function Activity() {
           <Chip label="Income" pressed={f.type === 'income'} disabled={state.dups} onClick={() => setFilter(toggle(f, { type: 'income' }))} />
           <Chip label="Cash" pressed={f.payment_method === 'cash'} disabled={state.dups} onClick={() => setFilter(toggle(f, { payment_method: 'cash' }))} />
         </div>
-        {state.dups ? <Duplicates /> : <Feed
-          filter={f}
-          onClear={clear}
-          hidden={held}
-          renderRow={(t, row, { pending }) => (
-            <SwipeRow
-              disabled={pending}
-              onDelete={() => deleteWithUndo(t)}
-              onCopy={() => navigate(`/new?from=${encodeURIComponent(t.id)}`)}
-            >
-              {row}
-            </SwipeRow>
-          )}
-        />}
+        {!state.dups && f.missing_payer && loaded.total > 0 && sel.kind !== 'filter' && sel.kind !== 'bill' && (
+          <button type="button" className="btn btn--ghost btn--sm select-all" onClick={selectAll}>
+            Select all {loaded.total}
+          </button>
+        )}
+        {state.dups ? <Duplicates /> : (
+          <Feed
+            filter={f}
+            onClear={clear}
+            hidden={held}
+            onLoaded={onLoaded}
+            selecting={selecting}
+            rowProps={selecting
+              ? (t) => ({ selected: isSelected(sel, t.id), onOpen: (id) => dispatch({ type: 'toggle', id, loadedIds: loaded.ids }) })
+              : undefined}
+            renderRow={selecting ? undefined : (t, row, { pending }) => (
+              <SwipeRow
+                disabled={pending}
+                onDelete={() => deleteWithUndo(t)}
+                onCopy={() => navigate(`/new?from=${encodeURIComponent(t.id)}`)}
+                onLongPress={() => dispatch({ type: 'enter', id: t.id })}
+              >
+                {row}
+              </SwipeRow>
+            )}
+          />
+        )}
       </section>
+      {selecting && (
+        <BulkBar
+          count={count}
+          total={pickedTotal !== null && count > 0 ? <Money amount={pickedTotal} /> : undefined}
+          disabled={!online}
+          disabledReason="Needs a connection"
+          actions={BULK_ACTIONS.map((a) => ({ label: a.label, onClick: () => setBulk(a.field) }))}
+        />
+      )}
+      <Sheet open={menu} onClose={() => setMenu(false)} title="Activity">
+        <ul className="ui-list feed__list menu-list">
+          <li>
+            <button type="button" className="ui-row option" disabled={state.dups}
+              onClick={() => { setMenu(false); dispatch({ type: 'enter' }) }}>
+              <span className="ui-row__main">
+                <span className="ui-row__title">Select</span>
+                <span className="ui-row__sub">Pick payments to change together</span>
+              </span>
+            </button>
+          </li>
+        </ul>
+      </Sheet>
       <OptionSheet
         open={sheet === 'month'}
         title="Month"
