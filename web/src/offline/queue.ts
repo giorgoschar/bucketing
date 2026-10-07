@@ -22,6 +22,8 @@ const LOCK_NAME = 'tameio-queue'
 const CSRF_DETAIL = 'CSRF token missing or invalid'
 let running: Promise<Result> | null = null
 let rerunForced = false
+/** Told after EVERY replay, even one that sent nothing (unlike onQueueDrained): the triggers re-arm here. */
+const replayListeners = new Set<(r: Result) => void>()
 
 export async function enqueue(req: Req): Promise<number> {
   const owner = getIdentity()
@@ -56,6 +58,9 @@ export function replay(opts: { force?: boolean } = {}): Promise<Result> {
         r = { sent: r.sent + next.sent, failed: r.failed + next.failed, stoppedOnAuth: next.stoppedOnAuth }
       }
       notifyDrained(r)
+      for (const cb of replayListeners) {
+        try { cb(r) } catch { /* a listener must never break the replay */ }
+      }
       return r
     } finally {
       rerunForced = false
@@ -216,10 +221,12 @@ export function startReplayTriggers(): () => void {
   }
   const run = (force: boolean) => {
     clearTimeout(timer)
-    void replay({ force })
-      .then((r) => { if (!r.stoppedOnAuth) return arm() })
-      .catch(() => {})
+    void replay({ force }).catch(() => {})
   }
+  // Re-arm after ANY replay (ours, a kick, an action's): a kicked replay that backs the head off must
+  // still get a wake-up. arm() keeps one timer (clearTimeout first), so this stays single-flight.
+  const onReplay = (r: Result) => { if (!r.stoppedOnAuth) void arm() }
+  replayListeners.add(onReplay)
   const online = () => run(true)
   const vis = () => { if (document.visibilityState === 'visible') run(false) }
   window.addEventListener('online', online)
@@ -227,6 +234,7 @@ export function startReplayTriggers(): () => void {
   run(false)
   return () => {
     stopped = true
+    replayListeners.delete(onReplay)
     clearTimeout(timer)
     window.removeEventListener('online', online)
     document.removeEventListener('visibilitychange', vis)

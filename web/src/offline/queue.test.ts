@@ -403,3 +403,24 @@ it('a kick pending at sign-out never runs', async () => {
     vi.useRealTimers()
   }
 })
+
+it('a kicked replay that backs off is retried by a timer, with no online or visibility event', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'], shouldAdvanceTime: true })
+  try {
+    let n = 0
+    const f = serve(() => (++n <= 1 ? new Response('{}', { status: 503 }) : ok()))
+    const stop = startReplayTriggers() // signed in, queue empty
+    await vi.advanceTimersByTimeAsync(10)
+    await post() // an online action got a 503 and queued its write…
+    kick() // …and kicked a replay
+    await vi.advanceTimersByTimeAsync(2_000) // the kicked replay: another 503, the head backs off
+    await vi.waitFor(async () => expect((await db.queue.toArray())[0]).toMatchObject({ attempts: 1 }))
+    expect(writes(f)).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(3_000) // past the backoff: the re-armed timer replays it
+    await vi.waitFor(async () => expect(await db.queue.count()).toBe(0))
+    expect(writes(f)).toHaveLength(2)
+    stop()
+  } finally {
+    vi.useRealTimers()
+  }
+})
