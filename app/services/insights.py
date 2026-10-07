@@ -177,6 +177,55 @@ def in_out(income: Decimal, summary: dict) -> dict:
     }
 
 
+def monthly_in_out(
+    db: Session,
+    household_id: str,
+    n_months: int = 6,
+    paid_by: str | None = None,
+    *,
+    today: date | None = None,
+) -> list[dict]:
+    """In, Out and Net for the last ``n_months`` calendar months, oldest first
+    (2d §7.3).
+
+    Ignores the insights period and every filter except the person
+    (``paid_by``: their income received and their share of spending, as
+    elsewhere). Each month is built exactly like :func:`in_out`: In from
+    :func:`get_insights_income`, Out from :func:`get_insights_summary` with
+    the not-yet-logged cash, over the same window, so the current month
+    (clipped to today, like ``this_month``) equals ``in_out`` for this month.
+    """
+    today = today or local_today()
+    person = paid_by or None
+    cash_for = make_cash_lookup(db, household_id, person=person)
+    split_members = settlement_members(db, household_id)
+    rows = []
+    for y, m in _recent_months(n_months, today):
+        start, end = _month_range(y, m)
+        end = min(end, today)
+        income = get_insights_income(db, household_id, start, end, paid_by=person)
+        out = get_insights_summary(
+            db,
+            household_id,
+            start,
+            end,
+            paid_by=person,
+            cash_for=cash_for,
+            split_members=split_members,
+        )["total_spent"]
+        rows.append(
+            {
+                "year": y,
+                "month": m,
+                "label": date(y, m, 1).strftime("%b"),
+                "in": quantize(income),
+                "out": quantize(out),
+                "net": quantize(income - out),
+            }
+        )
+    return rows
+
+
 def get_bills_due_month_total(db: Session, household_id: str, year: int, month: int) -> Decimal:
     """Sum of amounts for bill occurrences due within the given calendar month."""
     start, end = _month_range(year, month)
@@ -851,6 +900,8 @@ def get_insights_category_breakdown(
     for cat_id, amount in sorted(totals.items(), key=lambda x: -x[1])[:limit]:
         rows.append(
             {
+                # None: uncategorised; NOT_LOGGED_CASH: cash not logged yet.
+                "category_id": cat_id,
                 **_category_label(cat_id, cats),
                 "amount": quantize(amount),
                 "pct": quantize(amount / grand * 100, TENTH),
@@ -1361,6 +1412,10 @@ def build_insights(db: Session, household_id: str, filters: InsightFilters) -> d
     by_method, cash_share = get_insights_by_method(db, household_id, start, end, **with_cash)
     fuel = get_insights_fuel(db, household_id, start, end, **shares)
 
+    months_in_out = monthly_in_out(
+        db, household_id, 6, filters.paid_by or None, today=filters.today
+    )
+
     return {
         "period": period,
         "start": start,
@@ -1372,6 +1427,7 @@ def build_insights(db: Session, household_id: str, filters: InsightFilters) -> d
         "bills_due": bills_due,
         "net": quantize(income_total - summary["total_spent"]),
         "in_out": in_out(income_total, summary),
+        "monthly_in_out": months_in_out,
         "categories": categories,
         "budget_status": budget_status,
         "bucket_breakdown": bucket_breakdown,

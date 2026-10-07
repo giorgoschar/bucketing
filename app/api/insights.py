@@ -90,6 +90,8 @@ def insights(
         "net": data["net"],
         # In / Out (logged + not-yet-logged cash) / Net for the period.
         "in_out": data["in_out"],
+        # Six calendar months to this one, oldest first; ignores the period (2d §7.3).
+        "monthly_in_out": data["monthly_in_out"],
         "paid_by": summary.get("paid_by", {}),
         "kpis": data["kpis"],
         "categories": data["categories"],
