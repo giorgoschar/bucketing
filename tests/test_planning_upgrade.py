@@ -488,3 +488,43 @@ def test_bill_payment_method_is_backfilled_from_history(tmp_path, revision):
     up = _alembic(["upgrade", BILL_PM_REVISION], db_url)
     assert up.returncode == 0, up.stderr
     assert _methods(db_url) == expected
+
+
+def test_pantry_works_on_the_upgraded_data(upgraded):
+    """Pantry (e1f2a3b4c5d6) on a production-shaped upgrade: shopping_lines
+    exists, and a stock item from before the upgrade can be ticked and
+    added to the pantry through the new API."""
+    from sqlalchemy import inspect
+
+    client, Session, ids = upgraded
+    with Session() as db:
+        assert "shopping_lines" in inspect(db.get_bind()).get_table_names()
+        product, item = str(uuid.uuid4()), str(uuid.uuid4())
+        db.execute(
+            text("INSERT INTO products (id, household_id, name) VALUES (:i, :h, 'Milk')"),
+            {"i": product, "h": ids["hh"]},
+        )
+        db.execute(
+            text(
+                "INSERT INTO stock_items (id, household_id, product_id, quantity, min_quantity, "
+                "track_price) VALUES (:i, :h, :p, 0, 1, true)"
+            ),
+            {"i": item, "h": ids["hh"], "p": product},
+        )
+        db.commit()
+
+    r = client.post("/api/v1/auth/login", json={"username": "giorgos", "password": PASSWORD})
+    r = client.post(
+        "/api/v1/auth/totp/verify",
+        json={"pending_token": r.json()["pending_token"], "code": pyotp.TOTP(ids["secret"]).now()},
+    )
+    headers = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    assert client.get("/api/v1/stock/summary", headers=headers).json() == {
+        "low_count": 1,
+        "ticked_count": 0,
+    }
+    r = client.post("/api/v1/stock/shopping/ticks", json={"stock_item_id": item}, headers=headers)
+    assert r.status_code == 201, r.text
+    r = client.post("/api/v1/stock/shopping/apply-ticked", json={}, headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["applied"] == [{"stock_item_id": item, "name": "Milk", "before": 0, "after": 2}]

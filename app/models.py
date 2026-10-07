@@ -1043,3 +1043,40 @@ class PriceSnapshot(Base):
     snapshot_date = Column(Date, nullable=False)
 
     product = relationship("Product", back_populates="snapshots")
+
+
+class ShoppingLine(Base):
+    """A line on the household's shopping list (Plan › Pantry).
+
+    With ``stock_item_id`` set it is a **tick** on a computed item (low or
+    running out): picked up, not yet in the pantry; apply-ticked adds
+    ``quantity`` to stock. Without it, a **one-off line** the user typed
+    (``name`` required). ``checked_at`` is when it was ticked; a cleared line
+    (``cleared_at``) is history. Nothing here touches transactions.
+    """
+
+    __tablename__ = "shopping_lines"
+    __table_args__ = (
+        Index("ix_shopping_lines_household_id", "household_id"),
+        # One active tick per stock item; cleared ticks and one-off lines
+        # never collide.
+        Index(
+            "uq_shopping_lines_active_tick",
+            "stock_item_id",
+            unique=True,
+            sqlite_where=text("cleared_at IS NULL AND stock_item_id IS NOT NULL"),
+            postgresql_where=text("cleared_at IS NULL AND stock_item_id IS NOT NULL"),
+        ),
+    )
+
+    id = Column(String(36), primary_key=True, default=gen_id)
+    household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False)
+    stock_item_id = Column(String, ForeignKey("stock_items.id", ondelete="CASCADE"), nullable=True)
+    name = Column(String(200), nullable=True)
+    quantity = Column(Numeric(10, 2), nullable=True)
+    checked_at = Column(DateTime, nullable=True)
+    created_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=utcnow_naive)
+    cleared_at = Column(DateTime, nullable=True)
+
+    stock_item = relationship("StockItem")

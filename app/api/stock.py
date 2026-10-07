@@ -11,8 +11,8 @@ from dataclasses import asdict
 from decimal import Decimal
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, PlainSerializer, WithJsonSchema
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from pydantic import BaseModel, PlainSerializer, WithJsonSchema, field_validator
 from sqlalchemy.orm import Session
 
 from app.api_auth import require_api_auth
@@ -88,6 +88,9 @@ class ShoppingRowOut(BaseModel):
     advice: Advice
     advice_reason: str | None
     trend_pct_30d: Num | None
+    unit: str | None
+    ticked: bool
+    tick_id: str | None
 
 
 class ShoppingGroupOut(BaseModel):
@@ -105,11 +108,98 @@ class BestStoreOut(BaseModel):
     missing: int
 
 
+class ShoppingLineOut(BaseModel):
+    """A one-off line the user added to the shopping list."""
+
+    id: str
+    name: str
+    quantity: Num | None
+    checked: bool
+
+
 class ShoppingOut(BaseModel):
     items: list[ShoppingRowOut]
     groups: list[ShoppingGroupOut]
     best_single_store: BestStoreOut | None
     total: Num
+    unpriced: int  # items without a current price (the last group)
+    lines: list[ShoppingLineOut]  # active one-off lines, oldest first
+    ticked_count: int  # active ticks + checked one-off lines
+
+
+class TickOut(BaseModel):
+    id: str
+    stock_item_id: str
+    quantity: Num
+
+
+class AppliedOut(BaseModel):
+    stock_item_id: str
+    name: str
+    before: Num
+    after: Num
+
+
+class ApplyTickedOut(BaseModel):
+    applied: list[AppliedOut]
+    cleared_lines: int
+
+
+def _quantity(v):
+    """An optional positive quantity (422 otherwise)."""
+    if v is None or (isinstance(v, str) and not v.strip()):
+        return None
+    try:
+        return stock_svc.parse_quantity(v, allow_zero=False)
+    except StockError as exc:
+        raise ValueError(str(exc)) from None
+
+
+class TickIn(BaseModel):
+    stock_item_id: str
+    quantity: float | str | None = None  # default: the item's need_qty now
+
+    @field_validator("quantity")
+    @classmethod
+    def _qty(cls, v):
+        return _quantity(v)
+
+
+class LineIn(BaseModel):
+    name: str
+    quantity: float | str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Name is required.")
+        if len(v) > 200:
+            raise ValueError("Name must be at most 200 characters.")
+        return v
+
+    @field_validator("quantity")
+    @classmethod
+    def _qty(cls, v):
+        return _quantity(v)
+
+
+class LineCheckIn(BaseModel):
+    checked: bool
+
+
+def _line_payload(line) -> dict:
+    return {
+        "id": line.id,
+        "name": line.name,
+        "quantity": line.quantity,
+        "checked": line.checked_at is not None,
+    }
+
+
+def _tick_payload(tick) -> dict:
+    return {"id": tick.id, "stock_item_id": tick.stock_item_id, "quantity": tick.quantity}
 
 
 class RetailerPriceOut(BaseModel):
@@ -198,12 +288,14 @@ def _payloads(db: Session, hh_id: str, items) -> list[dict]:
     prices = stock_svc.current_prices(db, pids)
     advice = stock_svc.price_advice_bulk(db, pids)
     runout = stock_svc.runout_bulk(db, items)
+    ticks = stock_svc.active_ticks(db, hh_id)
     return [
         item_payload(
             i,
             prices.get(i.product_id),
             advice=advice.get(i.product_id),
             runout=runout.get(i.id),
+            tick=ticks.get(i.id),
         )
         for i in items
     ]
@@ -290,9 +382,11 @@ def adjust_stock(
 def shopping(auth=Depends(require_api_auth), db: Session = Depends(get_db)):
     _user, hh_id = auth
     data = stock_svc.shopping_list(db, hh_id)
+    ticks = stock_svc.active_ticks(db, hh_id)
 
     def row(r):
         a = r["advice"] or {}
+        tick = ticks.get(r["item"].id)
         return {
             "id": r["item"].id,
             "name": r["product"].name,
@@ -306,6 +400,9 @@ def shopping(auth=Depends(require_api_auth), db: Session = Depends(get_db)):
             "advice": a.get("advice", "unknown"),
             "advice_reason": a.get("reason"),
             "trend_pct_30d": a.get("trend_pct_30d"),
+            "unit": r["product"].unit,
+            "ticked": tick is not None,
+            "tick_id": tick.id if tick is not None else None,
         }
 
     return {
@@ -321,7 +418,71 @@ def shopping(auth=Depends(require_api_auth), db: Session = Depends(get_db)):
         ],
         "best_single_store": data["best_single_store"],
         "total": data["total"],
+        "unpriced": data["unpriced"],
+        "lines": [_line_payload(ln) for ln in stock_svc.one_off_lines(db, hh_id)],
+        "ticked_count": stock_svc.ticked_count(db, hh_id),
     }
+
+
+@router.post("/shopping/ticks", status_code=201, response_model=TickOut)
+def tick(body: TickIn, auth=Depends(require_api_auth), db: Session = Depends(get_db)):
+    """Tick a shopping-list item. Idempotent: ticking it again returns the
+    existing tick unchanged. Never changes stock."""
+    user, hh_id = auth
+    t = stock_svc.tick_item(db, hh_id, user.id, body.stock_item_id, body.quantity)
+    if t is None:
+        raise HTTPException(status_code=404, detail="Stock item not found")
+    db.commit()
+    return _tick_payload(t)
+
+
+@router.delete("/shopping/ticks/{tick_id}", status_code=204)
+def untick(tick_id: str, auth=Depends(require_api_auth), db: Session = Depends(get_db)):
+    _user, hh_id = auth
+    if not stock_svc.untick(db, hh_id, tick_id):
+        raise HTTPException(status_code=404, detail="Tick not found")
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/shopping/lines", status_code=201, response_model=ShoppingLineOut)
+def add_line(body: LineIn, auth=Depends(require_api_auth), db: Session = Depends(get_db)):
+    user, hh_id = auth
+    line = stock_svc.add_line(db, hh_id, user.id, body.name, body.quantity)
+    db.commit()
+    return _line_payload(line)
+
+
+@router.patch("/shopping/lines/{line_id}", response_model=ShoppingLineOut)
+def check_line(
+    line_id: str, body: LineCheckIn, auth=Depends(require_api_auth), db: Session = Depends(get_db)
+):
+    _user, hh_id = auth
+    line = stock_svc.set_line_checked(db, hh_id, line_id, body.checked)
+    if line is None:
+        raise HTTPException(status_code=404, detail="Line not found")
+    db.commit()
+    return _line_payload(line)
+
+
+@router.delete("/shopping/lines/{line_id}", status_code=204)
+def delete_line(line_id: str, auth=Depends(require_api_auth), db: Session = Depends(get_db)):
+    _user, hh_id = auth
+    if not stock_svc.delete_line(db, hh_id, line_id):
+        raise HTTPException(status_code=404, detail="Line not found")
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/shopping/apply-ticked", response_model=ApplyTickedOut)
+def apply_ticked(auth=Depends(require_api_auth), db: Session = Depends(get_db)):
+    """Add the ticked items to the pantry and clear the checked one-off lines,
+    in one transaction. Never touches transactions; a second call with
+    nothing ticked returns empty results."""
+    user, hh_id = auth
+    result = stock_svc.apply_ticked(db, hh_id, user.id)
+    db.commit()
+    return result
 
 
 def _product(summary) -> dict:

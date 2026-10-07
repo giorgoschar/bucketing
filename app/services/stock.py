@@ -16,14 +16,22 @@ import re
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.clock import local_today, utcnow_naive
 from app.core.money import ZERO, quantize, to_decimal
 from app.integrations import posokanei
 from app.integrations.posokanei import PosokaneiUnavailable, valid_product_id
-from app.models import PriceSnapshot, Product, StockItem, StockMovement, StockReason
+from app.models import (
+    PriceSnapshot,
+    Product,
+    ShoppingLine,
+    StockItem,
+    StockMovement,
+    StockReason,
+)
 
 MAX_QUANTITY = Decimal("100000")
 _BARCODE_RE = re.compile(r"^\d{6,14}$")
@@ -105,7 +113,7 @@ def stock_summary(db: Session, hh_id: str) -> dict:
         )
         .scalar()
     )
-    return {"low_count": int(low_count or 0), "ticked_count": 0}
+    return {"low_count": int(low_count or 0), "ticked_count": ticked_count(db, hh_id)}
 
 
 # ---------------------------------------------------------------------------
@@ -248,11 +256,16 @@ def update_stock_settings(
 
 
 def archive_product(db: Session, hh_id: str, item_id: str) -> StockItem | None:
-    """Hide a product from the stock list. History stays (soft delete)."""
+    """Hide a product from the stock list. History stays (soft delete); its
+    active shopping-list tick is cleared."""
     item = get_stock_item(db, hh_id, item_id)
     if item is None:
         return None
-    item.product.archived_at = utcnow_naive()
+    now = utcnow_naive()
+    item.product.archived_at = now
+    _active_lines(db, hh_id).filter(ShoppingLine.stock_item_id == item.id).update(
+        {ShoppingLine.cleared_at: now}, synchronize_session="fetch"
+    )
     return item
 
 
@@ -711,3 +724,185 @@ def rotation_suggestions(db: Session, hh_id: str, today: date | None = None) -> 
                 }
             )
     return out
+
+
+# ---------------------------------------------------------------------------
+# Shopping list lines: ticks on computed items and one-off lines (caller
+# commits). A tick never changes stock; apply_ticked does, after the user
+# confirms. Nothing here touches transactions.
+# ---------------------------------------------------------------------------
+
+
+def _active_lines(db: Session, hh_id: str):
+    return db.query(ShoppingLine).filter(
+        ShoppingLine.household_id == hh_id, ShoppingLine.cleared_at.is_(None)
+    )
+
+
+def _live_item(db: Session, hh_id: str, item_id: str) -> StockItem | None:
+    """The household's stock item, unless it is archived."""
+    item = get_stock_item(db, hh_id, item_id)
+    if item is None or item.product.archived_at is not None:
+        return None
+    return item
+
+
+def active_ticks(db: Session, hh_id: str) -> dict[str, ShoppingLine]:
+    """Active ticks by stock item id."""
+    rows = _active_lines(db, hh_id).filter(ShoppingLine.stock_item_id.isnot(None)).all()
+    return {r.stock_item_id: r for r in rows}
+
+
+def one_off_lines(db: Session, hh_id: str) -> list[ShoppingLine]:
+    """Active one-off lines, oldest first."""
+    return (
+        _active_lines(db, hh_id)
+        .filter(ShoppingLine.stock_item_id.is_(None))
+        .order_by(ShoppingLine.created_at, ShoppingLine.id)
+        .all()
+    )
+
+
+def ticked_count(db: Session, hh_id: str) -> int:
+    """Active ticks on items still in the pantry, plus checked one-off lines."""
+    n = (
+        _active_lines(db, hh_id)
+        .outerjoin(StockItem, StockItem.id == ShoppingLine.stock_item_id)
+        .outerjoin(Product, Product.id == StockItem.product_id)
+        .filter(
+            ShoppingLine.checked_at.isnot(None),
+            or_(ShoppingLine.stock_item_id.is_(None), Product.archived_at.is_(None)),
+        )
+        .with_entities(func.count(ShoppingLine.id))
+        .scalar()
+    )
+    return int(n or 0)
+
+
+def tick_item(
+    db: Session, hh_id: str, user_id: str | None, stock_item_id: str, quantity=None
+) -> ShoppingLine | None:
+    """Tick a stock item on the shopping list (idempotent: an item already
+    ticked returns its tick unchanged). ``quantity`` defaults to the item's
+    restock quantity now. None if the item is missing, foreign or archived."""
+    item = _live_item(db, hh_id, stock_item_id)
+    if item is None:
+        return None
+
+    def existing():
+        return _active_lines(db, hh_id).filter(ShoppingLine.stock_item_id == item.id).first()
+
+    tick = existing()
+    if tick is not None:
+        return tick
+    qty = restock_quantity(item) if quantity is None else parse_quantity(quantity, allow_zero=False)
+    now = utcnow_naive()
+    tick = ShoppingLine(
+        household_id=hh_id,
+        stock_item_id=item.id,
+        quantity=qty,
+        checked_at=now,
+        created_by=user_id,
+        created_at=now,
+    )
+    try:
+        with db.begin_nested():
+            db.add(tick)
+    except IntegrityError:
+        # Someone else ticked it at the same moment: theirs is the tick.
+        return existing()
+    return tick
+
+
+def untick(db: Session, hh_id: str, tick_id: str) -> bool:
+    """Remove an active tick (hard delete). False if there is no such tick."""
+    n = (
+        _active_lines(db, hh_id)
+        .filter(ShoppingLine.id == tick_id, ShoppingLine.stock_item_id.isnot(None))
+        .delete(synchronize_session="fetch")
+    )
+    return n > 0
+
+
+def add_line(
+    db: Session, hh_id: str, user_id: str | None, name: str, quantity=None
+) -> ShoppingLine:
+    name = _clip(name, 200)
+    if not name:
+        raise StockError("Name is required.")
+    qty = None if quantity in (None, "") else parse_quantity(quantity, allow_zero=False)
+    line = ShoppingLine(
+        household_id=hh_id, name=name, quantity=qty, created_by=user_id, created_at=utcnow_naive()
+    )
+    db.add(line)
+    db.flush()
+    return line
+
+
+def _one_off(db: Session, hh_id: str, line_id: str):
+    return _active_lines(db, hh_id).filter(
+        ShoppingLine.id == line_id, ShoppingLine.stock_item_id.is_(None)
+    )
+
+
+def set_line_checked(db: Session, hh_id: str, line_id: str, checked: bool) -> ShoppingLine | None:
+    line = _one_off(db, hh_id, line_id).first()
+    if line is None:
+        return None
+    if not checked:
+        line.checked_at = None
+    elif line.checked_at is None:
+        line.checked_at = utcnow_naive()
+    db.flush()
+    return line
+
+
+def delete_line(db: Session, hh_id: str, line_id: str) -> bool:
+    return _one_off(db, hh_id, line_id).delete(synchronize_session="fetch") > 0
+
+
+def apply_ticked(db: Session, hh_id: str, user_id: str | None) -> dict:
+    """Add every active tick's quantity to stock (a ``buy`` movement) and
+    clear it; clear every checked one-off line; leave unchecked lines.
+
+    One unit of work for the caller's single commit. The active rows are
+    locked (FOR UPDATE on Postgres), so a concurrent second call waits and
+    then finds nothing to apply. A tick whose item was archived meanwhile is
+    cleared without an adjust. Returns ``{"applied": [{stock_item_id, name,
+    before, after}], "cleared_lines": n}``.
+    """
+    now = utcnow_naive()
+    ticks = (
+        _active_lines(db, hh_id)
+        .filter(ShoppingLine.stock_item_id.isnot(None))
+        .order_by(ShoppingLine.created_at, ShoppingLine.id)
+        .with_for_update()
+        .all()
+    )
+    applied = []
+    for tick in ticks:
+        tick.cleared_at = now
+        item = _live_item(db, hh_id, tick.stock_item_id)
+        if item is None:
+            continue
+        before = to_decimal(item.quantity)
+        qty = to_decimal(tick.quantity) if tick.quantity else restock_quantity(item)
+        adjust_stock(db, hh_id, item.id, qty, user_id, reason=StockReason.buy)
+        applied.append(
+            {
+                "stock_item_id": item.id,
+                "name": item.product.name,
+                "before": before,
+                "after": to_decimal(item.quantity),
+            }
+        )
+    lines = (
+        _active_lines(db, hh_id)
+        .filter(ShoppingLine.stock_item_id.is_(None), ShoppingLine.checked_at.isnot(None))
+        .with_for_update()
+        .all()
+    )
+    for line in lines:
+        line.cleared_at = now
+    db.flush()
+    return {"applied": applied, "cleared_lines": len(lines)}
