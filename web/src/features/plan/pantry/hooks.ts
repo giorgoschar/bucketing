@@ -1,12 +1,15 @@
-import type { QueryClient, QueryKey } from '@tanstack/react-query'
+import { type QueryClient, type QueryKey, useQueryClient } from '@tanstack/react-query'
+import { useCallback } from 'react'
 import { api } from '../../../api/client'
 import { useAction } from '../../../data/action'
 import { useCachedQuery } from '../../../data/cachedQuery'
-import { useOnlineAction } from '../../../data/onlineAction'
+import { runOnline, useOnlineAction } from '../../../data/onlineAction'
 import type { RawResult } from '../../../data/rawJson'
 import { unwrap } from '../../../data/http'
 import { keys } from '../../../data/keys'
-import type { PantryShoppingCount, ProductSummary, StockAddBody, StockAdjustBody, StockDetail, StockItem } from './types'
+import type {
+  PantryShoppingCount, ProductSummary, StockAddBody, StockAdjustBody, StockDetail, StockItem, StockSettingsBody,
+} from './types'
 
 /**
  * The shopping list's count, for "Shopping list (N)". Stream Wb owns keys.shopping; until the integration
@@ -87,5 +90,55 @@ export function addBodyFor(p: ProductSummary): StockAddBody {
   return {
     name: p.name, brand: p.brand, barcode: p.barcode, posokanei_id: p.id, unit: p.unit, unit_quantity: p.unit_quantity,
     image_url: p.image_url, quantity: 1, min_quantity: 1,
+  }
+}
+
+const itemPath = (id: string) => `/api/v1/stock/${encodeURIComponent(id)}`
+
+/** The detail's online-only writes (spec §4.4, §4.8): settings, refresh and archive. */
+export function useStockWrites(id: string) {
+  const qc = useQueryClient()
+  const act = useOnlineAction()
+  const invalidate = useCallback(
+    () => Promise.all(PANTRY_INVALIDATES.map((queryKey) => qc.invalidateQueries({ queryKey }))),
+    [qc],
+  )
+  return {
+    /** PATCH /stock/{id}: the list item comes back; the detail keeps its prices and history. */
+    settings: async (body: StockSettingsBody) => {
+      const out = await act<StockItem>(
+        () => api.PATCH(itemPath(id) as never, { body } as never) as Promise<RawResult<StockItem>>,
+      )
+      if (out.ok) {
+        qc.setQueryData<StockDetail>(keys.stockItem(id), (d) => (d ? { ...d, ...out.data } : d))
+        await invalidate()
+      }
+      return out
+    },
+    /** POST /stock/{id}/refresh: 503 when PosoKanei is unavailable; the caller says so inline (not a toast). */
+    refresh: async () => {
+      const out = await runOnline<StockDetail>(
+        () => api.POST(`${itemPath(id)}/refresh` as never, {} as never) as Promise<RawResult<StockDetail>>,
+      )
+      if (out.ok) {
+        qc.setQueryData(keys.stockItem(id), out.data)
+        await invalidate()
+      }
+      return out
+    },
+    /** POST /stock/{id}/archive (204). */
+    archive: async () => {
+      const out = await act<null>(
+        () => api.POST(`${itemPath(id)}/archive` as never, {} as never) as Promise<RawResult<null>>,
+      )
+      if (out.ok) {
+        // The item is gone: never refetch it (a 404) while the screen leaves; everything else refreshes.
+        await Promise.all(PANTRY_INVALIDATES.map((queryKey) => qc.invalidateQueries({
+          queryKey, predicate: (q) => !(q.queryKey[0] === 'stock' && q.queryKey[1] === 'item' && q.queryKey[2] === id),
+        })))
+        await qc.invalidateQueries({ queryKey: keys.stockItem(id), refetchType: 'none' })
+      }
+      return out
+    },
   }
 }

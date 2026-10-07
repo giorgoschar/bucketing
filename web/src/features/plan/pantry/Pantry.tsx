@@ -66,7 +66,7 @@ function PantryBody({ items, onAdd, adding }: { items: StockItem[]; onAdd: () =>
           <input type="search" inputMode="search" enterKeyHint="search" autoComplete="off" placeholder="Search pantry"
             aria-label="Search pantry" value={query} onChange={(e) => setQuery(e.target.value)} />
         </label>
-        <button type="button" className="ui-iconbtn pantry-add" aria-label="Add to pantry" aria-expanded={adding}
+        <button type="button" className="ui-iconbtn pantry-plus" aria-label="Add to pantry" aria-expanded={adding}
           onClick={onAdd}>
           <PlusIcon />
         </button>

@@ -5,6 +5,8 @@ import { lazy } from 'react'
 export const Compose = lazy(() => import('./Compose').then((m) => ({ default: m.Compose })))
 export const Plan = lazy(() => import('./Plan').then((m) => ({ default: m.Plan })))
 export const Items = lazy(() => import('../features/plan/items/Items').then((m) => ({ default: m.Items })))
+// Plan › Pantry › product (pantry spec §4.4).
+export const PantryDetail = lazy(() => import('../features/plan/pantry/Detail').then((m) => ({ default: m.Detail })))
 
 // Phase 2 P3: the Activity detail, the Insights drill-downs and every Settings screen load on first visit
 // so the main bundle stays under 500 kB. The tab roots (Home, Activity, Insights) stay in the main bundle.

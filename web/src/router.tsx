@@ -6,7 +6,7 @@ import { Activity } from './screens/Activity'
 import { Insights } from './screens/Insights'
 import {
   ActivityDetail, Automations, Categories, CategoryScreen, Compose, FuelScreen, Household, Items, Notifications,
-  Plan, Profile, Settings,
+  PantryDetail, Plan, Profile, Settings,
 } from './screens/lazy'
 
 export const router = createBrowserRouter(
@@ -20,6 +20,8 @@ export const router = createBrowserRouter(
         { path: 'activity/:id', element: <ActivityDetail /> },
         { path: 'plan', element: <Plan /> },
         { path: 'plan/items', element: <Items /> },
+        // Static /plan/pantry/* routes (the shopping list) go above this one.
+        { path: 'plan/pantry/:id', element: <PantryDetail /> },
         { path: 'insights', element: <Insights /> },
         { path: 'insights/category/:id', element: <CategoryScreen /> },
         { path: 'insights/fuel', element: <FuelScreen /> },

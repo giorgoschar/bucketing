@@ -30,4 +30,12 @@ describe('router', () => {
       'settings/automations', 'settings/notifications',
     ]))
   })
+
+  it('has the lazy Pantry product detail under the shell, before the catch-all', () => {
+    const routes = router.routes[0].children ?? []
+    const detail = routes.find((r) => r.path === 'plan/pantry/:id')
+    expect(((detail?.element as ReactElement | undefined)?.type as { $$typeof?: symbol } | undefined)?.$$typeof)
+      .toBe(Symbol.for('react.lazy'))
+    expect(routes.findIndex((r) => r.path === 'plan/pantry/:id')).toBeLessThan(routes.length - 1)
+  })
 })

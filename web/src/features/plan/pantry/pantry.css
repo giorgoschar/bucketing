@@ -15,8 +15,8 @@
 }
 .pantry-search input:focus { outline: none; }
 .pantry-search input::placeholder { color: var(--muted); }
-.pantry-add { background: var(--accent); color: var(--accent-ink); }
-.pantry-add:active, .pantry-step__btn:active { transform: scale(.94); }
+.pantry-plus { background: var(--accent); color: var(--accent-ink); }
+.pantry-plus:active, .pantry-step__btn:active { transform: scale(.94); }
 .pantry-chips { margin-block: 0; }
 
 /* The list: one grouped card; each row is a link body plus the stepper (never a button inside a link). */
@@ -76,11 +76,12 @@
 
 @media (prefers-reduced-motion: reduce) {
   .pantry-row, .pantry-step__btn { transition: none; }
-  .pantry-add:active, .pantry-step__btn:active { transform: none; }
+  .pantry-plus:active, .pantry-step__btn:active { transform: none; }
 }
 
 /* ---- Add sheet, lookup sheet (spec §4.3) ---- */
 .pantry-add { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.pantry-add > *, .pantry-lookup > *, .pantry-manual > * { flex: none; }
 .pantry-search--strong { background: var(--surface); border: 1px solid var(--line); }
 .pantry-add__scan { border: 1px solid var(--line); background: transparent; color: var(--ink); }
 .pantry-add__typed { display: flex; gap: 8px; }
@@ -88,7 +89,7 @@
 .pantry-add__typed .btn { flex: none; }
 .pantry-add__nocam { margin: -4px 0 0; padding: 10px 12px; border-radius: var(--r-md); background: var(--warn-soft); color: var(--ink-2); font-size: 13.5px; }
 .pantry-add__nocam b { display: block; color: var(--warn); }
-.pantry-add__src { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 8px; margin: 4px 2px 0; font-size: 12px; font-weight: 600; color: var(--muted); }
+.pantry-add__src { display: flex; flex-wrap: wrap; gap: 2px 4px; margin: 4px 2px 0; font-size: 12px; font-weight: 600; color: var(--muted); }
 .pantry-add__asof { font-weight: 500; }
 .pantry-add__note { margin: 0; padding: 6px 2px; font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
 .pantry-add__manual { margin: 0; font-size: 14px; color: var(--muted); text-align: center; }
@@ -134,3 +135,62 @@
 .pantry-best__label { margin: 0; font-size: 12px; font-weight: 600; color: var(--muted); }
 .pantry-best__fig { margin: 2px 0 0; font-size: 14px; color: var(--ink-2); overflow-wrap: anywhere; }
 .pantry-best__price { font-size: 21px; color: var(--ink); white-space: normal; }
+
+/* ---- Product detail (spec §4.4) ---- */
+.pantry-detail { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.pantry-detail .ui-banner { margin: 0; }
+.pantry-detail__who { display: flex; align-items: center; gap: 14px; min-width: 0; padding: 2px 0 4px; }
+.pantry-detail__id { min-width: 0; }
+.pantry-detail__name {
+  margin: 0; font-family: var(--font-display); font-weight: var(--display-weight); font-size: 24px; line-height: 1.15;
+  letter-spacing: -.02em; overflow-wrap: anywhere;
+}
+.pantry-detail__sub { margin: 3px 0 0; font-size: 13.5px; color: var(--muted); overflow-wrap: anywhere; }
+
+.pantry-card { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 14px; }
+.pantry-card--tight { padding: 4px 14px; }
+.pantry-card__head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 10px; }
+.pantry-card__title { margin: 0; font-size: 15px; font-weight: 650; }
+.pantry-card__meta { font-size: 12px; color: var(--muted); }
+.pantry-card__row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; }
+.pantry-card__label { min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 14.5px; color: var(--ink-2); }
+.pantry-card__label b { color: var(--ink); font-size: 15px; }
+.pantry-card__warn { font-size: 12.5px; font-weight: 650; color: var(--warn); }
+.pantry-card__value { font-size: 14.5px; }
+.pantry-card__rule { height: 1px; background: var(--line); }
+.pantry-card__problem { margin: 0; padding: 9px 12px; border-radius: var(--r-md); background: var(--warn-soft); color: var(--warn); font-size: 13px; font-weight: 650; }
+.pantry-card__btn { border: 1px solid var(--line); background: transparent; color: var(--ink); }
+
+/* Prices today: bars from 0, so a small gap looks small; the cheapest in --pos, the rest neutral. */
+.pantry-cmp { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, auto) minmax(48px, 1fr) auto; align-items: center; gap: 9px 10px; }
+.pantry-cmp__row { display: contents; }
+.pantry-cmp__store { min-width: 0; display: flex; align-items: center; gap: 6px; font-size: 13.5px; color: var(--ink-2); overflow-wrap: anywhere; }
+.pantry-cmp__row--best .pantry-cmp__store { color: var(--ink); font-weight: 650; }
+.pantry-cmp__offer { height: 19px; padding: 0 6px; font-size: 10.5px; }
+.pantry-cmp__track { display: block; height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+.pantry-cmp__fill { display: block; height: 100%; border-radius: 4px; background: var(--c6); }
+.pantry-cmp__row--best .pantry-cmp__fill { background: var(--pos); }
+.pantry-cmp__price { font-size: 13.5px; text-align: right; }
+.pantry-cmp__row--best .pantry-cmp__price { color: var(--ink); font-weight: 650; }
+
+/* The 6-month line */
+.pantry-chart { margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.pantry-chart__plot { position: relative; touch-action: pan-y; }
+.pantry-chart__svg { display: block; width: 100%; height: auto; overflow: visible; }
+.pantry-chart__base { stroke: var(--line); stroke-width: 1; }
+.pantry-chart__line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.pantry-chart__cross { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
+.pantry-chart__dot { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+.pantry-chart__dot--low { fill: var(--pos); }
+.pantry-chart__dot--hover { fill: var(--surface); stroke: var(--accent); }
+.pantry-chart__tip {
+  position: absolute; top: 0; transform: translateX(-50%); padding: 4px 8px; border-radius: var(--r-xs);
+  background: var(--ink); color: var(--bg); font-size: 12px; white-space: nowrap; pointer-events: none;
+}
+.pantry-chart__ends { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--muted); }
+.pantry-chart__empty { margin: 0; padding: 10px 0; font-size: 13.5px; color: var(--muted); }
+
+.pantry-archive { border: 1px solid var(--line); background: transparent; color: var(--neg); }
+.pantry-confirm { display: flex; flex-direction: column; gap: 14px; }
+.pantry-confirm__text { margin: 0; font-size: 14.5px; line-height: 1.45; color: var(--ink-2); }
+.pantry-confirm__acts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
