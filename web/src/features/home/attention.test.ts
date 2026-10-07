@@ -51,3 +51,14 @@ it('the overdue window runs from the first of last month to yesterday', () => {
   expect(overdueWindow('2026-10-07')).toEqual({ from: '2026-09-01', to: '2026-10-06' })
   expect(overdueWindow('2026-01-01')).toEqual({ from: '2025-12-01', to: '2025-12-31' })
 })
+
+// Plan › Cash §4.6: the viewer's own not-yet-logged cash this month.
+it('cash not logged sits after missingAmount and before budget', () => {
+  const keys = buildAttention(full({ cashNotLogged: 45 })).map((i) => i.key)
+  expect(keys.slice(3, 7)).toEqual(['amount:est', 'amount:novalue', 'cash', 'budget:b2'])
+  expect(buildAttention(full({ cashNotLogged: 45 })).find((i) => i.kind === 'cash')).toMatchObject({ amount: 45 })
+})
+
+it.each([0.004, 0, undefined])('no cash row at %s', (cashNotLogged) => {
+  expect(buildAttention(full({ cashNotLogged })).some((i) => i.kind === 'cash')).toBe(false)
+})

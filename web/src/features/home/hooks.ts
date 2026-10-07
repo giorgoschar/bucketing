@@ -8,6 +8,7 @@ import { toTransactionPage } from '../../data/reads'
 import type { EntryOut, MatchOut } from '../../data/types'
 import { useFailedQueueRows } from '../../offline/useQueue'
 import { todayISO } from '../../ui/format'
+import { useCashWallets } from '../plan/cash/hooks'
 import { patchEntryEverywhere } from '../plan/entryPatch'
 import { useBudgets, useCategoriesVsUsual, usePlanUpcoming } from '../plan/hooks'
 import { attentionReady, buildAttention, overdueWindow, type AttentionInput, type AttentionItem } from './attention'
@@ -62,7 +63,9 @@ export function useAttention(): { items: AttentionItem[]; ready: boolean } {
   const upcoming = usePlanUpcoming().data
   const budgets = useBudgets().data
   const categories = useCategoriesVsUsual(today.slice(0, 7)).data
+  const wallets = useCashWallets(today.slice(0, 7)).data
+  const cashNotLogged = wallets?.members.find((m) => m.is_me)?.wallet.not_yet_logged
   const failed = useFailedQueueRows()
-  const input: AttentionInput = { today, matches, overdue, upcoming, budgets, categories, failed }
+  const input: AttentionInput = { today, matches, overdue, upcoming, budgets, categories, cashNotLogged, failed }
   return { items: buildAttention(input), ready: attentionReady(input) }
 }

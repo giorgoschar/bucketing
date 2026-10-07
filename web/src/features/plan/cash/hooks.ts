@@ -3,16 +3,14 @@ import { useCallback } from 'react'
 import { api } from '../../../api/client'
 import { useCachedQuery } from '../../../data/cachedQuery'
 import { unwrap } from '../../../data/http'
-import { keys } from '../../../data/keys'
+import { affects, keys } from '../../../data/keys'
 import { type OnlineOutcome, runOnline } from '../../../data/onlineAction'
 import { fetchJson } from '../../../data/rawJson'
 import { useToast } from '../../../ui/Toast'
 import type { CashMovementOut, CashMovementsOut, CashWalletsOut, MovementBody } from './types'
 
 /** Everything a cash write (or a composer save of a cash expense) makes stale (spec §4.7). */
-export const CASH_INVALIDATES: readonly QueryKey[] = [
-  keys.cashAll(), keys.cashStash(), keys.home.all, keys.plan.all, keys.insights.all,
-]
+export const CASH_INVALIDATES: readonly QueryKey[] = affects.cash
 
 /** The month's wallets and the viewer's stash. /cash/wallets is not in the generated types until the
  *  integration step, so it goes through fetchJson (switch to api.GET then). */

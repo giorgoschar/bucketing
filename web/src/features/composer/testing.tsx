@@ -1,4 +1,4 @@
-import { QueryClientProvider } from '@tanstack/react-query'
+import { type QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render } from '@testing-library/react'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { cachePut, wipe } from '../../offline/db'
@@ -67,7 +67,7 @@ export function baseRoutes(): Record<string, unknown> {
 }
 
 /** Fresh store, identity and stored defaults (null = first use), then the composer in a data router. */
-export async function renderComposer(url = '/new', opts: { routes?: Record<string, unknown>; defaults?: DefaultsRecord | null } = {}) {
+export async function renderComposer(url = '/new', opts: { routes?: Record<string, unknown>; defaults?: DefaultsRecord | null; client?: QueryClient } = {}) {
   await wipe()
   setIdentity({ user_id: 'u1', household_id: 'h1' })
   pendingStore.reset()
@@ -82,7 +82,7 @@ export async function renderComposer(url = '/new', opts: { routes?: Record<strin
     { initialEntries: [url] },
   )
   render(
-    <QueryClientProvider client={testQueryClient()}>
+    <QueryClientProvider client={opts.client ?? testQueryClient()}>
       <ToastHost>
         <RouterProvider router={router} />
       </ToastHost>

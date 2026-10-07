@@ -74,8 +74,10 @@ export const affects = {
   item: [keys.plan.all, keys.home.all, keys.recurring.all],
   sync: [
     keys.plan.all, keys.home.all, keys.recurring.all, keys.matches(), keys.transactions.all, keys.insights.all,
-    keys.buckets(),
+    keys.buckets(), keys.cashAll(), keys.cashStash(),
   ],
+  /** A cash write, or a save/delete of a cash expense (cash spec §4.7): the cash reads, Home, Plan, Insights. */
+  cash: [keys.cashAll(), keys.cashStash(), keys.home.all, keys.plan.all, keys.insights.all],
 } satisfies Record<string, readonly QueryKey[]>
 
 // ---- 2d: Insights and Settings ------------------------------------------------------------

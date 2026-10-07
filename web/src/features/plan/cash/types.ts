@@ -3,10 +3,10 @@
  * built in parallel. The integration step replaces these bodies with aliases of the generated schema types
  * (components['schemas']['CashWalletsOut'] and friends).
  *
- * Money: the generated cash types type money as `number | string` (MovementIn.amount; the responses are
- * still `unknown`). The server sends JSON numbers today; read every amount through `num()`.
+ * Money: every cash amount (stash, movement amount, each wallet field) is a JSON number on the wire
+ * (confirmed by the server stream, p4/cash-b).
  */
-export type CashMoney = number | string
+export type CashMoney = number
 
 /** `out` is legacy (read-only, history only); `stash_count` is a recount (a signed correction). */
 export type CashKind = 'stash_in' | 'take' | 'put_back' | 'still_have' | 'out' | 'stash_count'
@@ -36,8 +36,8 @@ export interface CashMovementsOut {
 export interface WalletOut {
   carried: CashMoney
   taken: CashMoney
-  /** The member's own wallet only; null (or absent) for everyone else, whose `taken` is net of it. */
-  put_back?: CashMoney | null
+  /** The member's own wallet only; null for everyone else, whose `taken` is net of it. */
+  put_back: CashMoney | null
   still_have: CashMoney | null
   spent: CashMoney
   logged: CashMoney
@@ -78,4 +78,5 @@ export interface MovementBody {
   category_id?: string | null
 }
 
-export const num = (v: CashMoney | null | undefined): number => (v === null || v === undefined ? 0 : Number(v))
+/** A nullable amount as a number (null counts as 0). */
+export const num = (v: CashMoney | null | undefined): number => v ?? 0

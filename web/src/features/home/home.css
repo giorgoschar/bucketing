@@ -24,3 +24,5 @@
 .ui-row.is-new { animation: home-new-row 2s ease-out; }
 @keyframes home-new-row { from { background: var(--accent-soft); } to { background: transparent; } }
 @media (prefers-reduced-motion: reduce) { .ui-row.is-new { animation: none; } }
+/* Plan › Cash §4.6: the cash row wraps rather than overflowing at 390 px. */
+.home-attn__wrapnum { white-space: normal; overflow-wrap: anywhere; }
