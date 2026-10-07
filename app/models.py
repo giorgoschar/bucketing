@@ -865,6 +865,19 @@ class PushSubscription(Base):
     user = relationship("User")
 
 
+class NotificationMute(Base):
+    """An alert type one member turned off in one household (2d §7.6). A row
+    means muted; the default is everything on. create_notification checks it,
+    so muting stops both the in-app notification and the push."""
+
+    __tablename__ = "notification_mutes"
+
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), primary_key=True)
+    # A NotificationType value as plain VARCHAR: never the native PG enum.
+    type = Column(String(32), primary_key=True)
+
+
 # ---------------------------------------------------------------------------
 # API Refresh Tokens (JWT — mobile / external clients)
 # ---------------------------------------------------------------------------
