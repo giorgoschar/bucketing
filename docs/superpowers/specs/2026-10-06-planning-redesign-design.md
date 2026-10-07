@@ -168,6 +168,7 @@ These stay: In/Out by month, category vs usual (§4.2), and the per-person lens 
 | `buckets` | add `kind` (`monthly`/`event`, NOT NULL) | `trip` → `event`; `day2day`, `custom`, `bills`, `savings` → `monthly` |
 | `transactions` | add `recurring_bill_id` (FK, nullable, SET NULL on delete), index | from `bill_occurrences.transaction_id` of paid rows |
 | `transactions` CHECK | `bucket_id IS NOT NULL OR type = 'income'` → `… OR recurring_bill_id IS NOT NULL` | none |
+| `bill_occurrences` | add `period` (nominal period key, nullable, indexed; Ruling 12) and `auto_paid_at` (nullable timestamp: auto-pay settles an entry at most once, so an undone or deleted auto-payment is never re-paid) | `period`: the due date's month; `auto_paid_at`: earliest `bill_auto_paid:{id}` notification |
 | new `match_suggestions` | `id`, `household_id`, `transaction_id`, `occurrence_id`, `dismissed` (bool), `created_at`; unique (`transaction_id`, `occurrence_id`) | empty |
 
 Nothing is dropped:
