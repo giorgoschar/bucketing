@@ -6,6 +6,7 @@ from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api_auth import require_api_auth, revoke_member_access
@@ -23,10 +24,12 @@ from app.core.database import get_db
 from app.core.ratelimit import limiter
 from app.models import (
     Category,
+    CategoryRule,
     Household,
     HouseholdMember,
     Invitation,
     MemberRole,
+    Transaction,
     User,
 )
 from app.services import revoke_user_tokens
@@ -255,6 +258,8 @@ def _category_dict(c: Category) -> dict:
 
 @router.get("/categories")
 def list_categories(auth=Depends(require_api_auth), db: Session = Depends(get_db)):
+    """Categories with how many active expenses and rules use each (2d §5.3:
+    the delete confirmation names both counts)."""
     user, hh_id = auth
     cats = (
         db.query(Category)
@@ -262,7 +267,30 @@ def list_categories(auth=Depends(require_api_auth), db: Session = Depends(get_db
         .order_by(Category.is_default.desc(), Category.name)
         .all()
     )
-    return [_category_dict(c) for c in cats]
+    expenses = dict(
+        db.query(Transaction.category_id, func.count(Transaction.id))
+        .filter(
+            Transaction.household_id == hh_id,
+            Transaction.active(),
+            Transaction.category_id.isnot(None),
+        )
+        .group_by(Transaction.category_id)
+        .all()
+    )
+    rules = dict(
+        db.query(CategoryRule.category_id, func.count(CategoryRule.id))
+        .filter(CategoryRule.household_id == hh_id)
+        .group_by(CategoryRule.category_id)
+        .all()
+    )
+    return [
+        {
+            **_category_dict(c),
+            "expense_count": expenses.get(c.id, 0),
+            "rule_count": rules.get(c.id, 0),
+        }
+        for c in cats
+    ]
 
 
 @router.post("/categories", status_code=status.HTTP_201_CREATED)
@@ -316,13 +344,17 @@ def delete_category(
 
     # Detach references first — category_id FKs have no ON DELETE rule, so a
     # referenced category cannot be deleted outright.
-    from app.models import RecurringBill, Transaction
+    from app.models import RecurringBill
 
     db.query(Transaction).filter_by(category_id=category_id).update(
         {"category_id": None}, synchronize_session=False
     )
     db.query(RecurringBill).filter_by(category_id=category_id).update(
         {"category_id": None}, synchronize_session=False
+    )
+    # The FK cascades too, but not every SQLite connection enforces FKs.
+    db.query(CategoryRule).filter_by(household_id=hh_id, category_id=category_id).delete(
+        synchronize_session=False
     )
     db.delete(cat)
     db.commit()

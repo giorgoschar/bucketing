@@ -813,7 +813,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Categories */
+        /**
+         * List Categories
+         * @description Categories with how many active expenses and rules use each (2d §5.3:
+         *     the delete confirmation names both counts).
+         */
         get: operations["list_categories_api_v1_settings_categories_get"];
         put?: never;
         /** Create Category */
@@ -837,6 +841,53 @@ export interface paths {
         post?: never;
         /** Delete Category */
         delete: operations["delete_category_api_v1_settings_categories__category_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/category-rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Category Rules
+         * @description The household's rules, most used first.
+         */
+        get: operations["list_category_rules_api_v1_settings_category_rules_get"];
+        put?: never;
+        /**
+         * Upsert Category Rule
+         * @description Teach a rule, or re-point the one with the same folded pattern (kept
+         *     match_count). 201 when new, 200 when it existed.
+         */
+        post: operations["upsert_category_rule_api_v1_settings_category_rules_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/category-rules/{rule_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Category Rule
+         * @description Edit a rule's pattern and category; match_count is kept. A pattern
+         *     another rule already folds to is a 409 (no silent merge on edit).
+         */
+        put: operations["update_category_rule_api_v1_settings_category_rules__rule_id__put"];
+        post?: never;
+        /** Delete Category Rule */
+        delete: operations["delete_category_rule_api_v1_settings_category_rules__rule_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2121,6 +2172,26 @@ export interface components {
             icon: string;
             /** Name */
             name: string;
+        };
+        /** CategoryRuleIn */
+        CategoryRuleIn: {
+            /** Category Id */
+            category_id: string;
+            /** Pattern */
+            pattern: string;
+        };
+        /** CategoryRuleOut */
+        CategoryRuleOut: {
+            /** Category Id */
+            category_id: string;
+            /** Created At */
+            created_at: string | null;
+            /** Id */
+            id: string;
+            /** Match Count */
+            match_count: number;
+            /** Pattern */
+            pattern: string;
         };
         /** CategoryUsualOut */
         CategoryUsualOut: {
@@ -4475,6 +4546,132 @@ export interface operations {
             header?: never;
             path: {
                 category_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_category_rules_api_v1_settings_category_rules_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryRuleOut"][];
+                };
+            };
+        };
+    };
+    upsert_category_rule_api_v1_settings_category_rules_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CategoryRuleIn"];
+            };
+        };
+        responses: {
+            /** @description The pattern had a rule; re-pointed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryRuleOut"];
+                };
+            };
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryRuleOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_category_rule_api_v1_settings_category_rules__rule_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CategoryRuleIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryRuleOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_category_rule_api_v1_settings_category_rules__rule_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: string;
             };
             cookie?: never;
         };

@@ -1673,6 +1673,65 @@
         "title": "CategoryIn",
         "type": "object"
       },
+      "CategoryRuleIn": {
+        "properties": {
+          "category_id": {
+            "title": "Category Id",
+            "type": "string"
+          },
+          "pattern": {
+            "title": "Pattern",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pattern",
+          "category_id"
+        ],
+        "title": "CategoryRuleIn",
+        "type": "object"
+      },
+      "CategoryRuleOut": {
+        "properties": {
+          "category_id": {
+            "title": "Category Id",
+            "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "match_count": {
+            "title": "Match Count",
+            "type": "integer"
+          },
+          "pattern": {
+            "title": "Pattern",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "pattern",
+          "category_id",
+          "match_count",
+          "created_at"
+        ],
+        "title": "CategoryRuleOut",
+        "type": "object"
+      },
       "CategoryUsualOut": {
         "properties": {
           "category_id": {
@@ -6198,6 +6257,7 @@
     },
     "/api/v1/settings/categories": {
       "get": {
+        "description": "Categories with how many active expenses and rules use each (2d \u00a75.3:\nthe delete confirmation names both counts).",
         "operationId": "list_categories_api_v1_settings_categories_get",
         "responses": {
           "200": {
@@ -6350,6 +6410,188 @@
           }
         ],
         "summary": "Update Category",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/category-rules": {
+      "get": {
+        "description": "The household's rules, most used first.",
+        "operationId": "list_category_rules_api_v1_settings_category_rules_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CategoryRuleOut"
+                  },
+                  "title": "Response List Category Rules Api V1 Settings Category Rules Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Category Rules",
+        "tags": [
+          "settings"
+        ]
+      },
+      "post": {
+        "description": "Teach a rule, or re-point the one with the same folded pattern (kept\nmatch_count). 201 when new, 200 when it existed.",
+        "operationId": "upsert_category_rule_api_v1_settings_category_rules_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CategoryRuleIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryRuleOut"
+                }
+              }
+            },
+            "description": "The pattern had a rule; re-pointed"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryRuleOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Upsert Category Rule",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/category-rules/{rule_id}": {
+      "delete": {
+        "operationId": "delete_category_rule_api_v1_settings_category_rules__rule_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rule_id",
+            "required": true,
+            "schema": {
+              "title": "Rule Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Category Rule",
+        "tags": [
+          "settings"
+        ]
+      },
+      "put": {
+        "description": "Edit a rule's pattern and category; match_count is kept. A pattern\nanother rule already folds to is a 409 (no silent merge on edit).",
+        "operationId": "update_category_rule_api_v1_settings_category_rules__rule_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rule_id",
+            "required": true,
+            "schema": {
+              "title": "Rule Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CategoryRuleIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryRuleOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Category Rule",
         "tags": [
           "settings"
         ]

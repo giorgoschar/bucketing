@@ -11,6 +11,7 @@ from app.api import (
     bills,
     buckets,
     cash,
+    category_rules,
     dashboard,
     income,
     ingest,
@@ -41,6 +42,8 @@ router.include_router(insights.router)
 router.include_router(notifications.router)
 router.include_router(personal_tokens.router)
 router.include_router(settings.router)
+# 2d §7.4: owned here, consumed by 2b's composer.
+router.include_router(category_rules.router)
 router.include_router(stock.router)
 router.include_router(stock.products_router)
 
