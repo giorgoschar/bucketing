@@ -1099,6 +1099,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/transactions/check-duplicate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check Duplicate
+         * @description Expenses that look like the one being entered (same amount ±0.01,
+         *     within 3 days), at most 5. Advisory only: never blocks a save.
+         */
+        get: operations["check_duplicate_api_v1_transactions_check_duplicate_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/transactions/scan/parse": {
         parameters: {
             query?: never;
@@ -1113,6 +1134,27 @@ export interface paths {
          * @description Parse raw OCR text from a receipt and return structured fields.
          */
         post: operations["scan_parse_api_v1_transactions_scan_parse_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/transactions/scan/qr": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Scan Qr
+         * @description Read a receipt from the URL in its QR code (AADE lookup). Same rules,
+         *     messages and result as the web route ``POST /transactions/scan/qr``.
+         */
+        post: operations["scan_qr_api_v1_transactions_scan_qr_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2161,6 +2203,32 @@ export interface components {
             /** Usual */
             usual: number | null;
         };
+        /** DuplicateCheckOut */
+        DuplicateCheckOut: {
+            /** Duplicates */
+            duplicates: components["schemas"]["DuplicateOut"][];
+        };
+        /** DuplicateOut */
+        DuplicateOut: {
+            /** Amount */
+            amount: number;
+            /** Bucket */
+            bucket: string | null;
+            /** Currency */
+            currency: string;
+            /** Date */
+            date: string;
+            /** Id */
+            id: string;
+            /** Merchant */
+            merchant: string | null;
+            /** Notes */
+            notes: string | null;
+            /** Paid By */
+            paid_by: string | null;
+            /** Same Bucket */
+            same_bucket: boolean;
+        };
         /** EntryAmountIn */
         EntryAmountIn: {
             /** Amount */
@@ -2406,6 +2474,29 @@ export interface components {
             display_name: string;
             /** Email */
             email?: string | null;
+        };
+        /** QrReceiptOut */
+        QrReceiptOut: {
+            /** Amount */
+            amount: number | null;
+            /** Category Hint */
+            category_hint: string | null;
+            /** Category Id */
+            category_id: string | null;
+            /** Currency */
+            currency: string;
+            /** Date */
+            date: string | null;
+            /** Merchant */
+            merchant: string | null;
+        };
+        /** QrScanIn */
+        QrScanIn: {
+            /**
+             * Url
+             * @default
+             */
+            url: string;
         };
         /** RecurringItemIn */
         RecurringItemIn: {
@@ -5104,6 +5195,40 @@ export interface operations {
             };
         };
     };
+    check_duplicate_api_v1_transactions_check_duplicate_get: {
+        parameters: {
+            query?: {
+                amount?: string;
+                transaction_date?: string;
+                bucket_id?: string;
+                exclude_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DuplicateCheckOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     scan_parse_api_v1_transactions_scan_parse_post: {
         parameters: {
             query?: never;
@@ -5126,6 +5251,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    scan_qr_api_v1_transactions_scan_qr_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QrScanIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QrReceiptOut"];
                 };
             };
             /** @description Validation Error */

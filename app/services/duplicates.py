@@ -6,6 +6,7 @@ from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
 
+from fastapi import HTTPException
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.clock import local_today
@@ -14,6 +15,7 @@ from app.models import (
     Transaction,
     TransactionType,
 )
+from app.validators import parse_amount
 
 # ---------------------------------------------------------------------------
 # Duplicate detection
@@ -122,3 +124,47 @@ def find_household_duplicates(
 
     groups.sort(key=lambda g: max(t.transaction_date for t in g["transactions"]), reverse=True)
     return groups
+
+
+def duplicate_check(
+    db: Session,
+    household_id: str,
+    *,
+    amount: str,
+    transaction_date: str,
+    bucket_id: str = "",
+    exclude_id: str = "",
+) -> list[dict]:
+    """The advisory "looks like one you already logged" check behind the
+    add-expense form and the composer. Blank or malformed input gives no
+    matches rather than an error: this check must never block a save."""
+    try:
+        value = parse_amount(amount, field="Amount", allow_blank=True)
+        when = date.fromisoformat((transaction_date or "").strip())
+    except (HTTPException, ValueError):
+        return []
+    if value is None:
+        return []
+
+    matches = find_duplicate_candidates(
+        db,
+        household_id,
+        amount=value,
+        transaction_date=when,
+        bucket_id=bucket_id or None,
+        exclude_id=exclude_id or None,
+    )
+    return [
+        {
+            "id": t.id,
+            "amount": float(t.amount),
+            "currency": t.currency,
+            "date": t.transaction_date.isoformat(),
+            "notes": t.notes,
+            "merchant": t.merchant,
+            "bucket": t.bucket.name if t.bucket else None,
+            "paid_by": t.paid_by_user.display_name if t.paid_by_user else None,
+            "same_bucket": bool(bucket_id) and t.bucket_id == bucket_id,
+        }
+        for t in matches
+    ]

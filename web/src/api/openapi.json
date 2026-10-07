@@ -1730,6 +1730,103 @@
         "title": "CategoryUsualOut",
         "type": "object"
       },
+      "DuplicateCheckOut": {
+        "properties": {
+          "duplicates": {
+            "items": {
+              "$ref": "#/components/schemas/DuplicateOut"
+            },
+            "title": "Duplicates",
+            "type": "array"
+          }
+        },
+        "required": [
+          "duplicates"
+        ],
+        "title": "DuplicateCheckOut",
+        "type": "object"
+      },
+      "DuplicateOut": {
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "number"
+          },
+          "bucket": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bucket"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "merchant": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Merchant"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "paid_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paid By"
+          },
+          "same_bucket": {
+            "title": "Same Bucket",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "amount",
+          "currency",
+          "date",
+          "notes",
+          "merchant",
+          "bucket",
+          "paid_by",
+          "same_bucket"
+        ],
+        "title": "DuplicateOut",
+        "type": "object"
+      },
       "EntryAmountIn": {
         "properties": {
           "amount": {
@@ -2494,6 +2591,90 @@
           "display_name"
         ],
         "title": "ProfileIn",
+        "type": "object"
+      },
+      "QrReceiptOut": {
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "category_hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Hint"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date"
+          },
+          "merchant": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Merchant"
+          }
+        },
+        "required": [
+          "amount",
+          "currency",
+          "date",
+          "merchant",
+          "category_hint",
+          "category_id"
+        ],
+        "title": "QrReceiptOut",
+        "type": "object"
+      },
+      "QrScanIn": {
+        "properties": {
+          "url": {
+            "default": "",
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "title": "QrScanIn",
         "type": "object"
       },
       "RecurringItemIn": {
@@ -7261,6 +7442,85 @@
         ]
       }
     },
+    "/api/v1/transactions/check-duplicate": {
+      "get": {
+        "description": "Expenses that look like the one being entered (same amount \u00b10.01,\nwithin 3 days), at most 5. Advisory only: never blocks a save.",
+        "operationId": "check_duplicate_api_v1_transactions_check_duplicate_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "amount",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Amount",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "transaction_date",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Transaction Date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "bucket_id",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Bucket Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "exclude_id",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Exclude Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DuplicateCheckOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Check Duplicate",
+        "tags": [
+          "transactions"
+        ]
+      }
+    },
     "/api/v1/transactions/scan/parse": {
       "post": {
         "description": "Parse raw OCR text from a receipt and return structured fields.",
@@ -7303,6 +7563,53 @@
           }
         ],
         "summary": "Scan Parse",
+        "tags": [
+          "transactions"
+        ]
+      }
+    },
+    "/api/v1/transactions/scan/qr": {
+      "post": {
+        "description": "Read a receipt from the URL in its QR code (AADE lookup). Same rules,\nmessages and result as the web route ``POST /transactions/scan/qr``.",
+        "operationId": "scan_qr_api_v1_transactions_scan_qr_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QrScanIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QrReceiptOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Scan Qr",
         "tags": [
           "transactions"
         ]

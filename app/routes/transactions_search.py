@@ -33,7 +33,7 @@ from app.models import (
 from app.routes.transactions import _get_context, _maybe_number
 from app.schemas import absorb_own_share_cent, own_share_problem, payer_choice
 from app.services import (
-    find_duplicate_candidates,
+    duplicate_check,
     find_household_duplicates,
 )
 from app.services.cash import linked_taker
@@ -466,38 +466,15 @@ def check_duplicate(
 ):
     """Live check used by the add-expense form. Advisory only — never blocks."""
     user, hh_id = auth
-
-    value = parse_amount(amount, field="Amount", allow_blank=True)
-    if value is None or not transaction_date.strip():
-        return {"duplicates": []}
-
-    try:
-        when = date.fromisoformat(transaction_date.strip())
-    except ValueError:
-        return {"duplicates": []}
-
-    matches = find_duplicate_candidates(
-        db,
-        hh_id,
-        amount=value,
-        transaction_date=when,
-        bucket_id=bucket_id or None,
-        exclude_id=exclude_id or None,
-    )
     return {
-        "duplicates": [
-            {
-                "id": t.id,
-                "amount": float(t.amount),
-                "currency": t.currency,
-                "date": t.transaction_date.isoformat(),
-                "notes": t.notes,
-                "bucket": t.bucket.name if t.bucket else None,
-                "paid_by": t.paid_by_user.display_name if t.paid_by_user else None,
-                "same_bucket": bool(bucket_id) and t.bucket_id == bucket_id,
-            }
-            for t in matches
-        ]
+        "duplicates": duplicate_check(
+            db,
+            hh_id,
+            amount=amount,
+            transaction_date=transaction_date,
+            bucket_id=bucket_id,
+            exclude_id=exclude_id,
+        )
     }
 
 
