@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
 
+from dateutil.relativedelta import relativedelta
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
@@ -311,3 +312,38 @@ def upcoming(
         out_days[-1]["entries"].append(e)
         out_days[-1]["net_this_month"] = quantize(running[key])
     return out_days
+
+
+def year_outlook(db: Session, household_id: str, *, today: date | None = None) -> dict:
+    """Plan > Year (spec §5.3): expected In and Out per month for this month
+    and the 11 after it, from recurring items only. Variable amounts use
+    their estimate (``estimated``). ``infrequent_monthly_average`` is the
+    sum of out entries of items that recur less than monthly, divided by 12:
+    for information only.
+    """
+    today = today or local_today()
+    first = date(today.year, today.month, 1)
+    months = [first + relativedelta(months=k) for k in range(12)]
+    last = _month_range(months[-1].year, months[-1].month)[1]
+    entries = [
+        e for e in list_entries(db, household_id, first, last, today=today) if e.status != "skipped"
+    ]
+    rows = []
+    for m in months:
+        in_month = [e for e in entries if (e.due_date.year, e.due_date.month) == (m.year, m.month)]
+        rows.append(
+            {
+                "month": f"{m.year:04d}-{m.month:02d}",
+                "income": _total(e for e in in_month if e.direction == ItemDirection.in_.value),
+                "out": _total(e for e in in_month if e.direction == ItemDirection.out.value),
+                "estimated": any(e.estimated for e in in_month),
+            }
+        )
+    infrequent = _total(
+        e for e in entries if e.direction == ItemDirection.out.value and e.infrequent
+    )
+    return {
+        "months": rows,
+        "infrequent_monthly_average": quantize(infrequent / 12),
+        "estimated": any(e.estimated for e in entries),
+    }

@@ -115,3 +115,64 @@ def budget_rows(db: Session, household_id: str, today: date) -> list[BudgetRow]:
             )
         )
     return rows
+
+
+PACE_FROM_DAY = 7  # before the 7th a month's pace says too little
+
+
+def bucket_pace(db: Session, household_id: str, *, today: date) -> list[dict]:
+    """Pace for each active monthly bucket with a budget (spec §5.4):
+    "€904 of €1,200 · on pace for €1,310".
+
+    Only spend not linked to a recurring item is extrapolated: (that spend /
+    days elapsed x days in month) + the bucket's recurring-linked spend. One-off
+    purchases (``exclude_from_forecast``) are added as they are too, never
+    extrapolated. ``pace`` is None before the 7th. It is a projection.
+    """
+    buckets = (
+        db.query(Bucket)
+        .filter(
+            Bucket.household_id == household_id,
+            Bucket.status == BucketStatus.active,
+            Bucket.kind == BucketKind.monthly.value,
+            Bucket.budget.isnot(None),
+        )
+        .order_by(Bucket.created_at)
+        .all()
+    )
+    rows = []
+    for b in buckets:
+        start, end = bucket_period(b, today)
+        spent = bucket_spent(db, b, today)
+        flat_filter = (Transaction.recurring_bill_id.isnot(None)) | (
+            Transaction.exclude_from_forecast.is_(True)
+        )
+        flat = quantize(
+            db.query(func.coalesce(func.sum(base_amount_expr()), 0))
+            .filter(
+                Transaction.active(),
+                Transaction.bucket_id == b.id,
+                Transaction.type == TransactionType.expense,
+                Transaction.transaction_date >= start,
+                Transaction.transaction_date <= end,
+                flat_filter,
+            )
+            .scalar()
+        )
+        free = spent - flat
+        budget = quantize(b.budget)
+        pace = None
+        if today.day >= PACE_FROM_DAY:
+            pace = quantize(free / today.day * end.day + flat)
+        rows.append(
+            {
+                "bucket_id": b.id,
+                "name": b.name,
+                "budget": budget,
+                "spent": spent,
+                "pct": percent(spent, budget),
+                "pace": pace,
+                "over_pace": pace is not None and pace > budget,
+            }
+        )
+    return rows
