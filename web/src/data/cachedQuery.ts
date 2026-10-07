@@ -22,9 +22,15 @@ export interface CachedQuery<T> {
   refetch: () => void
 }
 
-/** The device-cache key: scoped to the household so a switch never shows another household's data. */
-export function cacheKeyFor(householdId: string, key: QueryKey): string {
-  return `q:${householdId}:${JSON.stringify(key)}`
+/**
+ * The device-cache key, "q:<household>:<hex SHA-256 of the JSON query key>". Scoped to the household so a
+ * switch never shows another household's data. Cache keys are stored in plain text (only values are
+ * sealed), so the query key is digested: search text and other user input in a key never reach the disk.
+ */
+export async function cacheKeyFor(householdId: string, key: QueryKey): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(key)))
+  const hex = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('')
+  return `q:${householdId}:${hex}`
 }
 
 /**
@@ -42,18 +48,17 @@ export function useCachedQuery<T>(
   // The session's household; the queue identity covers the first render before SessionProvider's effect.
   const household = me?.household_id ?? getIdentity()?.household_id ?? null
   const hash = JSON.stringify(key)
-  const storeKey = household ? cacheKeyFor(household, key) : null
   const [seed, setSeed] = useState<{ hash: string; at: number } | null>(null)
   const [checked, setChecked] = useState<string | null>(null)
 
   useEffect(() => {
     let live = true
     const done = () => { if (live) setChecked(hash) }
-    if (!storeKey) {
+    if (!household) {
       done()
       return () => { live = false }
     }
-    cacheEntry<T>(storeKey).then((row) => {
+    cacheKeyFor(household, JSON.parse(hash) as QueryKey).then((storeKey) => cacheEntry<T>(storeKey)).then((row) => {
       if (!live) return
       const k = JSON.parse(hash) as QueryKey
       // Only fill an empty query: data that is already there (a fetch that landed first) is newer.
@@ -64,13 +69,16 @@ export function useCachedQuery<T>(
       done()
     }, done)
     return () => { live = false }
-  }, [qc, hash, storeKey])
+  }, [qc, hash, household])
 
   const q = useQuery({
     queryKey: key,
     queryFn: async ({ signal }) => {
       const data = await fetcher(signal)
-      if (storeKey) void cachePut(storeKey, data).catch(() => {}) // a racing wipe wins; nothing to persist
+      if (household) {
+        // A racing wipe wins; nothing to persist.
+        void cacheKeyFor(household, key).then((storeKey) => cachePut(storeKey, data)).catch(() => {})
+      }
       return data
     },
     networkMode: 'offlineFirst',

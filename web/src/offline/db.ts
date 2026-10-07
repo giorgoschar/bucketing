@@ -26,13 +26,25 @@ class LocalDB extends Dexie {
 
 export const db = new LocalDB()
 
+const EVICT_AFTER_MS = 60 * 24 * 60 * 60 * 1000
+let evictedThisSession = false
+
 export async function wipe(): Promise<void> {
   const { forgetKey } = await import('./crypto')
   forgetKey()
   clearPending() // the queued rows go with the store, so their "Waiting to sync" markers must too
+  evictedThisSession = false // a new session starts with the next sign-in
   await db.transaction('rw', db.keys, db.cache, db.queue, async () => {
     await Promise.all([db.keys.clear(), db.cache.clear(), db.queue.clear()])
   })
+}
+
+/** Drop cached rows nobody has refreshed for 60 days (old months, old searches). Once per session. */
+async function evictOld(): Promise<void> {
+  if (evictedThisSession) return
+  evictedThisSession = true
+  const cutoff = Date.now() - EVICT_AFTER_MS
+  await db.cache.filter((row) => row.updatedAt < cutoff).delete().catch(() => {})
 }
 
 export async function cachePut(key: string, value: unknown): Promise<void> {
@@ -44,6 +56,7 @@ export async function cachePut(key: string, value: unknown): Promise<void> {
     if (gen !== keyGeneration()) throw new Error('Store was wiped while writing')
     await db.cache.put({ key, ...sealed, updatedAt: Date.now() })
   })
+  await evictOld()
 }
 
 export async function cacheGet<T>(key: string): Promise<T | undefined> {
