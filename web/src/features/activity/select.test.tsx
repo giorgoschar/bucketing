@@ -1,7 +1,9 @@
 import { act, fireEvent, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
+import { setIdentity } from '../../offline/identity'
+import { enqueue } from '../../offline/queue'
 import { fakeApi } from '../../test/fakeApi'
-import { resetTestEnv, setOnline } from '../../test/render'
+import { resetTestEnv, setOnline, TEST_IDENTITY } from '../../test/render'
 import { Activity } from './Activity'
 import { makeTxn, pageOf, refRoutes, renderActivity } from './testing'
 
@@ -59,5 +61,18 @@ describe('selection mode', () => {
     act(() => setOnline(false)) // the rows are already on screen
     expect(screen.getByRole('button', { name: 'Bucket' })).toBeDisabled()
     expect(screen.getByText('Needs a connection')).toBeInTheDocument()
+  })
+
+  it('unticking after All keeps only visible, selectable rows (no queued edits)', async () => {
+    setIdentity(TEST_IDENTITY)
+    await enqueue({ method: 'PUT', path: `/api/v1/transactions/${rows[1].id}`, body: { type: 'expense', amount: '10.00', currency: 'EUR', notes: 'two', transaction_date: rows[1].transaction_date } })
+    setup()
+    expect(await screen.findByText('Waiting to sync')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'More' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Select/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'All' }))
+    fireEvent.click(screen.getByText('one'))
+    // "two" has a queued edit, so it can't be picked: only "three" is left.
+    expect(screen.getByText('1 selected')).toBeInTheDocument()
   })
 })

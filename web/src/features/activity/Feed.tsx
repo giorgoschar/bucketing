@@ -72,9 +72,12 @@ function FeedList({ filter, onClear, renderRow, hidden, selecting, rowProps, onL
   )
   const canLoadMore = serverRows.length < total
 
+  // What selection may pick: rows on screen that aren't held, deleted or waiting on a queued edit.
+  const selectable = rows.filter((t) => !('pending' in t))
+  const selectableKey = selectable.map((t) => t.id).join()
   useEffect(() => {
-    onLoaded?.(serverRows, total)
-  }, [serverRows.length, total]) // eslint-disable-line react-hooks/exhaustive-deps
+    onLoaded?.(selectable, total)
+  }, [selectableKey, total]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const onPageLoad = useCallback(
     (i: number, p: TxnPage) => setMore((m) => (m[i] === p ? m : Object.assign([...m], { [i]: p }))),
