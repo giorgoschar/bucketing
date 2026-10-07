@@ -193,6 +193,7 @@ def _auto_pay_due_bills(db, today: date) -> int:
                 "payer_mode": payer_mode,
                 "currency": bill.currency,
                 "name": bill.name,
+                "payment_method": bill.payment_method,
             }
         )
 
@@ -212,6 +213,7 @@ def _auto_pay_due_bills(db, today: date) -> int:
             payer_mode=item["payer_mode"],
             paid_on=paid_on,
             note_prefix="Auto-pay",
+            payment_method=item["payment_method"],
         ):
             logger.info("Occurrence %s already claimed elsewhere — skipping", item["occ_id"])
             db.rollback()
