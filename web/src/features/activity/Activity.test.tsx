@@ -3,10 +3,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fakeApi } from '../../test/fakeApi'
 import { resetTestEnv, setOnline } from '../../test/render'
 import { Activity } from './Activity'
+import * as hooks from './hooks'
 import { YESTERDAY, TODAY, makeTxn, pageOf, refRoutes, renderActivity } from './testing'
 
 afterEach(resetTestEnv)
 
+const LIMIT = 20 // observed 8 settled; the old loop gave 350+ in 300 ms
 const FEED = 'GET /api/v1/transactions' as const
 
 describe('Activity feed', () => {
@@ -78,17 +80,24 @@ describe('Activity feed', () => {
     expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull()
   })
 
-  it('does not loop after Load more', async () => {
-    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+  it('settles after Load more (no render loop)', async () => {
+    const spy = vi.spyOn(hooks, 'useFeedPage')
     const first = Array.from({ length: 50 }, (_, i) => makeTxn({ notes: `row ${i}` }))
     fakeApi({
       ...refRoutes(),
-      [FEED]: (req) => (req.query.get('page') === '2' ? pageOf([makeTxn({ notes: 'row 50' })], { total: 51, page: 2 }) : pageOf(first, { total: 51 })),
+      [FEED]: (req) => (req.query.get('page') === '2'
+        ? pageOf([makeTxn({ notes: 'row 50' })], { total: 51, page: 2 })
+        : pageOf(first, { total: 51 })),
     })
     renderActivity(<Activity />)
     fireEvent.click(await screen.findByRole('button', { name: 'Load more' }))
-    expect(await screen.findByText('row 50')).toBeInTheDocument()
-    expect(err.mock.calls.flat().join(' ')).not.toContain('Maximum update depth')
+    await screen.findByText('row 50')
+    await new Promise((r) => setTimeout(r, 300))
+    const settled = spy.mock.calls.length
+    expect(settled).toBeLessThan(LIMIT)
+    await new Promise((r) => setTimeout(r, 300))
+    expect(spy.mock.calls.length).toBe(settled)
+    spy.mockRestore()
   })
 
   it('shows a row repeated on page 2 once', async () => {
