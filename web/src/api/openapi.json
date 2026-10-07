@@ -2972,6 +2972,127 @@
         "title": "RecurringItemOut",
         "type": "object"
       },
+      "RulePreviewIn": {
+        "description": "The schedule fields of RecurringItemIn, plus how many dates to return.",
+        "properties": {
+          "count": {
+            "default": 3,
+            "maximum": 12.0,
+            "minimum": 1.0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "interval_months": {
+            "default": 1,
+            "title": "Interval Months",
+            "type": "integer"
+          },
+          "rule_adjust": {
+            "default": "none",
+            "title": "Rule Adjust",
+            "type": "string"
+          },
+          "rule_day": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Day"
+          },
+          "rule_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Days"
+          },
+          "rule_interval_weeks": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Interval Weeks"
+          },
+          "rule_kind": {
+            "default": "monthly_day",
+            "title": "Rule Kind",
+            "type": "string"
+          },
+          "rule_month": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Month"
+          },
+          "rule_weekday": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Weekday"
+          },
+          "start_date": {
+            "format": "date",
+            "title": "Start Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_date"
+        ],
+        "title": "RulePreviewIn",
+        "type": "object"
+      },
+      "RulePreviewOut": {
+        "properties": {
+          "dates": {
+            "items": {
+              "format": "date",
+              "type": "string"
+            },
+            "title": "Dates",
+            "type": "array"
+          }
+        },
+        "required": [
+          "dates"
+        ],
+        "title": "RulePreviewOut",
+        "type": "object"
+      },
       "SettleIn": {
         "properties": {
           "amount": {
@@ -6050,6 +6171,53 @@
           }
         ],
         "summary": "Entry Undo",
+        "tags": [
+          "recurring"
+        ]
+      }
+    },
+    "/api/v1/recurring/preview": {
+      "post": {
+        "description": "The next ``count`` dates of a rule (2a spec \u00a76), from today or the start date, whichever is\nlater. Dates are generated from the start date, so monthly_interval and weekly keep their anchor.\nWrites nothing.",
+        "operationId": "preview_api_v1_recurring_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RulePreviewIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RulePreviewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Preview",
         "tags": [
           "recurring"
         ]
