@@ -1,6 +1,7 @@
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vitest/config'
 import { VitePWA } from 'vite-plugin-pwa'
+import { pwaOptions } from './pwa.config.ts'
 
 // The new app is served under /app next to the current Jinja UI until cutover.
 // In dev, /api goes to the local FastAPI so requests stay same-origin.
@@ -10,39 +11,7 @@ export default defineConfig({
   build: { assetsInlineLimit: 0 },
   plugins: [
     react(),
-    VitePWA({
-      // Updates are applied by src/pwa/update.ts at a safe moment (app backgrounded), not mid-use.
-      registerType: 'prompt',
-      injectRegister: false,
-      includeManifestIcons: false,
-      scope: '/app/',
-      base: '/app/',
-      manifest: {
-        name: 'Tameio',
-        short_name: 'Tameio',
-        id: '/app/',
-        start_url: '/app/',
-        scope: '/app/',
-        display: 'standalone',
-        background_color: '#090B10',
-        theme_color: '#090B10',
-        icons: [
-          { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png' },
-          { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' },
-          { src: 'icons/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
-        ],
-      },
-      workbox: {
-        navigateFallback: '/app/index.html',
-        // Server routes (passkey redirects) and the API must never be answered with the shell.
-        navigateFallbackDenylist: [/^\/app\/auth\//, /^\/api\//],
-        globPatterns: ['**/*.{js,css,html,woff2,svg,png}'],
-        // API data is cached by our encrypted Dexie store, never by the service worker.
-        // Latin + Greek (merchant names) only; skip the other unicode-range subsets.
-        globIgnores: ['**/*-cyrillic*.woff2', '**/*-vietnamese*.woff2'],
-        runtimeCaching: [],
-      },
-    }),
+    VitePWA(pwaOptions),
   ],
   test: { environment: 'jsdom', setupFiles: ['src/test/setup.ts'] },
   server: {

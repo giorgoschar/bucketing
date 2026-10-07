@@ -5,6 +5,14 @@ import { Home } from './screens/Home'
 import { Activity } from './screens/Activity'
 import { ActivityDetail } from './features/activity/Detail'
 import { Insights } from './screens/Insights'
+import { CategoryScreen } from './features/insights/CategoryScreen'
+import { FuelScreen } from './features/insights/FuelScreen'
+import { Settings } from './features/settings/Settings'
+import { Profile } from './features/settings/Profile'
+import { Household } from './features/settings/Household'
+import { Categories } from './features/settings/Categories'
+import { Automations } from './features/settings/Automations'
+import { Notifications } from './features/settings/Notifications'
 import { Compose, Items, Plan } from './screens/lazy'
 
 export const router = createBrowserRouter(
@@ -19,6 +27,14 @@ export const router = createBrowserRouter(
         { path: 'plan', element: <Plan /> },
         { path: 'plan/items', element: <Items /> },
         { path: 'insights', element: <Insights /> },
+        { path: 'insights/category/:id', element: <CategoryScreen /> },
+        { path: 'insights/fuel', element: <FuelScreen /> },
+        { path: 'settings', element: <Settings /> },
+        { path: 'settings/profile', element: <Profile /> },
+        { path: 'settings/household', element: <Household /> },
+        { path: 'settings/categories', element: <Categories /> },
+        { path: 'settings/automations', element: <Automations /> },
+        { path: 'settings/notifications', element: <Notifications /> },
         { path: '*', element: <Navigate to="/" replace /> },
       ],
     },

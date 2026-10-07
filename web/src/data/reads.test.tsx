@@ -5,7 +5,7 @@ import { setIdentity } from '../offline/identity'
 import { fakeApi } from '../test/fakeApi'
 import { bucket, household, item, member } from '../test/fixtures'
 import { Providers, resetTestEnv, TEST_IDENTITY, testQueryClient } from '../test/render'
-import { memberName, toTransactionPage, useBuckets, useHousehold, useRecurringItems } from './reads'
+import { memberName, toCategories, toTransactionPage, useBuckets, useHousehold, useRecurringItems } from './reads'
 
 beforeEach(() => setIdentity(TEST_IDENTITY))
 afterEach(resetTestEnv)
@@ -37,4 +37,13 @@ it('toTransactionPage coerces numeric strings and drops nothing', () => {
   const p = toTransactionPage({ total: '2', page: 1, page_size: 10, items: [{ id: 't1', type: 'income', amount: '2450.00', currency: 'EUR', transaction_date: '2026-10-01' }] })
   expect(p.total).toBe(2)
   expect(p.items[0]).toMatchObject({ id: 't1', type: 'income', amount: 2450, merchant: null, bucket_id: null })
+})
+
+it('toCategories keeps the Settings fields and defaults them when missing', () => {
+  const [full, bare] = toCategories([
+    { id: 'c1', name: 'Fuel', system_key: 'fuel', is_default: true, locked: true, expense_count: 12, rule_count: '3' },
+    { id: 'c2', name: 'Coffee' },
+  ])
+  expect(full).toMatchObject({ is_default: true, system_key: 'fuel', locked: true, expense_count: 12, rule_count: 3 })
+  expect(bare).toMatchObject({ is_default: false, system_key: null, locked: false, expense_count: 0, rule_count: 0 })
 })

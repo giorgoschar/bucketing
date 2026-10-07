@@ -61,3 +61,14 @@ it('traps Tab inside the sheet', () => {
   fireEvent.keyDown(document, { key: 'Tab', shiftKey: true })
   expect(document.activeElement).toBe(last)
 })
+
+it('a sheet that ignores the backdrop ignores Esc too (2d backup codes)', () => {
+  const onClose = vi.fn()
+  render(<Harness closeOnBackdrop={false} onClose={onClose} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Open' }))
+  fireEvent.keyDown(document, { key: 'Escape' })
+  expect(onClose).not.toHaveBeenCalled()
+  expect(screen.getByRole('dialog', { name: 'Cosmote' })).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Close' })) // the explicit Close still works
+  expect(onClose).toHaveBeenCalledOnce()
+})

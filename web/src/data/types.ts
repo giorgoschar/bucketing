@@ -43,7 +43,14 @@ export interface Bucket {
   /** Income may be filed under this budget (composer income picker). */
   show_income: boolean
 }
-export interface Category { id: string; name: string; icon: string | null; color: string | null; system_key: string | null }
+export interface Category {
+  id: string; name: string; icon: string | null; color: string | null; system_key: string | null
+  /** Settings › Categories (2d): defaults can't be deleted; locked (system) ones can't be edited.
+   *  toCategories always fills these; they are optional so the composer's literals need not carry them. */
+  is_default?: boolean; locked?: boolean
+  /** Active expenses and rules using it, for the delete confirmation. */
+  expense_count?: number; rule_count?: number
+}
 /** One row of GET /transactions. `keys.transactions.recent()` holds TransactionRow[] (newest first). */
 export interface TransactionRow {
   id: string

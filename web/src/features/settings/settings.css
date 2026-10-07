@@ -1,0 +1,93 @@
+/* Settings (2d §5). Vault tokens; a centred 480px column comes from .shell__main. */
+.settings { display: flex; flex-direction: column; gap: 16px; padding-bottom: 24px; }
+
+.settings__who {
+  display: flex; align-items: center; gap: 14px; color: inherit; text-decoration: none; min-height: 72px;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.settings__who:active { background: var(--surface-2); }
+.settings__who > .ui-icon { margin-left: auto; color: var(--muted); width: 18px; height: 18px; flex: none; }
+.settings__whotext { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.settings__name { font-family: var(--font-display); font-weight: 600; font-size: 18px; letter-spacing: -.01em; }
+.settings__sub { font-size: 13.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+a.settings__row { color: inherit; text-decoration: none; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+a.settings__row:active { background: var(--surface-2); }
+.settings__chev { margin-left: auto; color: var(--muted); display: grid; place-items: center; flex: none; }
+.settings__chev .ui-icon { width: 18px; height: 18px; }
+.settings__row:focus-visible, .settings__who:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.settings__build { margin: 0; text-align: center; font: 500 12px/1.4 var(--font-num); color: var(--muted); }
+
+.settings__card { display: flex; flex-direction: column; gap: 12px; }
+.settings__h { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -.01em; }
+.settings__form { display: flex; flex-direction: column; gap: 12px; }
+.settings__line { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; }
+.settings__state { font-size: 14px; color: var(--ink-2); min-width: 0; }
+.settings__on { color: var(--pos); font-weight: 650; }
+.settings__help { margin: 0; font-size: 13.5px; color: var(--muted); line-height: 1.45; }
+.settings__notice { margin: 0; }
+.settings__btnrow { display: flex; gap: 8px; flex-wrap: wrap; }
+.settings__btnrow > .btn { flex: 1; }
+.settings .ui-input, .ui-sheet .ui-input { font-size: 16px; } /* no iOS zoom on focus */
+.settings__code { font-family: var(--font-num); letter-spacing: .2em; }
+
+/* Secrets: selectable in one tap, never stored. */
+.settings__secret, .settings__codes {
+  margin: 0; padding: 12px 14px; border-radius: var(--r-sm); background: var(--surface-2);
+  font: 500 15px/1.5 var(--font-num); letter-spacing: .04em; word-break: break-all;
+  user-select: all; -webkit-user-select: all;
+}
+.settings__codes { list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; }
+
+.settings__swatches { display: flex; flex-wrap: wrap; gap: 2px; }
+.settings__swatch {
+  width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: transparent; position: relative;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.settings__swatch::before { content: ''; position: absolute; inset: 9px; border-radius: 50%; background: var(--tint); }
+.settings__swatch[aria-checked='true']::after {
+  content: ''; position: absolute; inset: 4px; border-radius: 50%; box-shadow: 0 0 0 2px var(--tint);
+}
+.settings__swatch:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
+
+.settings__group { margin: 4px 4px 8px; font-size: 13px; font-weight: 650; color: var(--muted); }
+.settings__members { list-style: none; margin: 0; padding: 0; }
+.settings__members .ui-row { gap: 12px; }
+
+.settings__cats { list-style: none; margin: 0; padding: 0; }
+.settings__cat + .settings__cat { border-top: 1px solid var(--line); }
+.settings__catico {
+  width: 36px; height: 36px; flex: none; border-radius: var(--r-sm); display: grid; place-items: center; font-size: 18px;
+  background: color-mix(in srgb, var(--tint) 22%, transparent);
+}
+.settings__rules { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px 12px 62px; margin-top: -4px; }
+.settings__rule {
+  min-height: 32px; padding: 0 10px; border: 0; border-radius: var(--r-pill); background: var(--surface-2); color: var(--ink-2);
+  font: 500 12.5px/1 var(--font-num); position: relative;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none;
+}
+.settings__rule::after { content: ''; position: absolute; inset: -6px 0; } /* 44px tap height */
+.settings__rule:active { background: var(--line); }
+.settings__rule:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.settings__expand { padding: 4px 14px 14px; display: flex; flex-direction: column; gap: 10px; background: var(--surface-2); }
+.settings__expand .ui-input { background: var(--surface); }
+.settings__addrule { align-self: flex-start; }
+.settings__locked { padding: 0 14px 14px 62px; }
+.settings__icon-input { max-width: 120px; }
+
+.settings__steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.settings__steps li { display: grid; grid-template-columns: 26px 1fr; gap: 10px; font-size: 14px; }
+.settings__steps b { display: block; font-weight: 650; }
+.settings__stepn {
+  width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--accent-soft); color: var(--accent); font-weight: 700; font-size: 13px;
+}
+.settings__fresh { border: 1px solid var(--warn); }
+.settings__fresh .settings__h, .settings__fresh .settings__help { margin: 0; }
+.settings__tokens { list-style: none; margin: 0; padding: 0; }
+
+.settings__label { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.settings__labeltitle { font-weight: 600; font-size: 15px; }
+.settings__test { align-self: flex-start; }
+.settings__toggle-row { min-height: 52px; padding-top: 4px; padding-bottom: 4px; }

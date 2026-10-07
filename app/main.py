@@ -169,14 +169,11 @@ async def security_headers(request: Request, call_next):
     # new Function(); it also covers WebAssembly compilation for tesseract's
     # core, so 'wasm-unsafe-eval' is not needed.
     if request.url.path == "/app" or request.url.path.startswith("/app/"):
-        response.headers["Content-Security-Policy"] = web_app.APP_CSP
+        response.headers["Content-Security-Policy"] = web_app.app_csp()
     else:
         # The Link-passkey form on /settings posts to /app/auth/link, which redirects
         # to Pocket ID; browsers check form-action on every redirect hop.
-        form_action = "'self'"
-        # oidc_issuer_origin is validated (None for anything but a clean http(s) origin).
-        if settings.new_app_enabled and settings.oidc_enabled and settings.oidc_issuer_origin:
-            form_action += f" {settings.oidc_issuer_origin}"
+        form_action = web_app.form_action_sources()
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
             "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
