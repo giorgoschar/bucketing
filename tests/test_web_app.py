@@ -72,3 +72,11 @@ def test_auth_paths_are_not_shadowed(client, dist):
 def test_sw_is_no_cache(client, dist):
     r = client.get("/app/sw.js")
     assert r.status_code == 200 and r.headers["cache-control"] == "no-cache"
+
+
+def test_app_csp_allows_the_qr_decoder_worker():
+    # qr-scanner 1.4 decodes in a Worker built from a blob: URL when the browser has no native
+    # BarcodeDetector (iPhone Safari), so worker-src must allow blob: (2b scan).
+    assert "worker-src 'self' blob:" in web_app.APP_CSP
+    # Only the worker source widens: scripts stay same-origin.
+    assert "script-src 'self' 'wasm-unsafe-eval';" in web_app.APP_CSP

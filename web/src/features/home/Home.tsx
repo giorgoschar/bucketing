@@ -3,6 +3,7 @@ import { TopBar } from '../../shell/TopBar'
 import { formatMonthName, todayISO } from '../../ui/format'
 import { Money } from '../../ui/Money'
 import { QueryView } from '../../ui/QueryView'
+import { usePendingTransactions } from '../composer/hooks/usePendingTransactions'
 import { usePlanMonth } from '../plan/hooks'
 import { NeedsAttention } from './NeedsAttention'
 import { RecentActivity } from './RecentActivity'
@@ -17,6 +18,7 @@ export function Home() {
         <QueryView result={picture} noDataText="No saved data yet. Connect once to load Home.">
           {(p) => <HomeFigure picture={p} />}
         </QueryView>
+        <WaitingToSync />
         <NeedsAttention />
         <RecentActivity />
       </section>
@@ -35,4 +37,11 @@ function HomeFigure({ picture: p }: { picture: MonthPictureOut }) {
       </p>
     </div>
   )
+}
+
+/** Queued saves are not in the header figure (2b spec §5.3); say how many are waiting instead. */
+function WaitingToSync() {
+  const n = usePendingTransactions().waitingCount
+  if (n === 0) return null
+  return <p className="home__waiting">{n === 1 ? '1 entry waiting to sync' : `${n} entries waiting to sync`}</p>
 }

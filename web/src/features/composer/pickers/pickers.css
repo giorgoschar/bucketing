@@ -1,0 +1,61 @@
+/* Picker sheets: one tap picks and closes (mock screen 2). */
+.ck-options {
+  display: flex; flex-direction: column; background: var(--surface); border: var(--card-border);
+  border-radius: var(--r-lg); overflow: hidden;
+}
+.ck-option {
+  position: relative; display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px;
+  padding: 10px 14px; border: 0; background: var(--surface); color: var(--ink); text-align: left;
+  font: inherit; font-size: 15px; cursor: pointer;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none;
+  transition: background-color 100ms ease-out;
+}
+.ck-option + .ck-option::before {
+  content: ""; position: absolute; top: 0; left: 14px; right: 0; height: 1px; background: var(--line);
+}
+.ck-option:active { background: var(--surface-2); }
+.ck-option:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.ck-option[aria-pressed="true"] .ck-option__name { font-weight: 650; }
+.ck-option__lead { flex: none; display: grid; }
+.ck-option__main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ck-option__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ck-option__sub { font-size: 13px; color: var(--muted); }
+.ck-option__check { flex: none; display: grid; color: var(--accent); }
+
+.ck-glyph {
+  --tint: var(--muted);
+  width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-size: 16px; font-weight: 650;
+  background: color-mix(in srgb, var(--tint) 16%, transparent); color: var(--ink-2);
+}
+.ck-glyph--person { --tint: var(--accent); color: var(--accent); font-size: 14px; }
+.ck-glyph--cur { --tint: var(--ink-2); font-family: var(--font-num); font-size: 14px; }
+
+.ck-search {
+  width: 100%; min-height: 46px; padding: 0 14px; border: 1px solid transparent; border-radius: var(--r-md);
+  background: var(--surface-2); color: var(--ink); font: inherit; font-size: 16px; flex: none;
+}
+.ck-search:focus-visible { outline: none; border-color: var(--accent); }
+.ck-section { display: flex; flex-direction: column; gap: 8px; }
+.ck-section__title { margin: 0; font-size: 13px; font-weight: 600; color: var(--muted); }
+.ck-empty { margin: 0; padding: 12px 2px; color: var(--muted); font-size: 14px; }
+
+.ck-chips {
+  display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain;
+  margin-inline: -16px; padding-inline: 16px;
+}
+.ck-chips::-webkit-scrollbar { display: none; }
+.ck-chip {
+  flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 14px;
+  border-radius: var(--r-pill); border: 1px solid var(--line); background: var(--surface); color: var(--ink-2);
+  font: inherit; font-size: 13.5px; font-weight: 600; white-space: nowrap; cursor: pointer;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none;
+  transition: background-color 100ms ease-out, transform 100ms ease-out;
+}
+.ck-chip:active { transform: scale(0.97); }
+.ck-chip.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.ck-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ck-date { align-items: center; }
+.ck-date__input {
+  flex: none; min-height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--r-pill);
+  background: var(--surface); color: var(--ink-2); font: inherit; font-size: 16px;
+}

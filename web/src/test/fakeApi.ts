@@ -75,14 +75,19 @@ export function fakeApi(routes: Routes = {}): FakeApi {
   let offline = false
 
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
-    const req = input instanceof Request ? input : new Request(new URL(String(input), globalThis.location.origin), init)
+    // A FormData body (receipt upload) stays a FormData: jsdom's FormData cannot go through a Node Request.
+    const raw = input instanceof Request ? undefined : init?.body
+    const multipart = raw instanceof FormData
+    const req = input instanceof Request
+      ? input
+      : new Request(new URL(String(input), globalThis.location.origin), multipart ? { ...init, body: undefined } : init)
     const url = new URL(req.url)
-    const text = req.method === 'GET' || req.method === 'HEAD' ? '' : await req.clone().text()
+    const text = multipart || req.method === 'GET' || req.method === 'HEAD' ? '' : await req.clone().text()
     const call: FakeCall = {
       method: req.method,
       path: url.pathname,
       query: url.searchParams,
-      body: text ? (JSON.parse(text) as unknown) : undefined,
+      body: multipart ? raw : text ? (JSON.parse(text) as unknown) : undefined,
       headers: req.headers,
     }
     calls.push(call)

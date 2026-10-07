@@ -18,3 +18,9 @@
 .home-clear .ui-icon { width: 20px; height: 20px; }
 
 .home-recent { margin-top: 4px; }
+
+/* 2b: pending saves in Recent, the waiting count, the new-row highlight */
+.home__waiting { margin: 6px 2px 0; font-size: 13px; font-weight: 600; color: var(--muted); }
+.ui-row.is-new { animation: home-new-row 2s ease-out; }
+@keyframes home-new-row { from { background: var(--accent-soft); } to { background: transparent; } }
+@media (prefers-reduced-motion: reduce) { .ui-row.is-new { animation: none; } }

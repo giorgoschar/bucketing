@@ -31,8 +31,19 @@ export interface Member {
   avatar_color: string | null
 }
 export interface Household { id: string; name: string; default_currency: string; members: Member[] }
-export interface Bucket { id: string; name: string; kind: string; status: string; budget: number | null }
-export interface Category { id: string; name: string; icon: string | null; color: string | null }
+export interface Bucket {
+  id: string
+  name: string
+  kind: string
+  status: string
+  budget: number | null
+  /** Event buckets: shown as "12–19 Aug" in the composer's budget picker. */
+  start_date: string | null
+  end_date: string | null
+  /** Income may be filed under this budget (composer income picker). */
+  show_income: boolean
+}
+export interface Category { id: string; name: string; icon: string | null; color: string | null; system_key: string | null }
 /** One row of GET /transactions. `keys.transactions.recent()` holds TransactionRow[] (newest first). */
 export interface TransactionRow {
   id: string

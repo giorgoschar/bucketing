@@ -328,7 +328,7 @@ DIST_DIR = Path(__file__).resolve().parent.parent / "web" / "dist"
 
 APP_CSP = (
     "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; "
-    "img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self'; "
+    "img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self' blob:; "
     "manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; "
     "frame-ancestors 'none'"
 )

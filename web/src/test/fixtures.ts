@@ -102,10 +102,10 @@ export function page(items: TransactionRow[]): components['schemas']['Transactio
 }
 
 export function bucket(over: Partial<Bucket> = {}): Bucket {
-  return { id: 'b1', name: 'Day to day', kind: 'monthly', status: 'active', budget: 1200, ...over }
+  return { id: 'b1', name: 'Day to day', kind: 'monthly', status: 'active', budget: 1200, start_date: null, end_date: null, show_income: false, ...over }
 }
 export function category(over: Partial<Category> = {}): Category {
-  return { id: 'c1', name: 'Groceries', icon: '🛒', color: '#f59e0b', ...over }
+  return { id: 'c1', name: 'Groceries', icon: '🛒', color: '#f59e0b', system_key: null, ...over }
 }
 
 /** Handlers for the shared reads in data/reads.ts (household, items, buckets, categories). */
