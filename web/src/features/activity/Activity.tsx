@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router'
+import { useNavigate, useSearchParams } from 'react-router'
 import { TopBar } from '../../shell/TopBar'
 import { Chip } from '../../ui/Chip'
+import { SwipeRow } from '../../ui/SwipeRow'
 import { SearchField } from '../../ui/SearchField'
 import { Feed } from './Feed'
 import {
@@ -10,7 +11,9 @@ import {
 import { useRecurringItems } from '../../data/reads'
 import { FiltersSheet } from './FiltersSheet'
 import { useCounts, useRefData } from './hooks'
+import { useHeldDeletes } from './heldDeletes'
 import { OptionSheet } from './OptionSheet'
+import { useDeleteWithUndo } from './useDeleteWithUndo'
 import './activity.css'
 
 export function withoutDates(f: TransactionFilter): TransactionFilter {
@@ -43,6 +46,9 @@ export function Activity() {
   const [sheet, setSheet] = useState<null | 'month' | 'filters'>(null)
   const clear = () => set({ filter: monthRange(new Date()), dups: false })
   const filters = activeFilterCount(f)
+  const held = useHeldDeletes()
+  const deleteWithUndo = useDeleteWithUndo()
+  const navigate = useNavigate()
 
   return (
     <>
@@ -64,7 +70,20 @@ export function Activity() {
           <Chip label="Income" pressed={f.type === 'income'} disabled={state.dups} onClick={() => setFilter(toggle(f, { type: 'income' }))} />
           <Chip label="Cash" pressed={f.payment_method === 'cash'} disabled={state.dups} onClick={() => setFilter(toggle(f, { payment_method: 'cash' }))} />
         </div>
-        <Feed filter={f} onClear={clear} />
+        <Feed
+          filter={f}
+          onClear={clear}
+          hidden={held}
+          renderRow={(t, row, { pending }) => (
+            <SwipeRow
+              disabled={pending}
+              onDelete={() => deleteWithUndo(t)}
+              onCopy={() => navigate(`/new?from=${encodeURIComponent(t.id)}`)}
+            >
+              {row}
+            </SwipeRow>
+          )}
+        />
       </section>
       <OptionSheet
         open={sheet === 'month'}

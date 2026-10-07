@@ -147,5 +147,7 @@ export function useDeleteTransaction() {
     optimistic: (qc, { id }) => patchRows(qc, id, () => null),
     invalidates: ACTIVITY_WRITES,
     pendingId: ({ id }) => id,
+    // A delete that failed while online may have been applied; replaying it would 404. Queue it only offline.
+    queue: 'offline-only',
   })
 }

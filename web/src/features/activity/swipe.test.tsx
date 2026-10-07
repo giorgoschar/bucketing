@@ -1,0 +1,54 @@
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { fakeApi } from '../../test/fakeApi'
+import { resetTestEnv } from '../../test/render'
+import { Activity } from './Activity'
+import { HOLD_MS, _resetHeldForTests } from './heldDeletes'
+import { makeTxn, pageOf, refRoutes, renderActivity } from './testing'
+
+afterEach(async () => {
+  _resetHeldForTests()
+  await resetTestEnv()
+})
+
+const DELETE = 'DELETE /api/v1/transactions/{txn_id}' as const
+
+function setup() {
+  const row = makeTxn({ merchant: 'Cosmote', recurring_bill_id: 'r1', bucket_id: 'b-bills' })
+  const fake = fakeApi({
+    ...refRoutes(),
+    'GET /api/v1/recurring': () => [{ id: 'r1', name: 'Cosmote', direction: 'out' }] as never,
+    'GET /api/v1/transactions': () => pageOf([row]),
+    [DELETE]: () => null,
+  })
+  renderActivity(<Activity />)
+  return { row, fake }
+}
+
+describe('swipe delete', () => {
+  it('hides the row, offers Undo, and Undo sends nothing', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const { fake } = setup()
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }))
+    expect(screen.queryByText('Cosmote')).toBeNull()
+    expect(screen.getByText(/Cosmote .* is expected again/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(await screen.findByText('Cosmote')).toBeInTheDocument()
+    act(() => vi.advanceTimersByTime(HOLD_MS * 2))
+    expect(fake.callsTo(DELETE)).toHaveLength(0)
+  })
+
+  it('sends the DELETE after 5 s', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const { fake, row } = setup()
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }))
+    act(() => vi.advanceTimersByTime(HOLD_MS))
+    await waitFor(() => expect(fake.callsTo(DELETE).map((c) => c.path)).toEqual([`/api/v1/transactions/${row.id}`]))
+  })
+
+  it('Copy opens the composer with ?from=', async () => {
+    const { row } = setup()
+    fireEvent.click(await screen.findByRole('button', { name: 'Copy' }))
+    expect(screen.getByTestId('location').textContent).toBe(`/new?from=${row.id}`)
+  })
+})
