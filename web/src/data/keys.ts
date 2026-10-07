@@ -66,6 +66,10 @@ export const keys = {
   cashWallets: (month: string) => ['cash', 'wallets', month] as const,
   /** CashMovementsOut: GET /cash/movements?month=YYYY-MM */
   cashMovements: (month: string) => ['cash', 'movements', month] as const,
+  /** StockItem[]: GET /stock (Plan › Pantry) */
+  stockList: () => ['stock', 'list'] as const,
+  /** StockDetail: GET /stock/{id} */
+  stockItem: (id: string) => ['stock', 'item', id] as const,
 }
 
 /** What each kind of change makes stale (useAction `invalidates`; the queue bridge uses `sync`). */

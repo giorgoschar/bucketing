@@ -5,6 +5,7 @@ import { Budgets } from './Budgets'
 import { Month } from './Month'
 import { Upcoming } from './Upcoming'
 import { Cash } from './cash/Cash'
+import { Pantry } from './pantry/Pantry'
 import './plan.css'
 
 const VIEWS = [
@@ -12,6 +13,7 @@ const VIEWS = [
   { value: 'month', label: 'Month' },
   { value: 'budgets', label: 'Budgets' },
   { value: 'cash', label: 'Cash' },
+  { value: 'pantry', label: 'Pantry' },
 ] as const
 type View = (typeof VIEWS)[number]['value']
 
@@ -32,6 +34,7 @@ export function Plan() {
         {view === 'month' && <Month />}
         {view === 'budgets' && <Budgets />}
         {view === 'cash' && <Cash />}
+        {view === 'pantry' && <Pantry />}
       </section>
     </>
   )
