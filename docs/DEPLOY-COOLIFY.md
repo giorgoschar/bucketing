@@ -289,3 +289,39 @@ Settings → **Link passkey**. Keep Pocket ID's self sign-up off.
 
 For local development, `docker compose --profile pocketid up -d pocketid` starts a Pocket
 ID on `http://localhost:1411` (see `docs/POCKET-ID.md` → Local development).
+
+## 9. Phase 2 releases (P1, P2, P3)
+
+Phase 2 of the new app ships in three pushes. The migration chain is
+`a7b8c9d0e1f2` → `b8c9d0e1f2a3` (P1, `bill_payment_method`) → `c9d0e1f2a3b4`
+(P2, `bulk_changes`: `bulk_batches`, `bulk_batch_rows`, `duplicate_dismissals`) →
+`d0e1f2a3b4c5` (P2, `notification_mutes`). All are additive.
+
+**P3 (Activity bulk UI, Insights, Settings, push service worker) adds no migrations.**
+The head stays `d0e1f2a3b4c5`; `entrypoint.sh`'s `alembic upgrade head` is a no-op, so the
+pre-migrate dump is only the usual safety net. Nothing new is required in the environment.
+
+**Push notifications** (Settings › Notifications in `/app`) use the existing
+`VAPID_PRIVATE_KEY`, `VAPID_PUBLIC_KEY` and `VAPID_CLAIMS_EMAIL` (section 1). They are not
+required to start: without the keys the app logs a warning at startup,
+`GET /push/vapid-public-key` answers 404 so the new app cannot subscribe a device, and
+"Send test" reports that VAPID is not configured. Keep the same key pair across deploys:
+a new pair invalidates every existing subscription (each device has to turn push on
+again). The service worker is served at `/app/sw.js` with scope `/app/`; the old UI's
+`static/sw.js` is unchanged.
+
+**Rolling the image back past P2** (to a P1 or older image): the older image does not know
+revisions `c9d0e1f2a3b4` and `d0e1f2a3b4c5`, so its `alembic upgrade head` at boot fails
+against a P2 database. Before switching images, run the downgrade **from the P2 (or P3)
+image**, which still has those migration files:
+
+```sh
+docker run --rm --entrypoint alembic -e DATABASE_URL=<production url> \
+  -e APP_SECRET_KEY=<the production value> <P2 or P3 image> downgrade b8c9d0e1f2a3
+```
+
+This drops `bulk_batches`, `bulk_batch_rows` (bulk-change undo history),
+`duplicate_dismissals` ("Keep both") and `notification_mutes`; transactions themselves
+are untouched. Then deploy the older image. Rolling back between P3 and P2 needs no
+database step. Restoring the pre-migrate dump (section 5) remains the alternative, at the
+cost of anything entered since it was taken.
