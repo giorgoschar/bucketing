@@ -36,7 +36,8 @@ export function PriceChart({ history, title }: { history: readonly HistoryPoint[
       {head(`Low ${formatMoney(low.price)} in ${month(low.date)}`)}
       <div className="pantry-chart__plot">
         <svg viewBox={`0 0 ${box.width} ${box.height}`} className="pantry-chart__svg" aria-hidden="true" focusable="false"
-          onPointerMove={onMove} onPointerLeave={() => setHover(null)}>
+          onPointerMove={onMove} onPointerDown={onMove} onPointerLeave={() => setHover(null)}
+          onPointerUp={(e) => { if (e.pointerType !== 'mouse') setHover(null) }}>
           <line className="pantry-chart__base" x1={box.padX} x2={box.width - box.padX} y1={box.height - box.padBottom}
             y2={box.height - box.padBottom} />
           <path d={g.path} className="pantry-chart__line" />

@@ -1,11 +1,12 @@
 import { type QueryClient, type QueryKey, useQueryClient } from '@tanstack/react-query'
-import { useCallback } from 'react'
+import { useCallback, useEffect } from 'react'
 import { api } from '../../../api/client'
 import { useAction } from '../../../data/action'
 import { useCachedQuery } from '../../../data/cachedQuery'
 import { runOnline, useOnlineAction } from '../../../data/onlineAction'
 import type { RawResult } from '../../../data/rawJson'
 import { unwrap } from '../../../data/http'
+import { onQueueDrained } from '../../../offline/queueDrain'
 import { keys } from '../../../data/keys'
 import type {
   PantryShoppingCount, ProductSummary, StockAddBody, StockAdjustBody, StockDetail, StockItem, StockSettingsBody,
@@ -22,6 +23,18 @@ export const PANTRY_SHOPPING_COUNT_KEY = ['stock', 'shopping-count'] as const
  * and the shopping count. The integration adds Wb's keys.shopping and keys.stockSummary here.
  */
 export const PANTRY_INVALIDATES: readonly QueryKey[] = [['stock'], keys.home.all]
+
+/**
+ * After the offline queue replays, refetch the pantry: a queued adjust's row would otherwise keep its
+ * optimistic numbers (the queue bridge refreshes affects.sync, which has no stock key until the integration
+ * adds it). Mounted by the Pantry list and the product detail.
+ */
+export function usePantryReplaySync() {
+  const qc = useQueryClient()
+  useEffect(() => onQueueDrained(() => {
+    for (const queryKey of PANTRY_INVALIDATES) void qc.invalidateQueries({ queryKey })
+  }), [qc])
+}
 
 /** GET /stock. */
 export function useStockList() {

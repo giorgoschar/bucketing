@@ -47,6 +47,7 @@ export function AddSheet({ open, onClose }: { open: boolean; onClose: () => void
   const [noCamera, setNoCamera] = useState(false)
   const [typed, setTyped] = useState('')
   const typedRef = useRef<HTMLInputElement>(null)
+  const scanRef = useRef<HTMLButtonElement>(null)
   const typedId = useId()
 
   const q = query.trim()
@@ -106,7 +107,7 @@ export function AddSheet({ open, onClose }: { open: boolean; onClose: () => void
               <input type="search" inputMode="search" enterKeyHint="search" autoComplete="off" placeholder="Search products"
                 aria-label="Search PosoKanei" value={query} disabled={!online} onChange={(e) => setQuery(e.target.value)} />
             </label>
-            <button type="button" className="btn btn--block pantry-add__scan" disabled={!online}
+            <button ref={scanRef} type="button" className="btn btn--block pantry-add__scan" disabled={!online}
               onClick={() => { setNoCamera(false); setScanning(true) }}>
               <ScanIcon />Scan barcode
             </button>
@@ -136,7 +137,7 @@ export function AddSheet({ open, onClose }: { open: boolean; onClose: () => void
           <Scanner
             onDetect={(code) => { setScanning(false); lookUp(code) }}
             onUnavailable={() => { setScanning(false); setNoCamera(true) }}
-            onClose={() => setScanning(false)} />
+            onClose={() => { setScanning(false); scanRef.current?.focus() }} />
         </Suspense>
       )}
       {lookup && (

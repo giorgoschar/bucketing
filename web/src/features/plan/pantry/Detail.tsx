@@ -9,7 +9,7 @@ import { Sheet } from '../../../ui/Sheet'
 import { useToast } from '../../../ui/Toast'
 import { ToggleRow } from '../../../ui/ToggleRow'
 import { OFFLINE_WRITE } from './BarcodeSheet'
-import { useAdjustStock, useStockDetail, useStockWrites } from './hooks'
+import { useAdjustStock, usePantryReplaySync, useStockDetail, useStockWrites } from './hooks'
 import { ArchiveIcon, RefreshIcon } from './icons'
 import { Initial } from './PantryRow'
 import { PriceChart } from './PriceChart'
@@ -26,6 +26,7 @@ export function Detail({ id: given }: { id?: string } = {}) {
   const params = useParams()
   const id = given ?? params.id ?? ''
   const detail = useStockDetail(id)
+  usePantryReplaySync()
   const online = useOnline()
   return (
     <>

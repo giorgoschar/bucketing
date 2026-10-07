@@ -7,7 +7,7 @@ import { EmptyState } from '../../../ui/EmptyState'
 import { CloudOffIcon, PlusIcon } from '../../../ui/icons'
 import { QueryView } from '../../../ui/QueryView'
 import { AddSheet } from './AddSheet'
-import { usePantryShoppingCount, useStockList } from './hooks'
+import { usePantryReplaySync, usePantryShoppingCount, useStockList } from './hooks'
 import { CartIcon, SearchIcon } from './icons'
 import { PantryRow } from './PantryRow'
 import type { StockItem } from './types'
@@ -26,6 +26,7 @@ const matches = (i: StockItem, q: string) =>
 /** Plan › Pantry (pantry spec §4.2): search, filter chips, the stock rows, and the shopping list button. */
 export function Pantry() {
   const list = useStockList()
+  usePantryReplaySync()
   const online = useOnline()
   const [adding, setAdding] = useState(false)
   return (
@@ -36,14 +37,14 @@ export function Pantry() {
         </p>
       )}
       <QueryView result={list} showBanner={false} noDataText="No saved pantry yet. Connect once to load Pantry.">
-        {(items) => <PantryBody items={items} onAdd={() => setAdding(true)} adding={adding} />}
+        {(items) => <PantryBody items={items} onAdd={() => setAdding(true)} />}
       </QueryView>
       {adding && <AddSheet open onClose={() => setAdding(false)} />}
     </div>
   )
 }
 
-function PantryBody({ items, onAdd, adding }: { items: StockItem[]; onAdd: () => void; adding: boolean }) {
+function PantryBody({ items, onAdd }: { items: StockItem[]; onAdd: () => void }) {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
   const pending = usePendingIds()
@@ -66,7 +67,7 @@ function PantryBody({ items, onAdd, adding }: { items: StockItem[]; onAdd: () =>
           <input type="search" inputMode="search" enterKeyHint="search" autoComplete="off" placeholder="Search pantry"
             aria-label="Search pantry" value={query} onChange={(e) => setQuery(e.target.value)} />
         </label>
-        <button type="button" className="ui-iconbtn pantry-plus" aria-label="Add to pantry" aria-expanded={adding}
+        <button type="button" className="ui-iconbtn pantry-plus" aria-label="Add to pantry" aria-haspopup="dialog"
           onClick={onAdd}>
           <PlusIcon />
         </button>
