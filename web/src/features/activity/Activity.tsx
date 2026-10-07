@@ -14,7 +14,7 @@ import { SearchField } from '../../ui/SearchField'
 import { Duplicates } from './Duplicates'
 import { Feed } from './Feed'
 import {
-  type FeedState, type TransactionFilter, activeFilterCount, fromSearch, monthLabel, monthRange, toSearch, toggle,
+  type FeedState, type TransactionFilter, activeFilterCount, fromSearch, isEmpty, monthLabel, monthRange, toSearch, toggle,
 } from './filters'
 import { useRecurringItems } from '../../data/reads'
 import { FiltersSheet } from './FiltersSheet'
@@ -92,6 +92,8 @@ export function Activity() {
   const pickedTotal = sel.kind === 'picked'
     ? loaded.rows.filter((r) => sel.ids.includes(r.id)).reduce((sum, r) => sum + r.amount * (r.exchange_rate || 1), 0)
     : null
+  // Select by filter needs a filter: the server refuses an empty one (400).
+  const canSelectAll = loaded.total > 0 && !isEmpty(f)
   const selectAll = () => {
     dispatch({ type: 'enter' })
     dispatch({ type: 'all', filter: f, total: loaded.total })
@@ -103,7 +105,7 @@ export function Activity() {
         <header className="selbar" role="toolbar" aria-label="Selection">
           <button type="button" onClick={() => dispatch({ type: 'cancel' })}>Cancel</button>
           <h1 className="selbar__title num" aria-live="polite">{count} selected</h1>
-          <button type="button" disabled={loaded.total === 0} onClick={() => dispatch({ type: 'all', filter: f, total: loaded.total })}>
+          <button type="button" disabled={!canSelectAll} onClick={() => dispatch({ type: 'all', filter: f, total: loaded.total })}>
             All
           </button>
         </header>
@@ -142,7 +144,7 @@ export function Activity() {
           <Chip label="Income" pressed={f.type === 'income'} disabled={state.dups} onClick={() => setFilter(toggle(f, { type: 'income' }))} />
           <Chip label="Cash" pressed={f.payment_method === 'cash'} disabled={state.dups} onClick={() => setFilter(toggle(f, { payment_method: 'cash' }))} />
         </div>
-        {!state.dups && f.missing_payer && loaded.total > 0 && sel.kind !== 'filter' && sel.kind !== 'bill' && (
+        {!state.dups && f.missing_payer && canSelectAll && sel.kind !== 'filter' && sel.kind !== 'bill' && (
           <button type="button" className="btn btn--ghost btn--sm select-all" onClick={selectAll}>
             Select all {loaded.total}
           </button>

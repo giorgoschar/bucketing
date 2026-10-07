@@ -75,4 +75,11 @@ describe('selection mode', () => {
     // "two" has a queued edit, so it can't be picked: only "three" is left.
     expect(screen.getByText('1 selected')).toBeInTheDocument()
   })
+
+  it('All is disabled with no filter at all (the server refuses an empty filter)', async () => {
+    setup('/activity?all=1')
+    fireEvent.click(await screen.findByRole('button', { name: 'More' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Select/ }))
+    expect(await screen.findByRole('button', { name: 'All' })).toBeDisabled()
+  })
 })
