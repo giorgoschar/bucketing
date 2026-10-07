@@ -34,6 +34,7 @@ export function TwoFactor({ security }: { security: Security }) {
     void loadSetup()
   }
   const closeSetup = () => { setSetupOpen(false); setSetup(null); setCode(''); setSetupFailed(false) }
+  const closeOff = () => { setOffOpen(false); setPassword(''); setOffCode('') }
   const enable = async () => {
     setBusy(true)
     const out = await actions.totpEnable(code.trim())
@@ -45,7 +46,7 @@ export function TwoFactor({ security }: { security: Security }) {
     const out = await actions.totpDisable({ current_password: password, code: offCode.trim() })
     setBusy(false)
     if (!out.ok) return
-    setOffOpen(false); setPassword(''); setOffCode('')
+    closeOff()
     // Password sign-in requires 2FA: everything else now answers 403 until it is back on.
     if (security.password_session) openSetup(REENROL)
   }
@@ -104,7 +105,7 @@ export function TwoFactor({ security }: { security: Security }) {
         </div>
       </Sheet>
 
-      <Sheet open={offOpen} onClose={() => setOffOpen(false)} title="Turn off 2FA">
+      <Sheet open={offOpen} onClose={closeOff} title="Turn off 2FA">
         <div className="settings__form">
           <p className="settings__help">Your Apple Pay tokens will stop working and other devices will be signed out.</p>
           <label className="ui-field">
@@ -117,7 +118,7 @@ export function TwoFactor({ security }: { security: Security }) {
               onChange={(e) => setOffCode(e.target.value.replace(/\D/g, ''))} />
           </label>
           <div className="settings__btnrow">
-            <button type="button" className="btn" onClick={() => setOffOpen(false)}>Cancel</button>
+            <button type="button" className="btn" onClick={closeOff}>Cancel</button>
             <button type="button" className="btn btn--danger" disabled={busy} onClick={() => void turnOff()}>Turn off 2FA</button>
           </div>
         </div>

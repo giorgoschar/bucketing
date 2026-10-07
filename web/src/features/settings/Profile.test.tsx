@@ -164,6 +164,23 @@ describe('Profile', () => {
     expect(screen.getByText('Password sign-in needs 2FA. Set it up again to keep using Tameio.')).toBeInTheDocument()
   })
 
+  it('cancelling Turn off clears the password and code', () => {
+    renderAt()
+    fireEvent.click(screen.getByRole('button', { name: 'Turn off' }))
+    let sheet = screen.getByRole('dialog', { name: 'Turn off 2FA', hidden: true })
+    fireEvent.change(within(sheet).getByLabelText('Password'), { target: { value: 'pw-123456789012' } })
+    fireEvent.change(within(sheet).getByLabelText('Authenticator code'), { target: { value: '123456' } })
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Cancel', hidden: true }))
+    fireEvent.click(screen.getByRole('button', { name: 'Turn off' }))
+    sheet = screen.getByRole('dialog', { name: 'Turn off 2FA', hidden: true })
+    expect(within(sheet).getByLabelText('Password')).toHaveValue('')
+    expect(within(sheet).getByLabelText('Authenticator code')).toHaveValue('')
+    fireEvent.change(within(sheet).getByLabelText('Password'), { target: { value: 'x' } })
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Close', hidden: true }))
+    fireEvent.click(screen.getByRole('button', { name: 'Turn off' }))
+    expect(within(screen.getByRole('dialog', { name: 'Turn off 2FA', hidden: true })).getByLabelText('Password')).toHaveValue('')
+  })
+
   it('links a passkey with a native form carrying CSRF and return_to', () => {
     renderAt()
     const form = screen.getByRole('button', { name: 'Link passkey' }).closest('form')!
