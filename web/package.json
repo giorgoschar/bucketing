@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "postbuild": "node scripts/check-sw.mjs",
     "lint": "oxlint",
     "preview": "vite preview",
     "gen:api": "cd .. && .venv/bin/python scripts/export_openapi.py web/src/api/openapi.json && cd web && openapi-typescript src/api/openapi.json -o src/api/schema.d.ts",
@@ -40,6 +41,9 @@
     "typescript": "~6.0.2",
     "vite": "^8.3.0",
     "vite-plugin-pwa": "^2.0.0",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "workbox-core": "^7.4.1",
+    "workbox-precaching": "^7.4.1",
+    "workbox-routing": "^7.4.1"
   }
 }

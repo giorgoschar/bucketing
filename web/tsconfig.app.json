@@ -22,5 +22,7 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  // The worker has its own program (tsconfig.sw.json): the DOM program must not see worker globals.
+  "exclude": ["src/sw.ts", "src/sw.test.ts"]
 }
