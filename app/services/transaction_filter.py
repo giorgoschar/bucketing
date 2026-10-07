@@ -95,11 +95,29 @@ def _date(value: str, label: str) -> date:
         ) from None
 
 
+# Amounts are Numeric(12, 4); anything beyond this is not a real amount, and a
+# literal like 1e999999 would otherwise reach Postgres as a bind value.
+MAX_AMOUNT = Decimal("1e12")
+_FOUR_PLACES = Decimal("0.0001")
+
+
 def _amount(value: str, label: str) -> Decimal:
     d = maybe_number(value)
     if d is None or d < 0:
         raise HTTPException(status_code=400, detail=f"{label} must be a number of 0 or more.")
-    return d
+    if d > MAX_AMOUNT:
+        raise HTTPException(status_code=400, detail=f"{label} is too large.")
+    return d.quantize(_FOUR_PLACES)  # a tiny literal (1e-999999) becomes 0.0000
+
+
+def _exact_amount(text: str) -> Decimal | None:
+    """The amount ``q`` might name, or None when it can't be a stored amount
+    (too large, or finer than 4 decimals): the exact match is then skipped."""
+    d = maybe_number(text)
+    if d is None or abs(d) > MAX_AMOUNT:
+        return None
+    d = d.normalize()
+    return d if d.as_tuple().exponent >= -4 else None
 
 
 def apply_filter(q: Query, f: TransactionFilter, db: Session, household_id: str) -> Query:
@@ -133,7 +151,7 @@ def apply_filter(q: Query, f: TransactionFilter, db: Session, household_id: str)
                 .scalar_subquery()
             ),
         ]
-        exact = maybe_number(text)
+        exact = _exact_amount(text)
         if exact is not None:
             conditions.append(Transaction.amount == exact)  # "42.50" finds the amount
         q = q.filter(or_(*conditions))

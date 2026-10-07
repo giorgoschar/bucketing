@@ -132,6 +132,8 @@ def test_structured_filters(db, seed):
         {"from_date": "2026-10-07", "to_date": "2026-10-01"},
         {"min_amount": "abc"},
         {"max_amount": "-1"},
+        {"max_amount": "1e999999"},
+        {"min_amount": "1000000000001"},
         {"type": "bogus"},
         {"payment_method": "cheque"},
         {"year": 2026, "month": 13},
@@ -150,3 +152,13 @@ def test_is_empty_and_strict_extra():
     assert not TransactionFilter(missing_payer=True).is_empty()
     with pytest.raises(ValueError):
         StrictTransactionFilter(bucket="x")
+
+
+@pytest.mark.parametrize("term", ["1e999999", "1e13", "-1e999999", "1e-999999", "0.123456"])
+def test_q_with_a_huge_or_tiny_number_matches_nothing_and_does_not_fail(db, seed, term):
+    assert run(db, seed, q=term) == set()
+    assert run(db, seed, min_amount="1e-999999") >= set()  # tiny amounts quantise to 0
+
+
+def test_amount_at_the_cap_is_accepted(db, seed):
+    assert run(db, seed, max_amount="1e12") >= set()
