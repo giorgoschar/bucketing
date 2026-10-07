@@ -188,8 +188,27 @@ def _cookie_kwargs(max_age: int) -> dict:
     }
 
 
-def set_session(response, user_id: str, household_id: str, session_version: int, amr: str = "pwd"):
-    """Set a full authenticated session cookie. amr: "pwd" (password+TOTP) or "oidc" (passkey)."""
+def current_iat(request: Request) -> int | None:
+    """Original sign-in time of the request's session cookie (None if it has none)."""
+    iat = (get_current_session(request) or {}).get("iat")
+    return iat if isinstance(iat, int) else None
+
+
+def set_session(
+    response,
+    user_id: str,
+    household_id: str,
+    session_version: int,
+    amr: str = "pwd",
+    iat: int | None = None,
+):
+    """Set a full authenticated session cookie. amr: "pwd" (password+TOTP) or "oidc" (passkey).
+
+    iat is the time of the real authentication. Only real authentications (password+TOTP,
+    backup code, TOTP enrol, OIDC callback, password change) leave it None to stamp
+    now; re-issues without re-authentication (household switch/create/leave, unlink)
+    pass current_iat(request) so they cannot extend the absolute lifetime.
+    """
     value = _serializer.dumps(
         {
             "user_id": user_id,
@@ -197,7 +216,7 @@ def set_session(response, user_id: str, household_id: str, session_version: int,
             "sv": session_version,
             "state": "authenticated",
             "amr": amr,
-            "iat": int(time.time()),
+            "iat": int(time.time()) if iat is None else iat,
         }
     )
     response.set_cookie(COOKIE_NAME, value, **_cookie_kwargs(settings.session_max_age_seconds))
@@ -283,9 +302,15 @@ def clear_session(response):
 def decode_cookie(cookie: str, max_age: int | None = None) -> dict | None:
     """Verify signature and age (default: the session lifetime)."""
     try:
-        return _serializer.loads(cookie, max_age=max_age or settings.session_max_age_seconds)
+        data = _serializer.loads(cookie, max_age=max_age or settings.session_max_age_seconds)
     except BadSignature:  # includes SignatureExpired
         return None
+    # Absolute cap on a rolling session, counted from the real sign-in. Cookies
+    # without an iat (issued before rolling existed) just run out on their own.
+    iat = data.get("iat") if isinstance(data, dict) else None
+    if isinstance(iat, int) and time.time() - iat > settings.session_absolute_max_seconds:
+        return None
+    return data
 
 
 # Rolling session: a valid full session older than this is re-issued (same

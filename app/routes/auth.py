@@ -13,6 +13,7 @@ from app.auth import (
     clear_device_cookie,
     clear_failed_logins,
     clear_session,
+    current_iat,
     get_current_session,
     get_pending_session,
     hash_password,
@@ -381,7 +382,14 @@ def switch_household(
 
     response = RedirectResponse("/dashboard", status_code=302)
     amr = (get_current_session(request) or {}).get("amr", "pwd")
-    set_session(response, user.id, household_id, user.session_version, amr=amr)
+    set_session(
+        response,
+        user.id,
+        household_id,
+        user.session_version,
+        amr=amr,
+        iat=current_iat(request),
+    )
     return response
 
 

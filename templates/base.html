@@ -75,6 +75,17 @@
       document.addEventListener('DOMContentLoaded', _injectCsrfFields);
       document.addEventListener('htmx:afterSwap', _injectCsrfFields);
     }
+    // Refresh the field from the cookie at submit time: the server may have rolled the
+    // CSRF cookie since this page (or a tab left open) was rendered.
+    if (!window.__csrfSubmitWired) {
+      window.__csrfSubmitWired = true;
+      document.addEventListener('submit', function (evt) {
+        var f = evt.target, val = app.csrfToken();
+        if (!val || !f || (f.method || '').toLowerCase() !== 'post') return;
+        var inp = f.querySelector('[name="_csrf_token"]');
+        if (inp) inp.value = val;
+      }, true);
+    }
     _injectCsrfFields();   // run for the markup just swapped in
   </script>
 

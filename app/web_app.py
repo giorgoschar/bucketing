@@ -1,6 +1,7 @@
 """The new app at /app: passkey sign-in via Pocket ID, and (Task 5) the SPA itself."""
 
 import logging
+import secrets
 import time
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from app.auth import (
     clear_failed_logins,
     clear_session,
     csrf_matches,
+    current_iat,
     decode_cookie,
     invalidate_user_sessions,
     is_locked,
@@ -52,6 +54,12 @@ def _enabled() -> None:
 
 def _fail(code: str) -> RedirectResponse:
     return RedirectResponse(f"/app/?auth_error={code}", status_code=302)
+
+
+def _fail_clear(request: Request, code: str) -> RedirectResponse:
+    """Fail and drop every pending OIDC transaction, so none can be replayed."""
+    request.session.clear()
+    return _fail(code)
 
 
 def _callback_url(request: Request) -> str:
@@ -116,13 +124,17 @@ async def link(
             alert_failed_second_factor(db, request, user, hh_id)
         return RedirectResponse("/settings?passkey_error=1", status_code=302)
     clear_failed_logins(db, user)
+    # Drop any other pending transaction (a quiet sign-in's state must not be able
+    # to complete as a link), then start this one, always prompted.
+    request.session.clear()
+    state = secrets.token_urlsafe(32)
     request.session["link_user_id"] = user.id
     request.session["link_started_at"] = int(time.time())
-    request.session["oidc_prompted"] = True
+    request.session[f"oidc_prompted:{state}"] = True
     # prompt=login makes Pocket ID run a fresh passkey ceremony.
     try:
         return await oidc_client().authorize_redirect(
-            request, _callback_url(request), prompt="login"
+            request, _callback_url(request), state=state, prompt="login"
         )
     except _PROVIDER_ERRORS as exc:
         security_logger.warning(
@@ -149,7 +161,7 @@ async def unlink(request: Request, db: Session = Depends(get_db)):
     db.commit()
     security_logger.info("OIDC passkey unlinked")
     response = RedirectResponse("/settings?passkey=unlinked", status_code=302)
-    set_session(response, user.id, hh_id, user.session_version, amr="pwd")
+    set_session(response, user.id, hh_id, user.session_version, amr="pwd", iat=current_iat(request))
     return response
 
 
@@ -164,9 +176,14 @@ async def login(request: Request):
     # Pocket ID signing the next person straight back in. Whether we prompted is
     # remembered in the transaction session; the callback never infers it.
     extra = {} if read_device_cookie(request) else {"prompt": "login"}
-    request.session["oidc_prompted"] = bool(extra)
+    # One live transaction per browser, and its flag is bound to its own state.
+    request.session.clear()
+    state = secrets.token_urlsafe(32)
+    request.session[f"oidc_prompted:{state}"] = bool(extra)
     try:
-        return await oidc_client().authorize_redirect(request, _callback_url(request), **extra)
+        return await oidc_client().authorize_redirect(
+            request, _callback_url(request), state=state, **extra
+        )
     except _PROVIDER_ERRORS as exc:
         security_logger.warning(
             "OIDC provider error: %s: %s", type(exc).__name__, exc, exc_info=True
@@ -181,28 +198,32 @@ async def callback(request: Request, db: Session = Depends(get_db)):
     # never turn a later sign-in in this browser into a link.
     link_user_id = request.session.pop("link_user_id", None)
     link_started_at = request.session.pop("link_started_at", None)
-    # Transactions started before this existed were all prompted (default True).
-    prompted = bool(request.session.pop("oidc_prompted", True))
+    # Whether THIS transaction (keyed by its state) forced a passkey prompt. Missing
+    # means unknown: treated as not prompted, so the trusted-device check applies.
+    state = request.query_params.get("state")
+    prompted = bool(state and request.session.pop(f"oidc_prompted:{state}", False))
     if request.query_params.get("error"):
-        return _fail("denied")
+        return _fail_clear(request, "denied")
     try:
         token = await oidc_client().authorize_access_token(request)
     except OAuthError as exc:
         security_logger.warning("OIDC callback rejected: %s", type(exc).__name__)
-        return _fail("state")
+        return _fail_clear(request, "state")
     except JoseError as exc:
         security_logger.warning("OIDC ID token rejected: %s", type(exc).__name__)
-        return _fail("token")
+        return _fail_clear(request, "token")
     except _PROVIDER_ERRORS as exc:
         # Token endpoint/JWKS fetch failed or returned garbage. Authlib/joserfc/httpx
         # messages name the URL and the problem, never the code, token or secret.
         security_logger.warning(
             "OIDC provider error: %s: %s", type(exc).__name__, exc, exc_info=True
         )
-        return _fail("provider")
+        return _fail_clear(request, "provider")
     claims = token.get("userinfo") or {}
 
     if link_user_id:
+        if not prompted:
+            return _fail_clear(request, "link_requires_login")
         found = _password_session_user(request, db)
         user, hh_id = found if found else (None, None)
         fresh = (
@@ -210,12 +231,12 @@ async def callback(request: Request, db: Session = Depends(get_db)):
             and 0 <= time.time() - link_started_at <= LINK_MAX_AGE_SECONDS
         )
         if not user or user.id != link_user_id or not fresh:
-            return _fail("link_requires_login")
+            return _fail_clear(request, "link_requires_login")
         try:
             changed = link_oidc_subject(db, user, claims.get("sub"))
         except IdentityError as exc:
             security_logger.warning("OIDC link refused: %s", exc.code)
-            return _fail(exc.code)
+            return _fail_clear(request, exc.code)
         if changed:  # re-linking the same passkey is a no-op: no second alert
             security_logger.info("OIDC passkey linked")
             alert_passkey_linked(db, request, user, hh_id)
@@ -225,7 +246,7 @@ async def callback(request: Request, db: Session = Depends(get_db)):
         user = resolve_oidc_user(db, claims)
     except IdentityError as exc:
         security_logger.warning("OIDC sign-in refused: %s", exc.code)
-        return _fail(exc.code)
+        return _fail_clear(request, exc.code)
     member = (
         db.query(HouseholdMember)
         .filter_by(user_id=user.id)
@@ -234,7 +255,7 @@ async def callback(request: Request, db: Session = Depends(get_db)):
     )
     if not member:
         security_logger.warning("OIDC sign-in refused: no_household")
-        return _fail("no_household")
+        return _fail_clear(request, "no_household")
     if not prompted:
         # Quiet sign-in: only a device that signed in as this user, at the current
         # session_version, may skip the passkey ceremony. Anything else (first
@@ -246,6 +267,7 @@ async def callback(request: Request, db: Session = Depends(get_db)):
             or device.get("sv") != user.session_version
         ):
             security_logger.info("OIDC quiet sign-in refused: untrusted device")
+            request.session.clear()
             retry = RedirectResponse("/app/auth/login", status_code=302)
             clear_device_cookie(retry)
             return retry

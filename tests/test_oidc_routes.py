@@ -14,6 +14,38 @@ def _oidc_on(monkeypatch):
     monkeypatch.setattr(settings, "oidc_client_secret", "secret")
 
 
+@pytest.fixture(autouse=True)
+def _live_oidc_transactions(client, monkeypatch):
+    """These tests drive the callback with a canned state ("s"). Real states are random
+    and bound to a transaction started by /login or /link, so: make every state "s",
+    and start a (prompted) transaction before a callback that has none pending."""
+    from starlette.responses import RedirectResponse
+
+    monkeypatch.setattr("app.web_app.secrets.token_urlsafe", lambda n=32: "s")
+    started = {"live": False}
+    real_get, real_post = client.get, client.post
+
+    def get(url, *a, **kw):
+        if url.startswith("/app/auth/login"):
+            started["live"] = True
+        elif url.startswith("/app/auth/callback"):
+            if not started["live"] and "state=s" in url:
+                stub = AsyncMock()
+                stub.authorize_redirect.return_value = RedirectResponse("https://id.example.test/a")
+                with patch("app.web_app.oidc_client", return_value=stub):
+                    real_get("/app/auth/login")
+            started["live"] = False
+        return real_get(url, *a, **kw)
+
+    def post(url, *a, **kw):
+        if url.startswith("/app/auth/link"):
+            started["live"] = True
+        return real_post(url, *a, **kw)
+
+    monkeypatch.setattr(client, "get", get)
+    monkeypatch.setattr(client, "post", post)
+
+
 def _member(db, email="g@x.t", sub="s1"):
     u = User(username="g", email=email, display_name="G", password_hash="x", oidc_subject=sub)
     h = Household(name="Home")

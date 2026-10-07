@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.api_auth import revoke_member_access
 from app.auth import (
     clear_session,
+    current_iat,
     get_current_session,
     hash_password,
     invalidate_user_sessions,
@@ -176,6 +177,7 @@ def create_household(
         household.id,
         user.session_version,
         amr=(get_current_session(request) or {}).get("amr", "pwd"),
+        iat=current_iat(request),
     )
     return response
 
@@ -884,6 +886,7 @@ def leave_household(
             remaining.household_id,
             user.session_version,
             amr=(get_current_session(request) or {}).get("amr", "pwd"),
+            iat=current_iat(request),
         )
         return response
 

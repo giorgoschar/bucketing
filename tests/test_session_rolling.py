@@ -49,12 +49,16 @@ def _redirecting():
 
 def _oidc_login(client, fake):
     with patch("app.web_app.oidc_client", return_value=fake):
-        return client.get("/app/auth/login", follow_redirects=False)
+        r = client.get("/app/auth/login", follow_redirects=False)
+    fake.last_state = fake.authorize_redirect.call_args.kwargs["state"]
+    return r
 
 
 def _callback(client, fake):
     with patch("app.web_app.oidc_client", return_value=fake):
-        return client.get("/app/auth/callback?code=c&state=s", follow_redirects=False)
+        return client.get(
+            f"/app/auth/callback?code=c&state={fake.last_state}", follow_redirects=False
+        )
 
 
 def _sign_in(client, fake):
@@ -359,7 +363,7 @@ def test_cookie_past_absolute_cap_is_not_rolled(client, make_household, login, c
     client.cookies.clear()
     client.cookies.set(COOKIE_NAME, _serializer.dumps(payload))
     r = client.get("/api/v1/auth/me")
-    assert r.status_code == 200  # still within its own 30-day signature life
+    assert r.status_code == 401  # rejected outright, never rolled
     assert COOKIE_NAME not in _set_cookie_names(r)
 
 
@@ -415,3 +419,198 @@ def test_unlink_after_a_day_keeps_the_reissued_session(client, db, make_househol
     db.refresh(user)
     assert _serializer.loads(_session_cookie_value(client))["sv"] == user.session_version
     assert client.get("/api/v1/auth/me").status_code == 200
+
+
+# --- real Authlib state storage ---------------------------------------------
+
+
+class _RealStateClient:
+    """Real Authlib app for authorize_redirect and state storage; only the token
+    exchange is faked (it still validates and consumes the state like Authlib does)."""
+
+    def __init__(self, sub="s1"):
+        from authlib.integrations.starlette_client import OAuth
+
+        oauth = OAuth()
+        oauth.register(
+            name="pocketid",
+            client_id="cid",
+            client_secret="secret",
+            authorize_url="https://id.example.test/authorize",
+            access_token_url="https://id.example.test/token",
+            client_kwargs={"scope": "openid email profile"},
+        )
+        self.app = oauth.pocketid
+        self.sub = sub
+
+    async def authorize_redirect(self, request, redirect_uri=None, **kwargs):
+        return await self.app.authorize_redirect(request, redirect_uri, **kwargs)
+
+    async def authorize_access_token(self, request):
+        from authlib.integrations.base_client import OAuthError
+
+        state = request.query_params.get("state")
+        data = await self.app.framework.get_state_data(request.session, state)
+        if not data:
+            raise OAuthError(error="mismatching_state")
+        await self.app.framework.clear_state_data(request.session, state)
+        return {"userinfo": {"sub": self.sub, "email": "g@x.t", "email_verified": True}}
+
+
+def _start(client, fake, path="/app/auth/login"):
+    from urllib.parse import parse_qs, urlparse
+
+    with patch("app.web_app.oidc_client", return_value=fake):
+        r = client.get(path, follow_redirects=False)
+    q = parse_qs(urlparse(r.headers["location"]).query)
+    return r, q["state"][0], q.get("prompt", [None])[0]
+
+
+def _finish(client, fake, state, extra=""):
+    with patch("app.web_app.oidc_client", return_value=fake):
+        return client.get(f"/app/auth/callback?code=c&state={state}{extra}", follow_redirects=False)
+
+
+def test_real_state_prompted_sign_in(client, db):
+    _member(db)
+    fake = _RealStateClient()
+    r, state, prompt = _start(client, fake)
+    assert prompt == "login" and len(state) >= 40  # our own state reached Authlib
+    assert _finish(client, fake, state).headers["location"] == "/app/"
+    assert client.get("/api/v1/auth/me").status_code == 200
+
+
+def test_real_state_quiet_sign_in_with_valid_device(client, db):
+    _member(db)
+    fake = _RealStateClient()
+    _, state, _ = _start(client, fake)
+    _finish(client, fake, state)
+    _drop_session(client)
+    _, state, prompt = _start(client, fake)
+    assert prompt is None
+    assert _finish(client, fake, state).headers["location"] == "/app/"
+    assert client.get("/api/v1/auth/me").status_code == 200
+
+
+def _stale_device_browser(client, db):
+    """A browser whose trusted-device cookie went stale (sign-out everywhere elsewhere)."""
+    u, _ = _member(db)
+    fake = _RealStateClient()
+    _, state, _ = _start(client, fake)
+    _finish(client, fake, state)
+    u.session_version += 1
+    db.commit()
+    _drop_session(client)
+    return u, fake
+
+
+def test_error_callback_then_replay_of_quiet_state_is_refused(client, db):
+    """(a) The flag must not vanish with an error callback and let the replay skip the device check."""
+    _stale_device_browser(client, db)
+    fake = _RealStateClient()
+    _, s1, prompt = _start(client, fake)
+    assert prompt is None
+    assert "auth_error" in _finish(client, fake, s1, "&error=x").headers["location"]
+    r = _finish(client, fake, s1)
+    assert "auth_error" in r.headers["location"]
+    assert client.get("/api/v1/auth/me").status_code == 401
+
+
+def test_prompted_login_does_not_upgrade_an_earlier_quiet_state(client, db):
+    """(b) A later prompted transaction must not make an earlier quiet one count as prompted."""
+    _stale_device_browser(client, db)
+    fake = _RealStateClient()
+    _, s1, prompt1 = _start(client, fake)
+    assert prompt1 is None
+    stale_cookie = client.cookies.get(DEVICE_COOKIE_NAME)
+    client.cookies.delete(DEVICE_COOKIE_NAME)
+    _, s2, prompt2 = _start(client, fake)
+    assert prompt2 == "login"
+    client.cookies.set(DEVICE_COOKIE_NAME, stale_cookie)
+    r = _finish(client, fake, s1)
+    assert "auth_error" in r.headers["location"]
+    assert client.get("/api/v1/auth/me").status_code == 401
+
+
+def test_link_does_not_complete_an_earlier_quiet_state(client, db, make_household, login):
+    """(c) Replaying a quiet state after /link must not link a passkey."""
+    from tests.test_oidc_routes import _link_form
+
+    hh = make_household()
+    headers = login(hh.username, hh.secret)  # password session + trusted device
+    fake = _RealStateClient(sub="attacker-sub")
+    _, s1, prompt = _start(client, fake)
+    assert prompt is None
+    with patch("app.web_app.oidc_client", return_value=fake):
+        r = client.post(
+            "/app/auth/link", data=_link_form(hh), headers=headers, follow_redirects=False
+        )
+    assert r.status_code in (302, 307)
+    r = _finish(client, fake, s1)
+    assert "auth_error" in r.headers["location"]
+    db.expire_all()
+    assert db.get(User, hh.user_id).oidc_subject is None
+
+
+def test_real_state_link_flow_links(client, db, make_household, login):
+    from urllib.parse import parse_qs, urlparse
+
+    from tests.test_oidc_routes import _link_form
+
+    hh = make_household()
+    headers = login(hh.username, hh.secret)
+    fake = _RealStateClient(sub="new-sub")
+    with patch("app.web_app.oidc_client", return_value=fake):
+        r = client.post(
+            "/app/auth/link", data=_link_form(hh), headers=headers, follow_redirects=False
+        )
+    q = parse_qs(urlparse(r.headers["location"]).query)
+    assert q["prompt"] == ["login"]
+    r = _finish(client, fake, q["state"][0])
+    assert r.headers["location"] == "/app/?linked=1"
+    db.expire_all()
+    assert db.get(User, hh.user_id).oidc_subject == "new-sub"
+
+
+def test_callback_without_state_is_never_prompted(client, db):
+    _stale_device_browser(client, db)
+    fake = _RealStateClient()
+    with patch("app.web_app.oidc_client", return_value=fake):
+        r = client.get("/app/auth/callback?code=c", follow_redirects=False)
+    assert "auth_error" in r.headers["location"]
+
+
+# --- absolute lifetime ------------------------------------------------------
+
+
+def _age_session(client, clock, days, step=7):
+    """Use the app daily-ish so the cookie keeps rolling, up to `days` since sign-in."""
+    d = 0
+    while d + step < days:
+        d += step
+        clock["offset"] = d * DAY
+        assert client.get("/api/v1/auth/me").status_code == 200
+    clock["offset"] = days * DAY
+
+
+def test_switch_at_day_89_keeps_original_iat_and_day_91_is_rejected(
+    client, db, make_household, login, clock
+):
+    hh, headers = _signed_in(client, make_household, login)
+    other = Household(name="Second", default_currency="EUR")
+    db.add(other)
+    db.flush()
+    db.add(HouseholdMember(household_id=other.id, user_id=hh.user_id, role="member"))
+    db.commit()
+    iat = _serializer.loads(_session_cookie_value(client))["iat"]
+    _age_session(client, clock, 89)
+    headers = {"X-CSRF-Token": client.cookies.get(CSRF_COOKIE_NAME)}
+    r = client.post("/household/switch", data={"household_id": other.id}, headers=headers)
+    assert r.status_code == 302
+    after = _serializer.loads(_session_cookie_value(client))
+    assert after["hh_id"] == other.id and after["iat"] == iat
+
+    clock["offset"] = 91 * DAY
+    assert client.get("/api/v1/auth/me").status_code == 401
+    r = client.get("/dashboard")
+    assert r.status_code == 302 and r.headers["location"].startswith("/login")
