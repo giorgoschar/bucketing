@@ -164,7 +164,7 @@ async function drain(force: boolean): Promise<Result> {
         sent++
         continue
       }
-      if (res.status >= 500 || res.status === 429) {
+      if (res.status >= 500 || res.status === 429 || res.status === 408) {
         await retryLater()
         break
       }
