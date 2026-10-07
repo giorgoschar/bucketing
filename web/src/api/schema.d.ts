@@ -1013,6 +1013,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Prefs */
+        get: operations["get_prefs_api_v1_settings_notifications_get"];
+        /** Put Prefs */
+        put: operations["put_prefs_api_v1_settings_notifications_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings/profile": {
         parameters: {
             query?: never;
@@ -1515,6 +1533,17 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AlertTypeOut */
+        AlertTypeOut: {
+            /** Enabled */
+            enabled: boolean;
+            /** Group */
+            group: string;
+            /** Label */
+            label: string;
+            /** Type */
+            type: string;
+        };
         /** ApplePayIn */
         ApplePayIn: {
             /** Amount */
@@ -2969,6 +2998,18 @@ export interface components {
             spend_bucket_id?: string | null;
             /** Stash Owner Id */
             stash_owner_id?: string | null;
+        };
+        /** NotificationPrefsIn */
+        NotificationPrefsIn: {
+            /** Disabled */
+            disabled: string[];
+        };
+        /** NotificationPrefsOut */
+        NotificationPrefsOut: {
+            /** Push Devices */
+            push_devices: number;
+            /** Types */
+            types: components["schemas"]["AlertTypeOut"][];
         };
         /** PaceOut */
         PaceOut: {
@@ -5770,6 +5811,59 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_prefs_api_v1_settings_notifications_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationPrefsOut"];
+                };
+            };
+        };
+    };
+    put_prefs_api_v1_settings_notifications_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NotificationPrefsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationPrefsOut"];
+                };
             };
             /** @description Validation Error */
             422: {

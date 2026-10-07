@@ -1,6 +1,34 @@
 {
   "components": {
     "schemas": {
+      "AlertTypeOut": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "group": {
+            "title": "Group",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "group",
+          "label",
+          "enabled"
+        ],
+        "title": "AlertTypeOut",
+        "type": "object"
+      },
       "ApplePayIn": {
         "properties": {
           "amount": {
@@ -3213,6 +3241,43 @@
           "amount"
         ],
         "title": "MovementIn",
+        "type": "object"
+      },
+      "NotificationPrefsIn": {
+        "properties": {
+          "disabled": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Disabled",
+            "type": "array"
+          }
+        },
+        "required": [
+          "disabled"
+        ],
+        "title": "NotificationPrefsIn",
+        "type": "object"
+      },
+      "NotificationPrefsOut": {
+        "properties": {
+          "push_devices": {
+            "title": "Push Devices",
+            "type": "integer"
+          },
+          "types": {
+            "items": {
+              "$ref": "#/components/schemas/AlertTypeOut"
+            },
+            "title": "Types",
+            "type": "array"
+          }
+        },
+        "required": [
+          "types",
+          "push_devices"
+        ],
+        "title": "NotificationPrefsOut",
         "type": "object"
       },
       "PaceOut": {
@@ -8775,6 +8840,76 @@
           }
         ],
         "summary": "Remove Member",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/notifications": {
+      "get": {
+        "operationId": "get_prefs_api_v1_settings_notifications_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPrefsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Prefs",
+        "tags": [
+          "settings"
+        ]
+      },
+      "put": {
+        "operationId": "put_prefs_api_v1_settings_notifications_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationPrefsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPrefsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Put Prefs",
         "tags": [
           "settings"
         ]
