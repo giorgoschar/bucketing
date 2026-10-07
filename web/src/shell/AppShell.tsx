@@ -33,13 +33,17 @@ export function AppShell() {
   // Replay queued offline writes on open, `online` and returning to the tab (iOS has no Background Sync).
   // The bridge first, so the first drain already refreshes the screens and clears the pending markers.
   useEffect(() => {
-    if (status !== 'signedIn') return
+    if (status !== 'signedIn') {
+      // Signed out: this account's markers must not outlive it. Not on unmount: /new sits outside AppShell,
+      // and opening the composer must not wipe the "Waiting to sync" markers.
+      clearPending()
+      return
+    }
     const stopBridge = installQueueBridge(queryClient)
     const stopReplay = startReplayTriggers()
     return () => {
       stopReplay()
       stopBridge()
-      clearPending() // signed out or switched: this account's markers must not outlive it
     }
   }, [status])
 

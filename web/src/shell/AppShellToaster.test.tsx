@@ -46,9 +46,10 @@ it('the toast region sits outside <main>, so it never mixes with the page banner
   expect(screen.getByRole('main')).not.toContainElement(screen.getByText('Saved'))
 })
 
-it('leaving the signed-in shell clears the pending markers', () => {
-  at('/', 'signedIn')
+it('signing out clears the pending markers (unmounting for /new does not: AppShell.pending.test)', async () => {
+  const router = at('/', 'signedIn')
   markPending('e1')
-  cleanup()
+  session.status = 'signedOut'
+  await act(() => router.navigate('/?again'))
   expect(isPending('e1')).toBe(false)
 })
