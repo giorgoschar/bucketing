@@ -10,6 +10,7 @@ from app.api import (
     auth,
     bills,
     buckets,
+    bulk,
     cash,
     dashboard,
     income,
@@ -29,6 +30,7 @@ router = APIRouter(prefix="/api/v1")
 
 router.include_router(auth.router)
 router.include_router(dashboard.router)
+router.include_router(bulk.router)  # before transactions: /transactions/bulk is not a txn id
 router.include_router(transactions.router)
 router.include_router(buckets.router)
 # Household-wide settle up (defined alongside buckets, mounted at /settlement)

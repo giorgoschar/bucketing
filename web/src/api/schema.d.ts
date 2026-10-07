@@ -783,28 +783,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/recurring/preview": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Preview
-         * @description The next ``count`` dates of a rule (2a spec §6), from today or the start date, whichever is
-         *     later. Dates are generated from the start date, so monthly_interval and weekly keep their anchor.
-         *     Writes nothing.
-         */
-        post: operations["preview_api_v1_recurring_preview_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/recurring/{item_id}": {
         parameters: {
             query?: never;
@@ -1088,11 +1066,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * List Transactions
-         * @description The Activity feed (2c spec §5.1): the shared TransactionFilter, 50 a
-         *     page (max 200), newest first, with each shown day's net.
-         */
+        /** List Transactions */
         get: operations["list_transactions_api_v1_transactions_get"];
         put?: never;
         /** Create Transaction */
@@ -1103,7 +1077,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/transactions/counts": {
+    "/api/v1/transactions/bulk": {
         parameters: {
             query?: never;
             header?: never;
@@ -1111,33 +1085,57 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Transaction Counts
-         * @description The Activity chips' counts: expenses with no payer, and possible
-         *     duplicate groups (90 days, ±3 days).
+         * Recent Bulk
+         * @description The household's latest bulk changes, newest first ("Recent bulk changes").
          */
-        get: operations["transaction_counts_api_v1_transactions_counts_get"];
+        get: operations["recent_bulk_api_v1_transactions_bulk_get"];
         put?: never;
-        post?: never;
+        /**
+         * Bulk Change
+         * @description Preview (``dry_run``, the default) or apply one change to a selection.
+         *     Apply re-checks ``expected_count`` (409 on drift) and writes all or nothing.
+         */
+        post: operations["bulk_change_api_v1_transactions_bulk_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/transactions/duplicates": {
+    "/api/v1/transactions/bulk/{batch_id}/undo": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /**
-         * Duplicate Groups
-         * @description Possible duplicates over the last 90 days (find_household_duplicates).
-         */
-        get: operations["duplicate_groups_api_v1_transactions_duplicates_get"];
+        get?: never;
         put?: never;
-        post?: never;
+        /**
+         * Undo Bulk
+         * @description Undo a batch within 24 hours, once. Rows changed since are left as they are.
+         */
+        post: operations["undo_bulk_api_v1_transactions_bulk__batch_id__undo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/transactions/duplicates/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dismiss
+         * @description "Keep both": never show these as possible duplicates again, for anyone.
+         */
+        post: operations["dismiss_api_v1_transactions_duplicates_dismiss_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1188,23 +1186,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/transactions/{txn_id}/history": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get History */
-        get: operations["get_history_api_v1_transactions__txn_id__history_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/transactions/{txn_id}/receipt": {
         parameters: {
             query?: never;
@@ -1212,13 +1193,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Get Receipt
-         * @description The receipt file, with API auth (the old /transactions/files/ uses the
-         *     old app's cookie). 404 for no receipt, deleted, another household or a
-         *     missing file.
-         */
-        get: operations["get_receipt_api_v1_transactions__txn_id__receipt_get"];
+        get?: never;
         put?: never;
         /**
          * Upload Receipt
@@ -1311,6 +1286,17 @@ export interface components {
             start_date: string;
             /** Total Occurrences */
             total_occurrences?: number | null;
+        };
+        /** BillMoveOut */
+        BillMoveOut: {
+            /** Bucket After */
+            bucket_after: string | null;
+            /** Bucket Before */
+            bucket_before: string | null;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
         };
         /** BillSplitIn */
         BillSplitIn: {
@@ -2108,6 +2094,31 @@ export interface components {
             /** Code */
             code: string;
         };
+        /** BucketEffectOut */
+        BucketEffectOut: {
+            /** Bucket Id */
+            bucket_id: string | null;
+            /** Budget */
+            budget: number | null;
+            /** Kind */
+            kind: string;
+            /** Moved In */
+            moved_in: number;
+            /** Moved Out */
+            moved_out: number;
+            /** Name */
+            name: string;
+            /** Outside Period */
+            outside_period: number;
+            /** Period End */
+            period_end: string | null;
+            /** Period Start */
+            period_start: string | null;
+            /** Spent After */
+            spent_after: number;
+            /** Spent Before */
+            spent_before: number;
+        };
         /** BucketIn */
         BucketIn: {
             /** Budget */
@@ -2197,6 +2208,47 @@ export interface components {
             /** Spent */
             spent: number;
         };
+        /** BulkIn */
+        BulkIn: {
+            changes: components["schemas"]["ChangesIn"];
+            /**
+             * Dry Run
+             * @default true
+             */
+            dry_run: boolean;
+            /** Expected Count */
+            expected_count?: number | null;
+            /**
+             * Move Bill
+             * @default false
+             */
+            move_bill: boolean;
+            select: components["schemas"]["SelectIn"];
+        };
+        /** BulkResult */
+        BulkResult: {
+            /** Batch Id */
+            batch_id: string | null;
+            bill: components["schemas"]["BillMoveOut"] | null;
+            /** Buckets */
+            buckets: components["schemas"]["BucketEffectOut"][];
+            /** Changed */
+            changed: number;
+            /** Dry Run */
+            dry_run: boolean;
+            /** Matched */
+            matched: number;
+            /** Skipped */
+            skipped: components["schemas"]["SkippedOut"][];
+            /** Total In */
+            total_in: number;
+            /** Total Out */
+            total_out: number;
+            /** Unchanged */
+            unchanged: number;
+            /** Undo Until */
+            undo_until: string | null;
+        };
         /** CategoryIn */
         CategoryIn: {
             /**
@@ -2229,24 +2281,23 @@ export interface components {
             /** Usual */
             usual: number | null;
         };
-        /** CountsOut */
-        CountsOut: {
-            /** Duplicate Groups */
-            duplicate_groups: number;
-            /** No Payer */
-            no_payer: number;
+        /**
+         * ChangesIn
+         * @description A key sent as null means "none"; an absent key leaves the field.
+         */
+        ChangesIn: {
+            /** Bucket Id */
+            bucket_id?: string | null;
+            /** Category Id */
+            category_id?: string | null;
+            payer?: components["schemas"]["PayerIn"] | null;
+            /** Payment Method */
+            payment_method?: string | null;
         };
-        /** DuplicateGroupOut */
-        DuplicateGroupOut: {
-            /** Amount */
-            amount: number;
-            /** Transactions */
-            transactions: components["schemas"]["TransactionOut"][];
-        };
-        /** DuplicatesOut */
-        DuplicatesOut: {
-            /** Groups */
-            groups: components["schemas"]["DuplicateGroupOut"][];
+        /** DismissIn */
+        DismissIn: {
+            /** Ids */
+            ids: string[];
         };
         /** EntryAmountIn */
         EntryAmountIn: {
@@ -2310,32 +2361,6 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
-        };
-        /** HistoryEventOut */
-        HistoryEventOut: {
-            /**
-             * At
-             * Format: date-time
-             */
-            at: string;
-            /** Batch Id */
-            batch_id?: string | null;
-            /** By */
-            by: string | null;
-            /**
-             * Can Undo
-             * @default false
-             */
-            can_undo: boolean;
-            /** Kind */
-            kind: string;
-            /** Text */
-            text: string;
-        };
-        /** HistoryOut */
-        HistoryOut: {
-            /** Events */
-            events: components["schemas"]["HistoryEventOut"][];
         };
         /** HouseholdIn */
         HouseholdIn: {
@@ -2508,6 +2533,16 @@ export interface components {
              */
             splits: components["schemas"]["BillSplitIn"][];
         };
+        /** PayerIn */
+        PayerIn: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "single" | "own_share";
+            /** User Id */
+            user_id?: string | null;
+        };
         /** ProfileIn */
         ProfileIn: {
             /**
@@ -2519,6 +2554,26 @@ export interface components {
             display_name: string;
             /** Email */
             email?: string | null;
+        };
+        /** RecentBatchOut */
+        RecentBatchOut: {
+            /** Can Undo */
+            can_undo: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string | null;
+            /** Id */
+            id: string;
+            /** Row Count */
+            row_count: number;
+            /** Summary */
+            summary: string;
+            /** Undone At */
+            undone_at: string | null;
         };
         /** RecurringItemIn */
         RecurringItemIn: {
@@ -2619,8 +2674,6 @@ export interface components {
             direction: string;
             /** End Date */
             end_date: string | null;
-            /** Has History */
-            has_history: boolean;
             /** Id */
             id: string;
             /** Interval Months */
@@ -2664,53 +2717,13 @@ export interface components {
             /** Total Occurrences */
             total_occurrences: number | null;
         };
-        /**
-         * RulePreviewIn
-         * @description The schedule fields of RecurringItemIn, plus how many dates to return.
-         */
-        RulePreviewIn: {
-            /**
-             * Count
-             * @default 3
-             */
-            count: number;
-            /** End Date */
-            end_date?: string | null;
-            /**
-             * Interval Months
-             * @default 1
-             */
-            interval_months: number;
-            /**
-             * Rule Adjust
-             * @default none
-             */
-            rule_adjust: string;
-            /** Rule Day */
-            rule_day?: number | null;
-            /** Rule Days */
-            rule_days?: number | null;
-            /** Rule Interval Weeks */
-            rule_interval_weeks?: number | null;
-            /**
-             * Rule Kind
-             * @default monthly_day
-             */
-            rule_kind: string;
-            /** Rule Month */
-            rule_month?: number | null;
-            /** Rule Weekday */
-            rule_weekday?: number | null;
-            /**
-             * Start Date
-             * Format: date
-             */
-            start_date: string;
-        };
-        /** RulePreviewOut */
-        RulePreviewOut: {
-            /** Dates */
-            dates: string[];
+        /** SelectIn */
+        SelectIn: {
+            /** Bill Id */
+            bill_id?: string | null;
+            filter?: components["schemas"]["StrictTransactionFilter"] | null;
+            /** Ids */
+            ids?: string[] | null;
         };
         /** SettleIn */
         SettleIn: {
@@ -2724,6 +2737,15 @@ export interface components {
             note?: string | null;
             /** To User Id */
             to_user_id?: string | null;
+        };
+        /** SkippedOut */
+        SkippedOut: {
+            /** Code */
+            code: string;
+            /** Id */
+            id: string;
+            /** Reason */
+            reason: string;
         };
         /** SplitIn */
         SplitIn: {
@@ -2766,6 +2788,54 @@ export interface components {
         StockAdjust: {
             /** Delta */
             delta: number | string;
+        };
+        /**
+         * StrictTransactionFilter
+         * @description A bulk body's filter: an unknown key is a 422, never silently dropped,
+         *     so a typo can't widen what a bulk change touches.
+         */
+        StrictTransactionFilter: {
+            /** Bucket Id */
+            bucket_id?: string | null;
+            /** Category Id */
+            category_id?: string | null;
+            /**
+             * Fixed
+             * @default false
+             */
+            fixed: boolean;
+            /** From Date */
+            from_date?: string | null;
+            /** Max Amount */
+            max_amount?: string | null;
+            /** Min Amount */
+            min_amount?: string | null;
+            /**
+             * Missing Payer
+             * @default false
+             */
+            missing_payer: boolean;
+            /** Month */
+            month?: number | null;
+            /**
+             * No Bucket
+             * @default false
+             */
+            no_bucket: boolean;
+            /** Paid By */
+            paid_by?: string | null;
+            /** Payment Method */
+            payment_method?: string | null;
+            /** Q */
+            q?: string | null;
+            /** Recurring Bill Id */
+            recurring_bill_id?: string | null;
+            /** To Date */
+            to_date?: string | null;
+            /** Type */
+            type?: string | null;
+            /** Year */
+            year?: number | null;
         };
         /** TokenIn */
         TokenIn: {
@@ -2857,81 +2927,6 @@ export interface components {
             /** @default expense */
             type: components["schemas"]["TransactionType"];
         };
-        /** TransactionOut */
-        TransactionOut: {
-            /** Amount */
-            amount: number;
-            /** Bucket Id */
-            bucket_id: string | null;
-            /** Category Id */
-            category_id: string | null;
-            /** Created At */
-            created_at: string | null;
-            /** Currency */
-            currency: string | null;
-            /** Exchange Rate */
-            exchange_rate: number;
-            /** Exclude From Forecast */
-            exclude_from_forecast: boolean;
-            /** Exclude From Settlement */
-            exclude_from_settlement: boolean;
-            /** Fuel Litres */
-            fuel_litres: number | null;
-            /** Fuel Price Per Litre */
-            fuel_price_per_litre: number | null;
-            /** Has Take */
-            has_take: boolean;
-            /** Household Id */
-            household_id: string;
-            /** Id */
-            id: string;
-            /** Merchant */
-            merchant: string | null;
-            /** Missing Payer */
-            missing_payer: boolean;
-            /** Notes */
-            notes: string | null;
-            /** Paid By */
-            paid_by: string | null;
-            /** Payer Mode */
-            payer_mode: string | null;
-            /** Payment Method */
-            payment_method: string;
-            /** Receipt Path */
-            receipt_path: string | null;
-            /** Recurring Bill Id */
-            recurring_bill_id: string | null;
-            /** Splits */
-            splits: components["schemas"]["TransactionSplitOut"][];
-            /** Transaction Date */
-            transaction_date: string | null;
-            /** Type */
-            type: string;
-        };
-        /** TransactionPage */
-        TransactionPage: {
-            /** Day Totals */
-            day_totals: {
-                [key: string]: number;
-            };
-            /** Items */
-            items: components["schemas"]["TransactionOut"][];
-            /** Page */
-            page: number;
-            /** Page Size */
-            page_size: number;
-            /** Total */
-            total: number;
-        };
-        /** TransactionSplitOut */
-        TransactionSplitOut: {
-            /** Amount */
-            amount: number;
-            /** Is Settled */
-            is_settled: boolean;
-            /** User Id */
-            user_id: string;
-        };
         /**
          * TransactionType
          * @enum {string}
@@ -3008,6 +3003,15 @@ export interface components {
             transaction_date?: string | null;
             /** @default expense */
             type: components["schemas"]["TransactionType"];
+        };
+        /** UndoResult */
+        UndoResult: {
+            /** Bill Restored */
+            bill_restored: boolean;
+            /** Restored */
+            restored: number;
+            /** Skipped */
+            skipped: components["schemas"]["SkippedOut"][];
         };
         /** UpcomingDayOut */
         UpcomingDayOut: {
@@ -4546,39 +4550,6 @@ export interface operations {
             };
         };
     };
-    preview_api_v1_recurring_preview_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RulePreviewIn"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RulePreviewOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     get_item_api_v1_recurring__item_id__get: {
         parameters: {
             query?: never;
@@ -5223,24 +5194,15 @@ export interface operations {
     list_transactions_api_v1_transactions_get: {
         parameters: {
             query?: {
-                q?: string | null;
-                type?: string | null;
-                category_id?: string | null;
-                bucket_id?: string | null;
-                no_bucket?: boolean;
-                paid_by?: string | null;
-                missing_payer?: boolean;
-                payment_method?: string | null;
-                recurring_bill_id?: string | null;
-                fixed?: boolean;
-                from_date?: string | null;
-                to_date?: string | null;
-                min_amount?: string | null;
-                max_amount?: string | null;
-                year?: number | null;
-                month?: number | null;
                 page?: number;
                 page_size?: number;
+                bucket_id?: string;
+                category_id?: string;
+                type?: string;
+                year?: number;
+                month?: number;
+                recurring_bill_id?: string;
+                fixed?: boolean;
             };
             header?: never;
             path?: never;
@@ -5254,7 +5216,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TransactionPage"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -5301,9 +5263,11 @@ export interface operations {
             };
         };
     };
-    transaction_counts_api_v1_transactions_counts_get: {
+    recent_bulk_api_v1_transactions_bulk_get: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5316,16 +5280,60 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CountsOut"];
+                    "application/json": components["schemas"]["RecentBatchOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
     };
-    duplicate_groups_api_v1_transactions_duplicates_get: {
+    bulk_change_api_v1_transactions_bulk_post: {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    undo_bulk_api_v1_transactions_bulk__batch_id__undo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
             cookie?: never;
         };
         requestBody?: never;
@@ -5336,7 +5344,47 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DuplicatesOut"];
+                    "application/json": components["schemas"]["UndoResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dismiss_api_v1_transactions_duplicates_dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DismissIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -5393,7 +5441,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TransactionOut"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -5455,66 +5503,6 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_history_api_v1_transactions__txn_id__history_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                txn_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HistoryOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_receipt_api_v1_transactions__txn_id__receipt_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                txn_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
                 headers: {
                     [name: string]: unknown;
                 };

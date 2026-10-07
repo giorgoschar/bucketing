@@ -257,6 +257,48 @@
         "title": "BillIn",
         "type": "object"
       },
+      "BillMoveOut": {
+        "properties": {
+          "bucket_after": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bucket After"
+          },
+          "bucket_before": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bucket Before"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "bucket_before",
+          "bucket_after"
+        ],
+        "title": "BillMoveOut",
+        "type": "object"
+      },
       "BillSplitIn": {
         "properties": {
           "amount": {
@@ -1380,6 +1422,99 @@
         "title": "Body_verify_totp_submit_login_verify_post",
         "type": "object"
       },
+      "BucketEffectOut": {
+        "properties": {
+          "bucket_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bucket Id"
+          },
+          "budget": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budget"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "moved_in": {
+            "title": "Moved In",
+            "type": "number"
+          },
+          "moved_out": {
+            "title": "Moved Out",
+            "type": "number"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "outside_period": {
+            "title": "Outside Period",
+            "type": "integer"
+          },
+          "period_end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period End"
+          },
+          "period_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Start"
+          },
+          "spent_after": {
+            "title": "Spent After",
+            "type": "number"
+          },
+          "spent_before": {
+            "title": "Spent Before",
+            "type": "number"
+          }
+        },
+        "required": [
+          "bucket_id",
+          "name",
+          "kind",
+          "budget",
+          "period_start",
+          "period_end",
+          "spent_before",
+          "spent_after",
+          "moved_in",
+          "moved_out",
+          "outside_period"
+        ],
+        "title": "BucketEffectOut",
+        "type": "object"
+      },
       "BucketIn": {
         "properties": {
           "budget": {
@@ -1650,6 +1785,135 @@
         "title": "BudgetRowOut",
         "type": "object"
       },
+      "BulkIn": {
+        "additionalProperties": false,
+        "properties": {
+          "changes": {
+            "$ref": "#/components/schemas/ChangesIn"
+          },
+          "dry_run": {
+            "default": true,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "expected_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Count"
+          },
+          "move_bill": {
+            "default": false,
+            "title": "Move Bill",
+            "type": "boolean"
+          },
+          "select": {
+            "$ref": "#/components/schemas/SelectIn"
+          }
+        },
+        "required": [
+          "select",
+          "changes"
+        ],
+        "title": "BulkIn",
+        "type": "object"
+      },
+      "BulkResult": {
+        "properties": {
+          "batch_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Id"
+          },
+          "bill": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BillMoveOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "buckets": {
+            "items": {
+              "$ref": "#/components/schemas/BucketEffectOut"
+            },
+            "title": "Buckets",
+            "type": "array"
+          },
+          "changed": {
+            "title": "Changed",
+            "type": "integer"
+          },
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "matched": {
+            "title": "Matched",
+            "type": "integer"
+          },
+          "skipped": {
+            "items": {
+              "$ref": "#/components/schemas/SkippedOut"
+            },
+            "title": "Skipped",
+            "type": "array"
+          },
+          "total_in": {
+            "title": "Total In",
+            "type": "number"
+          },
+          "total_out": {
+            "title": "Total Out",
+            "type": "number"
+          },
+          "unchanged": {
+            "title": "Unchanged",
+            "type": "integer"
+          },
+          "undo_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Undo Until"
+          }
+        },
+        "required": [
+          "dry_run",
+          "batch_id",
+          "matched",
+          "changed",
+          "unchanged",
+          "total_out",
+          "total_in",
+          "skipped",
+          "buckets",
+          "bill",
+          "undo_until"
+        ],
+        "title": "BulkResult",
+        "type": "object"
+      },
       "CategoryIn": {
         "properties": {
           "color": {
@@ -1730,59 +1994,74 @@
         "title": "CategoryUsualOut",
         "type": "object"
       },
-      "CountsOut": {
+      "ChangesIn": {
+        "additionalProperties": false,
+        "description": "A key sent as null means \"none\"; an absent key leaves the field.",
         "properties": {
-          "duplicate_groups": {
-            "title": "Duplicate Groups",
-            "type": "integer"
+          "bucket_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bucket Id"
           },
-          "no_payer": {
-            "title": "No Payer",
-            "type": "integer"
+          "category_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "payer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PayerIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "payment_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Method"
           }
         },
-        "required": [
-          "no_payer",
-          "duplicate_groups"
-        ],
-        "title": "CountsOut",
+        "title": "ChangesIn",
         "type": "object"
       },
-      "DuplicateGroupOut": {
+      "DismissIn": {
+        "additionalProperties": false,
         "properties": {
-          "amount": {
-            "title": "Amount",
-            "type": "number"
-          },
-          "transactions": {
+          "ids": {
             "items": {
-              "$ref": "#/components/schemas/TransactionOut"
+              "type": "string"
             },
-            "title": "Transactions",
+            "maxItems": 20,
+            "minItems": 2,
+            "title": "Ids",
             "type": "array"
           }
         },
         "required": [
-          "amount",
-          "transactions"
+          "ids"
         ],
-        "title": "DuplicateGroupOut",
-        "type": "object"
-      },
-      "DuplicatesOut": {
-        "properties": {
-          "groups": {
-            "items": {
-              "$ref": "#/components/schemas/DuplicateGroupOut"
-            },
-            "title": "Groups",
-            "type": "array"
-          }
-        },
-        "required": [
-          "groups"
-        ],
-        "title": "DuplicatesOut",
+        "title": "DismissIn",
         "type": "object"
       },
       "EntryAmountIn": {
@@ -1983,74 +2262,6 @@
           }
         },
         "title": "HTTPValidationError",
-        "type": "object"
-      },
-      "HistoryEventOut": {
-        "properties": {
-          "at": {
-            "format": "date-time",
-            "title": "At",
-            "type": "string"
-          },
-          "batch_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Batch Id"
-          },
-          "by": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "By"
-          },
-          "can_undo": {
-            "default": false,
-            "title": "Can Undo",
-            "type": "boolean"
-          },
-          "kind": {
-            "title": "Kind",
-            "type": "string"
-          },
-          "text": {
-            "title": "Text",
-            "type": "string"
-          }
-        },
-        "required": [
-          "at",
-          "kind",
-          "by",
-          "text"
-        ],
-        "title": "HistoryEventOut",
-        "type": "object"
-      },
-      "HistoryOut": {
-        "properties": {
-          "events": {
-            "items": {
-              "$ref": "#/components/schemas/HistoryEventOut"
-            },
-            "title": "Events",
-            "type": "array"
-          }
-        },
-        "required": [
-          "events"
-        ],
-        "title": "HistoryOut",
         "type": "object"
       },
       "HouseholdIn": {
@@ -2590,6 +2801,35 @@
         "title": "PayOccurrenceIn",
         "type": "object"
       },
+      "PayerIn": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "enum": [
+              "single",
+              "own_share"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "PayerIn",
+        "type": "object"
+      },
       "ProfileIn": {
         "properties": {
           "avatar_color": {
@@ -2617,6 +2857,65 @@
           "display_name"
         ],
         "title": "ProfileIn",
+        "type": "object"
+      },
+      "RecentBatchOut": {
+        "properties": {
+          "can_undo": {
+            "title": "Can Undo",
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "row_count": {
+            "title": "Row Count",
+            "type": "integer"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "undone_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Undone At"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "created_by",
+          "summary",
+          "row_count",
+          "undone_at",
+          "can_undo"
+        ],
+        "title": "RecentBatchOut",
         "type": "object"
       },
       "RecurringItemIn": {
@@ -2916,10 +3215,6 @@
             ],
             "title": "End Date"
           },
-          "has_history": {
-            "title": "Has History",
-            "type": "boolean"
-          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -3094,131 +3389,51 @@
           "is_active",
           "notes",
           "splits",
-          "next_entry",
-          "has_history"
+          "next_entry"
         ],
         "title": "RecurringItemOut",
         "type": "object"
       },
-      "RulePreviewIn": {
-        "description": "The schedule fields of RecurringItemIn, plus how many dates to return.",
+      "SelectIn": {
+        "additionalProperties": false,
         "properties": {
-          "count": {
-            "default": 3,
-            "maximum": 12.0,
-            "minimum": 1.0,
-            "title": "Count",
-            "type": "integer"
-          },
-          "end_date": {
+          "bill_id": {
             "anyOf": [
               {
-                "format": "date",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "End Date"
+            "title": "Bill Id"
           },
-          "interval_months": {
-            "default": 1,
-            "title": "Interval Months",
-            "type": "integer"
-          },
-          "rule_adjust": {
-            "default": "none",
-            "title": "Rule Adjust",
-            "type": "string"
-          },
-          "rule_day": {
+          "filter": {
             "anyOf": [
               {
-                "type": "integer"
+                "$ref": "#/components/schemas/StrictTransactionFilter"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Rule Day"
-          },
-          "rule_days": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Rule Days"
-          },
-          "rule_interval_weeks": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Rule Interval Weeks"
-          },
-          "rule_kind": {
-            "default": "monthly_day",
-            "title": "Rule Kind",
-            "type": "string"
-          },
-          "rule_month": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Rule Month"
-          },
-          "rule_weekday": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Rule Weekday"
-          },
-          "start_date": {
-            "format": "date",
-            "title": "Start Date",
-            "type": "string"
+            "title": "Ids"
           }
         },
-        "required": [
-          "start_date"
-        ],
-        "title": "RulePreviewIn",
-        "type": "object"
-      },
-      "RulePreviewOut": {
-        "properties": {
-          "dates": {
-            "items": {
-              "format": "date",
-              "type": "string"
-            },
-            "title": "Dates",
-            "type": "array"
-          }
-        },
-        "required": [
-          "dates"
-        ],
-        "title": "RulePreviewOut",
+        "title": "SelectIn",
         "type": "object"
       },
       "SettleIn": {
@@ -3284,6 +3499,29 @@
           }
         },
         "title": "SettleIn",
+        "type": "object"
+      },
+      "SkippedOut": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "reason"
+        ],
+        "title": "SkippedOut",
         "type": "object"
       },
       "SplitIn": {
@@ -3429,6 +3667,172 @@
           "delta"
         ],
         "title": "StockAdjust",
+        "type": "object"
+      },
+      "StrictTransactionFilter": {
+        "additionalProperties": false,
+        "description": "A bulk body's filter: an unknown key is a 422, never silently dropped,\nso a typo can't widen what a bulk change touches.",
+        "properties": {
+          "bucket_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bucket Id"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "fixed": {
+            "default": false,
+            "title": "Fixed",
+            "type": "boolean"
+          },
+          "from_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Date"
+          },
+          "max_amount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Amount"
+          },
+          "min_amount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Amount"
+          },
+          "missing_payer": {
+            "default": false,
+            "title": "Missing Payer",
+            "type": "boolean"
+          },
+          "month": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Month"
+          },
+          "no_bucket": {
+            "default": false,
+            "title": "No Bucket",
+            "type": "boolean"
+          },
+          "paid_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paid By"
+          },
+          "payment_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Method"
+          },
+          "q": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Q"
+          },
+          "recurring_bill_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recurring Bill Id"
+          },
+          "to_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Date"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          }
+        },
+        "title": "StrictTransactionFilter",
         "type": "object"
       },
       "TokenIn": {
@@ -3674,292 +4078,6 @@
         "title": "TransactionCreate",
         "type": "object"
       },
-      "TransactionOut": {
-        "properties": {
-          "amount": {
-            "title": "Amount",
-            "type": "number"
-          },
-          "bucket_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Bucket Id"
-          },
-          "category_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Category Id"
-          },
-          "created_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Created At"
-          },
-          "currency": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Currency"
-          },
-          "exchange_rate": {
-            "title": "Exchange Rate",
-            "type": "number"
-          },
-          "exclude_from_forecast": {
-            "title": "Exclude From Forecast",
-            "type": "boolean"
-          },
-          "exclude_from_settlement": {
-            "title": "Exclude From Settlement",
-            "type": "boolean"
-          },
-          "fuel_litres": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Fuel Litres"
-          },
-          "fuel_price_per_litre": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Fuel Price Per Litre"
-          },
-          "has_take": {
-            "title": "Has Take",
-            "type": "boolean"
-          },
-          "household_id": {
-            "title": "Household Id",
-            "type": "string"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "merchant": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Merchant"
-          },
-          "missing_payer": {
-            "title": "Missing Payer",
-            "type": "boolean"
-          },
-          "notes": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Notes"
-          },
-          "paid_by": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Paid By"
-          },
-          "payer_mode": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Payer Mode"
-          },
-          "payment_method": {
-            "title": "Payment Method",
-            "type": "string"
-          },
-          "receipt_path": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Receipt Path"
-          },
-          "recurring_bill_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Recurring Bill Id"
-          },
-          "splits": {
-            "items": {
-              "$ref": "#/components/schemas/TransactionSplitOut"
-            },
-            "title": "Splits",
-            "type": "array"
-          },
-          "transaction_date": {
-            "anyOf": [
-              {
-                "format": "date",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Transaction Date"
-          },
-          "type": {
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "bucket_id",
-          "household_id",
-          "amount",
-          "currency",
-          "exchange_rate",
-          "type",
-          "paid_by",
-          "payer_mode",
-          "category_id",
-          "notes",
-          "transaction_date",
-          "receipt_path",
-          "payment_method",
-          "merchant",
-          "fuel_price_per_litre",
-          "fuel_litres",
-          "exclude_from_forecast",
-          "exclude_from_settlement",
-          "recurring_bill_id",
-          "created_at",
-          "splits",
-          "has_take",
-          "missing_payer"
-        ],
-        "title": "TransactionOut",
-        "type": "object"
-      },
-      "TransactionPage": {
-        "properties": {
-          "day_totals": {
-            "additionalProperties": {
-              "type": "number"
-            },
-            "title": "Day Totals",
-            "type": "object"
-          },
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/TransactionOut"
-            },
-            "title": "Items",
-            "type": "array"
-          },
-          "page": {
-            "title": "Page",
-            "type": "integer"
-          },
-          "page_size": {
-            "title": "Page Size",
-            "type": "integer"
-          },
-          "total": {
-            "title": "Total",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "total",
-          "page",
-          "page_size",
-          "items",
-          "day_totals"
-        ],
-        "title": "TransactionPage",
-        "type": "object"
-      },
-      "TransactionSplitOut": {
-        "properties": {
-          "amount": {
-            "title": "Amount",
-            "type": "number"
-          },
-          "is_settled": {
-            "title": "Is Settled",
-            "type": "boolean"
-          },
-          "user_id": {
-            "title": "User Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "user_id",
-          "amount",
-          "is_settled"
-        ],
-        "title": "TransactionSplitOut",
-        "type": "object"
-      },
       "TransactionType": {
         "enum": [
           "expense",
@@ -4154,6 +4272,32 @@
           "amount"
         ],
         "title": "TransactionUpdate",
+        "type": "object"
+      },
+      "UndoResult": {
+        "properties": {
+          "bill_restored": {
+            "title": "Bill Restored",
+            "type": "boolean"
+          },
+          "restored": {
+            "title": "Restored",
+            "type": "integer"
+          },
+          "skipped": {
+            "items": {
+              "$ref": "#/components/schemas/SkippedOut"
+            },
+            "title": "Skipped",
+            "type": "array"
+          }
+        },
+        "required": [
+          "restored",
+          "skipped",
+          "bill_restored"
+        ],
+        "title": "UndoResult",
         "type": "object"
       },
       "UpcomingDayOut": {
@@ -6590,53 +6734,6 @@
         ]
       }
     },
-    "/api/v1/recurring/preview": {
-      "post": {
-        "description": "The next ``count`` dates of a rule (2a spec \u00a76), from today or the start date, whichever is\nlater. Dates are generated from the start date, so monthly_interval and weekly keep their anchor.\nWrites nothing.",
-        "operationId": "preview_api_v1_recurring_preview_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RulePreviewIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RulePreviewOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Preview",
-        "tags": [
-          "recurring"
-        ]
-      }
-    },
     "/api/v1/recurring/{item_id}": {
       "delete": {
         "operationId": "delete_item_api_v1_recurring__item_id__delete",
@@ -7503,247 +7600,8 @@
     },
     "/api/v1/transactions": {
       "get": {
-        "description": "The Activity feed (2c spec \u00a75.1): the shared TransactionFilter, 50 a\npage (max 200), newest first, with each shown day's net.",
         "operationId": "list_transactions_api_v1_transactions_get",
         "parameters": [
-          {
-            "in": "query",
-            "name": "q",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Q"
-            }
-          },
-          {
-            "in": "query",
-            "name": "type",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Type"
-            }
-          },
-          {
-            "in": "query",
-            "name": "category_id",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Category Id"
-            }
-          },
-          {
-            "in": "query",
-            "name": "bucket_id",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Bucket Id"
-            }
-          },
-          {
-            "in": "query",
-            "name": "no_bucket",
-            "required": false,
-            "schema": {
-              "default": false,
-              "title": "No Bucket",
-              "type": "boolean"
-            }
-          },
-          {
-            "in": "query",
-            "name": "paid_by",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Paid By"
-            }
-          },
-          {
-            "in": "query",
-            "name": "missing_payer",
-            "required": false,
-            "schema": {
-              "default": false,
-              "title": "Missing Payer",
-              "type": "boolean"
-            }
-          },
-          {
-            "in": "query",
-            "name": "payment_method",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Payment Method"
-            }
-          },
-          {
-            "in": "query",
-            "name": "recurring_bill_id",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Recurring Bill Id"
-            }
-          },
-          {
-            "in": "query",
-            "name": "fixed",
-            "required": false,
-            "schema": {
-              "default": false,
-              "title": "Fixed",
-              "type": "boolean"
-            }
-          },
-          {
-            "in": "query",
-            "name": "from_date",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "From Date"
-            }
-          },
-          {
-            "in": "query",
-            "name": "to_date",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "To Date"
-            }
-          },
-          {
-            "in": "query",
-            "name": "min_amount",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Min Amount"
-            }
-          },
-          {
-            "in": "query",
-            "name": "max_amount",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Max Amount"
-            }
-          },
-          {
-            "in": "query",
-            "name": "year",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Year"
-            }
-          },
-          {
-            "in": "query",
-            "name": "month",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Month"
-            }
-          },
           {
             "in": "query",
             "name": "page",
@@ -7766,15 +7624,81 @@
               "title": "Page Size",
               "type": "integer"
             }
+          },
+          {
+            "in": "query",
+            "name": "bucket_id",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Bucket Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "category_id",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Category Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "year",
+            "required": false,
+            "schema": {
+              "title": "Year",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "month",
+            "required": false,
+            "schema": {
+              "title": "Month",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "recurring_bill_id",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Recurring Bill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fixed",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Fixed",
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TransactionPage"
-                }
+                "schema": {}
               }
             },
             "description": "Successful Response"
@@ -7843,20 +7767,48 @@
         ]
       }
     },
-    "/api/v1/transactions/counts": {
+    "/api/v1/transactions/bulk": {
       "get": {
-        "description": "The Activity chips' counts: expenses with no payer, and possible\nduplicate groups (90 days, \u00b13 days).",
-        "operationId": "transaction_counts_api_v1_transactions_counts_get",
+        "description": "The household's latest bulk changes, newest first (\"Recent bulk changes\").",
+        "operationId": "recent_bulk_api_v1_transactions_bulk_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CountsOut"
+                  "items": {
+                    "$ref": "#/components/schemas/RecentBatchOut"
+                  },
+                  "title": "Response Recent Bulk Api V1 Transactions Bulk Get",
+                  "type": "array"
                 }
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [
@@ -7864,26 +7816,92 @@
             "HTTPBearer": []
           }
         ],
-        "summary": "Transaction Counts",
+        "summary": "Recent Bulk",
+        "tags": [
+          "transactions"
+        ]
+      },
+      "post": {
+        "description": "Preview (``dry_run``, the default) or apply one change to a selection.\nApply re-checks ``expected_count`` (409 on drift) and writes all or nothing.",
+        "operationId": "bulk_change_api_v1_transactions_bulk_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Bulk Change",
         "tags": [
           "transactions"
         ]
       }
     },
-    "/api/v1/transactions/duplicates": {
-      "get": {
-        "description": "Possible duplicates over the last 90 days (find_household_duplicates).",
-        "operationId": "duplicate_groups_api_v1_transactions_duplicates_get",
+    "/api/v1/transactions/bulk/{batch_id}/undo": {
+      "post": {
+        "description": "Undo a batch within 24 hours, once. Rows changed since are left as they are.",
+        "operationId": "undo_bulk_api_v1_transactions_bulk__batch_id__undo_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DuplicatesOut"
+                  "$ref": "#/components/schemas/UndoResult"
                 }
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [
@@ -7891,7 +7909,47 @@
             "HTTPBearer": []
           }
         ],
-        "summary": "Duplicate Groups",
+        "summary": "Undo Bulk",
+        "tags": [
+          "transactions"
+        ]
+      }
+    },
+    "/api/v1/transactions/duplicates/dismiss": {
+      "post": {
+        "description": "\"Keep both\": never show these as possible duplicates again, for anyone.",
+        "operationId": "dismiss_api_v1_transactions_duplicates_dismiss_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DismissIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Dismiss",
         "tags": [
           "transactions"
         ]
@@ -8000,9 +8058,7 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TransactionOut"
-                }
+                "schema": {}
               }
             },
             "description": "Successful Response"
@@ -8083,93 +8139,7 @@
         ]
       }
     },
-    "/api/v1/transactions/{txn_id}/history": {
-      "get": {
-        "operationId": "get_history_api_v1_transactions__txn_id__history_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "txn_id",
-            "required": true,
-            "schema": {
-              "title": "Txn Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HistoryOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Get History",
-        "tags": [
-          "transactions"
-        ]
-      }
-    },
     "/api/v1/transactions/{txn_id}/receipt": {
-      "get": {
-        "description": "The receipt file, with API auth (the old /transactions/files/ uses the\nold app's cookie). 404 for no receipt, deleted, another household or a\nmissing file.",
-        "operationId": "get_receipt_api_v1_transactions__txn_id__receipt_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "txn_id",
-            "required": true,
-            "schema": {
-              "title": "Txn Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Get Receipt",
-        "tags": [
-          "transactions"
-        ]
-      },
       "post": {
         "description": "Upload or replace a receipt image/PDF for a transaction.",
         "operationId": "upload_receipt_api_v1_transactions__txn_id__receipt_post",
