@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   centsToString, convertCents, displayAmount, formatLitres, fromApiAmount, litresMilli, parseFuelPrice,
-  parseRate, pressKey, toApiAmount, toCents, type AmountKey,
+  parseCents, parseRate, pressKey, toApiAmount, toCents, type AmountKey,
 } from './amount'
 
 const type = (keys: AmountKey[], from = '') => keys.reduce(pressKey, from)
@@ -39,6 +39,20 @@ describe('cents', () => {
     expect(toCents('.')).toBe(0)
     expect(toCents('9999999.99')).toBe(999999999)
     expect(toCents('abc')).toBe(0)
+  })
+  it('accepts a comma as the decimal mark', () => {
+    expect(toCents('12,50')).toBe(1250)
+    expect(toCents('0,5')).toBe(50)
+  })
+  it('parseCents: strict, comma or dot, null for malformed text instead of 0', () => {
+    expect(parseCents('12,50')).toBe(1250)
+    expect(parseCents('12.5')).toBe(1250)
+    expect(parseCents(' 7 ')).toBe(700)
+    expect(parseCents('')).toBe(0)
+    expect(parseCents('1.234')).toBeNull()
+    expect(parseCents('1,2,3')).toBeNull()
+    expect(parseCents('abc')).toBeNull()
+    expect(parseCents('-3')).toBeNull()
   })
   it('formats for the API', () => {
     expect(centsToString(410)).toBe('4.10')

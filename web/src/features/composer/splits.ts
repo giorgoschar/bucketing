@@ -1,4 +1,4 @@
-import { centsToString, parseScaled, toCents } from './amount'
+import { centsToString, parseCents, parseScaled } from './amount'
 import type { Share } from './state'
 
 /** Shares in cents by user id. */
@@ -20,7 +20,7 @@ export function amountShares(total: number, memberIds: string[], payer: string, 
   let rest = total
   for (const id of memberIds) {
     if (id === payer) continue
-    out[id] = toCents(typed[id] ?? '')
+    out[id] = parseCents(typed[id] ?? '') ?? 0
     rest -= out[id]
   }
   out[payer] = rest
@@ -43,10 +43,16 @@ export function percentShares(total: number, memberIds: string[], payer: string,
 
 /** "Each paid own share": everyone's typed amount, no remainder. */
 export function ownShares(memberIds: string[], typed: Record<string, string>): ShareMap {
-  return Object.fromEntries(memberIds.map((id) => [id, toCents(typed[id] ?? '')]))
+  return Object.fromEntries(memberIds.map((id) => [id, parseCents(typed[id] ?? '') ?? 0]))
 }
 
-export type SplitProblem = 'negative' | 'over' | 'mismatch' | null
+/** Ids whose typed text is not a valid amount (cents) or percent (2 decimals). Blank is fine (0). */
+export function invalidInputs(typed: Record<string, string>, unit: 'amount' | 'percent'): string[] {
+  return Object.keys(typed).filter((id) =>
+    unit === 'amount' ? parseCents(typed[id]) === null : typed[id].trim() !== '' && parseScaled(typed[id], 2) === null)
+}
+
+export type SplitProblem = 'invalid' | 'negative' | 'over' | 'mismatch' | null
 
 export function splitProblem(total: number, shares: ShareMap, own: boolean): SplitProblem {
   const values = Object.values(shares)

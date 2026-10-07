@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { amountShares, equalShares, ownShares, percentShares, splitProblem, toShareList, typedFromShares } from './splits'
+import { amountShares, invalidInputs, equalShares, ownShares, percentShares, splitProblem, toShareList, typedFromShares } from './splits'
 
 const sum = (m: Record<string, number>) => Object.values(m).reduce((a, x) => a + x, 0)
 
@@ -39,4 +39,16 @@ it('to and from the API list, in member order, every member present', () => {
   const list = toShareList(['u1', 'u2'], { u2: 350, u1: 650 })
   expect(list).toEqual([{ user_id: 'u1', amount: '6.50' }, { user_id: 'u2', amount: '3.50' }])
   expect(typedFromShares(list)).toEqual({ u1: '6.50', u2: '3.50' })
+})
+
+describe('typed inputs parse one way in every mode', () => {
+  it('a comma decimal counts in amounts, percent and own share', () => {
+    expect(amountShares(2000, ['u1', 'u2'], 'u1', { u2: '12,50' })).toEqual({ u1: 750, u2: 1250 })
+    expect(percentShares(1000, ['u1', 'u2'], 'u1', { u2: '12,5' })).toEqual({ u1: 875, u2: 125 })
+    expect(ownShares(['u1', 'u2'], { u1: '6,50', u2: '3,50' })).toEqual({ u1: 650, u2: 350 })
+  })
+  it('malformed text is reported, never read as 0', () => {
+    expect(invalidInputs({ u1: '1.234', u2: '3', u3: '' }, 'amount')).toEqual(['u1'])
+    expect(invalidInputs({ u1: 'abc', u2: '12,345', u3: '10' }, 'percent')).toEqual(['u1', 'u2'])
+  })
 })

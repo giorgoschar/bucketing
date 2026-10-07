@@ -21,11 +21,16 @@ export function pressKey(v: string, k: AmountKey): string {
   return v.length >= MAX_INT_DIGITS ? v : v + k
 }
 
-export function toCents(v: string): number {
-  const m = /^(\d*)(?:\.(\d{0,2}))?$/.exec(v.trim())
-  if (!m || (m[1] === '' && !m[2])) return 0
+/** Typed money ("12.50" or "12,50") in cents; null when malformed or more precise than a cent. Blank is 0. */
+export function parseCents(v: string): number | null {
+  const m = /^(\d*)(?:[.,](\d{0,2}))?$/.exec(v.trim())
+  if (!m) return null
+  if (m[1] === '' && !m[2]) return 0
   return Number(m[1] || '0') * 100 + Number(`${m[2] ?? ''}00`.slice(0, 2))
 }
+
+/** Keypad and API strings in cents ("." or "," as the mark); anything malformed is 0. Typed fields use parseCents. */
+export const toCents = (v: string): number => parseCents(v) ?? 0
 
 export function centsToString(c: number): string {
   const a = Math.abs(c)

@@ -3,7 +3,7 @@ import { type Member, Segmented, Sheet } from './bridge'
 import { formatCents } from './currencies'
 import { memberName } from './pickers/labels'
 import {
-  amountShares, equalShares, ownShares, percentShares, splitProblem, toShareList, typedFromShares,
+  amountShares, equalShares, invalidInputs, ownShares, percentShares, splitProblem, toShareList, typedFromShares,
 } from './splits'
 import type { Share, SplitMode } from './state'
 import './split.css'
@@ -46,7 +46,9 @@ function SplitBody({ onClose, variant, totalCents, currency, members, payerId, i
     : mode === 'equal' ? equalShares(totalCents, ids, payer)
     : mode === 'amounts' ? amountShares(totalCents, ids, payer, typed)
     : percentShares(totalCents, ids, payer, typed)
-  const problem = splitProblem(totalCents, shares, own)
+  const unitOf = own || mode === 'amounts' ? 'amount' : 'percent'
+  const bad = mode === 'equal' && !own ? [] : invalidInputs(typed, unitOf)
+  const problem = bad.length ? 'invalid' : splitProblem(totalCents, shares, own)
   const assigned = Object.values(shares).reduce((a, x) => a + x, 0)
   const money = (c: number) => formatCents(c, currency)
   const pct = (c: number) => (totalCents > 0 ? Math.round((Math.max(c, 0) / totalCents) * 100) : 0)
@@ -92,6 +94,7 @@ function SplitBody({ onClose, variant, totalCents, currency, members, payerId, i
               {editable ? (
                 <span className="ck-split__field">
                   <input className="ck-split__input" aria-label={`${name} ${unit}`} inputMode="decimal" autoComplete="off"
+                    aria-invalid={bad.includes(m.user_id) || undefined}
                     value={typed[m.user_id] ?? ''} placeholder={unit === 'percent' ? '0' : '0.00'}
                     onChange={(e) => setTyped((t) => ({ ...t, [m.user_id]: e.target.value }))} />
                   {unit === 'percent' && <span className="ck-split__unit" aria-hidden="true">%</span>}
@@ -105,7 +108,9 @@ function SplitBody({ onClose, variant, totalCents, currency, members, payerId, i
       </div>
 
       <p className={problem ? 'ck-split__note ck-split__note--bad' : 'ck-split__note'}>
-        {own
+        {problem === 'invalid'
+          ? unitOf === 'percent' ? 'Use a number like 12.5' : 'Use a number like 12.50'
+          : own
           ? `Left to assign ${money(totalCents - assigned)}`
           : `${memberName(members.find((m) => m.user_id === payer))} covers the remaining ${money(shares[payer] ?? 0)}`}
       </p>

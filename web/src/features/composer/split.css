@@ -33,3 +33,4 @@
 .ck-split__note { margin: 0; padding: 10px 12px; border-radius: var(--r-md); background: var(--surface-2); font-size: 13.5px; color: var(--ink-2); }
 .ck-split__note--bad { background: var(--neg-soft); color: var(--neg); }
 @media (prefers-reduced-motion: reduce) { .ck-split__seg { transition: none; } }
+.ck-split__input[aria-invalid="true"] { border-color: var(--neg); }
