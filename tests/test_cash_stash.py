@@ -43,6 +43,7 @@ from app.services import (
     wallet_summary,
     withdraw_and_spend,
 )
+from tests.conftest import json_numbers, without_ids
 from tests.test_isolation import _add_member_user, _web_login
 
 D = Decimal
@@ -248,14 +249,15 @@ def test_the_users_own_scenario(app, client, db, duo):
         data={"kind": "take", "amount": "500", "movement_date": "2026-01-21", "source": a},
     )
     assert r.status_code in (200, 302), r.text
-    assert "Not enough" not in r.text and "450" not in r.text
+    assert "Not enough" not in r.text and "450" not in without_ids(r.text)
     r = client.post(
         "/api/v1/cash/movements",
         headers=bh,
         json={"kind": "take", "amount": "500", "stash_owner_id": a, "movement_date": "2026-01-22"},
     )
     assert r.status_code in (200, 201), r.text
-    assert "450" not in r.text and "950" not in r.text
+    # The reply is the flatmate's own movement: no number in it but the 500 they took.
+    assert set(json_numbers(r.json())) == {500.0}
     assert stash_balance(db, hh, a) == D("-950.00")
     own = client.get("/cash?month=2026-01").text
     assert "more than your stash held" in own
@@ -1040,9 +1042,9 @@ def test_me_and_dashboard_show_not_logged(client, db, authed):
     _move(db, authed, "take", 45, local_today())
     me = client.get("/me").text
     assert NOT_LOGGED in me.split("share by category", 1)[1]
-    assert "Not yet logged" in me and "777" not in me
+    assert "Not yet logged" in me and "777" not in without_ids(me)
     dash = client.get("/dashboard").text
-    assert "45.00 cash not yet logged" in dash and "777" not in dash
+    assert "45.00 cash not yet logged" in dash and "777" not in without_ids(dash)
 
 
 def test_forecast_includes_not_logged_cash(db, duo):
