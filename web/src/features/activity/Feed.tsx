@@ -6,7 +6,7 @@ import { type TransactionFilter, activeFilterCount, isEmpty } from './filters'
 import { groupByDay } from './format'
 import { FeedRow } from './FeedRow'
 import { type RefData, type Txn, type TxnPage, useFeedPage, useRefData } from './hooks'
-import { type PendingTxn, usePendingTransactions } from './pending'
+import { type PendingTxn, toPendingTxn, usePendingActivity } from './pending'
 
 export type RenderRow = (t: Txn, row: ReactNode, opts: { pending: boolean }) => ReactNode
 
@@ -48,15 +48,21 @@ function FeedList({ filter, onClear, renderRow, hidden, rowProps, onLoaded }: Pr
   const first = useFeedPage(filter, 1)
   const [more, setMore] = useState<TxnPage[]>([])
   const [extra, setExtra] = useState(0)
-  const pendingAll = usePendingTransactions()
+  const pendingAll = usePendingActivity()
   const plain = isEmpty({ ...filter, from_date: undefined, to_date: undefined })
 
   const loaded = useMemo(() => (first.data ? [first.data, ...more.filter(Boolean)] : []), [first.data, more])
   const total = first.data?.total ?? 0
   // A row can shift between pages while the user scrolls: keep the first copy, in first-seen order.
   const serverRows = [...new Map(loaded.flatMap((p) => p.items).map((t) => [t.id, t])).values()]
-  const rows = serverRows.filter((t) => !hidden?.has(t.id))
-  const pending: PendingTxn[] = plain ? pendingAll : []
+  // Held (swipe) deletes and 2b's queued deletes stay out of view; a queued edit shows its new values.
+  const rows: Txn[] = serverRows
+    .filter((t) => !hidden?.has(t.id) && !pendingAll.hidden.has(t.id))
+    .map((t) => {
+      const edit = pendingAll.edits.get(t.id)
+      return edit ? toPendingTxn(edit, t) : t
+    })
+  const pending: PendingTxn[] = plain ? pendingAll.creates : []
   const dayTotals = Object.assign({}, ...loaded.map((p) => p.day_totals)) as Record<string, number>
   const groups = groupByDay(
     [...pending, ...rows].sort((a, b) => (b.transaction_date ?? '').localeCompare(a.transaction_date ?? '')),
