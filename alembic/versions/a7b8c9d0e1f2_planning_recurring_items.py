@@ -12,6 +12,10 @@ working on the same database.
 - ck_transactions_bucket_unless_income also allows a bucket-less expense that
   is linked to a recurring item (a Fixed cost).
 - match_suggestions, empty.
+- bill_occurrences.period (indexed with bill_id): the rule period of each
+  entry, before business-day adjustment. Every existing row is a
+  monthly_interval entry, which is never adjusted, so its period is its due
+  date's month.
 
 SQLite cannot alter a CHECK in place, so transactions goes through batch mode
 (a table copy), as in d8e9f0a1b2c3. Downgrade refuses while a bucket-less
@@ -41,6 +45,7 @@ FK_NAME = "fk_transactions_recurring_bill_id"
 TXN_INDEX = "ix_transactions_recurring_bill_id"
 MATCH_INDEX = "ix_match_suggestions_household"
 MATCH_OCC_INDEX = "ix_match_suggestions_occurrence"
+PERIOD_INDEX = "ix_bill_occurrences_bill_period"
 RULE_COLUMNS = (
     "direction",
     "rule_kind",
@@ -132,6 +137,13 @@ def upgrade() -> None:
     op.create_index(MATCH_INDEX, "match_suggestions", ["household_id", "dismissed"])
     op.create_index(MATCH_OCC_INDEX, "match_suggestions", ["occurrence_id"])
 
+    op.add_column("bill_occurrences", sa.Column("period", sa.String(10), nullable=True))
+    if op.get_bind().dialect.name == "postgresql":
+        op.execute("UPDATE bill_occurrences SET period = to_char(due_date, 'YYYY-MM')")
+    else:
+        op.execute("UPDATE bill_occurrences SET period = strftime('%Y-%m', due_date)")
+    op.create_index(PERIOD_INDEX, "bill_occurrences", ["bill_id", "period"])
+
 
 def downgrade() -> None:
     """Refuses rather than lose data. Production rollback = restore the
@@ -160,6 +172,10 @@ def downgrade() -> None:
     op.drop_index(MATCH_OCC_INDEX, table_name="match_suggestions")
     op.drop_index(MATCH_INDEX, table_name="match_suggestions")
     op.drop_table("match_suggestions")
+
+    op.drop_index(PERIOD_INDEX, table_name="bill_occurrences")
+    with op.batch_alter_table("bill_occurrences") as batch:
+        batch.drop_column("period")
 
     op.drop_index(TXN_INDEX, table_name="transactions")
     if conn.dialect.name == "postgresql":

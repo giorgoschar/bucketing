@@ -179,7 +179,7 @@ def test_daily_job_tops_up_active_items_only(db, make_household, monkeypatch, Se
 
 
 # Ruling 12: a rule change never yields two entries for one item in one
-# calendar month (ISO week for weekly rules), so salaries cannot double.
+# period (month, ISO week or year), so salaries cannot double.
 
 
 def _edit(db, bill, **changes):
@@ -296,7 +296,9 @@ def test_long_lived_item_still_gets_future_entries(db, make_household, frozen_to
     assert got[0] == date(2026, 10, 12)
 
 
-# Ruling 12, refined: a kept off-rule row suppresses only its nearest new date.
+# Ruling 12, final: every entry carries its nominal period (the rule's month,
+# ISO week or year before business-day adjustment); a period never gets a
+# second entry.
 
 
 def test_kept_31_dec_suppresses_2_jan_not_2_dec(db, make_household, frozen_today):
@@ -341,17 +343,100 @@ def test_kept_2_dec_suppresses_1_dec_not_31_dec(db, make_household, frozen_today
     assert date(2026, 12, 31) in got  # January's, off the 1 Jan holiday
 
 
-def test_a_tie_suppresses_the_earlier_date(db, make_household, frozen_today):
-    # 15 Feb 2027 is 14 days from both 1 Feb and 1 Mar.
-    hh = make_household()
-    bill = _item(db, hh, start_date=date(2026, 10, 7), rule_kind="monthly_day", rule_day=15)
-    generate_occurrences(db, bill, past=PAST_NONE)
+def _paid(db, bill, due, **fields):
+    row = db.query(BillOccurrence).filter_by(bill_id=bill.id, due_date=due).one()
+    row.status = OccurrenceStatus.paid
+    for key, value in fields.items():
+        setattr(row, key, value)
     db.commit()
-    february = db.query(BillOccurrence).filter_by(bill_id=bill.id, due_date=date(2027, 2, 15)).one()
-    february.status = OccurrenceStatus.skipped
-    db.commit()
+    return row
 
-    _edit(db, bill, rule_day=1)
+
+def test_entries_carry_the_nominal_period(db, make_household, frozen_today):
+    hh = make_household()
+    bill = _item(
+        db,
+        hh,
+        start_date=date(2026, 10, 7),
+        rule_kind="monthly_day",
+        rule_day=1,
+        rule_adjust="previous_business_day",
+    )
+    generate_occurrences(db, bill, past=PAST_NONE)
+    periods = dict(
+        db.query(BillOccurrence.due_date, BillOccurrence.period).filter_by(bill_id=bill.id)
+    )
+    assert periods[date(2026, 12, 1)] == "2026-12"
+    assert periods[date(2026, 12, 31)] == "2027-01"  # 1 Jan is a holiday
+    assert periods[date(2026, 10, 30)] == "2026-11"  # 1 Nov 2026 is a Sunday
+
+
+def test_payday_moved_earlier_still_pays_this_month(db, make_household, frozen_today):
+    # September's salary was paid on the 26th; on 6 Oct payday becomes the
+    # 10th. October has no entry yet, so 10 Oct is generated.
+    hh = make_household()
+    bill = _item(db, hh, start_date=date(2026, 9, 1), rule_kind="monthly_day", rule_day=26)
+    generate_occurrences(db, bill)
+    db.commit()
+    _paid(db, bill, date(2026, 9, 26))
+
+    _edit(db, bill, rule_day=10)
 
     got = _dates(db, bill)
-    assert date(2027, 2, 1) not in got and date(2027, 3, 1) in got
+    assert date(2026, 10, 10) in got
+    assert [d for d in got if (d.year, d.month) == (2026, 9)] == [date(2026, 9, 26)]
+
+
+def test_two_paid_dates_in_december_cover_december_and_january(db, make_household, frozen_today):
+    hh = make_household()
+    bill = _item(
+        db,
+        hh,
+        start_date=date(2026, 10, 7),
+        rule_kind="monthly_day",
+        rule_day=1,
+        rule_adjust="previous_business_day",
+    )
+    generate_occurrences(db, bill, past=PAST_NONE)
+    db.commit()
+    _paid(db, bill, date(2026, 12, 1))
+    _paid(db, bill, date(2026, 12, 31))
+
+    _edit(db, bill, rule_day=15, rule_adjust="none")
+
+    got = _dates(db, bill)
+    assert date(2026, 11, 15) in got and date(2027, 2, 15) in got
+    assert date(2026, 12, 15) not in got and date(2027, 1, 15) not in got
+    periods = [p for (p,) in db.query(BillOccurrence.period).filter_by(bill_id=bill.id)]
+    assert len(periods) == len(set(periods))
+
+
+def test_yearly_rule_change_skips_a_year_that_has_an_entry(db, make_household, frozen_today):
+    hh = make_household()
+    bill = _item(
+        db, hh, start_date=date(2026, 10, 7), rule_kind="yearly", rule_month=10, rule_day=26
+    )
+    generate_occurrences(db, bill, past=PAST_NONE)
+    db.commit()
+    _paid(db, bill, date(2026, 10, 26))
+
+    _edit(db, bill, rule_day=28)
+
+    assert _dates(db, bill) == [date(2026, 10, 26), date(2027, 10, 28)]
+
+
+def test_legacy_row_without_a_period_counts_for_its_month(db, make_household, frozen_today):
+    hh = make_household()
+    bill = _item(db, hh, start_date=date(2026, 10, 26))
+    db.add(
+        BillOccurrence(
+            bill_id=bill.id, due_date=date(2026, 10, 26), status=OccurrenceStatus.paid, period=None
+        )
+    )
+    db.commit()
+
+    _edit(db, bill, start_date=date(2026, 10, 28))
+
+    got = _dates(db, bill)
+    assert [d for d in got if (d.year, d.month) == (2026, 10)] == [date(2026, 10, 26)]
+    assert date(2026, 11, 28) in got

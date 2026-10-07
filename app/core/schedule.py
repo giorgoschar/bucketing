@@ -85,10 +85,27 @@ def _on_day(year: int, month: int, day: int) -> date:
     return date(year, month, min(day, calendar.monthrange(year, month)[1]))
 
 
-def _candidates(rule: Rule, start: date) -> Iterator[date]:
-    """The rule's dates from start's month (or year, or week) on, unbounded.
+def period_key(kind: str, nominal: date) -> str:
+    """The period a rule assigns a date to: "YYYY-MM" for the monthly kinds,
+    ISO "YYYY-Www" for weekly, "YYYY" for yearly and easter_offset.
 
-    An adjusted date can fall before ``start``; iter_dates drops those.
+    ``nominal`` is the date before any business-day adjustment, so the 1st
+    moved back to 31 Dec still belongs to January. An item never gets two
+    entries with one key (app.services.bills.generate_occurrences).
+    """
+    if kind == RuleKind.weekly.value:
+        year, week, _ = nominal.isocalendar()
+        return f"{year}-W{week:02d}"
+    if kind in (RuleKind.yearly.value, RuleKind.easter_offset.value):
+        return f"{nominal.year}"
+    return f"{nominal.year}-{nominal.month:02d}"
+
+
+def _candidates(rule: Rule, start: date) -> Iterator[tuple[date, date]]:
+    """(nominal, due) pairs of the rule from start's month (or year, or
+    week) on, unbounded. ``due`` is ``nominal`` after adjustment.
+
+    An adjusted date can fall before ``start``; iter_entries drops those.
     """
     kind = rule.kind
     if kind == RuleKind.monthly_interval.value:
@@ -97,7 +114,7 @@ def _candidates(rule: Rule, start: date) -> Iterator[date]:
         # there. Existing bills keep exactly those dates.
         current = start
         while True:
-            yield current
+            yield current, current
             current = current + relativedelta(months=rule.interval_months)
     elif kind in (RuleKind.monthly_day.value, RuleKind.last_business_day.value):
         first = date(start.year, start.month, 1)
@@ -105,25 +122,64 @@ def _candidates(rule: Rule, start: date) -> Iterator[date]:
         while True:
             month = first + relativedelta(months=k * rule.interval_months)
             if kind == RuleKind.monthly_day.value:
-                yield adjust_date(_on_day(month.year, month.month, rule.day), rule.adjust)
+                nominal = _on_day(month.year, month.month, rule.day)
+                yield nominal, adjust_date(nominal, rule.adjust)
             else:
-                yield last_business_day(month.year, month.month)
+                # Always inside its own month, so it is its own nominal date.
+                due = last_business_day(month.year, month.month)
+                yield due, due
             k += 1
     elif kind == RuleKind.yearly.value:
         year = start.year
         while True:
-            yield adjust_date(_on_day(year, rule.month, rule.day), rule.adjust)
+            nominal = _on_day(year, rule.month, rule.day)
+            yield nominal, adjust_date(nominal, rule.adjust)
             year += 1
     elif kind == RuleKind.easter_offset.value:
         year = start.year
         while True:
-            yield adjust_date(orthodox_easter(year) + timedelta(days=rule.days), rule.adjust)
+            nominal = orthodox_easter(year) + timedelta(days=rule.days)
+            yield nominal, adjust_date(nominal, rule.adjust)
             year += 1
     else:  # weekly
         current = start + timedelta(days=(rule.weekday - start.weekday()) % 7)
         while True:
-            yield current
+            yield current, current
             current += timedelta(weeks=rule.interval_weeks)
+
+
+def iter_entries(
+    rule: Rule,
+    start: date,
+    *,
+    end: date | None = None,
+    total: int | None = None,
+    until: date,
+) -> Iterator[tuple[date, str]]:
+    """(due date, period key) pairs of ``rule`` on or after ``start``, ascending.
+
+    Stops after ``end``, after ``total`` dates (0 or None means no limit, as
+    the old generator read it) or once past ``until``, the generation
+    horizon that keeps every rule finite. A date before ``start`` (an
+    adjustment can move one back) or equal to the previous one is dropped.
+    The key is :func:`period_key` of the date before adjustment.
+    Raises RuleError for a rule validate_rule rejects.
+    """
+    rule = validate_rule(rule)
+    count = 0
+    previous: date | None = None
+    for nominal, d in _candidates(rule, start):
+        if d < start or (previous is not None and d <= previous):
+            continue
+        if total and count >= total:
+            return
+        if end is not None and d > end:
+            return
+        if d > until:
+            return
+        yield d, period_key(rule.kind, nominal)
+        count += 1
+        previous = d
 
 
 def iter_dates(
@@ -134,26 +190,6 @@ def iter_dates(
     total: int | None = None,
     until: date,
 ) -> Iterator[date]:
-    """Due dates of ``rule`` on or after ``start``, ascending.
-
-    Stops after ``end``, after ``total`` dates (0 or None means no limit, as
-    the old generator read it) or once past ``until``, the generation
-    horizon that keeps every rule finite. A date before ``start`` (an
-    adjustment can move one back) or equal to the previous one is dropped.
-    Raises RuleError for a rule validate_rule rejects.
-    """
-    rule = validate_rule(rule)
-    count = 0
-    previous: date | None = None
-    for d in _candidates(rule, start):
-        if d < start or (previous is not None and d <= previous):
-            continue
-        if total and count >= total:
-            return
-        if end is not None and d > end:
-            return
-        if d > until:
-            return
+    """Due dates of ``rule``: :func:`iter_entries` without the period keys."""
+    for d, _ in iter_entries(rule, start, end=end, total=total, until=until):
         yield d
-        count += 1
-        previous = d

@@ -138,6 +138,8 @@ def test_upgrade_backfills_and_keeps_every_row(tmp_path):
         ).scalar()
         assert linked == ids["bill"]
         assert conn.execute(text("SELECT COUNT(*) FROM bill_occurrences")).scalar() == 2
+        periods = dict(conn.execute(text("SELECT id, period FROM bill_occurrences")).all())
+        assert periods == {ids["paid"]: "2026-02", ids["open"]: "2026-03"}
         assert conn.execute(text("SELECT COUNT(*) FROM match_suggestions")).scalar() == 0
     engine.dispose()
 
@@ -230,6 +232,7 @@ def test_downgrade_refuses_while_a_fixed_cost_exists_then_round_trips(tmp_path):
     assert "match_suggestions" not in insp.get_table_names()
     assert "recurring_bill_id" not in {c["name"] for c in insp.get_columns("transactions")}
     assert "kind" not in {c["name"] for c in insp.get_columns("buckets")}
+    assert "period" not in {c["name"] for c in insp.get_columns("bill_occurrences")}
     with engine.connect() as conn:
         assert conn.execute(text("SELECT COUNT(*) FROM transactions")).scalar() == 3
 

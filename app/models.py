@@ -587,6 +587,7 @@ class BillOccurrence(Base):
     __table_args__ = (
         UniqueConstraint("bill_id", "due_date", name="uq_bill_occurrence"),
         Index("ix_bill_occurrences_bill_status", "bill_id", "due_date", "status"),
+        Index("ix_bill_occurrences_bill_period", "bill_id", "period"),
     )
 
     id = Column(String, primary_key=True, default=gen_id)
@@ -597,6 +598,11 @@ class BillOccurrence(Base):
     paid_at = Column(DateTime, nullable=True)
     paid_by = Column(String, ForeignKey("users.id"), nullable=True)
     transaction_id = Column(String, ForeignKey("transactions.id"), nullable=True)
+    # The rule's period for this entry, before business-day adjustment:
+    # "YYYY-MM", "YYYY-Www" (weekly) or "YYYY" (app.core.schedule.period_key).
+    # An item never gets two entries in one period. NULL on rows the old app
+    # writes; generation reads those by their due date's month.
+    period = Column(String(10), nullable=True)
 
     bill = relationship("RecurringBill", back_populates="occurrences")
     transaction = relationship("Transaction", back_populates="bill_occurrence")
