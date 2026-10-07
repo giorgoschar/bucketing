@@ -97,7 +97,18 @@ def upsert_category_rule(
     rule = learn_rule(db, hh_id, pattern, category_id, created_by=user.id)
     if rule is None:  # _validated already ruled this out
         raise HTTPException(status_code=400, detail=INVALID_RULE_MSG)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # Another request inserted this pattern between our check and our
+        # commit: it is the same upsert, so re-point that rule and answer 200.
+        db.rollback()
+        rule = _by_pattern(db, hh_id, pattern)
+        if rule is None:  # the winner was deleted meanwhile; let the client retry
+            raise HTTPException(status_code=409, detail=PATTERN_TAKEN_MSG) from None
+        rule.category_id = category_id
+        db.commit()
+        existed = True
     db.refresh(rule)
     if existed:
         response.status_code = status.HTTP_200_OK

@@ -196,3 +196,43 @@ def test_put_race_on_the_unique_pattern_is_409_not_500(client, db, api, monkeypa
     monkeypatch.undo()
     rules = {x["pattern"] for x in client.get(URL, headers=headers).json()}
     assert rules == {"lidl", "ab"}
+
+
+def test_post_race_on_the_unique_pattern_is_200_with_the_existing_rule(
+    client, db, api, monkeypatch
+):  # noqa: F811
+    """Two POSTs for the same pattern: the loser's insert hits the unique
+    constraint at commit. It re-reads and answers 200 with the winner's rule
+    (re-pointed to its category), never a 500."""
+    headers, hh = api
+    groceries = _category(db, hh.household_id)
+    coffee = _category(db, hh.household_id, "Coffee")
+    winner = client.post(URL, headers=headers, json={"pattern": "lidl", "category_id": groceries})
+    assert winner.status_code == 201
+
+    def racing_learn_rule(session, household_id, pattern, category_id, *, created_by=None):
+        # Neither pre-check saw the other request's row: insert a duplicate.
+        rule = CategoryRule(household_id=household_id, pattern=pattern, category_id=category_id)
+        session.add(rule)
+        return rule
+
+    monkeypatch.setattr("app.api.category_rules._by_pattern", _first_call_misses())
+    monkeypatch.setattr("app.api.category_rules.learn_rule", racing_learn_rule)
+    r = client.post(URL, headers=headers, json={"pattern": "LIDL", "category_id": coffee})
+    assert r.status_code == 200, r.text
+    assert (r.json()["id"], r.json()["category_id"]) == (winner.json()["id"], coffee)
+    monkeypatch.undo()
+    assert [x["pattern"] for x in client.get(URL, headers=headers).json()] == ["lidl"]
+
+
+def _first_call_misses():
+    from app.api import category_rules as mod
+
+    real = mod._by_pattern
+    calls = {"n": 0}
+
+    def by_pattern(*a, **k):
+        calls["n"] += 1
+        return None if calls["n"] == 1 else real(*a, **k)
+
+    return by_pattern
