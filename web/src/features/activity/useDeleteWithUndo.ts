@@ -11,7 +11,11 @@ export function useDeleteWithUndo() {
   const toast = useToast()
   const items = useRecurringItems().data
   return (t: Txn) => {
-    holdDelete(t.id, () => void del.run({ id: t.id }))
+    holdDelete(t.id, (reason) => {
+      // Flushed early (page hidden): the delete is gone, so an Undo still on screen would do nothing.
+      if (reason === 'hidden') toast.dismiss()
+      void del.run({ id: t.id })
+    })
     const bill = t.recurring_bill_id ? items?.find((i) => i.id === t.recurring_bill_id) : undefined
     const month = t.transaction_date ? MONTH.format(new Date(`${t.transaction_date}T12:00:00`)) : ''
     toast.show(bill ? `Deleted · ${bill.name} ${month} is expected again` : 'Deleted', {

@@ -6,7 +6,13 @@ import { Activity } from './Activity'
 import { HOLD_MS, _resetHeldForTests } from './heldDeletes'
 import { makeTxn, pageOf, refRoutes, renderActivity } from './testing'
 
+const hide = () => {
+  Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
+  document.dispatchEvent(new Event('visibilitychange'))
+}
+
 afterEach(async () => {
+  Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
   _resetHeldForTests()
   await resetTestEnv()
 })
@@ -50,5 +56,14 @@ describe('swipe delete', () => {
     const { row } = setup()
     fireEvent.click(await screen.findByRole('button', { name: 'Copy' }))
     expect(screen.getByTestId('location').textContent).toBe(`/new?from=${row.id}`)
+  })
+
+  it('hiding the page sends the delete at once and takes the Undo toast away', async () => {
+    const { fake } = setup()
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }))
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeInTheDocument()
+    act(() => hide())
+    await waitFor(() => expect(fake.callsTo(DELETE)).toHaveLength(1))
+    expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull()
   })
 })

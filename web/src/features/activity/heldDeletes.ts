@@ -5,7 +5,10 @@ import { useSyncExternalStore } from 'react'
 
 export const HOLD_MS = 5000
 
-type Held = { timer: ReturnType<typeof setTimeout>; send: () => void }
+/** Why the hold ended: its 5 s ran out, or the page was hidden (backgrounded, closed) first. */
+export type FlushReason = 'timer' | 'hidden'
+type Send = (reason: FlushReason) => void
+type Held = { timer: ReturnType<typeof setTimeout>; send: Send }
 const held = new Map<string, Held>()
 const listeners = new Set<() => void>()
 let snapshot: ReadonlySet<string> = new Set()
@@ -20,12 +23,12 @@ function installFlushOnHide() {
   if (installed) return
   installed = true
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') flushAll()
+    if (document.visibilityState === 'hidden') flushAll('hidden')
   })
-  window.addEventListener('pagehide', flushAll)
+  window.addEventListener('pagehide', () => flushAll('hidden'))
 }
 
-export function holdDelete(id: string, send: () => void, ms = HOLD_MS) {
+export function holdDelete(id: string, send: Send, ms = HOLD_MS) {
   const prev = held.get(id)
   if (prev) clearTimeout(prev.timer)
   held.set(id, { timer: setTimeout(() => flush(id), ms), send })
@@ -42,17 +45,17 @@ export function undoDelete(id: string): boolean {
   return true
 }
 
-export function flush(id: string) {
+export function flush(id: string, reason: FlushReason = 'timer') {
   const h = held.get(id)
   if (!h) return
   clearTimeout(h.timer)
   held.delete(id)
   emit()
-  h.send()
+  h.send(reason)
 }
 
-export function flushAll() {
-  for (const id of [...held.keys()]) flush(id)
+export function flushAll(reason: FlushReason = 'timer') {
+  for (const id of [...held.keys()]) flush(id, reason)
 }
 
 const subscribe = (cb: () => void) => {
