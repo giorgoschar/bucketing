@@ -118,3 +118,4 @@
 .cash-move .ui-row__title { white-space: normal; overflow-wrap: anywhere; }
 /* M4: the reason a sheet's Save is disabled, right above it. */
 .cash-offline-hint--foot { text-align: center; }
+.cash-date--fixed { color: var(--muted); background: var(--surface-2); }

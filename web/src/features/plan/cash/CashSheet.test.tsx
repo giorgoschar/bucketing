@@ -194,3 +194,41 @@ it('Save disables live when the device goes offline, and says why', async () => 
   act(() => setOnline(true))
   expect(within(sheet).getByRole('button', { name: 'Take €5.00' })).toBeEnabled()
 })
+
+// Final review I1: Put back and Still have write into today's month, so a past month's sheet offers only Take
+// (and the stash card's Add); its figures would be the wrong month's.
+it('on a past month, the sheet from the stash card offers Take only: no Put back or Still have', async () => {
+  fakeApi({ ...readRoutes(), ...cashRoutes({ wallets: cashWallets({ month: '2026-09' }) }) })
+  renderWithProviders(<Cash />, { route: '/plan?view=cash&month=2026-09' })
+  const stash = await screen.findByRole('region', { name: 'My stash' })
+  fireEvent.click(within(stash).getByRole('button', { name: 'Take' }))
+  const sheet = await screen.findByRole('dialog', { name: 'Take cash' })
+  expect(within(sheet).queryByRole('group', { name: 'Cash action' })).not.toBeInTheDocument()
+  expect(within(sheet).queryByRole('button', { name: 'Put back' })).not.toBeInTheDocument()
+  expect(within(sheet).queryByRole('button', { name: 'Still have' })).not.toBeInTheDocument()
+  expect(within(sheet).getByRole('radio', { name: /My stash/ })).toBeChecked()
+  fireEvent.keyDown(document, { key: 'Escape' })
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  fireEvent.click(within(stash).getByRole('button', { name: 'Add' }))
+  expect(await screen.findByRole('dialog', { name: 'Add to stash' })).toBeInTheDocument()
+})
+
+it('on the current month, the Take sheet still offers Put back and Still have', async () => {
+  const { sheet } = await open('Take')
+  const modes = within(within(sheet).getByRole('group', { name: 'Cash action' }))
+  expect(modes.getAllByRole('button').map((b) => b.textContent)).toEqual(['Take', 'Put back', 'Still have'])
+})
+
+// Final review m4: the Still have preview assumes today, so its date is today and read-only.
+it('Still have is dated today, read-only, even after another mode picked an earlier date', async () => {
+  const { api, sheet } = await open('Take')
+  type(sheet, 'Date', '2026-10-02')
+  fireEvent.click(within(sheet).getByRole('button', { name: 'Still have' }))
+  const date = within(sheet).getByLabelText('Date')
+  expect(date).toHaveAttribute('readonly')
+  expect(date).toHaveValue('2026-10-07')
+  type(sheet, 'Amount', '15')
+  fireEvent.click(within(sheet).getByRole('button', { name: 'Save €15.00 in hand' }))
+  await waitFor(() => expect(posts(api)).toHaveLength(1))
+  expect(posts(api)[0].body).toMatchObject({ kind: 'still_have', movement_date: '2026-10-07' })
+})

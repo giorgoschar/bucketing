@@ -31,10 +31,13 @@ export interface CashSheetProps {
   /** The month's wallets, the viewer first (is_me). */
   members: CashWalletMemberOut[]
   currency: string
+  /** The shown month is today's. Put back and Still have write into today's month (and Still have previews
+   *  the shown month's wallet), so on another month the sheet offers Take only (final review I1). */
+  current?: boolean
 }
 
 /** Take / Put back / Still have in one sheet, and Add to stash without the segment row (spec §4.3). */
-export function CashSheet({ mode: initialMode, onClose, stash, members, currency }: CashSheetProps) {
+export function CashSheet({ mode: initialMode, onClose, stash, members, currency, current = true }: CashSheetProps) {
   const [mode, setMode] = useState<CashSheetMode>(initialMode)
   const [text, setText] = useState('')
   const [date, setDate] = useState(todayISO())
@@ -80,7 +83,8 @@ export function CashSheet({ mode: initialMode, onClose, stash, members, currency
     const body: MovementBody = {
       kind: mode === 'add' ? 'stash_in' : mode,
       amount: centsToString(amount),
-      movement_date: date || null,
+      // Still have's preview assumes today (final review m4), so it is always dated today.
+      movement_date: mode === 'still_have' ? todayISO() : date || null,
       note: note.trim() || null,
     }
     if (mode === 'take') {
@@ -109,7 +113,7 @@ export function CashSheet({ mode: initialMode, onClose, stash, members, currency
         </>
       }>
       <form className="cash-form" onSubmit={(ev) => { ev.preventDefault(); void save() }}>
-        {mode !== 'add' && (
+        {mode !== 'add' && current && (
           <Segmented label="Cash action" options={MODES} value={mode as Exclude<CashSheetMode, 'add'>}
             onChange={(m) => { setMode(m); setError(null) }} />
         )}
@@ -144,7 +148,11 @@ export function CashSheet({ mode: initialMode, onClose, stash, members, currency
         <div className="cash-form__row">
           <label className="ui-field">
             <span className="ui-field__label">Date</span>
-            <input className="ui-input" type="date" value={date} max={todayISO()} onChange={(ev) => setDate(ev.target.value)} />
+            {mode === 'still_have' ? (
+              <input className="ui-input cash-date--fixed" type="date" value={todayISO()} readOnly aria-readonly="true" />
+            ) : (
+              <input className="ui-input" type="date" value={date} max={todayISO()} onChange={(ev) => setDate(ev.target.value)} />
+            )}
           </label>
           <label className="ui-field">
             <span className="ui-field__label">Note (optional)</span>

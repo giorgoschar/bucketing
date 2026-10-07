@@ -98,7 +98,8 @@ function CashBody({ stash, members, wallets, month, go, canWrite }: BodyProps) {
       </section>
 
       {open?.kind === 'cash' && (
-        <CashSheet mode={open.mode} stash={stash} members={members} currency={currency} onClose={() => setOpen(null)} />
+        <CashSheet mode={open.mode} stash={stash} members={members} currency={currency}
+          current={month === todayISO().slice(0, 7)} onClose={() => setOpen(null)} />
       )}
       {open?.kind === 'count' && <CountSheet stash={stash} currency={currency} onClose={() => setOpen(null)} />}
 
