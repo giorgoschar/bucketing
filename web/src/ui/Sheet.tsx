@@ -9,7 +9,8 @@ export interface SheetProps {
   children: ReactNode
   /** Pinned below the scrolling body (primary actions). */
   footer?: ReactNode
-  /** false for sheets that show something the user must acknowledge (2d's backup codes). */
+  /** false for sheets that show something the user must acknowledge (2d's backup codes): neither a
+   *  backdrop tap nor Esc closes them, only their own buttons. */
   closeOnBackdrop?: boolean
   /** Where focus lands on open; defaults to the first focusable element (the Close button). */
   initialFocus?: RefObject<HTMLElement | null>
@@ -26,7 +27,8 @@ export function Sheet({ open, onClose, title, children, footer, closeOnBackdrop 
   const panel = useRef<HTMLDivElement>(null)
   const titleId = useId()
   const onCloseRef = useRef(onClose)
-  useEffect(() => { onCloseRef.current = onClose })
+  const dismissableRef = useRef(closeOnBackdrop)
+  useEffect(() => { onCloseRef.current = onClose; dismissableRef.current = closeOnBackdrop })
 
   useEffect(() => {
     if (!open || !panel.current) return
@@ -38,7 +40,7 @@ export function Sheet({ open, onClose, title, children, footer, closeOnBackdrop 
       if (stack[stack.length - 1] !== node) return
       if (e.key === 'Escape') {
         e.preventDefault()
-        onCloseRef.current()
+        if (dismissableRef.current) onCloseRef.current()
         return
       }
       if (e.key !== 'Tab') return
