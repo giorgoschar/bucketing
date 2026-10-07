@@ -1082,7 +1082,7 @@ class ShoppingLine(Base):
     quantity = Column(Numeric(10, 2), nullable=True)
     checked_at = Column(DateTime, nullable=True)
     created_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    created_at = Column(DateTime, default=utcnow_naive)
+    created_at = Column(DateTime, default=utcnow_naive, nullable=False)
     cleared_at = Column(DateTime, nullable=True)
 
     stock_item = relationship("StockItem")

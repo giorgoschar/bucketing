@@ -41,6 +41,12 @@ class StockError(ValueError):
     """Invalid stock input (maps to HTTP 400)."""
 
 
+class ShoppingIdConflict(Exception):
+    """A client-chosen shopping-line id is already used by a row this request
+    cannot be a replay of (another household's, another item's, or the other
+    kind of line). Maps to 409, saying nothing about that row."""
+
+
 # ---------------------------------------------------------------------------
 # Parsing helpers
 # ---------------------------------------------------------------------------
@@ -101,18 +107,42 @@ def get_stock_item(db: Session, hh_id: str, item_id: str) -> StockItem | None:
     return item
 
 
-def pantry_item_by_barcode(db: Session, hh_id: str, barcode: str) -> StockItem | None:
-    """The household's (unarchived) stock item with this barcode, if any."""
-    return (
+def pantry_match(
+    db: Session, hh_id: str, barcode: str | None, posokanei_id: str | None = None
+) -> StockItem | None:
+    """The household's (unarchived) stock item with this barcode or this
+    PosoKanei product id, if any; a barcode match wins."""
+    keys = []
+    if barcode:
+        keys.append(Product.barcode == barcode)
+    if posokanei_id:
+        keys.append(Product.posokanei_id == posokanei_id)
+    if not keys:
+        return None
+    rows = (
         db.query(StockItem)
         .join(Product, Product.id == StockItem.product_id)
-        .filter(
-            Product.household_id == hh_id,
-            Product.barcode == barcode,
-            Product.archived_at.is_(None),
-        )
-        .first()
+        .filter(Product.household_id == hh_id, Product.archived_at.is_(None), or_(*keys))
+        .all()
     )
+    rows.sort(key=lambda i: (not barcode or i.product.barcode != barcode, i.product.name, i.id))
+    return rows[0] if rows else None
+
+
+def _lock_query(db: Session, hh_id: str, item_id: str):
+    return (
+        db.query(StockItem)
+        .filter(StockItem.id == item_id, StockItem.household_id == hh_id)
+        .with_for_update()
+        .populate_existing()
+    )
+
+
+def lock_stock_item(db: Session, hh_id: str, item_id: str) -> StockItem | None:
+    """The household's stock item, row-locked (FOR UPDATE on Postgres) and
+    freshly read, so a read-modify-write of its quantity cannot lose a
+    concurrent one."""
+    return _lock_query(db, hh_id, item_id).first()
 
 
 def stock_summary(db: Session, hh_id: str) -> dict:
@@ -247,9 +277,9 @@ def adjust_stock(
     The logged delta is what actually changed, so using an item already at
     zero records nothing and cannot skew the consumption rate. ``client_id``
     (the PWA's queued stepper) is stored on the movement for
-    :func:`find_adjust_replay`.
+    :func:`find_adjust_replay`. The item row is locked first.
     """
-    item = get_stock_item(db, hh_id, item_id)
+    item = lock_stock_item(db, hh_id, item_id)
     if item is None:
         return None
     delta = to_decimal(delta)
@@ -658,18 +688,27 @@ def restock_quantity(item: StockItem) -> Decimal:
     return max(Decimal("1"), Decimal(math.ceil(gap)))
 
 
-def shopping_list(db: Session, hh_id: str, today: date | None = None) -> dict:
+def shopping_list(
+    db: Session, hh_id: str, today: date | None = None, *, include_ticked: bool = False
+) -> dict:
     """Items to buy (at/below minimum, or running out within a week), each at
-    its cheapest current retailer, grouped into per-retailer baskets."""
+    its cheapest current retailer, grouped into per-retailer baskets.
+
+    ``include_ticked`` (the PWA list) also keeps any item with an active tick
+    that is neither, with reason ``ticked``, so every tick that is counted
+    and applied has a row it can be unticked from."""
     today = today or local_today()
     items = list_stock(db, hh_id)
     runout = runout_bulk(db, items, today)
-    wanted = [
-        i
-        for i in items
-        if to_decimal(i.quantity) <= to_decimal(i.min_quantity)
-        or (runout[i.id] is not None and runout[i.id] <= RUNOUT_SOON_DAYS)
-    ]
+    ticked = set(active_ticks(db, hh_id)) if include_ticked else set()
+
+    def _low(i):
+        return to_decimal(i.quantity) <= to_decimal(i.min_quantity)
+
+    def _soon(i):
+        return runout[i.id] is not None and runout[i.id] <= RUNOUT_SOON_DAYS
+
+    wanted = [i for i in items if _low(i) or _soon(i) or i.id in ticked]
     pids = [i.product_id for i in wanted]
     prices = current_prices(db, pids)
     advice = price_advice_bulk(db, pids, today)
@@ -684,9 +723,7 @@ def shopping_list(db: Session, hh_id: str, today: date | None = None) -> dict:
                 "item": i,
                 "product": i.product,
                 "need_qty": need,
-                "reason": "low"
-                if to_decimal(i.quantity) <= to_decimal(i.min_quantity)
-                else "runout",
+                "reason": "low" if _low(i) else "runout" if _soon(i) else "ticked",
                 "runout_days": runout[i.id],
                 "retailer": best.retailer if best else None,
                 "retailer_name": retailer_label(best.retailer) if best else None,
@@ -815,9 +852,12 @@ def get_live_item(db: Session, hh_id: str, item_id: str) -> StockItem | None:
     return item
 
 
-def active_ticks(db: Session, hh_id: str) -> dict[str, ShoppingLine]:
-    """Active ticks by stock item id."""
-    rows = _active_lines(db, hh_id).filter(ShoppingLine.stock_item_id.isnot(None)).all()
+def active_ticks(db: Session, hh_id: str, item_ids=None) -> dict[str, ShoppingLine]:
+    """Active ticks by stock item id (only ``item_ids``' when given)."""
+    q = _active_lines(db, hh_id).filter(ShoppingLine.stock_item_id.isnot(None))
+    if item_ids is not None:
+        q = q.filter(ShoppingLine.stock_item_id.in_(list(item_ids)))
+    rows = q.all()
     return {r.stock_item_id: r for r in rows}
 
 
@@ -847,12 +887,36 @@ def ticked_count(db: Session, hh_id: str) -> int:
     return int(n or 0)
 
 
+def _replayed(db: Session, hh_id: str, line_id: str | None, stock_item_id: str | None):
+    """The row a create with client id ``line_id`` already made, if any.
+    Raises ShoppingIdConflict when the id is taken by a row this create cannot
+    be a replay of (another household's, or another item / kind of line)."""
+    if not line_id:
+        return None
+    row = db.get(ShoppingLine, line_id)
+    if row is None:
+        return None
+    if row.household_id != hh_id or row.stock_item_id != stock_item_id:
+        raise ShoppingIdConflict(line_id)
+    return row
+
+
 def tick_item(
-    db: Session, hh_id: str, user_id: str | None, stock_item_id: str, quantity=None
+    db: Session,
+    hh_id: str,
+    user_id: str | None,
+    stock_item_id: str,
+    quantity=None,
+    tick_id: str | None = None,
 ) -> ShoppingLine | None:
-    """Tick a stock item on the shopping list (idempotent: an item already
-    ticked returns its tick unchanged). ``quantity`` defaults to the item's
-    restock quantity now. None if the item is missing, foreign or archived."""
+    """Tick a stock item on the shopping list. Idempotent: an item already
+    ticked returns its tick unchanged, and so does a replay of a client
+    ``tick_id`` (even once applied or cleared, so a late replay never ticks
+    again). ``quantity`` defaults to the item's restock quantity now. None if
+    the item is missing, foreign or archived."""
+    replay = _replayed(db, hh_id, tick_id, stock_item_id)
+    if replay is not None:
+        return replay
     item = get_live_item(db, hh_id, stock_item_id)
     if item is None:
         return None
@@ -866,6 +930,7 @@ def tick_item(
     qty = restock_quantity(item) if quantity is None else parse_quantity(quantity, allow_zero=False)
     now = utcnow_naive()
     tick = ShoppingLine(
+        **({"id": tick_id} if tick_id else {}),
         household_id=hh_id,
         stock_item_id=item.id,
         quantity=qty,
@@ -877,8 +942,9 @@ def tick_item(
         with db.begin_nested():
             db.add(tick)
     except IntegrityError:
-        # Someone else ticked it at the same moment: theirs is the tick.
-        return existing()
+        # A concurrent create won: the same client id replayed, or someone
+        # else ticked the item. Theirs is the tick.
+        return _replayed(db, hh_id, tick_id, stock_item_id) or existing()
     return tick
 
 
@@ -893,17 +959,38 @@ def untick(db: Session, hh_id: str, tick_id: str) -> bool:
 
 
 def add_line(
-    db: Session, hh_id: str, user_id: str | None, name: str, quantity=None
+    db: Session,
+    hh_id: str,
+    user_id: str | None,
+    name: str,
+    quantity=None,
+    line_id: str | None = None,
 ) -> ShoppingLine:
+    """Add a one-off line. A replay of a client ``line_id`` returns that line
+    as it is now (idempotent)."""
+    replay = _replayed(db, hh_id, line_id, None)
+    if replay is not None:
+        return replay
     name = _clip(name, 200)
     if not name:
         raise StockError("Name is required.")
     qty = None if quantity in (None, "") else parse_quantity(quantity, allow_zero=False)
     line = ShoppingLine(
-        household_id=hh_id, name=name, quantity=qty, created_by=user_id, created_at=utcnow_naive()
+        **({"id": line_id} if line_id else {}),
+        household_id=hh_id,
+        name=name,
+        quantity=qty,
+        created_by=user_id,
+        created_at=utcnow_naive(),
     )
-    db.add(line)
-    db.flush()
+    try:
+        with db.begin_nested():
+            db.add(line)
+    except IntegrityError:
+        replay = _replayed(db, hh_id, line_id, None)
+        if replay is None:
+            raise
+        return replay
     return line
 
 

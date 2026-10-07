@@ -55,7 +55,7 @@ def upgrade() -> None:
             sa.ForeignKey("users.id", ondelete="SET NULL"),
             nullable=True,
         ),
-        sa.Column("created_at", sa.DateTime(), nullable=True),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("cleared_at", sa.DateTime(), nullable=True),
     )
     op.create_index("ix_shopping_lines_household_id", "shopping_lines", ["household_id"])

@@ -3412,6 +3412,17 @@
       },
       "LineIn": {
         "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -4165,6 +4176,31 @@
           "is_discount"
         ],
         "title": "PriceTodayOut",
+        "type": "object"
+      },
+      "ProductLookupErrorOut": {
+        "description": "404 (not on PosoKanei) and 503 (prices unavailable) on the barcode\nlookup: the usual string ``detail`` plus the household's pantry match by\nbarcode.",
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "in_pantry": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InPantryOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "detail",
+          "in_pantry"
+        ],
+        "title": "ProductLookupErrorOut",
         "type": "object"
       },
       "ProductLookupOut": {
@@ -5563,7 +5599,8 @@
           "reason": {
             "enum": [
               "low",
-              "runout"
+              "runout",
+              "ticked"
             ],
             "title": "Reason",
             "type": "string"
@@ -6523,6 +6560,17 @@
       },
       "TickIn": {
         "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
           "quantity": {
             "anyOf": [
               {
@@ -9672,6 +9720,16 @@
             },
             "description": "Successful Response"
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductLookupErrorOut"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -9681,6 +9739,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductLookupErrorOut"
+                }
+              }
+            },
+            "description": "Service Unavailable"
           }
         },
         "security": [

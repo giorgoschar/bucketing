@@ -394,8 +394,9 @@ def test_shopping_lines_migration_round_trip_and_active_tick_index(tmp_path):
     def add_line(conn, stock_item_id, cleared=None, name=None):
         conn.execute(
             text(
-                "INSERT INTO shopping_lines (id, household_id, stock_item_id, name, cleared_at) "
-                "VALUES (:i, :h, :s, :n, :c)"
+                "INSERT INTO shopping_lines "
+                "(id, household_id, stock_item_id, name, cleared_at, created_at) "
+                "VALUES (:i, :h, :s, :n, :c, '2026-10-01 09:00:00')"
             ),
             {"i": str(uuid.uuid4()), "h": hh, "s": stock_item_id, "n": name, "c": cleared},
         )

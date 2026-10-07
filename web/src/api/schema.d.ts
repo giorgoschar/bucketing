@@ -3257,6 +3257,8 @@ export interface components {
         };
         /** LineIn */
         LineIn: {
+            /** Id */
+            id?: string | null;
             /** Name */
             name: string;
             /** Quantity */
@@ -3485,6 +3487,17 @@ export interface components {
             retailer_name: string;
             /** Unit Price */
             unit_price: number | null;
+        };
+        /**
+         * ProductLookupErrorOut
+         * @description 404 (not on PosoKanei) and 503 (prices unavailable) on the barcode
+         *     lookup: the usual string ``detail`` plus the household's pantry match by
+         *     barcode.
+         */
+        ProductLookupErrorOut: {
+            /** Detail */
+            detail: string;
+            in_pantry: components["schemas"]["InPantryOut"] | null;
         };
         /** ProductLookupOut */
         ProductLookupOut: {
@@ -3898,7 +3911,7 @@ export interface components {
              * Reason
              * @enum {string}
              */
-            reason: "low" | "runout";
+            reason: "low" | "runout" | "ticked";
             /** Retailer */
             retailer: string | null;
             /** Retailer Name */
@@ -4158,6 +4171,8 @@ export interface components {
         };
         /** TickIn */
         TickIn: {
+            /** Id */
+            id?: string | null;
             /** Quantity */
             quantity?: number | string | null;
             /** Stock Item Id */
@@ -5842,6 +5857,15 @@ export interface operations {
                     "application/json": components["schemas"]["ProductLookupOut"];
                 };
             };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductLookupErrorOut"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -5849,6 +5873,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductLookupErrorOut"];
                 };
             };
         };

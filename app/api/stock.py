@@ -7,11 +7,13 @@ own Decimal encoding (``Num``), so a whole Decimal stays a JSON integer and a
 ``Numeric(10, 2)`` value a float.
 """
 
+import uuid
 from dataclasses import asdict
 from decimal import Decimal
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, PlainSerializer, WithJsonSchema, field_validator
 from sqlalchemy.orm import Session
 
@@ -20,7 +22,7 @@ from app.core.database import get_db
 from app.integrations import posokanei
 from app.integrations.posokanei import PosokaneiUnavailable
 from app.services import stock as stock_svc
-from app.services.stock import StockError
+from app.services.stock import ShoppingIdConflict, StockError
 
 router = APIRouter(prefix="/stock", tags=["stock"])
 products_router = APIRouter(prefix="/products", tags=["stock"])
@@ -79,7 +81,8 @@ class ShoppingRowOut(BaseModel):
     id: str  # the stock item id
     name: str
     need_qty: Num
-    reason: Literal["low", "runout"]
+    # ticked: neither low nor running out any more, but still ticked
+    reason: Literal["low", "runout", "ticked"]
     runout_days_estimate: Num | None  # fractional days (estimate)
     retailer: str | None
     retailer_name: str | None
@@ -156,7 +159,23 @@ def _quantity(v):
         raise ValueError(str(exc)) from None
 
 
+def _client_uuid(v):
+    """An optional client-generated uuid4 (lower-case canonical form)."""
+    if v is None:
+        return None
+    try:
+        u = uuid.UUID(str(v))
+    except ValueError:
+        raise ValueError("id must be a UUID (version 4).") from None
+    if u.version != 4 or str(v).strip().lower() != str(u):
+        raise ValueError("id must be a UUID (version 4).")
+    return str(u)
+
+
 class TickIn(BaseModel):
+    # Client-generated (uuid4) so the offline queue can replay the create and
+    # address the tick before the server answered. A replay returns the row.
+    id: str | None = None
     stock_item_id: str
     quantity: float | str | None = None  # default: the item's need_qty now
 
@@ -165,8 +184,14 @@ class TickIn(BaseModel):
     def _qty(cls, v):
         return _quantity(v)
 
+    @field_validator("id")
+    @classmethod
+    def _id(cls, v):
+        return _client_uuid(v)
+
 
 class LineIn(BaseModel):
+    id: str | None = None  # client-generated uuid4, as on TickIn
     name: str
     quantity: float | str | None = None
 
@@ -184,6 +209,11 @@ class LineIn(BaseModel):
     @classmethod
     def _qty(cls, v):
         return _quantity(v)
+
+    @field_validator("id")
+    @classmethod
+    def _id(cls, v):
+        return _client_uuid(v)
 
 
 class LineCheckIn(BaseModel):
@@ -281,7 +311,17 @@ class InPantryOut(BaseModel):
 
 
 class ProductLookupOut(ProductOut):
-    in_pantry: InPantryOut | None  # this household's item with the barcode
+    # This household's item with the barcode or this PosoKanei id.
+    in_pantry: InPantryOut | None
+
+
+class ProductLookupErrorOut(BaseModel):
+    """404 (not on PosoKanei) and 503 (prices unavailable) on the barcode
+    lookup: the usual string ``detail`` plus the household's pantry match by
+    barcode."""
+
+    detail: str
+    in_pantry: InPantryOut | None
 
 
 class StockSummaryOut(BaseModel):
@@ -325,8 +365,9 @@ def item_payload(item, prices=None, *, advice=None, runout=None, tick=None) -> d
 
 
 def _detail(db: Session, hh_id: str, item) -> dict:
-    out = _payloads(db, hh_id, [item])[0]
-    snaps = stock_svc.current_prices(db, [item.product_id]).get(item.product_id, [])
+    prices = stock_svc.current_prices(db, [item.product_id])
+    out = _payloads(db, hh_id, [item], prices)[0]
+    snaps = prices.get(item.product_id, [])
     advice = stock_svc.price_advice(db, item.product)
     as_of = advice["as_of"]
     out.update(
@@ -357,14 +398,15 @@ def _live_or_404(db: Session, hh_id: str, item_id: str):
     return item
 
 
-def _payloads(db: Session, hh_id: str, items) -> list[dict]:
+def _payloads(db: Session, hh_id: str, items, prices=None) -> list[dict]:
     """List rows for ``items``, with prices, advice and run-out from bulk
     queries (a fixed number of statements whatever the item count)."""
     pids = [i.product_id for i in items]
-    prices = stock_svc.current_prices(db, pids)
+    if prices is None:
+        prices = stock_svc.current_prices(db, pids)
     advice = stock_svc.price_advice_bulk(db, pids)
     runout = stock_svc.runout_bulk(db, items)
-    ticks = stock_svc.active_ticks(db, hh_id)
+    ticks = stock_svc.active_ticks(db, hh_id, [i.id for i in items])
     return [
         item_payload(
             i,
@@ -455,9 +497,11 @@ def add_stock(body: StockAdd, auth=Depends(require_api_auth), db: Session = Depe
         )
     except StockError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
-    # Best effort, as the old app's add: no prices is not an error.
-    stock_svc.snapshot_now(db, item.product)
     db.commit()
+    # Best effort, as the old app's add: no prices is not an error. After the
+    # commit, so no transaction stays open across the PosoKanei call.
+    if stock_svc.snapshot_now(db, item.product):
+        db.commit()
     return _payloads(db, hh_id, [item])[0]
 
 
@@ -472,6 +516,10 @@ def adjust_stock(
         )
     except StockError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
+    # Lock the row first: a concurrent duplicate waits here, then finds the
+    # first one's movement below.
+    if stock_svc.lock_stock_item(db, hh_id, item_id) is None:
+        raise HTTPException(status_code=404, detail="Stock item not found")
     if body.client_id:
         prior = stock_svc.find_adjust_replay(db, hh_id, body.client_id)
         if prior is not None:
@@ -489,7 +537,7 @@ def adjust_stock(
 @router.get("/shopping", response_model=ShoppingOut)
 def shopping(auth=Depends(require_api_auth), db: Session = Depends(get_db)):
     _user, hh_id = auth
-    data = stock_svc.shopping_list(db, hh_id)
+    data = stock_svc.shopping_list(db, hh_id, include_ticked=True)
     ticks = stock_svc.active_ticks(db, hh_id)
 
     def row(r):
@@ -538,7 +586,12 @@ def tick(body: TickIn, auth=Depends(require_api_auth), db: Session = Depends(get
     """Tick a shopping-list item. Idempotent: ticking it again returns the
     existing tick unchanged. Never changes stock."""
     user, hh_id = auth
-    t = stock_svc.tick_item(db, hh_id, user.id, body.stock_item_id, body.quantity)
+    try:
+        t = stock_svc.tick_item(
+            db, hh_id, user.id, body.stock_item_id, body.quantity, tick_id=body.id
+        )
+    except ShoppingIdConflict:
+        raise HTTPException(status_code=409, detail="id already used") from None
     if t is None:
         raise HTTPException(status_code=404, detail="Stock item not found")
     db.commit()
@@ -557,7 +610,10 @@ def untick(tick_id: str, auth=Depends(require_api_auth), db: Session = Depends(g
 @router.post("/shopping/lines", status_code=201, response_model=ShoppingLineOut)
 def add_line(body: LineIn, auth=Depends(require_api_auth), db: Session = Depends(get_db)):
     user, hh_id = auth
-    line = stock_svc.add_line(db, hh_id, user.id, body.name, body.quantity)
+    try:
+        line = stock_svc.add_line(db, hh_id, user.id, body.name, body.quantity, line_id=body.id)
+    except ShoppingIdConflict:
+        raise HTTPException(status_code=409, detail="id already used") from None
     db.commit()
     return _line_payload(line)
 
@@ -653,23 +709,34 @@ def search_products(q: str = "", auth=Depends(require_api_auth)):
         raise HTTPException(status_code=503, detail="Prices unavailable") from None
 
 
-@products_router.get("/barcode/{code}", response_model=ProductLookupOut)
+def _in_pantry(item) -> dict | None:
+    return None if item is None else {"stock_item_id": item.id, "quantity": item.quantity}
+
+
+@products_router.get(
+    "/barcode/{code}",
+    response_model=ProductLookupOut,
+    responses={404: {"model": ProductLookupErrorOut}, 503: {"model": ProductLookupErrorOut}},
+)
 def product_by_barcode(code: str, auth=Depends(require_api_auth), db: Session = Depends(get_db)):
     _user, hh_id = auth
     try:
         barcode = stock_svc.clean_barcode(code)
     except StockError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
+    # The pantry first: it answers even when PosoKanei cannot.
+    mine = stock_svc.pantry_match(db, hh_id, barcode)
+
+    def error(status_code: int, detail: str) -> JSONResponse:
+        body = ProductLookupErrorOut(detail=detail, in_pantry=_in_pantry(mine))
+        return JSONResponse(status_code=status_code, content=body.model_dump(mode="json"))
+
     try:
         product = posokanei.by_barcode(barcode)
     except PosokaneiUnavailable:
-        raise HTTPException(status_code=503, detail="Prices unavailable") from None
+        return error(503, "Prices unavailable")
     if product is None:
-        raise HTTPException(status_code=404, detail="Product not found")
-    mine = stock_svc.pantry_item_by_barcode(db, hh_id, barcode)
-    return {
-        **_product(product),
-        "in_pantry": None
-        if mine is None
-        else {"stock_item_id": mine.id, "quantity": mine.quantity},
-    }
+        return error(404, "Product not found")
+    if mine is None:
+        mine = stock_svc.pantry_match(db, hh_id, None, product.id)
+    return {**_product(product), "in_pantry": _in_pantry(mine)}
