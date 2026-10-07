@@ -5,7 +5,9 @@ expected entries (spec §3, §6.3). The new app's only way to change them.
 
 from datetime import date, timedelta
 from decimal import Decimal
+from itertools import islice
 
+from dateutil.relativedelta import relativedelta
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
@@ -14,7 +16,14 @@ from app.api.planning_models import EntryOut, RecurringItemOut
 from app.api_auth import require_api_auth
 from app.core.clock import local_today
 from app.core.database import get_db
-from app.core.schedule import MAX_INTERVAL_MONTHS, MAX_INTERVAL_WEEKS, RuleError, validate_rule
+from app.core.schedule import (
+    MAX_INTERVAL_MONTHS,
+    MAX_INTERVAL_WEEKS,
+    Rule,
+    RuleError,
+    iter_dates,
+    validate_rule,
+)
 from app.models import (
     BillOccurrence,
     BucketKind,
@@ -109,6 +118,34 @@ class EntryUndoIn(BaseModel):
 
 class EntryAmountIn(BaseModel):
     amount: Decimal
+
+
+class RulePreviewIn(BaseModel):
+    """The schedule fields of RecurringItemIn, plus how many dates to return."""
+
+    rule_kind: str = "monthly_day"
+    interval_months: int = 1
+    rule_day: int | None = None
+    rule_month: int | None = None
+    rule_adjust: str = "none"
+    rule_days: int | None = None
+    rule_weekday: int | None = None
+    rule_interval_weeks: int | None = None
+    start_date: date
+    end_date: date | None = None
+    count: int = Field(default=3, ge=1, le=12)
+
+
+class RulePreviewOut(BaseModel):
+    dates: list[date]
+
+
+def _preview_until(first: date, count: int) -> date:
+    """Far enough for ``count`` dates of the sparsest rule (MAX_INTERVAL_MONTHS apart)."""
+    try:
+        return first + relativedelta(months=MAX_INTERVAL_MONTHS * count)
+    except (OverflowError, ValueError):
+        return date.max
 
 
 def _apply(db: Session, item: RecurringBill, body: RecurringItemIn, hh_id: str) -> None:
@@ -353,6 +390,34 @@ def entry_amount(
         raise HTTPException(status_code=409, detail=str(exc)) from None
     db.commit()
     return entry_for(db, occ)
+
+
+@router.post("/preview", response_model=RulePreviewOut)
+def preview(body: RulePreviewIn, auth=Depends(require_api_auth)):
+    """The next ``count`` dates of a rule (2a spec §6), from today or the start date, whichever is
+    later. Dates are generated from the start date, so monthly_interval and weekly keep their anchor.
+    Writes nothing."""
+    rule = Rule(
+        kind=body.rule_kind,
+        interval_months=body.interval_months,
+        day=body.rule_day,
+        month=body.rule_month,
+        adjust=body.rule_adjust,
+        days=body.rule_days,
+        weekday=body.rule_weekday,
+        interval_weeks=body.rule_interval_weeks or 1,
+    )
+    try:
+        validate_rule(rule)
+    except RuleError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    if body.end_date and body.end_date < body.start_date:
+        raise HTTPException(status_code=400, detail="The end date is before the start date.")
+    first = max(body.start_date, local_today())
+    dates = iter_dates(
+        rule, body.start_date, end=body.end_date, until=_preview_until(first, body.count)
+    )
+    return RulePreviewOut(dates=list(islice((d for d in dates if d >= first), body.count)))
 
 
 # ----------------------------------------------------------------- items
