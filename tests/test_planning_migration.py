@@ -104,17 +104,32 @@ def _seed(conn) -> dict:
     return ids
 
 
+def _auto_paid_notification(conn, ids, occ_id):
+    conn.execute(
+        text(
+            "INSERT INTO notifications (id, household_id, user_id, type, title, dedupe_key, "
+            "is_read, created_at) VALUES (:i, :h, :u, 'bill_auto_paid', 'Auto-paid: Cosmote', "
+            ":k, false, '2026-02-05 00:05:00')"
+        ),
+        {"i": str(uuid.uuid4()), "h": ids["hh"], "u": ids["user"], "k": f"bill_auto_paid:{occ_id}"},
+    )
+
+
 def test_upgrade_backfills_and_keeps_every_row(tmp_path):
     db_url = _db_url(tmp_path, "planning.db")
     assert _alembic(["upgrade", _previous_revision()], db_url).returncode == 0
     engine = create_engine(db_url)
     with engine.begin() as conn:
         ids = _seed(conn)
+        _auto_paid_notification(conn, ids, ids["paid"])
 
     up = _alembic(["upgrade", "head"], db_url)
     assert up.returncode == 0, up.stderr
 
     with engine.connect() as conn:
+        auto_paid = dict(conn.execute(text("SELECT id, auto_paid_at FROM bill_occurrences")).all())
+        # The old app's "Auto-paid" notification is the trace auto_paid_at is backfilled from.
+        assert auto_paid[ids["paid"]] is not None and auto_paid[ids["open"]] is None
         bill = conn.execute(
             text("SELECT direction, rule_kind, rule_adjust, interval_months FROM recurring_bills")
         ).one()
@@ -232,7 +247,8 @@ def test_downgrade_refuses_while_a_fixed_cost_exists_then_round_trips(tmp_path):
     assert "match_suggestions" not in insp.get_table_names()
     assert "recurring_bill_id" not in {c["name"] for c in insp.get_columns("transactions")}
     assert "kind" not in {c["name"] for c in insp.get_columns("buckets")}
-    assert "period" not in {c["name"] for c in insp.get_columns("bill_occurrences")}
+    occ_columns = {c["name"] for c in insp.get_columns("bill_occurrences")}
+    assert "period" not in occ_columns and "auto_paid_at" not in occ_columns
     with engine.connect() as conn:
         assert conn.execute(text("SELECT COUNT(*) FROM transactions")).scalar() == 3
 
@@ -264,4 +280,34 @@ def test_downgrade_refuses_while_a_new_style_item_exists(tmp_path, update):
             text("UPDATE recurring_bills SET direction = 'out', rule_kind = 'monthly_interval'")
         )
     assert _alembic(["downgrade", _previous_revision()], db_url).returncode == 0
+    engine.dispose()
+
+
+def test_downgrade_refuses_while_an_undone_auto_payment_is_in_the_window(tmp_path):
+    """Without auto_paid_at the old app's auto-pay would pay it again."""
+    from datetime import UTC, datetime, timedelta
+
+    db_url = _db_url(tmp_path, "downauto.db")
+    assert _alembic(["upgrade", _previous_revision()], db_url).returncode == 0
+    engine = create_engine(db_url)
+    with engine.begin() as conn:
+        ids = _seed(conn)
+    assert _alembic(["upgrade", "head"], db_url).returncode == 0
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE bill_occurrences SET auto_paid_at = '2026-03-05 00:05:00', "
+                "due_date = :d WHERE id = :i"
+            ),
+            {"d": datetime.now(UTC).date() - timedelta(days=1), "i": ids["open"]},
+        )
+    down = _alembic(["downgrade", _previous_revision()], db_url)
+    assert down.returncode != 0 and "auto-payment" in down.stderr
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE bill_occurrences SET status = 'skipped' WHERE id = :i"),
+            {"i": ids["open"]},
+        )
+    down = _alembic(["downgrade", _previous_revision()], db_url)
+    assert down.returncode == 0, down.stderr
     engine.dispose()

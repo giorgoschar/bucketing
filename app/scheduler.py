@@ -154,6 +154,9 @@ def _auto_pay_due_bills(db, today: date) -> int:
             BillOccurrence.due_date <= today,
             BillOccurrence.due_date >= today - timedelta(days=AUTO_PAY_WINDOW_DAYS),
             BillOccurrence.transaction_id.is_(None),
+            # Never twice: an auto-payment the user undid or deleted (say, a
+            # duplicate of the real card charge) stays undone.
+            BillOccurrence.auto_paid_at.is_(None),
             RecurringBill.is_auto_pay.is_(True),
             RecurringBill.is_active.is_(True),
             RecurringBill.direction == "out",
@@ -200,18 +203,21 @@ def _auto_pay_due_bills(db, today: date) -> int:
         # of this job) already claimed it nothing is written — this is what
         # prevents duplicate auto-pay transactions.
         occ = db.get(BillOccurrence, item["occ_id"])
+        paid_on = _utcnow()
         if not bills_service.settle_occurrence(
             db,
             occ,
             amount=item["amount"],
             paid_by=item["paid_by_default"],
             payer_mode=item["payer_mode"],
-            paid_on=_utcnow(),
+            paid_on=paid_on,
             note_prefix="Auto-pay",
         ):
             logger.info("Occurrence %s already claimed elsewhere — skipping", item["occ_id"])
             db.rollback()
             continue
+        # Committed with the claim: this entry is never auto-paid again.
+        occ.auto_paid_at = paid_on
 
         _notify_members(
             db,
@@ -278,6 +284,7 @@ def _notify_due_soon(db, today: date) -> None:
 
 def _notify_overdue(db, today: date) -> None:
     """Remind members about overdue bills at fixed milestones, not every day."""
+    from sqlalchemy import or_
     from sqlalchemy.orm import joinedload
 
     from app.models import BillOccurrence, NotificationType, OccurrenceStatus, RecurringBill
@@ -292,7 +299,13 @@ def _notify_overdue(db, today: date) -> None:
             BillOccurrence.due_date.in_(list(milestone_dates)),
             RecurringBill.is_active.is_(True),
             RecurringBill.direction == "out",
-            RecurringBill.is_auto_pay.is_(False),
+            # Auto-pay items are paid by the job, so they are not nagged about
+            # while it can still pay them; one it missed (no amount, or added
+            # late) is overdue like any other.
+            or_(
+                RecurringBill.is_auto_pay.is_(False),
+                BillOccurrence.due_date < today - timedelta(days=AUTO_PAY_WINDOW_DAYS),
+            ),
         )
         .all()
     )

@@ -16,16 +16,23 @@ working on the same database.
   entry, before business-day adjustment. Every existing row is a
   monthly_interval entry, which is never adjusted, so its period is its due
   date's month.
+- bill_occurrences.auto_paid_at: when auto-pay settled the entry; auto-pay
+  never claims an entry twice, so an undone or deleted auto-payment is not
+  re-created. Backfilled from the old app's "Auto-paid" notifications
+  (dedupe_key bill_auto_paid:<id>), the one durable trace it left.
 
 SQLite cannot alter a CHECK in place, so transactions goes through batch mode
 (a table copy), as in d8e9f0a1b2c3. Downgrade refuses while a bucket-less
 expense exists, since the old CHECK would reject it; give it a bucket first.
+It also refuses while an undone auto-payment is still in the auto-pay window.
 
 Revision ID: a7b8c9d0e1f2
 Revises: f0a1b2c3d4e5
 Create Date: 2026-10-06 12:00:00.000000
 
 """
+
+from datetime import UTC, datetime, timedelta
 
 import sqlalchemy as sa
 
@@ -46,6 +53,7 @@ TXN_INDEX = "ix_transactions_recurring_bill_id"
 MATCH_INDEX = "ix_match_suggestions_household"
 MATCH_OCC_INDEX = "ix_match_suggestions_occurrence"
 PERIOD_INDEX = "ix_bill_occurrences_bill_period"
+AUTO_PAY_WINDOW_DAYS = 3  # app.scheduler.AUTO_PAY_WINDOW_DAYS, frozen here
 RULE_COLUMNS = (
     "direction",
     "rule_kind",
@@ -144,6 +152,17 @@ def upgrade() -> None:
         op.execute("UPDATE bill_occurrences SET period = strftime('%Y-%m', due_date)")
     op.create_index(PERIOD_INDEX, "bill_occurrences", ["bill_id", "period"])
 
+    op.add_column("bill_occurrences", sa.Column("auto_paid_at", sa.DateTime(), nullable=True))
+    op.execute(
+        "UPDATE bill_occurrences SET auto_paid_at = ("
+        "  SELECT MIN(n.created_at) FROM notifications n"
+        "  WHERE n.dedupe_key = 'bill_auto_paid:' || bill_occurrences.id"
+        ") WHERE EXISTS ("
+        "  SELECT 1 FROM notifications n"
+        "  WHERE n.dedupe_key = 'bill_auto_paid:' || bill_occurrences.id"
+        ")"
+    )
+
 
 def downgrade() -> None:
     """Refuses rather than lose data. Production rollback = restore the
@@ -169,12 +188,29 @@ def downgrade() -> None:
             f"Cannot downgrade: {fixed} Fixed-cost expense(s) have no bucket. "
             "Give them a bucket first."
         )
+    # Without auto_paid_at the old app's auto-pay would pay an undone
+    # auto-payment again while it is in its 3-day window (a day of margin
+    # for the household timezone).
+    reopened = conn.execute(
+        sa.text(
+            "SELECT COUNT(*) FROM bill_occurrences "
+            "WHERE auto_paid_at IS NOT NULL AND status = 'unpaid' AND due_date >= :cutoff"
+        ),
+        {"cutoff": datetime.now(UTC).date() - timedelta(days=AUTO_PAY_WINDOW_DAYS + 1)},
+    ).scalar()
+    if reopened:
+        raise RuntimeError(
+            f"Cannot downgrade: {reopened} undone auto-payment(s) are still in the "
+            "auto-pay window; the old app would pay them again. Skip them, or wait "
+            f"{AUTO_PAY_WINDOW_DAYS + 1} days."
+        )
     op.drop_index(MATCH_OCC_INDEX, table_name="match_suggestions")
     op.drop_index(MATCH_INDEX, table_name="match_suggestions")
     op.drop_table("match_suggestions")
 
     op.drop_index(PERIOD_INDEX, table_name="bill_occurrences")
     with op.batch_alter_table("bill_occurrences") as batch:
+        batch.drop_column("auto_paid_at")
         batch.drop_column("period")
 
     op.drop_index(TXN_INDEX, table_name="transactions")

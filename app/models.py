@@ -603,6 +603,10 @@ class BillOccurrence(Base):
     # An item never gets two entries in one period. NULL on rows the old app
     # writes; generation reads those by their due date's month.
     period = Column(String(10), nullable=True)
+    # When auto-pay settled this entry. Auto-pay never claims an entry it has
+    # settled before, so an undone or deleted auto-payment stays undone.
+    # Undo and delete leave it set.
+    auto_paid_at = Column(DateTime, nullable=True)
 
     bill = relationship("RecurringBill", back_populates="occurrences")
     transaction = relationship("Transaction", back_populates="bill_occurrence")
