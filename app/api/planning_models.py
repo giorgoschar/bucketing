@@ -68,6 +68,8 @@ class RecurringItemOut(BaseModel):
     notes: str | None
     splits: list[SplitOut]
     next_entry: EntryOut | None
+    # Paid or skipped-with-amount occurrences, or linked transactions: locks direction and currency.
+    has_history: bool
 
 
 class MatchOut(BaseModel):

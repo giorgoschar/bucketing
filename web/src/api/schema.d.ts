@@ -2506,6 +2506,8 @@ export interface components {
             direction: string;
             /** End Date */
             end_date: string | null;
+            /** Has History */
+            has_history: boolean;
             /** Id */
             id: string;
             /** Interval Months */

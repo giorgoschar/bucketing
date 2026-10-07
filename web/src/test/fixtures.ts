@@ -23,7 +23,7 @@ export function item(over: Partial<RecurringItemOut> = {}): RecurringItemOut {
     rule_kind: 'monthly_day', interval_months: 1, rule_day: 9, rule_month: null, rule_adjust: 'none', rule_days: null,
     rule_weekday: null, rule_interval_weeks: null, start_date: '2026-01-09', end_date: null, total_occurrences: null,
     contract_end_date: null, paid_by_default: 'u1', payer_mode: 'single', is_auto_pay: false, is_active: true,
-    notes: null, splits: [], next_entry: entry(), ...over,
+    notes: null, splits: [], next_entry: entry(), has_history: false, ...over,
   }
 }
 

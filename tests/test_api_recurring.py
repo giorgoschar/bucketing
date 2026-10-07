@@ -232,3 +232,19 @@ def test_direction_and_currency_locked_by_history(client, db, api):  # noqa: F81
     assert client.put(url, headers=headers, json=_salary(direction="out")).status_code == 409
     assert client.put(url, headers=headers, json=_salary(currency="USD")).status_code == 409
     assert client.put(url, headers=headers, json=_salary(name="Pay")).status_code == 200
+
+
+def test_has_history_follows_bill_has_payment_history(client, db, api):  # noqa: F811
+    headers, hh = api
+    item = client.post(URL, headers=headers, json=_salary()).json()
+    assert item["has_history"] is False
+    assert client.get(f"{URL}/{item['id']}", headers=headers).json()["has_history"] is False
+    # A skipped occurrence with an amount recorded counts, though no transaction exists.
+    occ = db.query(BillOccurrence).filter_by(bill_id=item["id"]).order_by(BillOccurrence.due_date).first()
+    occ.status = OccurrenceStatus.skipped
+    occ.amount = Decimal("1500.00")
+    db.commit()
+    assert db.query(Transaction).count() == 0
+    [listed] = client.get(URL, headers=headers).json()
+    assert listed["has_history"] is True
+    assert client.get(f"{URL}/{item['id']}", headers=headers).json()["has_history"] is True

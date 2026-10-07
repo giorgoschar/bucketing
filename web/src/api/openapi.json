@@ -2793,6 +2793,10 @@
             ],
             "title": "End Date"
           },
+          "has_history": {
+            "title": "Has History",
+            "type": "boolean"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -2967,7 +2971,8 @@
           "is_active",
           "notes",
           "splits",
-          "next_entry"
+          "next_entry",
+          "has_history"
         ],
         "title": "RecurringItemOut",
         "type": "object"

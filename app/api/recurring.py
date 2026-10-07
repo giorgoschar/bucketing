@@ -240,7 +240,7 @@ def _replace_splits(db: Session, item: RecurringBill, body: RecurringItemIn) -> 
         )
 
 
-def _item_out(item: RecurringBill, next_entry) -> RecurringItemOut:
+def _item_out(db: Session, item: RecurringBill, next_entry) -> RecurringItemOut:
     return RecurringItemOut(
         id=item.id,
         name=item.name,
@@ -269,6 +269,7 @@ def _item_out(item: RecurringBill, next_entry) -> RecurringItemOut:
         notes=item.notes,
         splits=[{"user_id": s.user_id, "amount": s.amount} for s in item.splits],
         next_entry=next_entry,
+        has_history=bill_has_payment_history(db, item.id),
     )
 
 
@@ -438,7 +439,7 @@ def list_items(auth=Depends(require_api_auth), db: Session = Depends(get_db)):
         .all()
     )
     nxt = _next_entries(db, hh_id)
-    return [_item_out(i, nxt.get(i.id)) for i in items]
+    return [_item_out(db, i, nxt.get(i.id)) for i in items]
 
 
 @router.post("", response_model=RecurringItemOut, status_code=status.HTTP_201_CREATED)
@@ -455,14 +456,14 @@ def create_item(
     generate_occurrences(db, item, past=PAST_NONE)
     db.commit()
     db.refresh(item)
-    return _item_out(item, _next_entries(db, hh_id).get(item.id))
+    return _item_out(db, item, _next_entries(db, hh_id).get(item.id))
 
 
 @router.get("/{item_id}", response_model=RecurringItemOut)
 def get_item(item_id: str, auth=Depends(require_api_auth), db: Session = Depends(get_db)):
     user, hh_id = auth
     item = _item_or_404(db, item_id, hh_id)
-    return _item_out(item, _next_entries(db, hh_id).get(item.id))
+    return _item_out(db, item, _next_entries(db, hh_id).get(item.id))
 
 
 @router.put("/{item_id}", response_model=RecurringItemOut)
@@ -482,7 +483,7 @@ def update_item(
     generate_occurrences(db, item, past=PAST_NONE)
     db.commit()
     db.refresh(item)
-    return _item_out(item, _next_entries(db, hh_id).get(item.id))
+    return _item_out(db, item, _next_entries(db, hh_id).get(item.id))
 
 
 @router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
