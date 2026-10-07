@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { forgetKey } from './crypto'
 import { db, wipe } from './db'
 import { setIdentity } from './identity'
-import { enqueue, replay, startReplayTriggers } from './queue'
+import { enqueue, kick, replay, startReplayTriggers } from './queue'
 
 const ME = { id: 'u1', household_id: 'h1' }
 const ME_URL = '/api/v1/auth/me'
@@ -383,4 +383,23 @@ it('triggers: online forces a retry inside the backoff window, and a timer retri
   expect(writes(f).map((c) => String(c[0]))).toEqual(['/third'])
 
   stop()
+})
+
+it('a kick pending at sign-out never runs', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true })
+  try {
+    const f = serve(ok)
+    await post({}, '/old-session')
+    kick()
+    await wipe() // sign-out
+    setIdentity({ user_id: ME.id, household_id: ME.household_id }) // signed in again within the kick delay
+    await post({}, '/new-session')
+    await vi.advanceTimersByTimeAsync(5_000)
+    // Give a (wrongly) kicked replay time to reach the network before checking that nothing was sent.
+    await new Promise((r) => setTimeout(r, 300))
+    expect(f).not.toHaveBeenCalled()
+    expect(await db.queue.count()).toBe(1)
+  } finally {
+    vi.useRealTimers()
+  }
 })

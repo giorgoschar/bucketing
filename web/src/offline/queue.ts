@@ -2,9 +2,11 @@ import { readCsrf } from '../api/client'
 import { keyGeneration, open, seal } from './crypto'
 import { db, type QueueRow } from './db'
 import { getIdentity, type Identity } from './identity'
+import { scheduleKick } from './kickTimer'
 import { notifyDrained, type ReplayResult } from './queueDrain'
 
 export { onQueueDrained } from './queueDrain'
+export { cancelKick } from './kickTimer'
 export type { ReplayResult } from './queueDrain'
 
 type Method = 'POST' | 'PUT' | 'PATCH' | 'DELETE'
@@ -187,24 +189,14 @@ async function drain(force: boolean): Promise<Result> {
 }
 
 const KICK_DELAY_MS = 2000
-let kickTimer: ReturnType<typeof setTimeout> | undefined
 
 /**
  * Replay soon. For a write queued while online (a 5xx, 408, 429 or a dropped connection): no `online` or
  * visibility event will come to trigger the replay, so schedule one. Repeated kicks collapse into one.
+ * `wipe()` cancels a pending kick (sign-out).
  */
 export function kick(delayMs = KICK_DELAY_MS): void {
-  clearTimeout(kickTimer)
-  kickTimer = setTimeout(() => {
-    kickTimer = undefined
-    void replay().catch(() => {})
-  }, delayMs)
-}
-
-/** Drop a scheduled kick (sign-out, tests). */
-export function cancelKick(): void {
-  clearTimeout(kickTimer)
-  kickTimer = undefined
+  scheduleKick(() => void replay().catch(() => {}), delayMs)
 }
 
 export function startReplayTriggers(): () => void {

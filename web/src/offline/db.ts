@@ -1,5 +1,6 @@
 import Dexie, { type Table } from 'dexie'
 import { clearPending } from '../data/pending'
+import { cancelKick } from './kickTimer'
 
 // NOTE: cache keys and queue `error` are stored in plaintext; never put sensitive values in them.
 export interface Sealed { iv: Uint8Array<ArrayBuffer>; data: ArrayBuffer }
@@ -30,6 +31,7 @@ const EVICT_AFTER_MS = 60 * 24 * 60 * 60 * 1000
 let evictedThisSession = false
 
 export async function wipe(): Promise<void> {
+  cancelKick() // a replay scheduled for the old session must not run after sign-out
   const { forgetKey } = await import('./crypto')
   forgetKey()
   clearPending() // the queued rows go with the store, so their "Waiting to sync" markers must too
