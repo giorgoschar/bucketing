@@ -56,7 +56,7 @@ function MonthPicture({ picture: p }: { picture: MonthPictureOut }) {
       <table className="plan-table">
         <caption className="ui-sr">In and out this month</caption>
         <thead>
-          <tr><td /><th scope="col">So far</th><th scope="col">To come</th><th scope="col">Projected</th></tr>
+          <tr><th scope="col"><span className="ui-sr">Line</span></th><th scope="col">So far</th><th scope="col">To come</th><th scope="col">Projected</th></tr>
         </thead>
         <tbody>
           {rows.map(([label, r]) => (

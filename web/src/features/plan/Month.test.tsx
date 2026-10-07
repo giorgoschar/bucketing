@@ -81,3 +81,12 @@ it('stops 11 months either side and ignores an out-of-range month in the URL', a
   renderWithProviders(<Month />, { route: '/plan?month=2030-01' })
   expect(await screen.findByRole('heading', { level: 3, name: 'Oct 2026' })).toBeInTheDocument()
 })
+
+it('the table header row starts with a real header cell, labelled for screen readers', async () => {
+  fakeApi(routes())
+  renderWithProviders(<Month />)
+  await screen.findByText('+€2,311.10')
+  const head = screen.getAllByRole('row')[0]
+  expect(within(head).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Line', 'So far', 'To come', 'Projected'])
+  expect(within(head).queryAllByRole('cell')).toHaveLength(0)
+})
