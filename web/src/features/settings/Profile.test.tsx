@@ -143,6 +143,27 @@ describe('Profile', () => {
     expect(await screen.findByText('Password sign-in needs 2FA. Set it up again to keep using Tameio.')).toBeInTheDocument()
   })
 
+  it('if set up fails after Turn off, the sheet offers Retry instead of a stuck skeleton', async () => {
+    let setupCalls = 0
+    answer({
+      '/api/v1/settings/security/totp/disable': () => new Response(null, { status: 204 }),
+      '/api/v1/settings/security/totp/setup': () => (++setupCalls === 1
+        ? new Response('{}', { status: 502 })
+        : json({ secret: 'JBSWY3DPEHPK3PXP', otpauth_uri: 'otpauth://totp/x' })()),
+    })
+    renderAt()
+    fireEvent.click(screen.getByRole('button', { name: 'Turn off' }))
+    const off = screen.getByRole('dialog', { name: 'Turn off 2FA', hidden: true })
+    fireEvent.change(within(off).getByLabelText('Password'), { target: { value: 'pw-123456789012' } })
+    fireEvent.change(within(off).getByLabelText('Authenticator code'), { target: { value: '123456' } })
+    fireEvent.click(within(off).getByRole('button', { name: 'Turn off 2FA', hidden: true }))
+    expect(await screen.findByText("Couldn't start the set up.")).toBeInTheDocument()
+    expect(screen.queryByRole('status', { name: 'Loading' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(await screen.findByText('JBSW Y3DP EHPK 3PXP')).toBeInTheDocument()
+    expect(screen.getByText('Password sign-in needs 2FA. Set it up again to keep using Tameio.')).toBeInTheDocument()
+  })
+
   it('links a passkey with a native form carrying CSRF and return_to', () => {
     renderAt()
     const form = screen.getByRole('button', { name: 'Link passkey' }).closest('form')!

@@ -15,6 +15,7 @@ export function TwoFactor({ security }: { security: Security }) {
   const [setup, setSetup] = useState<{ secret: string; otpauth_uri: string } | null>(null)
   const [setupOpen, setSetupOpen] = useState(false)
   const [reason, setReason] = useState<string | null>(null)
+  const [setupFailed, setSetupFailed] = useState(false)
   const [code, setCode] = useState('')
   const [codes, setCodes] = useState<string[] | null>(null)
   const [offOpen, setOffOpen] = useState(false)
@@ -22,13 +23,17 @@ export function TwoFactor({ security }: { security: Security }) {
   const [offCode, setOffCode] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const openSetup = async (why: string | null = null) => {
-    setReason(why); setCode(''); setSetup(null); setSetupOpen(true)
+  const loadSetup = async () => {
+    setSetupFailed(false)
     const out = await actions.totpSetup()
     if (out.ok) setSetup(out.data as { secret: string; otpauth_uri: string })
-    else if (!why) setSetupOpen(false) // after Turn off the sheet stays, so the reason is still read
+    else setSetupFailed(true) // the action toasted why; the sheet offers Retry (after Turn off it must stay)
   }
-  const closeSetup = () => { setSetupOpen(false); setSetup(null); setCode('') }
+  const openSetup = (why: string | null = null) => {
+    setReason(why); setCode(''); setSetup(null); setSetupOpen(true)
+    void loadSetup()
+  }
+  const closeSetup = () => { setSetupOpen(false); setSetup(null); setCode(''); setSetupFailed(false) }
   const enable = async () => {
     setBusy(true)
     const out = await actions.totpEnable(code.trim())
@@ -42,7 +47,7 @@ export function TwoFactor({ security }: { security: Security }) {
     if (!out.ok) return
     setOffOpen(false); setPassword(''); setOffCode('')
     // Password sign-in requires 2FA: everything else now answers 403 until it is back on.
-    if (security.password_session) void openSetup(REENROL)
+    if (security.password_session) openSetup(REENROL)
   }
 
   return (
@@ -56,7 +61,7 @@ export function TwoFactor({ security }: { security: Security }) {
       ) : (
         <div className="settings__line">
           <span className="settings__state">Off</span>
-          <button type="button" className="btn btn--sm btn--primary" onClick={() => void openSetup()}>Set up</button>
+          <button type="button" className="btn btn--sm btn--primary" onClick={() => openSetup()}>Set up</button>
         </div>
       )}
 
@@ -79,6 +84,11 @@ export function TwoFactor({ security }: { security: Security }) {
               <button type="button" className="btn" onClick={closeSetup}>Cancel</button>
               <button type="button" className="btn btn--primary" disabled={busy} onClick={() => void enable()}>Turn on</button>
             </div>
+          </div>
+        ) : setupFailed ? (
+          <div className="settings__line">
+            <span className="settings__state">Couldn't start the set up.</span>
+            <button type="button" className="btn btn--sm" onClick={() => void loadSetup()}>Retry</button>
           </div>
         ) : <div className="ui-skeleton" role="status" aria-busy="true" aria-label="Loading" />}
       </Sheet>
