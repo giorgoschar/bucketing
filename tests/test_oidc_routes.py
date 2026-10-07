@@ -118,8 +118,8 @@ def test_login_redirects_to_provider(client):
     assert r.headers["location"].startswith("https://id.example.test/")
     redirect_uri = fake.authorize_redirect.call_args.args[1]
     assert str(redirect_uri).endswith("/app/auth/callback")
-    # Sign-out on a shared device sticks: Pocket ID must not silently sign back in.
-    assert fake.authorize_redirect.call_args.kwargs["prompt"] == "login"
+    # Quiet by default; prompt=login only after an explicit sign-out (test_session_rolling).
+    assert "prompt" not in fake.authorize_redirect.call_args.kwargs
 
 
 def test_logout_clears_session(client, db):

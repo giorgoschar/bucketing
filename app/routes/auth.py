@@ -18,6 +18,7 @@ from app.auth import (
     invalidate_user_sessions,
     is_locked,
     log_id,
+    mark_signed_out,
     register_failed_login,
     require_auth,
     require_csrf,
@@ -355,6 +356,7 @@ def logout(request: Request, db: Session = Depends(get_db)):
             security_logger.info("Logout for '%s'", user.username)
     response = RedirectResponse("/login", status_code=302)
     clear_session(response)
+    mark_signed_out(response)
     return response
 
 

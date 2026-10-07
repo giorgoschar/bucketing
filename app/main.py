@@ -137,6 +137,11 @@ async def security_headers(request: Request, call_next):
                 max_age=settings.session_max_age_seconds,
                 secure=not settings.debug,
             )
+    # Rolling session: keeps an active user signed in past the 30-day cap.
+    if getattr(request.state, "user", None) is not None:
+        from app.auth import roll_session
+
+        roll_session(request, response)
     pre_nonce = getattr(request.state, "pre_csrf_nonce", None)
     if pre_nonce:
         from app.auth import set_pre_csrf_cookie

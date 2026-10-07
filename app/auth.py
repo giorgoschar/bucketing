@@ -231,6 +231,27 @@ def _expired_session_cookie() -> str:
     return f"{COOKIE_NAME}=; Max-Age=0; Path=/; HttpOnly; SameSite=lax"
 
 
+SIGNED_OUT_COOKIE_NAME = "tameio_signed_out"
+
+
+def mark_signed_out(response) -> None:
+    """Remember an explicit sign-out: the next OIDC sign-in then forces a fresh
+    passkey ceremony (prompt=login) instead of riding Pocket ID's own session."""
+    response.set_cookie(
+        SIGNED_OUT_COOKIE_NAME,
+        "1",
+        httponly=True,
+        samesite="lax",
+        secure=not settings.debug,
+        path="/",
+        max_age=settings.session_max_age_seconds,
+    )
+
+
+def clear_signed_out(response) -> None:
+    response.delete_cookie(SIGNED_OUT_COOKIE_NAME, path="/")
+
+
 def clear_session(response):
     response.delete_cookie(COOKIE_NAME)
     response.delete_cookie(PENDING_COOKIE_NAME)
@@ -243,6 +264,67 @@ def decode_cookie(cookie: str, max_age: int | None = None) -> dict | None:
         return _serializer.loads(cookie, max_age=max_age or settings.session_max_age_seconds)
     except BadSignature:  # includes SignatureExpired
         return None
+
+
+# Rolling session: a valid full session older than this is re-issued (same
+# payload, fresh lifetime), so a daily user is never signed out by the 30-day cap.
+SESSION_REFRESH_AFTER = 24 * 60 * 60
+# The CSRF token is replaced only once it is this old (still valid for the rest
+# of its life), so forms open in other tabs keep working in the common case.
+CSRF_REFRESH_AFTER = settings.session_max_age_seconds * 4 // 5
+
+
+def _age_seconds(signed_at: datetime) -> float:
+    return time.time() - signed_at.timestamp()
+
+
+def roll_session(request: Request, response) -> None:
+    """Re-issue the session (and, when old, the CSRF) cookie of a fully validated request.
+
+    Call only when request.state.user is set: the route's own auth already checked
+    signature, age, session_version and membership. The payload is re-signed
+    unchanged (a missing "amr" stays missing). No-op when the route itself set or
+    cleared the session cookie, or when the cookie is under a day old.
+    """
+    cookie = request.cookies.get(COOKIE_NAME)
+    if not cookie or getattr(request.state, "user", None) is None:
+        return
+    if any(
+        h.startswith((f"{COOKIE_NAME}=", f"{CSRF_COOKIE_NAME}="))
+        for h in response.headers.getlist("set-cookie")
+    ):
+        return
+    try:
+        payload, signed_at = _serializer.loads(
+            cookie, max_age=settings.session_max_age_seconds, return_timestamp=True
+        )
+    except BadSignature:
+        return
+    # (request.state.user may be detached by now, so its attributes are not read.)
+    if not isinstance(payload, dict) or payload.get("state") != "authenticated":
+        return
+    if _age_seconds(signed_at) <= SESSION_REFRESH_AFTER:
+        return
+    response.set_cookie(
+        COOKIE_NAME, _serializer.dumps(payload), **_cookie_kwargs(settings.session_max_age_seconds)
+    )
+    csrf_cookie = request.cookies.get(CSRF_COOKIE_NAME)
+    if csrf_cookie:
+        try:
+            _, csrf_signed_at = _csrf_serializer.loads(
+                csrf_cookie, max_age=settings.session_max_age_seconds, return_timestamp=True
+            )
+        except BadSignature:
+            return  # the middleware's missing-cookie path / CSRF check deals with it
+        if _age_seconds(csrf_signed_at) > CSRF_REFRESH_AFTER:
+            response.set_cookie(
+                CSRF_COOKIE_NAME,
+                generate_csrf_token(payload["user_id"]),
+                httponly=False,
+                samesite="strict",
+                max_age=settings.session_max_age_seconds,
+                secure=not settings.debug,
+            )
 
 
 def get_current_session(request: Request) -> dict | None:
