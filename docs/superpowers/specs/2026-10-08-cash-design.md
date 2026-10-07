@@ -64,10 +64,10 @@ Out of scope:
 - Default: the current month. Auth: `require_api_auth`. A bad month returns 400, as `/summary` does.
 - Response (`CashWalletsOut`):
   ```json
-  {"month":"2026-10","stash":"380.00",
+  {"month":"2026-10","stash":380.0,
    "members":[{"member_id":"…","name":"Giorgos","is_me":true,
-               "wallet":{"carried":"0.00","taken":"120.00","put_back":"0.00","still_have":null,
-                         "spent":"120.00","logged":"75.00","outs":"0.00","not_yet_logged":"45.00"}}]}
+               "wallet":{"carried":0.00,"taken":120.00,"put_back":0.00,"still_have":null,
+                         "spent":120.00,"logged":75.00,"outs":0.00,"not_yet_logged":45.00}}]}
   ```
   - `stash` is the viewer's own.
   - `members` covers every household member: the viewer first, then the others by name.
