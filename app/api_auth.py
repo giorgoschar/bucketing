@@ -219,6 +219,10 @@ def _cookie_auth(request: Request, db: Session):
         raise HTTPException(status_code=412, detail="Signed in as a different account")
     # Fully validated: lets the security-headers middleware re-issue a missing CSRF cookie.
     request.state.user = user
+    request.state.user_id = user.id
+    from app.auth import csrf_for_request
+
+    csrf_for_request(request)  # a token near its end of life is replaced via the middleware
     return user, hh_id
 
 
