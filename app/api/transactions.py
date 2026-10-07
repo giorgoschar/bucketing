@@ -9,11 +9,18 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
+from fastapi.responses import FileResponse
 from pydantic import Field
 from sqlalchemy import case, func
 from sqlalchemy.orm import Session, joinedload
 
-from app.api.transaction_models import TransactionOut, TransactionPage
+from app.api.transaction_models import (
+    CountsOut,
+    DuplicatesOut,
+    HistoryOut,
+    TransactionOut,
+    TransactionPage,
+)
 from app.api_auth import require_api_auth
 from app.core.database import get_db
 from app.core.money import quantize
@@ -29,6 +36,8 @@ from app.services import DeletedTransactionReplay, DuplicateTransaction
 from app.services import create_transaction as create_transaction_service
 from app.services import delete_transaction as delete_transaction_soft
 from app.services import update_transaction as update_transaction_service
+from app.services.duplicates import find_household_duplicates
+from app.services.history import transaction_history
 from app.services.money import base_amount_expr
 from app.services.receipt_parser import match_category, parse_receipt_text
 from app.services.transaction_filter import TransactionFilter, apply_filter
@@ -205,6 +214,50 @@ def create_transaction(
     return _txn_dict(txn)
 
 
+# Literal paths: declared before /{txn_id}, or FastAPI reads "counts" as an id.
+
+
+@router.get("/counts", response_model=CountsOut)
+def transaction_counts(
+    auth=Depends(require_api_auth),
+    db: Session = Depends(get_db),
+):
+    """The Activity chips' counts: expenses with no payer, and possible
+    duplicate groups (90 days, ±3 days)."""
+    user, hh_id = auth
+    no_payer = (
+        db.query(func.count(Transaction.id))
+        .filter(
+            Transaction.household_id == hh_id,
+            Transaction.active(),
+            Transaction.missing_payer(),
+            Transaction.type == TransactionType.expense,
+        )
+        .scalar()
+    )
+    return {"no_payer": no_payer, "duplicate_groups": len(find_household_duplicates(db, hh_id))}
+
+
+@router.get("/duplicates", response_model=DuplicatesOut)
+def duplicate_groups(
+    auth=Depends(require_api_auth),
+    db: Session = Depends(get_db),
+):
+    """Possible duplicates over the last 90 days (find_household_duplicates)."""
+    user, hh_id = auth
+    groups = find_household_duplicates(db, hh_id)
+    takes = _takes(db, [t.id for g in groups for t in g["transactions"]])
+    return {
+        "groups": [
+            {
+                "amount": g["amount"],
+                "transactions": [transaction_out(t, t.id in takes) for t in g["transactions"]],
+            }
+            for g in groups
+        ]
+    }
+
+
 @router.get("/{txn_id}", response_model=TransactionOut)
 def get_transaction(
     txn_id: str,
@@ -344,3 +397,45 @@ async def scan_parse(
         "category_hint": parsed["category_hint"],
         "category_id": category_id,
     }
+
+
+@router.get("/{txn_id}/receipt", response_class=FileResponse)
+def get_receipt(
+    txn_id: str,
+    auth=Depends(require_api_auth),
+    db: Session = Depends(get_db),
+):
+    """The receipt file, with API auth (the old /transactions/files/ uses the
+    old app's cookie). 404 for no receipt, deleted, another household or a
+    missing file."""
+    user, hh_id = auth
+    txn = (
+        db.query(Transaction)
+        .filter(Transaction.active())
+        .filter_by(id=txn_id, household_id=hh_id)
+        .first()
+    )
+    if txn is None or not txn.receipt_path:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+    path = Path(UPLOADS_DIR) / Path(txn.receipt_path).name
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Receipt not found")
+    return FileResponse(str(path))
+
+
+@router.get("/{txn_id}/history", response_model=HistoryOut)
+def get_history(
+    txn_id: str,
+    auth=Depends(require_api_auth),
+    db: Session = Depends(get_db),
+):
+    user, hh_id = auth
+    txn = (
+        db.query(Transaction)
+        .filter(Transaction.active())
+        .filter_by(id=txn_id, household_id=hh_id)
+        .first()
+    )
+    if txn is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return {"events": transaction_history(db, txn)}
