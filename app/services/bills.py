@@ -3,7 +3,8 @@ Recurring items: generating their expected entries (BillOccurrence rows) and
 paying, receiving, undoing and skipping them.
 """
 
-from datetime import date, datetime
+from bisect import bisect_left, bisect_right
+from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import NamedTuple
 
@@ -80,7 +81,8 @@ def generate_occurrences(
 
     Dates come from the shared rule engine, so both apps and the scheduler
     agree. end_date and total_occurrences count from start_date, whether or
-    not a past date gets a row. A date that already has a row is left alone.
+    not a past date gets a row. A date that already has a row is left alone,
+    and so is a date a kept off-rule row stands in for (_suppressed_dates).
     ``past`` decides what a date before today becomes (PAST_UNPAID,
     PAST_SKIPPED or PAST_NONE); only PAST_UNPAID, kept for direct callers,
     creates expected entries before today. At most MAX_OCCURRENCES rows are
@@ -92,31 +94,30 @@ def generate_occurrences(
     bill.interval_months = normalise_interval_months(bill.interval_months)
     today = today or local_today()
     rule = item_rule(bill)
+    horizon = horizon_end(today)
+    # Dates a little past the horizon too, so a kept row just beyond it is
+    # recognised as on-rule rather than as a row an edit left behind.
+    window = timedelta(days=_suppression_window(rule))
     dates = list(
         iter_dates(
             rule,
             bill.start_date,
             end=bill.end_date,
             total=bill.total_occurrences,
-            until=horizon_end(today),
+            until=horizon + window,
         )
     )
     existing_dates = {
         row.due_date for row in db.query(BillOccurrence.due_date).filter_by(bill_id=bill.id).all()
     }
-    # A row the rule no longer produces (a done, skipped or amount-set entry
-    # an edit kept) still stands for its month, or its ISO week for a weekly
-    # rule: that period gets no second entry, so a day change cannot pay a
-    # salary twice. A row on a current rule date blocks nothing, since an
-    # adjusted rule can put two dates in one month (1 Dec and 31 Dec).
-    period = _iso_week if rule.kind == RuleKind.weekly.value else _month
-    rule_dates = set(dates)
-    blocked = {period(d) for d in existing_dates if d not in rule_dates}
+    suppressed = _suppressed_dates(rule, dates, existing_dates)
     created = 0
     for due in dates:
+        if due > horizon:
+            break
         if created >= MAX_OCCURRENCES:
             break
-        if due in existing_dates or period(due) in blocked:
+        if due in existing_dates or due in suppressed:
             continue
         status = OccurrenceStatus.unpaid
         if due < today:
@@ -138,12 +139,47 @@ def generate_occurrences(
     return created
 
 
-def _month(d: date) -> tuple[int, int]:
-    return d.year, d.month
+def _suppression_window(rule: Rule) -> int:
+    """Half the rule's period, in days: how far a kept row's reach extends."""
+    if rule.kind == RuleKind.weekly.value:
+        return 7 * rule.interval_weeks // 2
+    if rule.kind in (RuleKind.yearly.value, RuleKind.easter_offset.value):
+        return 183
+    return 15 * rule.interval_months
 
 
-def _iso_week(d: date) -> tuple[int, int]:
-    return d.isocalendar()[:2]
+def _suppressed_dates(rule: Rule, dates: list[date], existing: set[date]) -> set[date]:
+    """Rule dates that a kept row the rule no longer produces stands in for.
+
+    After an edit, a done, skipped, amount-set or linked row can sit off the
+    new rule's dates (paid on the 26th, the rule now says the 28th). Each such
+    row suppresses the one nearest rule date that has no row yet, within half
+    the rule's period, so the edit neither doubles nor drops a salary. The
+    matching is one-to-one: the closest pairs are taken first; on a tie the
+    earlier rule date (then the earlier row) wins. A row on a rule date
+    suppresses nothing, since adjusted rules can put two dates in one month
+    (1 Dec and 31 Dec, off the 1 Jan holiday).
+    """
+    rule_dates = set(dates)
+    off_rule = [d for d in existing if d not in rule_dates]
+    if not off_rule:
+        return set()
+    free = [d for d in dates if d not in existing]  # ascending, as dates is
+    window = _suppression_window(rule)
+    pairs = []
+    for row in off_rule:
+        lo = bisect_left(free, row - timedelta(days=window))
+        hi = bisect_right(free, row + timedelta(days=window))
+        pairs.extend((abs((due - row).days), due, row) for due in free[lo:hi])
+    pairs.sort()
+    used_rows: set[date] = set()
+    suppressed: set[date] = set()
+    for _, due, row in pairs:
+        if row in used_rows or due in suppressed:
+            continue
+        used_rows.add(row)
+        suppressed.add(due)
+    return suppressed
 
 
 def delete_future_occurrences(db: Session, bill_id: str) -> None:

@@ -682,10 +682,11 @@ def _top_up_entries(db, today: date) -> int:
     ]
     created = 0
     for bill_id in bill_ids:
+        bill = db.get(RecurringBill, bill_id)
+        if bill is None:  # deleted since the id list was read
+            continue
         try:
-            created += generate_occurrences(
-                db, db.get(RecurringBill, bill_id), today=today, past=PAST_NONE
-            )
+            created += generate_occurrences(db, bill, today=today, past=PAST_NONE)
             db.commit()
         except Exception:
             logger.exception("Could not top up entries for recurring item %s", bill_id)

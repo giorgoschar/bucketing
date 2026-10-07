@@ -294,3 +294,64 @@ def test_long_lived_item_still_gets_future_entries(db, make_household, frozen_to
     got = _dates(db, bill)
     assert created == len(got) and 55 <= created <= 58
     assert got[0] == date(2026, 10, 12)
+
+
+# Ruling 12, refined: a kept off-rule row suppresses only its nearest new date.
+
+
+def test_kept_31_dec_suppresses_2_jan_not_2_dec(db, make_household, frozen_today):
+    # January's salary, moved back to 31 Dec off the 1 Jan holiday, was paid;
+    # the rule then changes to the 2nd with no adjustment.
+    hh = make_household()
+    bill = _item(
+        db,
+        hh,
+        start_date=date(2026, 10, 7),
+        rule_kind="monthly_day",
+        rule_day=1,
+        rule_adjust="previous_business_day",
+    )
+    generate_occurrences(db, bill, past=PAST_NONE)
+    db.commit()
+    january = db.query(BillOccurrence).filter_by(bill_id=bill.id, due_date=date(2026, 12, 31)).one()
+    january.status = OccurrenceStatus.paid
+    db.commit()
+
+    _edit(db, bill, rule_day=2, rule_adjust="none")
+
+    got = _dates(db, bill)
+    assert date(2026, 12, 2) in got and date(2026, 12, 31) in got
+    assert date(2027, 1, 2) not in got
+    assert date(2027, 2, 2) in got
+
+
+def test_kept_2_dec_suppresses_1_dec_not_31_dec(db, make_household, frozen_today):
+    hh = make_household()
+    bill = _item(db, hh, start_date=date(2026, 10, 7), rule_kind="monthly_day", rule_day=2)
+    generate_occurrences(db, bill, past=PAST_NONE)
+    db.commit()
+    december = db.query(BillOccurrence).filter_by(bill_id=bill.id, due_date=date(2026, 12, 2)).one()
+    december.amount = Decimal("1600.00")
+    db.commit()
+
+    _edit(db, bill, rule_day=1, rule_adjust="previous_business_day")
+
+    got = _dates(db, bill)
+    assert date(2026, 12, 2) in got and date(2026, 12, 1) not in got
+    assert date(2026, 12, 31) in got  # January's, off the 1 Jan holiday
+
+
+def test_a_tie_suppresses_the_earlier_date(db, make_household, frozen_today):
+    # 15 Feb 2027 is 14 days from both 1 Feb and 1 Mar.
+    hh = make_household()
+    bill = _item(db, hh, start_date=date(2026, 10, 7), rule_kind="monthly_day", rule_day=15)
+    generate_occurrences(db, bill, past=PAST_NONE)
+    db.commit()
+    february = db.query(BillOccurrence).filter_by(bill_id=bill.id, due_date=date(2027, 2, 15)).one()
+    february.status = OccurrenceStatus.skipped
+    db.commit()
+
+    _edit(db, bill, rule_day=1)
+
+    got = _dates(db, bill)
+    assert date(2027, 2, 1) not in got and date(2027, 3, 1) in got
