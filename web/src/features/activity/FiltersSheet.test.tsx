@@ -32,3 +32,13 @@ describe('FiltersSheet', () => {
     expect(onApply).toHaveBeenCalledWith({ q: 'x' })
   })
 })
+
+describe('FiltersSheet draft', () => {
+  it('keeps the open draft when the filter prop changes', () => {
+    const props = { open: true, refData: REF, items: ITEMS, onApply: vi.fn(), onClose: () => {} }
+    const { rerender } = render(<FiltersSheet {...props} filter={{}} />)
+    fireEvent.change(screen.getByLabelText('Min €'), { target: { value: '7' } })
+    rerender(<FiltersSheet {...props} filter={{ q: 'new' }} />)
+    expect((screen.getByLabelText('Min €') as HTMLInputElement).value).toBe('7')
+  })
+})

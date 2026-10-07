@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useState } from 'react'
+import { type FormEvent, useState } from 'react'
 import { Segmented } from '../../ui/Segmented'
 import { Sheet } from '../../ui/Sheet'
 import { toQuery, type TransactionFilter, type TxnType } from './filters'
@@ -17,11 +17,18 @@ type Props = {
 
 const clean = (f: TransactionFilter) => toQuery(f) as TransactionFilter
 
-export function FiltersSheet({ open, filter, refData, items, onApply, onClose }: Props) {
+/** The Sheet renders its children only while open, so the form (and its draft) mounts fresh on each open
+ * and an open draft is never overwritten by a changing `filter`. */
+export function FiltersSheet({ open, onClose, ...rest }: Props) {
+  return (
+    <Sheet open={open} onClose={onClose} title="Filters">
+      <FiltersForm onClose={onClose} {...rest} />
+    </Sheet>
+  )
+}
+
+function FiltersForm({ filter, refData, items, onApply, onClose }: Omit<Props, 'open'>) {
   const [draft, setDraft] = useState<TransactionFilter>(filter)
-  useEffect(() => {
-    if (open) setDraft(filter)
-  }, [open, filter])
   const set = (patch: TransactionFilter) => setDraft((d) => ({ ...d, ...patch }))
   const text = (key: keyof TransactionFilter) => ({
     value: (draft[key] as string | undefined) ?? '',
@@ -34,7 +41,6 @@ export function FiltersSheet({ open, filter, refData, items, onApply, onClose }:
   }
 
   return (
-    <Sheet open={open} onClose={onClose} title="Filters">
       <form className="filters" onSubmit={submit}>
         <Segmented
           label="Type"
@@ -101,6 +107,5 @@ export function FiltersSheet({ open, filter, refData, items, onApply, onClose }:
           <button type="submit" className="btn btn--primary">Show results</button>
         </div>
       </form>
-    </Sheet>
   )
 }
