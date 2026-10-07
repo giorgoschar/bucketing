@@ -151,3 +151,18 @@ export function useDeleteTransaction() {
     queue: 'offline-only',
   })
 }
+
+export type LinkedEntry = S['EntryOut']
+/** The plan entry this transaction paid, looked up within ±45 days (2a's entries read). */
+export function useLinkedEntry(t: Txn | undefined): LinkedEntry | undefined {
+  const day = t?.transaction_date ?? '2000-01-01'
+  const shift = (d: string, n: number) => new Date(Date.parse(d) + n * 864e5).toISOString().slice(0, 10)
+  const from = shift(day, -45)
+  const to = shift(day, 45)
+  const q = useCachedQuery(
+    keys.recurring.entries(from, to),
+    (signal) => unwrap(api.GET('/api/v1/recurring/entries', { params: { query: { from, to } }, signal })),
+    { enabled: !!t?.recurring_bill_id },
+  )
+  return t?.recurring_bill_id ? q.data?.find((e) => e.transaction_id === t.id) : undefined
+}
