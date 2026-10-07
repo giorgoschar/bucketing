@@ -82,8 +82,8 @@ def _is_linked(db: Session, txn: Transaction) -> bool:
 def find_match(db: Session, txn: Transaction) -> BillOccurrence | None:
     """The expected entry ``txn`` most likely pays or receives, or None.
 
-    None too when ``txn`` is deleted, already linked, or already has an open
-    suggestion. Pairs suggested before (dismissed or not) are not offered
+    None too when ``txn`` is deleted, already linked, or already has a
+    still-valid open suggestion (a stale one does not block). Pairs suggested before (dismissed or not) are not offered
     again. The closest due date wins, then the closest amount.
     """
     if txn.deleted_at is not None or txn.type not in (
@@ -99,8 +99,8 @@ def find_match(db: Session, txn: Transaction) -> BillOccurrence | None:
             MatchSuggestion.occurrence_id, MatchSuggestion.dismissed
         ).filter(MatchSuggestion.transaction_id == txn.id)
     }
-    if not all(tried.values()):
-        return None  # an open suggestion is already waiting for a tap
+    if _open_query(db).filter(MatchSuggestion.transaction_id == txn.id).first() is not None:
+        return None  # a still-valid suggestion is already waiting for a tap
     direction = (
         ItemDirection.in_.value if txn.type == TransactionType.income else ItemDirection.out.value
     )
@@ -169,7 +169,7 @@ def suggest_recent(db: Session, today: date, *, household_id: str | None = None)
     return made
 
 
-def open_suggestions(db: Session, household_id: str) -> list[MatchSuggestion]:
+def _open_query(db: Session):
     """Suggestions still waiting for a tap: not dismissed, the transaction
     still there and unlinked, the entry still expected on an active item."""
     return (
@@ -177,12 +177,7 @@ def open_suggestions(db: Session, household_id: str) -> list[MatchSuggestion]:
         .join(Transaction, Transaction.id == MatchSuggestion.transaction_id)
         .join(BillOccurrence, BillOccurrence.id == MatchSuggestion.occurrence_id)
         .join(RecurringBill, RecurringBill.id == BillOccurrence.bill_id)
-        .options(
-            joinedload(MatchSuggestion.transaction),
-            joinedload(MatchSuggestion.occurrence).joinedload(BillOccurrence.bill),
-        )
         .filter(
-            MatchSuggestion.household_id == household_id,
             MatchSuggestion.dismissed.is_(False),
             Transaction.active(),
             Transaction.recurring_bill_id.is_(None),
@@ -190,6 +185,18 @@ def open_suggestions(db: Session, household_id: str) -> list[MatchSuggestion]:
             BillOccurrence.transaction_id.is_(None),
             RecurringBill.active_filter(),
         )
+    )
+
+
+def open_suggestions(db: Session, household_id: str) -> list[MatchSuggestion]:
+    """Suggestions still waiting for a tap (see ``_open_query``), by due date."""
+    return (
+        _open_query(db)
+        .options(
+            joinedload(MatchSuggestion.transaction),
+            joinedload(MatchSuggestion.occurrence).joinedload(BillOccurrence.bill),
+        )
+        .filter(MatchSuggestion.household_id == household_id)
         .order_by(BillOccurrence.due_date, MatchSuggestion.created_at)
         .all()
     )
