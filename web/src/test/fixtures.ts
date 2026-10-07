@@ -5,6 +5,7 @@ import type {
 import type { components } from '../api/schema'
 import type { Routes } from './fakeApi'
 import type { CashMovementOut, CashWalletMemberOut, CashWalletsOut, WalletOut } from '../features/plan/cash/types'
+import type { BarcodeProduct, ProductSummary, StockDetail, StockItem } from '../features/plan/pantry/types'
 
 /** Cosmote, out, €38.90, due Fri 9 Oct 2026, expected. */
 export function entry(over: Partial<EntryOut> = {}): EntryOut {
@@ -160,5 +161,85 @@ export function cashRoutes(
     'GET /api/v1/cash/movements': () => ({ items: o.movements ?? [], stash: wallets.stash }),
     'POST /api/v1/cash/movements': () => Response.json(cashMovement({ id: 'new' }), { status: 201 }),
     'DELETE /api/v1/cash/movements/{movement_id}': () => null,
+  }
+}
+
+// ---- Plan › Pantry (pantry spec §3.2).
+
+/** Barilla spaghetti 500 g: 3 left, keep at least 1, cheapest €1.19 at Sklavenitis. */
+export function stockItem(over: Partial<StockItem> = {}): StockItem {
+  return {
+    id: 's1', product_id: 'p1', name: 'Barilla spaghetti', brand: 'Barilla', barcode: '8076802085738', posokanei_id: 'pk1',
+    quantity: 3, min_quantity: 1, track_price: false, low: false,
+    cheapest: {
+      retailer: 'sklavenitis', retailer_name: 'Sklavenitis', price: 1.19, unit_price: 2.38, is_discount: false, date: '2026-10-08',
+    },
+    unit: 'g', unit_quantity: 500, image_url: null, need_qty: 1, runout_days: null, advice: 'neutral', ticked: false, tick_id: null,
+    ...over,
+  }
+}
+
+/** Milk 1 L: none left, keep at least 1, need 2, no price. */
+export function lowMilk(over: Partial<StockItem> = {}): StockItem {
+  return stockItem({
+    id: 's2', product_id: 'p2', name: 'Milk', brand: 'Delta', barcode: null, posokanei_id: null, quantity: 0, min_quantity: 1,
+    low: true, cheapest: null, unit: 'L', unit_quantity: 1, need_qty: 2, advice: 'unknown', ...over,
+  })
+}
+
+export function stockDetail(over: Partial<StockDetail> = {}): StockDetail {
+  return {
+    ...stockItem(),
+    prices_today: [
+      { retailer: 'sklavenitis', retailer_name: 'Sklavenitis', price: 1.19, unit_price: 2.38, is_discount: true },
+      { retailer: 'lidl', retailer_name: 'Lidl', price: 1.29, unit_price: 2.58, is_discount: false },
+      { retailer: 'ab', retailer_name: 'AB', price: 1.45, unit_price: 2.9, is_discount: false },
+    ],
+    history: [
+      { date: '2026-05-01', min_price: 1.49 },
+      { date: '2026-08-01', min_price: 1.09 },
+      { date: '2026-10-08', min_price: 1.19 },
+    ],
+    advice_detail: {
+      advice: 'neutral', current_min: 1.19, median_30d: 1.29, min_90d: 1.09, trend_pct_30d: -3.1, reason: null, as_of: '2026-10-08',
+    },
+    prices_as_of: '2026-10-08',
+    ...over,
+  }
+}
+
+/** A PosoKanei search result: Dodoni feta 400 g, best €5.29 at Lidl. */
+export function productSummary(over: Partial<ProductSummary> = {}): ProductSummary {
+  return {
+    id: 'pk-feta', name: 'Dodoni Feta PDO', brand: 'Dodoni', barcode: '5201004021108', unit: 'g', unit_quantity: 400,
+    image_url: null,
+    retailer_prices: [
+      { retailer: 'sklavenitis', display_name: 'Sklavenitis', price: 5.89, unit_price: 14.73, is_discount: false, discount_pct: null, last_updated: '2026-10-08' },
+      { retailer: 'lidl', display_name: 'Lidl', price: 5.29, unit_price: 13.23, is_discount: false, discount_pct: null, last_updated: '2026-10-08' },
+    ],
+    price_stats: { min: 5.29, max: 5.89, avg: 5.59 },
+    ...over,
+  }
+}
+
+export function barcodeProduct(over: Partial<BarcodeProduct> = {}): BarcodeProduct {
+  return { ...productSummary(), in_pantry: null, ...over }
+}
+
+/** Handlers for the Pantry list: the household, GET /stock and the shopping list count. */
+export function pantryRoutes(o: { items?: StockItem[]; shopping?: { id: string }[] } = {}): Routes {
+  // A small server: adjusts change what the next GET /stock returns.
+  const items = (o.items ?? [stockItem(), lowMilk()]).map((i) => ({ ...i }))
+  return {
+    ...readRoutes(),
+    'GET /api/v1/stock': () => items.map((i) => ({ ...i })),
+    'GET /api/v1/stock/shopping': () => ({ items: o.shopping ?? [{ id: 's2' }], groups: [], best_single_store: null, total: 0 }),
+    'POST /api/v1/stock/{item_id}/adjust': (req) => {
+      const it = items.find((i) => i.id === req.params.item_id)
+      if (!it) return Response.json({ detail: 'Stock item not found' }, { status: 404 })
+      it.quantity = Math.max(0, it.quantity + Number((req.body as { delta: number }).delta))
+      it.low = it.quantity <= it.min_quantity
+      return { ...it }
+    },
   }
 }

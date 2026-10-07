@@ -1,0 +1,196 @@
+/* Plan › Pantry (pantry spec §4; mock docs/redesign/mocks/cash-pantry.html, Pantry). Kit classes come from ui/ui.css. */
+.pantry { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.pantry .ui-banner { margin: 0; }
+
+/* Header: search + ＋, then the filter chips. */
+.pantry-head { display: flex; align-items: center; gap: 8px; }
+.pantry-search {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 12px;
+  border-radius: var(--r-md); background: var(--surface-2); color: var(--muted);
+}
+.pantry-search:focus-within { box-shadow: 0 0 0 2px var(--accent); }
+.pantry-search input {
+  flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; background: transparent; color: var(--ink);
+  font: 500 16px/1 var(--font-body); -webkit-appearance: none; appearance: none; /* 16px: no zoom on iOS focus */
+}
+.pantry-search input:focus { outline: none; }
+.pantry-search input::placeholder { color: var(--muted); }
+.pantry-plus { background: var(--accent); color: var(--accent-ink); }
+.pantry-plus:active, .pantry-step__btn:active { transform: scale(.94); }
+.pantry-chips { margin-block: 0; }
+
+/* The list: one grouped card; each row is a link body plus the stepper (never a button inside a link). */
+.pantry-list { list-style: none; margin: 0; padding: 0; background: var(--surface); border: var(--card-border); border-radius: var(--r-lg); box-shadow: var(--shadow); overflow: hidden; }
+.pantry-row { position: relative; display: flex; align-items: center; gap: 4px; padding-right: 10px; transition: background-color .2s ease; }
+.pantry-row + .pantry-row::before { content: ""; position: absolute; top: 0; left: 62px; right: 0; height: 1px; background: var(--line); }
+.pantry-row--low { background: color-mix(in srgb, var(--warn-soft) 70%, var(--surface)); }
+.pantry-row__body {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 10px 6px 10px 14px;
+  color: inherit; text-decoration: none; -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
+.pantry-row__body:active { background: var(--surface-2); }
+.pantry-row__main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.pantry-row__title { font-weight: 600; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pantry-row__size { font-weight: 500; color: var(--muted); }
+.pantry-row__sub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 12.5px; color: var(--muted); }
+.pantry-row__left--low { color: var(--warn); font-weight: 650; }
+.pantry-row__pending { font-weight: 600; color: var(--accent); }
+
+/* An initial on a tinted tile (no product photos: the CSP serves images from 'self' only). */
+.pantry-tile {
+  width: 36px; height: 36px; flex: none; border-radius: var(--r-sm); display: grid; place-items: center;
+  background: color-mix(in srgb, var(--tint, var(--c6)) 18%, var(--surface)); color: var(--tint, var(--c6));
+  font-family: var(--font-display); font-weight: 650; font-size: 16px;
+}
+.pantry-tile--lg { width: 52px; height: 52px; border-radius: var(--r-md); font-size: 22px; }
+
+/* The cheapest price: plain, or green with a falling mark when it's a good time to buy. */
+.pantry-price {
+  display: inline-flex; align-items: center; gap: 4px; max-width: 100%; min-width: 0; height: 22px; padding: 0 7px;
+  border-radius: var(--r-pill); background: var(--surface-2); color: var(--ink-2); font-size: 12px;
+}
+.pantry-price .ui-num { overflow: hidden; text-overflow: ellipsis; }
+.pantry-price .ui-icon { width: 13px; height: 13px; }
+.pantry-price--buy { background: var(--pos-soft); color: var(--pos); font-weight: 650; }
+
+/* − n +: 44 px targets either side of the count. */
+.pantry-step { flex: none; display: flex; align-items: center; border-radius: var(--r-pill); background: var(--surface-2); }
+.pantry-step__btn {
+  width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; display: grid; place-items: center;
+  background: transparent; color: var(--ink); cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  user-select: none; -webkit-user-select: none; transition: transform .1s ease-out;
+}
+.pantry-step__btn:disabled { color: var(--muted); opacity: .45; cursor: default; }
+.pantry-step__n { min-width: 2ch; text-align: center; font-size: 16px; font-weight: 600; }
+.pantry-step--lg .pantry-step__btn { width: 48px; height: 48px; }
+.pantry-step--lg .pantry-step__n { min-width: 2.5ch; font-size: 19px; }
+
+.pantry-none { margin: 0; padding: 18px 4px; font-size: 14px; color: var(--muted); text-align: center; overflow-wrap: anywhere; }
+
+/* "Shopping list (N)": rides above the tab bar while the list scrolls. */
+.pantry-float {
+  position: sticky; bottom: calc(env(safe-area-inset-bottom, 0px) + 84px); z-index: 2; align-self: center;
+  margin-top: 6px; padding-inline: 22px; text-decoration: none;
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--accent) 35%, transparent), 0 0 0 4px var(--bg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pantry-row, .pantry-step__btn { transition: none; }
+  .pantry-plus:active, .pantry-step__btn:active { transform: none; }
+}
+
+/* ---- Add sheet, lookup sheet (spec §4.3) ---- */
+.pantry-add { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.pantry-add > *, .pantry-lookup > *, .pantry-manual > * { flex: none; }
+.pantry-search--strong { background: var(--surface); border: 1px solid var(--line); }
+.pantry-add__scan { border: 1px solid var(--line); background: transparent; color: var(--ink); }
+.pantry-add__typed { display: flex; gap: 8px; }
+.pantry-add__typed .ui-input { flex: 1; min-width: 0; font-family: var(--font-num); letter-spacing: .02em; }
+.pantry-add__typed .btn { flex: none; }
+.pantry-add__nocam { margin: -4px 0 0; padding: 10px 12px; border-radius: var(--r-md); background: var(--warn-soft); color: var(--ink-2); font-size: 13.5px; }
+.pantry-add__nocam b { display: block; color: var(--warn); }
+.pantry-add__src { display: flex; flex-wrap: wrap; gap: 2px 4px; margin: 4px 2px 0; font-size: 12px; font-weight: 600; color: var(--muted); }
+.pantry-add__asof { font-weight: 500; }
+.pantry-add__note { margin: 0; padding: 6px 2px; font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
+.pantry-add__manual { margin: 0; font-size: 14px; color: var(--muted); text-align: center; }
+.pantry-link {
+  min-height: 44px; padding: 0 4px; border: 0; background: none; color: var(--accent); font: inherit; font-weight: 650; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
+.pantry-offline { margin: 0; font-size: 12.5px; font-weight: 600; color: var(--muted); text-align: center; }
+
+.pantry-results { list-style: none; margin: 0; padding: 0; border: var(--card-border); border-radius: var(--r-lg); overflow: hidden; }
+.pantry-result { position: relative; display: flex; align-items: center; gap: 10px; min-height: 60px; padding: 8px 8px 8px 12px; }
+.pantry-result + .pantry-result::before { content: ""; position: absolute; top: 0; left: 58px; right: 0; height: 1px; background: var(--line); }
+.pantry-result__main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pantry-result__name { font-weight: 600; font-size: 14.5px; overflow-wrap: anywhere; }
+.pantry-result__sub { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+.pantry-result__end { flex: none; display: flex; flex-direction: column; align-items: flex-end; font-size: 14.5px; }
+.pantry-result__store { font-size: 11.5px; color: var(--muted); }
+.pantry-result__add { background: var(--accent-soft); color: var(--accent); }
+.pantry-result__add.is-added { background: var(--pos-soft); color: var(--pos); opacity: 1; }
+
+.pantry-manual { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.pantry-manual__size { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.pantry-manual__back { align-self: center; }
+.pantry-sheet__foot { display: flex; flex-direction: column; gap: 8px; }
+.pantry-sheet__acts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.pantry-sheet__acts .btn { min-width: 0; padding-inline: 10px; }
+
+.pantry-lookup { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.pantry-lookup__who { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.pantry-lookup__id { min-width: 0; }
+.pantry-lookup__brand { margin: 0 0 2px; font-weight: 600; color: var(--ink-2); overflow-wrap: anywhere; }
+.pantry-lookup__note { margin: 0; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.pantry-lookup__note .ui-num { white-space: normal; overflow-wrap: anywhere; }
+.pantry-lookup__have { color: var(--ink); }
+.pantry-lookup__msg { padding: 12px 14px; border-radius: var(--r-md); background: var(--surface-2); }
+.pantry-lookup__head { margin: 0 0 2px; font-weight: 650; color: var(--ink); }
+.pantry-lookup__others { margin: 0; font-size: 13px; line-height: 1.5; color: var(--muted); }
+.pantry-lookup__others .ui-num { white-space: normal; color: var(--ink-2); }
+.pantry-best {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px;
+  border-radius: var(--r-md); background: var(--surface-2);
+}
+.pantry-best__label { margin: 0; font-size: 12px; font-weight: 600; color: var(--muted); }
+.pantry-best__fig { margin: 2px 0 0; font-size: 14px; color: var(--ink-2); overflow-wrap: anywhere; }
+.pantry-best__price { font-size: 21px; color: var(--ink); white-space: normal; }
+
+/* ---- Product detail (spec §4.4) ---- */
+.pantry-detail { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.pantry-detail .ui-banner { margin: 0; }
+.pantry-detail__who { display: flex; align-items: center; gap: 14px; min-width: 0; padding: 2px 0 4px; }
+.pantry-detail__id { min-width: 0; }
+.pantry-detail__name {
+  margin: 0; font-family: var(--font-display); font-weight: var(--display-weight); font-size: 24px; line-height: 1.15;
+  letter-spacing: -.02em; overflow-wrap: anywhere;
+}
+.pantry-detail__sub { margin: 3px 0 0; font-size: 13.5px; color: var(--muted); overflow-wrap: anywhere; }
+
+.pantry-card { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 14px; }
+.pantry-card--tight { padding: 4px 14px; }
+.pantry-card__head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 10px; }
+.pantry-card__title { margin: 0; font-size: 15px; font-weight: 650; }
+.pantry-card__meta { font-size: 12px; color: var(--muted); }
+.pantry-card__row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; }
+.pantry-card__label { min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 14.5px; color: var(--ink-2); }
+.pantry-card__label b { color: var(--ink); font-size: 15px; }
+.pantry-card__warn { font-size: 12.5px; font-weight: 650; color: var(--warn); }
+.pantry-card__value { font-size: 14.5px; }
+.pantry-card__rule { height: 1px; background: var(--line); }
+.pantry-card__problem { margin: 0; padding: 9px 12px; border-radius: var(--r-md); background: var(--warn-soft); color: var(--warn); font-size: 13px; font-weight: 650; }
+.pantry-card__btn { border: 1px solid var(--line); background: transparent; color: var(--ink); }
+
+/* Prices today: bars from 0, so a small gap looks small; the cheapest in --pos, the rest neutral. */
+.pantry-cmp { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, auto) minmax(48px, 1fr) auto; align-items: center; gap: 9px 10px; }
+.pantry-cmp__row { display: contents; }
+.pantry-cmp__store { min-width: 0; display: flex; align-items: center; gap: 6px; font-size: 13.5px; color: var(--ink-2); overflow-wrap: anywhere; }
+.pantry-cmp__row--best .pantry-cmp__store { color: var(--ink); font-weight: 650; }
+.pantry-cmp__offer { height: 19px; padding: 0 6px; font-size: 10.5px; }
+.pantry-cmp__track { display: block; height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+.pantry-cmp__fill { display: block; height: 100%; border-radius: 4px; background: var(--c6); }
+.pantry-cmp__row--best .pantry-cmp__fill { background: var(--pos); }
+.pantry-cmp__price { font-size: 13.5px; text-align: right; }
+.pantry-cmp__row--best .pantry-cmp__price { color: var(--ink); font-weight: 650; }
+
+/* The 6-month line */
+.pantry-chart { margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.pantry-chart__plot { position: relative; touch-action: pan-y; }
+.pantry-chart__svg { display: block; width: 100%; height: auto; overflow: visible; }
+.pantry-chart__base { stroke: var(--line); stroke-width: 1; }
+.pantry-chart__line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.pantry-chart__cross { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
+.pantry-chart__dot { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+.pantry-chart__dot--low { fill: var(--pos); }
+.pantry-chart__dot--hover { fill: var(--surface); stroke: var(--accent); }
+.pantry-chart__tip {
+  position: absolute; top: 0; transform: translateX(-50%); padding: 4px 8px; border-radius: var(--r-xs);
+  background: var(--ink); color: var(--bg); font-size: 12px; white-space: nowrap; pointer-events: none;
+}
+.pantry-chart__ends { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--muted); }
+.pantry-chart__empty { margin: 0; padding: 10px 0; font-size: 13.5px; color: var(--muted); }
+
+.pantry-archive { border: 1px solid var(--line); background: transparent; color: var(--neg); }
+.pantry-confirm { display: flex; flex-direction: column; gap: 14px; }
+.pantry-confirm__text { margin: 0; font-size: 14.5px; line-height: 1.45; color: var(--ink-2); }
+.pantry-confirm__acts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }

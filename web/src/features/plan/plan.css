@@ -1,6 +1,9 @@
 /* Plan tab: the screen, Upcoming, Month, Year, Budgets. Kit classes come from ui/ui.css. */
 .plan { display: flex; flex-direction: column; gap: 16px; }
 .plan__seg { position: sticky; top: calc(env(safe-area-inset-top) + 60px); z-index: 3; }
+/* Five segments on one row at 390 px (pantry spec §4.1): tighter than the kit, never truncated. */
+.plan__seg .ui-seg { flex-wrap: nowrap; }
+.plan__seg .ui-seg__opt { flex: 1 1 auto; padding: 0 8px; font-size: 13px; }
 
 /* Upcoming */
 .plan-days { display: flex; flex-direction: column; gap: 18px; }

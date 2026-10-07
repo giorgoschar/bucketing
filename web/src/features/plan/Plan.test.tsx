@@ -43,10 +43,19 @@ it('has an Items link in the top bar', () => {
 
 const planView = () => within(screen.getByRole('group', { name: 'Plan view' }))
 
-it('the segments read exactly Upcoming, Month, Budgets, Cash', () => {
+it('the segments read exactly Upcoming, Month, Budgets, Cash, Pantry', () => {
   fakeApi(routes())
   renderWithProviders(<Plan />, { route: '/plan' })
-  expect(planView().getAllByRole('button').map((b) => b.textContent)).toEqual(['Upcoming', 'Month', 'Budgets', 'Cash'])
+  expect(planView().getAllByRole('button').map((b) => b.textContent)).toEqual(['Upcoming', 'Month', 'Budgets', 'Cash', 'Pantry'])
+})
+
+it('?view=pantry opens Pantry', async () => {
+  fakeApi({ ...routes(), 'GET /api/v1/stock': () => [], 'GET /api/v1/stock/shopping': () => ({ items: [], groups: [], best_single_store: null, total: 0 }) })
+  const { router } = renderWithProviders(<Plan />, { route: '/plan' })
+  fireEvent.click(planView().getByRole('button', { name: 'Pantry' }))
+  expect(router.state.location.search).toBe('?view=pantry')
+  expect(planView().getByRole('button', { name: 'Pantry' })).toHaveAttribute('aria-pressed', 'true')
+  expect(await screen.findByText('Nothing in your pantry yet')).toBeInTheDocument()
 })
 
 it('?view=year resolves to Month with the Year scale and shows Year', async () => {

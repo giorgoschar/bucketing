@@ -17,12 +17,22 @@ export type Route = {
   [P in keyof paths & string]: {
     [M in Lower]: [Op<P, M>] extends [undefined] ? never : `${Uppercase<M>} ${P}`
   }[Lower]
-}[keyof paths & string]
+}[keyof paths & string] | PantryWaRoute
+
+/**
+ * Plan › Pantry routes the server stream adds in parallel (pantry spec §3.2), not in the schema yet: their
+ * replies are untyped. The integration's gen:api types them; then this union can go.
+ */
+export type PantryWaRoute =
+  | 'GET /api/v1/stock/{item_id}'
+  | 'PATCH /api/v1/stock/{item_id}'
+  | 'POST /api/v1/stock/{item_id}/refresh'
+  | 'POST /api/v1/stock/{item_id}/archive'
 
 type PathOf<R> = R extends `${string} ${infer P}` ? P : never
 type MethodOf<R> = R extends `${infer M} ${string}` ? Lowercase<M> : never
 /** The success body the schema declares for a route (null for a 204). */
-export type Reply<R extends Route> = Success<Op<PathOf<R> & keyof paths, MethodOf<R> & Lower>>
+export type Reply<R extends Route> = R extends PantryWaRoute ? unknown : Success<Op<PathOf<R> & keyof paths, MethodOf<R> & Lower>>
 
 export interface FakeRequest {
   method: string
