@@ -166,7 +166,8 @@ async function drain(force: boolean): Promise<Result> {
         continue
       }
       // 409 = the transaction was deleted since; dropped for now (Phase 2 surfaces it).
-      if (res.ok || res.status === 409) {
+      // A DELETE that finds nothing (404) got what it asked for: done (2b spec §4.8).
+      if (res.ok || res.status === 409 || (req.method === 'DELETE' && res.status === 404)) {
         await db.queue.delete(row.id!)
         sent++
         continue

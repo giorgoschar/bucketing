@@ -424,3 +424,13 @@ it('a kicked replay that backs off is retried by a timer, with no online or visi
     vi.useRealTimers()
   }
 })
+
+it('a replayed DELETE that gets 404 is done (the row is already gone); a 404 on another method still fails', async () => {
+  serve(() => new Response(JSON.stringify({ detail: 'Not found' }), { status: 404 }))
+  await enqueue({ method: 'DELETE', path: '/api/v1/transactions/t1' })
+  expect(await replay()).toMatchObject({ sent: 1, failed: 0 })
+  expect(await db.queue.count()).toBe(0)
+  await enqueue({ method: 'PUT', path: '/api/v1/transactions/t1', body: {} })
+  expect(await replay()).toMatchObject({ sent: 0, failed: 1 })
+  expect((await db.queue.toArray())[0]).toMatchObject({ status: 'failed', error: 'Not found' })
+})
