@@ -171,3 +171,18 @@ export function useLinkedEntry(t: Txn | undefined): LinkedEntry | undefined {
 export async function dismissDuplicates(ids: string[]): Promise<void> {
   await online(() => unwrap(api.POST('/api/v1/transactions/duplicates/dismiss', { body: { ids } })))
 }
+
+export type BulkChanges = S['ChangesIn']
+export type BulkResult = S['BulkResult']
+export type BulkReq = { select: import('./selection').BulkSelect; changes: BulkChanges; move_bill: boolean }
+
+/** Bulk preview and apply are online only: a network failure is never queued (spec §6). */
+export function previewBulk(req: BulkReq): Promise<BulkResult> {
+  return online(() => unwrap(api.POST('/api/v1/transactions/bulk', { body: { ...req, dry_run: true } as never })))
+}
+/** `expected` (filter and bill selections) makes the server answer 409 if the selection drifted. */
+export function applyBulk(req: BulkReq, expected: number | null): Promise<BulkResult> {
+  return online(() =>
+    unwrap(api.POST('/api/v1/transactions/bulk', { body: { ...req, dry_run: false, expected_count: expected } as never })),
+  )
+}

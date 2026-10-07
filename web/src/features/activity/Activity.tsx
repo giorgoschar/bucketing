@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useMemo, useReducer, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import { useOnline } from '../../data/online'
@@ -6,6 +7,8 @@ import { BulkBar } from '../../ui/BulkBar'
 import { Chip } from '../../ui/Chip'
 import { Money } from '../../ui/Money'
 import { Sheet } from '../../ui/Sheet'
+import { useToast } from '../../ui/Toast'
+import { type BulkField, BulkSheet } from './BulkSheet'
 import { SwipeRow } from '../../ui/SwipeRow'
 import { SearchField } from '../../ui/SearchField'
 import { Duplicates } from './Duplicates'
@@ -15,7 +18,7 @@ import {
 } from './filters'
 import { useRecurringItems } from '../../data/reads'
 import { FiltersSheet } from './FiltersSheet'
-import { type Txn, useCounts, useRefData } from './hooks'
+import { ACTIVITY_WRITES, type Txn, useCounts, useRefData } from './hooks'
 import { useHeldDeletes } from './heldDeletes'
 import { OptionSheet } from './OptionSheet'
 import { OFF, isSelected, reduce, selectedCount } from './selection'
@@ -27,7 +30,6 @@ export function withoutDates(f: TransactionFilter): TransactionFilter {
   return rest
 }
 
-type BulkField = 'bucket' | 'category' | 'payer' | 'method'
 const BULK_ACTIONS: { field: BulkField; label: string }[] = [
   { field: 'bucket', label: 'Bucket' },
   { field: 'category', label: 'Category' },
@@ -78,7 +80,9 @@ export function Activity() {
   const [loaded, setLoaded] = useState<{ ids: string[]; rows: Txn[]; total: number }>({ ids: [], rows: [], total: 0 })
   const onLoaded = useCallback((rows: Txn[], total: number) => setLoaded({ ids: rows.map((r) => r.id), rows, total }), [])
   const [menu, setMenu] = useState(false)
-  const [, setBulk] = useState<null | BulkField>(null)
+  const [bulk, setBulk] = useState<null | BulkField>(null)
+  const qc = useQueryClient()
+  const toast = useToast()
   const selecting = sel.kind !== 'off'
   const count = selectedCount(sel)
   const pickedTotal = sel.kind === 'picked'
@@ -171,6 +175,25 @@ export function Activity() {
           actions={BULK_ACTIONS.map((a) => ({ label: a.label, onClick: () => setBulk(a.field) }))}
         />
       )}
+      <BulkSheet
+        open={bulk !== null}
+        initial={bulk ?? 'bucket'}
+        selection={sel}
+        rows={loaded.rows}
+        refData={refData}
+        items={items}
+        onClose={() => setBulk(null)}
+        onApplied={(result, req) => {
+          setBulk(null)
+          dispatch({ type: 'cancel' })
+          // ACTIVITY_WRITES includes keys.recurring.all, for "Also move the bill".
+          for (const key of ACTIVITY_WRITES) void qc.invalidateQueries({ queryKey: key })
+          const n = result.changed
+          toast.show('bucket_id' in req.changes ? `Moved ${n} ${n === 1 ? 'payment' : 'payments'}` : `Changed ${n}`, {
+            durationMs: 10_000,
+          })
+        }}
+      />
       <Sheet open={menu} onClose={() => setMenu(false)} title="Activity">
         <ul className="ui-list feed__list menu-list">
           <li>
