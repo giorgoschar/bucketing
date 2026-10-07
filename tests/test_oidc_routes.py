@@ -825,3 +825,79 @@ def test_callback_provider_garbage_is_handled(client, kind):
         r = client.get("/app/auth/callback?code=c&state=s", follow_redirects=False)
     assert r.headers["location"] == "/app/?auth_error=provider"
     assert client.get("/api/v1/auth/me").status_code == 401
+
+
+# --- 2d §7.5: return_to=app sends link/unlink back to the new app's Profile ----
+
+PROFILE = "/app/settings/profile"
+
+
+def _post_link(client, hh, headers, fake, **extra):
+    with patch("app.web_app.oidc_client", return_value=fake):
+        return client.post(
+            "/app/auth/link",
+            data={**_link_form(hh), **extra},
+            headers=headers,
+            follow_redirects=False,
+        )
+
+
+def test_link_with_return_to_app_lands_on_profile(client, db, make_household, login):
+    hh = make_household()
+    headers = login(hh.username, hh.secret)
+    fake = _redirecting_client({"sub": "new-sub"})
+    r = _post_link(client, hh, headers, fake, return_to="app")
+    assert r.headers["location"].startswith("https://id.example.test/")
+    with patch("app.web_app.oidc_client", return_value=fake):
+        r = client.get("/app/auth/callback?code=c&state=s", follow_redirects=False)
+    assert r.headers["location"] == f"{PROFILE}?passkey=linked"
+
+
+def test_link_refusals_with_return_to_app_say_error(client, db, make_household, login):
+    hh = make_household()
+    headers = login(hh.username, hh.secret)
+    r = _post_link(client, hh, headers, _redirecting_client(), return_to="app", password="nope")
+    assert r.headers["location"] == f"{PROFILE}?passkey=error"
+
+
+def test_link_denied_at_the_provider_with_return_to_app_says_error(
+    client, db, make_household, login
+):
+    hh = make_household()
+    headers = login(hh.username, hh.secret)
+    fake = _redirecting_client({"sub": "new-sub"})
+    _post_link(client, hh, headers, fake, return_to="app")
+    with patch("app.web_app.oidc_client", return_value=fake):
+        r = client.get("/app/auth/callback?error=access_denied&state=s", follow_redirects=False)
+    assert r.headers["location"] == f"{PROFILE}?passkey=error"
+
+
+def test_unlink_with_return_to_app(client, db, make_household, login):
+    hh = make_household()
+    headers = login(hh.username, hh.secret)
+    user = db.get(User, hh.user_id)
+    user.oidc_subject = "s1"
+    db.commit()
+    r = client.post(
+        "/app/auth/unlink", data={"return_to": "app"}, headers=headers, follow_redirects=False
+    )
+    assert r.headers["location"] == f"{PROFILE}?passkey=unlinked"
+
+
+def test_unknown_return_to_is_ignored(client, db, make_household, login):
+    hh = make_household()
+    headers = login(hh.username, hh.secret)
+    r = _post_link(
+        client, hh, headers, _redirecting_client(), return_to="https://evil.test", password="nope"
+    )
+    assert r.headers["location"] == "/settings?passkey_error=1"
+    user = db.get(User, hh.user_id)
+    user.oidc_subject = "s1"
+    db.commit()
+    r = client.post(
+        "/app/auth/unlink",
+        data={"return_to": "/elsewhere"},
+        headers=headers,
+        follow_redirects=False,
+    )
+    assert r.headers["location"] == "/settings?passkey=unlinked"
