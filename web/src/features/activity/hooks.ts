@@ -186,3 +186,18 @@ export function applyBulk(req: BulkReq, expected: number | null): Promise<BulkRe
     unwrap(api.POST('/api/v1/transactions/bulk', { body: { ...req, dry_run: false, expected_count: expected } as never })),
   )
 }
+
+export type UndoResult = S['UndoResult']
+export type RecentBatch = S['RecentBatchOut']
+
+/** Undo a bulk batch (24 h, once, any member). Online only; a 409 carries the reason. */
+export function undoBulk(batchId: string): Promise<UndoResult> {
+  return online(() =>
+    unwrap(api.POST('/api/v1/transactions/bulk/{batch_id}/undo', { params: { path: { batch_id: batchId } } })),
+  )
+}
+export function useRecentBulk() {
+  return useCachedQuery(keys.bulkRecent(), (signal) =>
+    unwrap(api.GET('/api/v1/transactions/bulk', { params: { query: { limit: 10 } }, signal })),
+  )
+}

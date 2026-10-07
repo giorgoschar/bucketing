@@ -19,6 +19,7 @@ import { OptionSheet } from './OptionSheet'
 import { toPendingTxn, usePendingActivity } from './pending'
 import { bucketOptions, OWN_SHARE, payerOptions, payerPatch } from './pickers'
 import { useDeleteWithUndo } from './useDeleteWithUndo'
+import { useUndoBulk } from './useUndoBulk'
 import './activity.css' // a cold deep link to /activity/:id never loads Activity.tsx
 
 type Picker = null | 'category' | 'bucket' | 'payer' | 'method' | 'notes'
@@ -101,7 +102,7 @@ function Shares({ t, refData }: { t: Txn; refData?: RefData }) {
   )
 }
 
-export function Detail({ historyAction }: { historyAction?: (e: HistoryEvent) => ReactNode } = {}) {
+export function Detail() {
   const { id = '' } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
@@ -113,6 +114,7 @@ export function Detail({ historyAction }: { historyAction?: (e: HistoryEvent) =>
   const query = useTransaction(id)
   const edit = useEditTransaction()
   const deleteWithUndo = useDeleteWithUndo()
+  const undo = useUndoBulk()
   const linked = useLinkedEntry(query.data)
   const [picker, setPicker] = useState<Picker>(null)
   const [entryOpen, setEntryOpen] = useState(false)
@@ -243,7 +245,14 @@ export function Detail({ historyAction }: { historyAction?: (e: HistoryEvent) =>
           </section>
         )}
 
-        {!readOnly && <HistoryList id={t.id} renderAction={historyAction} />}
+        {!readOnly && (
+          <HistoryList
+            id={t.id}
+            renderAction={(e) => e.kind === 'bulk_change' && e.can_undo && e.batch_id
+              ? <button type="button" className="btn btn--ghost btn--sm" disabled={!online} onClick={() => void undo(e.batch_id!)}>Undo this change</button>
+              : null}
+          />
+        )}
 
         {!readOnly && (
           <footer className="detail__footer">

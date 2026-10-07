@@ -21,8 +21,10 @@ import { FiltersSheet } from './FiltersSheet'
 import { ACTIVITY_WRITES, type Txn, useCounts, useRefData } from './hooks'
 import { useHeldDeletes } from './heldDeletes'
 import { OptionSheet } from './OptionSheet'
+import { RecentBulk } from './RecentBulk'
 import { OFF, isSelected, reduce, selectedCount } from './selection'
 import { useDeleteWithUndo } from './useDeleteWithUndo'
+import { useUndoBulk } from './useUndoBulk'
 import './activity.css'
 
 export function withoutDates(f: TransactionFilter): TransactionFilter {
@@ -80,6 +82,8 @@ export function Activity() {
   const [loaded, setLoaded] = useState<{ ids: string[]; rows: Txn[]; total: number }>({ ids: [], rows: [], total: 0 })
   const onLoaded = useCallback((rows: Txn[], total: number) => setLoaded({ ids: rows.map((r) => r.id), rows, total }), [])
   const [menu, setMenu] = useState(false)
+  const [recentOpen, setRecentOpen] = useState(false)
+  const undo = useUndoBulk()
   const [bulk, setBulk] = useState<null | BulkField>(null)
   const qc = useQueryClient()
   const toast = useToast()
@@ -191,6 +195,7 @@ export function Activity() {
           const n = result.changed
           toast.show('bucket_id' in req.changes ? `Moved ${n} ${n === 1 ? 'payment' : 'payments'}` : `Changed ${n}`, {
             durationMs: 10_000,
+            action: result.batch_id ? { label: 'Undo', onClick: () => void undo(result.batch_id!) } : undefined,
           })
         }}
       />
@@ -205,8 +210,17 @@ export function Activity() {
               </span>
             </button>
           </li>
+          <li>
+            <button type="button" className="ui-row option" onClick={() => { setMenu(false); setRecentOpen(true) }}>
+              <span className="ui-row__main">
+                <span className="ui-row__title">Recent bulk changes</span>
+                <span className="ui-row__sub">See or undo the last 10</span>
+              </span>
+            </button>
+          </li>
         </ul>
       </Sheet>
+      <RecentBulk open={recentOpen} onClose={() => setRecentOpen(false)} />
       <OptionSheet
         open={sheet === 'month'}
         title="Month"

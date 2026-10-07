@@ -142,3 +142,13 @@
 .bulk-preview__skip summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-size: 14px; }
 .bulk-preview__skip ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 14px; }
 .bulk-preview__skip a { color: var(--accent); }
+
+/* Recent bulk changes */
+.recent-bulk { margin: 0; padding: 0; list-style: none; }
+.recent-bulk__row { position: relative; min-height: 60px; }
+.recent-bulk > li + li::before { content: ''; position: absolute; top: 0; left: 14px; right: 0; height: 1px; background: var(--line); }
+.recent-bulk__text { display: block; font-size: 14.5px; font-weight: 600; }
+.recent-bulk__empty { margin: 8px 0 0; font-size: 13.5px; color: var(--muted); }
+.recent-bulk__details { margin-top: 14px; display: grid; gap: 6px; }
+.recent-bulk__details ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 14px; }
+.recent-bulk__details a { color: var(--accent); }
