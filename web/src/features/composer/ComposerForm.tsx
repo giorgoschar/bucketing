@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react'
 import { useBlocker, useNavigate, useSearchParams } from 'react-router'
 import { CloseIcon } from '../../shell/icons'
 import { AmountDisplay } from '../../ui/AmountDisplay'
@@ -40,6 +40,7 @@ const QUEUED = "Saved on this phone. It will sync when you're back online."
 const QUEUED_NO_RECEIPT = "Saved on this phone. The receipt wasn't attached: add it when you're back online."
 const UPLOAD_FAILED = "Saved. The receipt didn't upload."
 const UNDO_MS = 5000
+const INTERACTIVE = 'button, a[href], select, summary, [role="button"], [role="option"], [role="switch"], [role="tab"], [role="menuitem"], [role="link"]'
 
 export function ComposerForm({ initial, data, defaults }: { initial: ComposerState; data: ComposerData; defaults: DefaultsRecord }) {
   const [s, dispatch] = useReducer(reduce, initial)
@@ -149,10 +150,12 @@ export function ComposerForm({ initial, data, defaults }: { initial: ComposerSta
     }
   }
 
-  // Hardware keyboard (spec §4.2): digits, "." or ",", Backspace, Enter saves. Not while a field or sheet has focus.
+  // Hardware keyboard (spec §4.2): digits, "." or ",", Backspace, Enter saves. Not while a field or sheet has focus,
+  // and Enter on a focused button, link or control activates that control instead (✕ must close, not save).
+  // A layout effect: the listener is live before the first paint, so an early keystroke is never lost.
   const onSaveRef = useRef(onSave)
   useEffect(() => { onSaveRef.current = onSave })
-  useEffect(() => {
+  useLayoutEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (sheet || dup || confirmDelete || scanOpen || blocker.state === 'blocked') return
       const t = e.target as HTMLElement | null
@@ -162,7 +165,10 @@ export function ComposerForm({ initial, data, defaults }: { initial: ComposerSta
       else if (e.key === '.' || e.key === ',') key = '.'
       else if (e.key === 'Backspace') key = 'back'
       if (key) dispatch({ type: 'key', key })
-      else if (e.key === 'Enter') void onSaveRef.current()
+      else if (e.key === 'Enter') {
+        if (t?.closest?.(INTERACTIVE)) return
+        void onSaveRef.current()
+      }
       else return
       e.preventDefault()
     }

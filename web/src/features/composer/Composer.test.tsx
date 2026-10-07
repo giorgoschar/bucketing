@@ -212,3 +212,22 @@ it('merchant: suggestions after 2 characters, and the keypad hides while typing'
   fireEvent.blur(input)
   expect(screen.getByRole('button', { name: '3' })).toBeInTheDocument()
 })
+
+it('Enter on a focused button activates that button, never Save: Enter on ✕ closes and does not save', async () => {
+  const { api } = await renderComposer()
+  await ready()
+  fireEvent.keyDown(document.body, { key: '3' })
+  const close = screen.getByRole('button', { name: 'Close' })
+  close.focus()
+  fireEvent.keyDown(close, { key: 'Enter' })
+  await act(async () => { await new Promise((r) => setTimeout(r, 50)) })
+  expect(api.calls.filter((c) => c.path === '/api/v1/transactions/check-duplicate' || c.method === 'POST')).toHaveLength(0)
+  fireEvent.click(close) // what the browser does for Enter on a focused button
+  expect(await screen.findByRole('dialog', { name: 'Discard this entry?' })).toBeInTheDocument()
+  expect(writes(api).filter((c) => c.path === '/api/v1/transactions')).toHaveLength(0)
+  // Enter on the page itself still saves.
+  fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }))
+  fireEvent.keyDown(document.body, { key: 'Enter' })
+  await screen.findByText('home screen')
+  expect(writes(api).filter((c) => c.path === '/api/v1/transactions')).toHaveLength(1)
+})
