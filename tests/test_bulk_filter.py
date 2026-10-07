@@ -163,3 +163,24 @@ def test_filter_that_constrains_nothing_is_400(env, db, monkeypatch):  # noqa: F
     r = env.bulk({"filter": {"q": "   "}}, {"bucket_id": env.bills})
     assert r.status_code == 400 and r.json()["detail"] == "Choose what to change first."
     assert env.row(a).bucket_id == env.day and db.query(BulkBatch).count() == 0
+
+
+def test_dismiss_that_keeps_failing_is_409_not_a_silent_204(env, db, monkeypatch):  # noqa: F811
+    import pytest
+    from fastapi import HTTPException
+    from sqlalchemy.exc import IntegrityError
+
+    from app.services.bulk import dismiss_duplicates
+
+    a, b = env.add("9.99"), env.add("9.99")
+
+    def failing_commit():
+        raise IntegrityError("INSERT", {}, Exception("uq_duplicate_dismissal"))
+
+    monkeypatch.setattr(db, "commit", failing_commit)
+    with pytest.raises(HTTPException) as exc:
+        dismiss_duplicates(db, household_id=env.hid, user_id=env.me, ids=[a, b])
+    assert exc.value.status_code == 409
+    assert exc.value.detail == "Couldn't save that; try again."
+    monkeypatch.undo()
+    assert db.query(DuplicateDismissal).count() == 0

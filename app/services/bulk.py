@@ -697,3 +697,4 @@ def dismiss_duplicates(db: Session, *, household_id: str, user_id: str, ids: lis
             return
         except IntegrityError:
             db.rollback()
+    raise HTTPException(status_code=409, detail="Couldn't save that; try again.")

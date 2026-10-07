@@ -11,7 +11,7 @@ from decimal import Decimal
 import pytest
 from fastapi.testclient import TestClient
 
-from app.models import TransactionSplit
+from app.models import DuplicateDismissal, TransactionSplit
 from tests.bulk_fixtures import URL, env  # noqa: F401
 from tests.conftest import TEST_DATABASE_URL
 from tests.test_api import api  # noqa: F401
@@ -62,8 +62,11 @@ def test_concurrent_undos_one_wins(env, db):  # noqa: F811
 def test_dismissal_order_matches_the_check(env, db):  # noqa: F811
     """Python's sorted() and Postgres' text collation must agree on "smaller
     id first", or the CHECK first_id < second_id rejects the insert."""
-    ids = [env.add("3.30") for _ in range(4)]
+    ids = [env.add("3.30") for _ in range(6)]
     r = env.client.post(
         "/api/v1/transactions/duplicates/dismiss", headers=env.headers, json={"ids": ids}
     )
     assert r.status_code == 204, r.text
+    db.expire_all()
+    assert db.query(DuplicateDismissal).count() == 15  # every pair of 6, once
+    assert all(d.first_id < d.second_id for d in db.query(DuplicateDismissal))
