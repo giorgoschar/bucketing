@@ -1,4 +1,5 @@
 import { formatMoney } from '../../../ui/format'
+import { parseCents } from '../../composer/amount'
 import { type CashWalletMemberOut, num } from './types'
 
 /** Below half a cent counts as zero (spec §4.2, §4.6). */
@@ -21,3 +22,8 @@ export function walletSum(m: CashWalletMemberOut) {
   }
 }
 
+
+/** Typed money ("12,5" or "12.50") in cents, or null when blank or malformed (composer parsing). */
+export function typedCents(v: string): number | null {
+  return v.trim() === '' ? null : parseCents(v.replace(/[\s€]/g, ''))
+}

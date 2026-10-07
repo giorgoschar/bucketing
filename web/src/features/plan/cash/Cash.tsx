@@ -8,6 +8,8 @@ import { CloudOffIcon, EyeIcon } from '../../../ui/icons'
 import { QueryView } from '../../../ui/QueryView'
 import { MonthStepper } from '../MonthStepper'
 import { useShownMonth } from '../shownMonth'
+import { CashSheet } from './CashSheet'
+import { CountSheet } from './CountSheet'
 import { useCashMovements, useCashWallets } from './hooks'
 import { Movements } from './Movements'
 import { StashCard } from './StashCard'
@@ -58,7 +60,7 @@ function CashBody({ stash, wallets, month, go, canWrite }: BodyProps) {
   const navigate = useNavigate()
   const currency = useHousehold().data?.default_currency ?? 'EUR'
   const movements = useCashMovements(month)
-  const [, setOpen] = useState<Open>(null)
+  const [open, setOpen] = useState<Open>(null)
   const members = wallets.data?.members ?? []
   const me = members.find((m) => m.is_me)
   const names = new Map(members.map((m) => [m.member_id, m.name]))
@@ -89,6 +91,11 @@ function CashBody({ stash, wallets, month, go, canWrite }: BodyProps) {
           )}
         </QueryView>
       </section>
+
+      {open?.kind === 'cash' && (
+        <CashSheet mode={open.mode} stash={stash} members={members} currency={currency} onClose={() => setOpen(null)} />
+      )}
+      {open?.kind === 'count' && <CountSheet stash={stash} currency={currency} onClose={() => setOpen(null)} />}
 
       {me && (
         <section className="cash-sec" aria-labelledby="cash-moves-title">

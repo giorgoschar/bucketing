@@ -80,3 +80,35 @@
 .cash-del { display: flex; flex-direction: column; gap: 8px; }
 .cash-del__what { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
 .cash-del__ask { margin: 0; color: var(--ink-2); }
+
+/* Sheets: Take / Put back / Still have / Add, and Count (spec §4.3, §4.4) */
+.cash-form { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.cash-form__row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.cash-amount { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.cash-amount__prompt { margin: 0; font-size: 17px; font-weight: 650; text-align: center; letter-spacing: -.01em; }
+.cash-amount__box { display: flex; align-items: baseline; justify-content: center; gap: 2px; max-width: 100%; }
+.cash-amount__sym { font-family: var(--font-display); font-size: 30px; font-weight: var(--display-weight); color: var(--muted); }
+.cash-amount__input {
+  width: 7ch; max-width: 100%; min-height: 56px; padding: 0; border: 0; border-bottom: 2px solid var(--line); border-radius: 0;
+  background: transparent; color: var(--ink); font-family: var(--font-display); font-size: 44px; font-weight: var(--display-weight);
+  text-align: center; letter-spacing: -.03em;
+}
+.cash-amount__input:focus { outline: none; border-bottom-color: var(--accent); }
+.cash-amount__input[aria-invalid="true"] { border-bottom-color: var(--neg); }
+.cash-amount__err { text-align: center; }
+.cash-from { margin: 0; padding: 0; border: 0; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.cash-from .ui-list { box-shadow: none; }
+.cash-source { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.cash-source + .cash-source::before { content: ""; position: absolute; top: 0; left: 14px; right: 0; height: 1px; background: var(--line); }
+.cash-source--on { background: var(--accent-soft); }
+.cash-source__sub { display: block; font-size: 12.5px; color: var(--muted); white-space: normal; }
+.cash-source__sub .ui-num { white-space: normal; }
+.cash-source__radio { width: 22px; height: 22px; flex: none; margin: 0; accent-color: var(--accent); }
+.cash-hidden { display: inline-flex; align-items: center; gap: 5px; }
+.cash-hidden .ui-icon { width: 13px; height: 13px; }
+.cash-preview {
+  margin: 0; padding: 10px 12px; border-radius: var(--r-md); background: var(--surface-2); font-size: 14px; color: var(--ink-2);
+  text-align: center; overflow-wrap: anywhere;
+}
+.cash-preview .ui-num { white-space: normal; color: var(--ink); }
+.cash-spend { display: flex; flex-direction: column; gap: 10px; }
