@@ -1726,11 +1726,15 @@ export interface components {
              * @default false
              */
             enable_settlement: boolean;
+            /** End Date */
+            end_date?: string | null;
             /**
              * Icon
              * @default 🪣
              */
             icon: string;
+            /** Kind */
+            kind?: string | null;
             /** Name */
             name: string;
             /**
@@ -1738,6 +1742,8 @@ export interface components {
              * @default true
              */
             show_income: boolean;
+            /** Start Date */
+            start_date?: string | null;
             /**
              * Type
              * @default custom

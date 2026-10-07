@@ -1407,10 +1407,33 @@
             "title": "Enable Settlement",
             "type": "boolean"
           },
+          "end_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
           "icon": {
             "default": "\ud83e\udea3",
             "title": "Icon",
             "type": "string"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
           },
           "name": {
             "title": "Name",
@@ -1420,6 +1443,18 @@
             "default": true,
             "title": "Show Income",
             "type": "boolean"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
           },
           "type": {
             "default": "custom",

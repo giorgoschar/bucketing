@@ -422,8 +422,9 @@ def _notify_bill_drift(db, today: date) -> None:
 def _notify_budget_thresholds(db, today: date) -> None:
     """Warn when a bucket's spend for the current month crosses its budget."""
     from app.core.money import ZERO, to_decimal
-    from app.models import Bucket, BucketStatus, NotificationType
+    from app.models import Bucket, BucketKind, BucketStatus, NotificationType
     from app.services import get_bucket_spend_this_month
+    from app.services.budgets import bucket_spent
 
     buckets = (
         db.query(Bucket)
@@ -449,7 +450,12 @@ def _notify_budget_thresholds(db, today: date) -> None:
         budget = to_decimal(bucket.budget)
         if budget <= 0:
             continue
-        spent = spend_by_hh.get(bucket.household_id, {}).get(bucket.id, ZERO)
+        # An event's budget is a total over its dates (spec §4.1).
+        event = bucket.kind == BucketKind.event.value
+        if event:
+            spent = bucket_spent(db, bucket, today)
+        else:
+            spent = spend_by_hh.get(bucket.household_id, {}).get(bucket.id, ZERO)
         pct = spent / budget * 100
 
         # Highest crossed threshold only — no point saying 80% and 100% together.
@@ -470,7 +476,8 @@ def _notify_budget_thresholds(db, today: date) -> None:
             body = (
                 f"{_money(spent, currency)} of "
                 f"{_money(budget, currency)} — "
-                f"{_money(budget - spent, currency)} left this month."
+                f"{_money(budget - spent, currency)} left"
+                f"{'.' if event else ' this month.'}"
             )
 
         _notify_members(
@@ -483,7 +490,11 @@ def _notify_budget_thresholds(db, today: date) -> None:
             link=f"/buckets/{bucket.id}",
             # Per bucket, per month, per threshold: crossing 80 then later 100
             # produces two notices, but neither repeats.
-            dedupe_key=f"budget:{bucket.id}:{period}:{crossed}",
+            dedupe_key=(
+                f"budget:{bucket.id}:event:{crossed}"
+                if event
+                else f"budget:{bucket.id}:{period}:{crossed}"
+            ),
         )
     db.commit()
 
