@@ -16,7 +16,7 @@ from decimal import Decimal
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from pydantic import BaseModel, ValidationError, ValidationInfo, field_validator
+from pydantic import BaseModel, ValidationError, ValidationInfo, field_validator, model_validator
 from sqlalchemy.orm import Session
 
 from app.api_auth import require_api_auth
@@ -30,11 +30,12 @@ from app.services import (
     list_movements,
     parse_month,
     record_movement,
+    record_stash_count,
     stash_balance,
     wallet_summary,
     withdraw_and_spend,
 )
-from app.services.cash import FROM_BANK, FROM_STASH, TAKE
+from app.services.cash import FROM_BANK, FROM_STASH, STASH_COUNT, TAKE
 from app.validators import (
     parse_amount,
     require_bucket,
@@ -46,7 +47,9 @@ router = APIRouter(prefix="/cash", tags=["cash"])
 
 
 class MovementIn(BaseModel):
-    kind: Literal["stash_in", "take", "put_back", "still_have"]
+    # ``stash_count``: a recount of your own stash; ``amount`` is what you
+    # counted (0 or more) and the server stores the signed correction.
+    kind: Literal["stash_in", "take", "put_back", "still_have", "stash_count"]
     amount: Decimal
     movement_date: date | None = None  # blank means today
     currency: str | None = None  # must equal the household currency if given
@@ -62,9 +65,17 @@ class MovementIn(BaseModel):
     @field_validator("amount", mode="before")
     @classmethod
     def _amount(cls, v: Any, info: ValidationInfo) -> Decimal:
-        # An empty wallet is a valid "still have".
+        kind = info.data.get("kind")
+        if kind == STASH_COUNT:
+            try:
+                negative = Decimal(str(v).strip().replace(",", ".")) < 0
+            except (ArithmeticError, ValueError, TypeError):
+                negative = False  # parse_amount below says what is wrong
+            if negative:
+                raise ValueError("Count can't be negative")
+        # An empty wallet is a valid "still have"; an empty stash a valid count.
         return _checked(
-            parse_amount, v, field="Amount", allow_zero=info.data.get("kind") == "still_have"
+            parse_amount, v, field="Amount", allow_zero=kind in ("still_have", STASH_COUNT)
         )
 
     @field_validator("note")
@@ -74,6 +85,14 @@ class MovementIn(BaseModel):
         if len(v) > 500:
             raise ValueError("Note must be at most 500 characters.")
         return v or None
+
+    @model_validator(mode="after")
+    def _count_is_plain(self) -> "MovementIn":
+        if self.kind == STASH_COUNT and (
+            self.stash_owner_id or self.spend_bucket_id or self.category_id
+        ):
+            raise ValueError("A stash count is just the amount you counted.")
+        return self
 
 
 def _dict(m: CashMovement) -> dict:
@@ -136,6 +155,17 @@ def create_movement(
             detail=f"Cash is tracked in the household currency ({currency}).",
         )
     when = body.movement_date or local_today()
+    if body.kind == STASH_COUNT:
+        mv = record_stash_count(
+            db,
+            household_id=hh_id,
+            actor_id=user.id,
+            counted=body.amount,
+            when=when,
+            note=body.note,
+            currency=currency,
+        )
+        return _dict(mv)
     if body.spend_bucket_id:
         if body.kind != TAKE or body.stash_owner_id not in (None, user.id):
             raise HTTPException(

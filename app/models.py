@@ -73,7 +73,9 @@ class CashKind(str, enum.Enum):
     their wallet, from a stash (``stash_owner_id``) or the bank (NULL).
     ``put_back``: wallet back into their own stash. ``still_have``: what was
     in their wallet on that date. ``out``: legacy, no longer offered: cash
-    that left the wallet without a logged expense.
+    that left the wallet without a logged expense. ``stash_count``: a
+    recount of the member's own stash, stored as the signed correction
+    (counted minus the balance then), so it may be negative or zero.
     """
 
     stash_in = "stash_in"
@@ -81,6 +83,7 @@ class CashKind(str, enum.Enum):
     put_back = "put_back"
     still_have = "still_have"
     out = "out"
+    stash_count = "stash_count"
 
 
 class BucketType(str, enum.Enum):
