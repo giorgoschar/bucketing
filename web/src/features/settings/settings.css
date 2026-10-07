@@ -75,3 +75,14 @@ a.settings__row:active { background: var(--surface-2); }
 .settings__addrule { align-self: flex-start; }
 .settings__locked { padding: 0 14px 14px 62px; }
 .settings__icon-input { max-width: 120px; }
+
+.settings__steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.settings__steps li { display: grid; grid-template-columns: 26px 1fr; gap: 10px; font-size: 14px; }
+.settings__steps b { display: block; font-weight: 650; }
+.settings__stepn {
+  width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--accent-soft); color: var(--accent); font-weight: 700; font-size: 13px;
+}
+.settings__fresh { border: 1px solid var(--warn); }
+.settings__fresh .settings__h, .settings__fresh .settings__help { margin: 0; }
+.settings__tokens { list-style: none; margin: 0; padding: 0; }
