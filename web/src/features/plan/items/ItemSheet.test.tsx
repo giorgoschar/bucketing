@@ -150,3 +150,18 @@ it('the next entry opens the Entry sheet', () => {
   fireEvent.click(screen.getByRole('button', { name: /Next: 9 Oct/ }))
   expect(onOpenEntry).toHaveBeenCalledWith(entry())
 })
+
+it('links an existing item to its payments in Activity', async () => {
+  fakeApi(routes())
+  renderWithProviders(<ItemSheet open item={item({ id: 'r-cosmote' })} onClose={() => {}} />)
+  expect(await screen.findByRole('link', { name: 'See payments' })).toHaveAttribute(
+    'href',
+    '/activity?recurring_bill_id=r-cosmote',
+  )
+})
+
+it('a new item has no See payments link', () => {
+  fakeApi(routes())
+  renderWithProviders(<ItemSheet open item={null} onClose={() => {}} />)
+  expect(screen.queryByRole('link', { name: 'See payments' })).toBeNull()
+})
