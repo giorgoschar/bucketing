@@ -13,9 +13,11 @@ from sqlalchemy.orm import Session
 
 from app.core.clock import utcnow_naive
 from app.models import (
+    BillOccurrence,
     CashMovement,
     Household,
     HouseholdMember,
+    OccurrenceStatus,
     PayerMode,
     PaymentMethod,
     Transaction,
@@ -94,6 +96,16 @@ def delete_transaction(db: Session, txn: Transaction, uploads_dir: str | None = 
         CashMovement.transaction_id == txn.id,
         CashMovement.active(),
     ).update({CashMovement.deleted_at: txn.deleted_at}, synchronize_session=False)
+    # A deleted payment puts its entry back to expected (spec §3.3).
+    db.query(BillOccurrence).filter(BillOccurrence.transaction_id == txn.id).update(
+        {
+            BillOccurrence.status: OccurrenceStatus.unpaid,
+            BillOccurrence.paid_at: None,
+            BillOccurrence.paid_by: None,
+            BillOccurrence.transaction_id: None,
+        },
+        synchronize_session=False,
+    )
     db.commit()
     if not txn.receipt_path:
         return

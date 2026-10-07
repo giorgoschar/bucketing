@@ -357,6 +357,17 @@ def claim_occurrence(
     return True
 
 
+def _link_transaction(db: Session, occ: BillOccurrence, txn: Transaction) -> None:
+    """Point ``occ`` at its payment ``txn`` (both the row and the loaded object).
+
+    Does not commit. The one place an entry is linked to a transaction.
+    """
+    db.query(BillOccurrence).filter(BillOccurrence.id == occ.id).update(
+        {BillOccurrence.transaction_id: txn.id}, synchronize_session=False
+    )
+    occ.transaction_id = txn.id
+
+
 def pay_occurrence(
     db: Session,
     occ: BillOccurrence,
@@ -414,10 +425,7 @@ def pay_occurrence(
     )
     db.add(txn)
     db.flush()
-    db.query(BillOccurrence).filter(BillOccurrence.id == occ.id).update(
-        {BillOccurrence.transaction_id: txn.id}, synchronize_session=False
-    )
-    occ.transaction_id = txn.id
+    _link_transaction(db, occ, txn)
 
     for uid, share in splits.items():
         db.add(TransactionSplit(transaction_id=txn.id, user_id=uid, amount=share))
@@ -433,6 +441,97 @@ def settle_occurrence(db: Session, occ: BillOccurrence, **kwargs) -> bool:
         return pay_occurrence(db, occ, **kwargs) is not None
     paid_by = None if kwargs.get("payer_mode") == PayerMode.own_share.value else kwargs["paid_by"]
     return claim_occurrence(db, occ, paid_by=paid_by, paid_on=kwargs["paid_on"])
+
+
+# ---------------------------------------------------------------------------
+# Entry lifecycle (spec §3.3): undo, skip, set amount, estimate
+# ---------------------------------------------------------------------------
+
+ESTIMATE_FROM_LAST = 3  # done amounts averaged for a variable item's estimate
+
+FIXED_COST_NEEDS_ITEM_MSG = (
+    "This expense has no bucket, so it can't stay without its bill. "
+    "Delete it too, or give it a bucket first."
+)
+
+
+class EntryStateError(Exception):
+    """The entry is not in a state that allows this action (HTTP 409).
+
+    The message is user-facing.
+    """
+
+
+def reopen_occurrence(occ: BillOccurrence) -> None:
+    """Put an entry back to expected: not paid, nothing linked. Does not commit."""
+    occ.status = OccurrenceStatus.unpaid
+    occ.paid_at = None
+    occ.paid_by = None
+    occ.transaction_id = None
+
+
+def undo_occurrence(db: Session, occ: BillOccurrence, *, delete_transaction: bool = False) -> None:
+    """Done -> expected, or skipped -> expected (spec §3.3).
+
+    A done entry's transaction is unlinked; with ``delete_transaction`` it is
+    soft-deleted too (app.services.transactions.delete_transaction, which
+    reopens the entry and commits). Kept, a bucket-less expense would break
+    the transactions CHECK, so that raises EntryStateError. Otherwise does
+    not commit.
+    """
+    if occ.status == OccurrenceStatus.skipped:
+        reopen_occurrence(occ)
+        return
+    if occ.status != OccurrenceStatus.paid:
+        raise EntryStateError("This entry is already expected.")
+    txn = db.get(Transaction, occ.transaction_id) if occ.transaction_id else None
+    if txn is None or txn.deleted_at is not None:
+        reopen_occurrence(occ)
+        return
+    if delete_transaction:
+        from app.services.transactions import delete_transaction as soft_delete
+
+        soft_delete(db, txn)
+        return
+    if txn.bucket_id is None and txn.type == TransactionType.expense:
+        raise EntryStateError(FIXED_COST_NEEDS_ITEM_MSG)
+    txn.recurring_bill_id = None
+    reopen_occurrence(occ)
+
+
+def skip_entry(occ: BillOccurrence) -> None:
+    """Expected -> skipped. A done entry has to be undone first. Does not commit."""
+    if occ.status == OccurrenceStatus.paid:
+        raise EntryStateError("This entry is done. Undo it first.")
+    occ.status = OccurrenceStatus.skipped
+
+
+def set_entry_amount(occ: BillOccurrence, amount: Decimal) -> None:
+    """Store the real amount on an expected entry (spec §3.3). Does not commit."""
+    if occ.status != OccurrenceStatus.unpaid:
+        raise EntryStateError("Only an expected entry can have its amount set.")
+    occ.amount = _q(amount)
+
+
+def estimate_amount(db: Session, bill_id: str) -> Decimal | None:
+    """The "≈" amount of a variable item: the mean of its last 3 done amounts.
+
+    None when nothing has been done with an amount yet.
+    """
+    rows = [
+        _dec(a)
+        for (a,) in db.query(BillOccurrence.amount)
+        .filter(
+            BillOccurrence.bill_id == bill_id,
+            BillOccurrence.status == OccurrenceStatus.paid,
+            BillOccurrence.amount.isnot(None),
+        )
+        .order_by(BillOccurrence.due_date.desc())
+        .limit(ESTIMATE_FROM_LAST)
+    ]
+    if not rows:
+        return None
+    return _q(sum(rows, Decimal(0)) / len(rows))
 
 
 def effective_overrides(bill: RecurringBill, submitted) -> dict[str, Decimal] | None:
