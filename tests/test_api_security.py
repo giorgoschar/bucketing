@@ -156,3 +156,42 @@ def test_profile_name_must_be_1_to_100(client, api):  # noqa: F811
             json={"display_name": name, "avatar_color": "#6366f1"},
         )
         assert r.status_code == 400, name
+
+
+def test_a_non_bearer_authorization_header_does_not_make_a_password_session(
+    client, db, make_household
+):
+    """Only a real Bearer token counts; a stray Authorization header (a proxy's
+    Basic auth) leaves the passkey cookie session as it is."""
+    hh = make_household()
+    user = db.get(User, hh.user_id)
+    user.oidc_subject = "sub-1"
+    db.commit()
+    cookie = _serializer.dumps(
+        {
+            "user_id": hh.user_id,
+            "hh_id": hh.household_id,
+            "sv": 0,
+            "state": "authenticated",
+            "amr": "oidc",
+            "iat": int(time.time()),
+        }
+    )
+    headers = {"Cookie": f"{COOKIE_NAME}={cookie}", "Authorization": "Basic dXNlcjpwdw=="}
+    assert client.get(URL, headers=headers).json()["password_session"] is False
+
+
+def test_an_unenrolled_bearer_token_is_refused_even_on_the_enrolling_routes(
+    client,
+    db,
+    api,  # noqa: F811
+):
+    """allow_unenrolled is for the cookie session only (2d §7.5 review)."""
+    headers, hh = api
+    user = db.get(User, hh.user_id)
+    user.totp_enabled = False
+    db.commit()
+    for method, path in (("get", URL), ("post", f"{URL}/totp/setup")):
+        r = getattr(client, method)(path, headers=headers)
+        assert r.status_code == 403, (path, r.text)
+        assert r.json()["detail"] == "TOTP enrollment required"

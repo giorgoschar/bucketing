@@ -4,10 +4,11 @@
 
 from cryptography.fernet import InvalidToken
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.api_auth import require_api_auth, require_api_auth_enrolling
+from app.api_auth import _bearer, require_api_auth, require_api_auth_enrolling
 from app.auth import (
     COOKIE_NAME,
     current_iat,
@@ -69,15 +70,20 @@ def _session_amr(request: Request) -> str | None:
     return session.get("amr", "pwd") if session else None
 
 
-def _password_session(request: Request) -> bool:
-    if request.headers.get("authorization"):
+def _password_session(request: Request, credentials: HTTPAuthorizationCredentials | None) -> bool:
+    # Only a real Bearer token counts; some other Authorization header (a proxy's
+    # Basic auth, say) leaves the cookie session in charge.
+    if credentials is not None:
         return True  # Bearer tokens come from password + TOTP sign-in only
     return _session_amr(request) == "pwd"
 
 
 @router.get("", response_model=SecurityOut)
 def security(
-    request: Request, auth=Depends(require_api_auth_enrolling), db: Session = Depends(get_db)
+    request: Request,
+    auth=Depends(require_api_auth_enrolling),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    db: Session = Depends(get_db),
 ):
     user, _ = auth
     return SecurityOut(
@@ -85,7 +91,7 @@ def security(
         backup_codes_remaining=backup_codes_remaining(user),
         passkey_available=bool(settings.new_app_enabled and settings.oidc_enabled),
         passkey_linked=bool(user.oidc_subject),
-        password_session=_password_session(request),
+        password_session=_password_session(request, credentials),
     )
 
 
@@ -140,6 +146,7 @@ def totp_disable(
     request: Request,
     body: TotpDisableIn,
     auth=Depends(require_api_auth),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
     db: Session = Depends(get_db),
 ):
     """Turn 2FA off: the same effects as the old route (secret and codes
@@ -160,6 +167,6 @@ def totp_disable(
     db.commit()
     security_logger.info("TOTP disabled for '%s' (new app)", user.username)
     response = Response(status_code=status.HTTP_204_NO_CONTENT)
-    if amr and not request.headers.get("authorization"):
+    if amr and credentials is None:
         set_session(response, user.id, hh_id, user.session_version, amr=amr, iat=iat)
     return response

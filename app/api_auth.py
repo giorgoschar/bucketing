@@ -270,7 +270,8 @@ def _api_auth(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    if not allow_unenrolled and not user.totp_enabled:
+    # allow_unenrolled is for the cookie session only; a Bearer token always needs 2FA.
+    if not user.totp_enabled:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="TOTP enrollment required",
