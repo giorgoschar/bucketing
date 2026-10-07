@@ -37,6 +37,7 @@
 
 .insights__lead { margin: 0; font-family: var(--font-display); font-size: 20px; font-weight: 600; letter-spacing: -.015em; line-height: 1.25; }
 .insights__foot { margin: 0; font-size: 13px; color: var(--muted); }
+.insights__foot.ui-num { white-space: normal; } /* .ui-num is nowrap; these footnotes are sentences */
 
 .insights__trio { margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .insights__trio div { min-width: 0; }
