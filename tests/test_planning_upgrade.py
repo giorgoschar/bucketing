@@ -9,6 +9,7 @@ overdue, a skipped and a year of old-app-generated future entries; a
 bucket-less bill the old app paid claim-only; and a paused bill."""
 
 import uuid
+from collections import Counter
 from datetime import timedelta
 
 import pyotp
@@ -308,17 +309,14 @@ def test_periods_are_backfilled_and_top_up_adds_nothing_to_them(upgraded):
             period == f"{_as_date(due).year:04d}-{_as_date(due).month:02d}"
             for _, due, period in rows
         )
-        before = {(bill_id, period) for bill_id, _, period in rows}
-        assert len(before) == len(rows)  # one entry per bill and month
+        before = Counter((bill_id, period) for bill_id, _, period in rows)
 
         created = _top_up_entries(db, local_today())
         db.commit()
         after = db.execute(text("SELECT bill_id, period FROM bill_occurrences")).all()
-    counts: dict = {}
-    for pair in map(tuple, after):
-        counts[pair] = counts.get(pair, 0) + 1
-    # Every period the old app had already generated still has exactly its one row.
-    assert all(counts[pair] == 1 for pair in before)
+    counts = Counter(map(tuple, after))
+    # Every period the old app had already generated keeps exactly the rows it had.
+    assert all(counts[pair] == n for pair, n in before.items())
     # It did run: the bucket-less bill had no future entries and gets them now.
     assert created == len(after) - len(rows) and created > 0
     # The paused bill gets nothing.
