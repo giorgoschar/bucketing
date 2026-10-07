@@ -35,7 +35,10 @@
 .swipe { position: relative; overflow: hidden; }
 .swipe__actions { position: absolute; inset: 0; z-index: 0; display: flex; justify-content: space-between; clip-path: inset(50%); }
 /* Clipped, not display/visibility: none, so Tab and screen readers still reach Copy and Delete. */
-.swipe__actions:focus-within { z-index: 2; clip-path: none; }
+.swipe__actions:focus-within { clip-path: none; }
+/* A focused action slides the row aside (88px = the action width) instead of covering it. */
+.swipe:has(.swipe__copy:focus-visible) .swipe__content { transform: translateX(88px); }
+.swipe:has(.swipe__delete:focus-visible) .swipe__content { transform: translateX(-88px); }
 .swipe[data-dragging] .swipe__actions { clip-path: none; }
 .swipe__actions button { min-width: 88px; min-height: 44px; border: 0; font: inherit; font-weight: 650; cursor: pointer; }
 .swipe__copy { background: var(--accent-soft); color: var(--ink); }
