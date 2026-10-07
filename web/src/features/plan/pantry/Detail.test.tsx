@@ -97,12 +97,33 @@ it('the chart: every point lies on its time and price scale', () => {
     [{ date: '2026-05-01', min_price: 2 }, { date: '2026-05-11', min_price: 1 }, { date: '2026-05-31', min_price: 3 }],
     { width: 300, height: 100, padX: 10, padTop: 20, padBottom: 10 },
   )
-  // x: 10 + days/30 * 280; y: price 3 at the top (20), price 1 at the bottom (90).
-  expect(g.points.map((p) => [Math.round(p.x * 100) / 100, Math.round(p.y * 100) / 100])).toEqual([
-    [10, 55], [10 + (10 / 30) * 280, 90], [290, 20],
-  ].map(([x, y]) => [Math.round(x * 100) / 100, y]))
+  // The price axis runs from 1 − 0.10 to 3 + 0.10 (the larger of ±5 % of the mid price, 2, and ±€0.10).
+  expect(g.lo).toBeCloseTo(0.9)
+  expect(g.hi).toBeCloseTo(3.1)
+  // x: 10 + days/30 * 280; y: 20 + (3.1 − price) / 2.2 * 70.
+  const y = (p: number) => 20 + ((3.1 - p) / 2.2) * 70
+  const expected = [[10, y(2)], [10 + (10 / 30) * 280, y(1)], [290, y(3)]]
+  g.points.forEach((p, i) => {
+    expect(p.x).toBeCloseTo(expected[i][0], 6)
+    expect(p.y).toBeCloseTo(expected[i][1], 6)
+  })
   expect(g.low).toBe(1)
-  expect(g.path).toBe('M10.0 55.0 L103.3 90.0 L290.0 20.0')
+  expect(g.path).toBe(`M10.0 ${y(2).toFixed(1)} L103.3 ${y(1).toFixed(1)} L290.0 ${y(3).toFixed(1)}`)
+})
+
+it('the chart: a 1-cent wiggle stays small (the y-range is padded, never just min to max)', () => {
+  const box = { width: 300, height: 100, padX: 10, padTop: 20, padBottom: 10 }
+  const g = chartGeometry(
+    [{ date: '2026-05-01', min_price: 1.19 }, { date: '2026-05-02', min_price: 1.2 }, { date: '2026-05-03', min_price: 1.19 }], box,
+  )
+  // ±€0.10 beats ±5 % of €1.195: the range is 1.09–1.30, so a cent is under a tenth of the 70 px plot.
+  expect(g.lo).toBeCloseTo(1.09)
+  expect(g.hi).toBeCloseTo(1.3)
+  expect(Math.abs(g.points[1].y - g.points[0].y)).toBeLessThan(7)
+  // At higher prices, 5 % wins: €20–€21 pads by €1.025.
+  const big = chartGeometry([{ date: '2026-05-01', min_price: 20 }, { date: '2026-05-02', min_price: 21 }], box)
+  expect(big.lo).toBeCloseTo(18.975)
+  expect(big.hi).toBeCloseTo(22.025)
 })
 
 it('the chart draws the history with its low, first and last labels and a table', () => {
@@ -188,8 +209,28 @@ it('offline: the online-only writes are disabled with the reason; the stepper st
   expect(screen.getAllByText('Connect to change the pantry').length).toBeGreaterThan(0)
 })
 
-it('a missing item says so', async () => {
+it('a missing (archived or foreign) item says so, with a way back to the list', async () => {
   fakeApi({ ...routes(), [DETAIL]: () => reply(404, { detail: 'Stock item not found' }) })
   renderWithProviders(<Detail id="nope" />)
+  expect(await screen.findByText('This item isn’t in your pantry any more')).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: 'Back to Pantry' })).toHaveAttribute('href', '/plan?view=pantry')
+  expect(screen.queryByText('Couldn’t load this.')).not.toBeInTheDocument()
+})
+
+it('another failure keeps the generic retry', async () => {
+  fakeApi({ ...routes(), [DETAIL]: () => reply(500) })
+  renderWithProviders(<Detail id="s1" />)
   expect(await screen.findByText('Couldn’t load this.')).toBeInTheDocument()
+})
+
+it('offline, the stock stepper is queued and says it is waiting to sync', async () => {
+  const fake = fakeApi(routes())
+  renderWithProviders(<Detail id="s1" />)
+  const stock = await screen.findByRole('region', { name: 'Stock' })
+  expect(stock).not.toHaveTextContent('Waiting to sync')
+  setOnline(false)
+  fake.down()
+  fireEvent.click(within(stock).getByRole('button', { name: 'Increase Barilla spaghetti' }))
+  expect(await within(stock).findByText('Waiting to sync')).toBeInTheDocument()
+  expect(within(within(stock).getByRole('group', { name: 'Barilla spaghetti in stock' })).getByTestId('pantry-qty')).toHaveTextContent('4')
 })

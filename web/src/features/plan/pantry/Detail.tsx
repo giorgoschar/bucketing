@@ -1,6 +1,10 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { type CSSProperties, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
+import { ApiError } from '../../../data/http'
+import { keys } from '../../../data/keys'
 import { useOnline } from '../../../data/online'
+import { usePendingIds } from '../../../data/pending'
 import { barPct, scaleMax } from '../../../ui/charts/scale'
 import { formatMoney } from '../../../ui/format'
 import { CloudOffIcon } from '../../../ui/icons'
@@ -27,6 +31,9 @@ export function Detail({ id: given }: { id?: string } = {}) {
   const id = given ?? params.id ?? ''
   const detail = useStockDetail(id)
   usePantryReplaySync()
+  // A 404 (archived meanwhile, an old notification link, another household's id) is not a retryable failure.
+  const error = useQueryClient().getQueryState(keys.stockItem(id))?.error
+  const gone = detail.data === undefined && error instanceof ApiError && error.status === 404
   const online = useOnline()
   return (
     <>
@@ -43,9 +50,17 @@ export function Detail({ id: given }: { id?: string } = {}) {
             <CloudOffIcon />{online ? 'Couldn’t refresh · showing saved product' : 'Offline · showing saved product'}
           </p>
         )}
-        <QueryView result={detail} showBanner={false} noDataText="No saved copy of this product yet. Connect to load it.">
-          {(d) => <Body d={d} online={online} />}
-        </QueryView>
+        {gone ? (
+          <div className="ui-empty">
+            <p className="ui-empty__title">This item isn’t in your pantry any more</p>
+            <p className="ui-empty__body">It was archived, or it belongs to another household.</p>
+            <Link className="btn btn--primary" to={LIST}>Back to Pantry</Link>
+          </div>
+        ) : (
+          <QueryView result={detail} showBanner={false} noDataText="No saved copy of this product yet. Connect to load it.">
+            {(d) => <Body d={d} online={online} />}
+          </QueryView>
+        )}
       </section>
     </>
   )
@@ -75,6 +90,7 @@ function Body({ d, online }: { d: StockDetail; online: boolean }) {
 
 function StockCard({ d, online }: { d: StockDetail; online: boolean }) {
   const { adjust } = useAdjustStock(d)
+  const pending = usePendingIds().has(d.id)
   const writes = useStockWrites(d.id)
   const [min, setMin] = useState<number | null>(null)
   const shownMin = min ?? d.min_quantity
@@ -92,6 +108,7 @@ function StockCard({ d, online }: { d: StockDetail; online: boolean }) {
           <b>In stock</b>
           {below > 1e-9 && <span className="pantry-card__warn">{formatQty(below)} below your minimum</span>}
           {Math.abs(below) <= 1e-9 && <span className="pantry-card__warn">At your minimum</span>}
+          {pending && <span className="pantry-row__pending">Waiting to sync</span>}
         </div>
         <Stepper name={d.name} value={d.quantity} size="lg" onStep={(delta) => void adjust(delta)} />
       </div>
