@@ -3,17 +3,11 @@ import { AppShell } from './shell/AppShell'
 import { FullScreenShell } from './shell/FullScreenShell'
 import { Home } from './screens/Home'
 import { Activity } from './screens/Activity'
-import { ActivityDetail } from './features/activity/Detail'
 import { Insights } from './screens/Insights'
-import { CategoryScreen } from './features/insights/CategoryScreen'
-import { FuelScreen } from './features/insights/FuelScreen'
-import { Settings } from './features/settings/Settings'
-import { Profile } from './features/settings/Profile'
-import { Household } from './features/settings/Household'
-import { Categories } from './features/settings/Categories'
-import { Automations } from './features/settings/Automations'
-import { Notifications } from './features/settings/Notifications'
-import { Compose, Items, Plan } from './screens/lazy'
+import {
+  ActivityDetail, Automations, Categories, CategoryScreen, Compose, FuelScreen, Household, Items, Notifications,
+  Plan, Profile, Settings,
+} from './screens/lazy'
 
 export const router = createBrowserRouter(
   [
