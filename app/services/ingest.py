@@ -16,8 +16,10 @@ Settings → Automations instead of guessed at from a bare "422".
 import hashlib
 import logging
 import re
+import sys
 from datetime import UTC, datetime
 from decimal import Decimal
+from urllib.parse import unquote
 
 from fastapi import HTTPException
 from pydantic import ValidationError
@@ -64,6 +66,7 @@ MAX_AMOUNT_CHARS = 64
 # Raw bodies are cut to this before redaction regexes run, so work stays bounded.
 _REDACT_INPUT_CHARS = 20_000
 REDACTED_TOKEN = "pat_…redacted"
+TOKEN_PREFIX_RAW = "pat_"
 
 # A personal token pasted anywhere in what was sent (R2a).
 _TOKEN_RE = re.compile(r"pat_[A-Za-z0-9_-]+")
@@ -77,20 +80,86 @@ _SECRET_FIELD_FORM = re.compile(r"((?:^|[&?\s])(?:authorization|token)=)[^&\s]*"
 _LOG_UNSAFE = re.compile("[\x00-\x1f\x7f\x85\u2028\u2029]")
 
 
-def redact_secrets(text: str | None) -> str | None:
-    """Replace personal tokens and ``authorization``/``token`` field values."""
-    if not text:
-        return text
-    text = text[:_REDACT_INPUT_CHARS]
+_BEARER_RE = re.compile(r"bearer\s+[A-Za-z0-9._~+/=-]+", re.IGNORECASE)
+_JSON_ESCAPE = re.compile(r"\\u([0-9a-fA-F]{4})")
+_TRAILING_PARTIAL = re.compile(r"pat_[A-Za-z0-9_-]*$")
+_WINDOW = 12
+WITHHELD = "[payload withheld: it contained the token]"
+
+
+def _normalise(text: str) -> str:
+    """A copy for detection: JSON ``\\uXXXX`` and percent escapes decoded
+    (twice, for double encoding)."""
+    for _ in range(2):
+        text = _JSON_ESCAPE.sub(lambda m: chr(int(m.group(1), 16)), text).replace("\\/", "/")
+        text = unquote(text)
+    return text
+
+
+def _redact_plain(text: str) -> str:
     text = _TOKEN_RE.sub(REDACTED_TOKEN, text)
+    text = _BEARER_RE.sub("Bearer …redacted", text)
     text = _SECRET_FIELD_JSON.sub(lambda m: f'{m.group(1)}"…redacted"', text)
     return _SECRET_FIELD_FORM.sub(lambda m: f"{m.group(1)}…redacted", text)
 
 
-def log_safe(value, limit: int | None = None) -> str:
+def _mentions_secret(text: str) -> bool:
+    return bool(
+        _TOKEN_RE.search(text)
+        or _BEARER_RE.search(text)
+        or _SECRET_FIELD_JSON.search(text)
+        or _SECRET_FIELD_FORM.search(text)
+    )
+
+
+def _leaks(text: str, secret: str | None) -> bool:
+    """True when ``text`` holds the real token or any 12+ character run of
+    its secret part, also with separators (whitespace, quotes, ``+``) between
+    the characters."""
+    if not secret:
+        return False
+    body = secret[len(TOKEN_PREFIX_RAW) :] if secret.startswith(TOKEN_PREFIX_RAW) else secret
+    if len(body) < _WINDOW:
+        return secret in text
+    windows = [body[i : i + _WINDOW] for i in range(len(body) - _WINDOW + 1)]
+    variants = (text, _normalise(text))
+    for variant in variants:
+        collapsed = re.sub(r"[^A-Za-z0-9_-]", "", variant)
+        if any(w in variant or w in collapsed for w in windows):
+            return True
+    return False
+
+
+def scrub(text: str | None, secret: str | None = None, *, label: str = "payload") -> str | None:
+    """The one place stored and logged text is cleaned of credentials.
+
+    Works on the final text, whatever produced it (bytes, str, a dict run
+    through the encoder, a repr, form data, broken JSON): tokens, ``Bearer``
+    values and ``authorization``/``token`` fields are replaced, also when
+    hidden behind JSON ``\\u`` escapes or percent-encoding (then the decoded,
+    redacted text is kept instead of the original). The caller's own token,
+    when known, is a last guard: any trace of it left makes the whole text
+    withheld. Redaction runs before any truncation.
+    """
+    if not text:
+        return text
+    text = text[:_REDACT_INPUT_CHARS]
+    normalised = _normalise(text)
+    source = normalised if normalised != text and _mentions_secret(normalised) else text
+    out = _redact_plain(source)
+    if _leaks(out, secret):
+        return WITHHELD if label == "payload" else f"[{label} withheld: it contained the token]"
+    return out
+
+
+def redact_secrets(text: str | None) -> str | None:
+    return scrub(text)
+
+
+def log_safe(value, limit: int | None = None, secret: str | None = None) -> str:
     """Request-derived text made safe for one log line: control characters
     become visible escapes (``\\n``, ``\\x1b``), then the length cap applies."""
-    text = redact_secrets(str(value)) if value is not None else ""
+    text = scrub(str(value), secret, label="text") if value is not None else ""
     text = _LOG_UNSAFE.sub(lambda m: m.group().encode("unicode_escape").decode(), text)
     return text[:limit] if limit else text
 
@@ -249,8 +318,7 @@ def _payload_text(payload) -> str | None:
             payload = str(jsonable_encoder(payload))
         except Exception:  # pragma: no cover - a log line never breaks a payment
             payload = repr(payload)
-    payload = redact_secrets(payload.strip()) or ""
-    return payload[:MAX_PAYLOAD_CHARS] or None
+    return payload.strip() or None
 
 
 def _keep_newest(db: Session, scope, count: int) -> None:
@@ -321,11 +389,16 @@ def record_ingest_attempt(
             prefix = token.prefix
         elif raw_token and raw_token.startswith("pat_"):
             prefix = raw_token[:DISPLAY_PREFIX_LEN]
-        payload_text = _payload_text(payload)
+        # The last step before anything is stored or logged: credentials out
+        # of the final text, then the length cap (never the other way round).
+        secret = raw_token or None
+        payload_text = scrub(_payload_text(payload), secret)
+        if payload_text:
+            payload_text = _TRAILING_PARTIAL.sub("", payload_text[:MAX_PAYLOAD_CHARS]) or None
         if detail is not None and not isinstance(detail, str):
             detail = str(detail)
-        detail = redact_secrets(detail)
-        content_type = redact_secrets(content_type)
+        detail = scrub(detail, secret, label="detail")
+        content_type = scrub(content_type, secret, label="content type")
         row = IngestAttempt(
             household_id=token.household_id if token is not None else None,
             token_id=token.id if token is not None else None,
@@ -346,7 +419,12 @@ def record_ingest_attempt(
                 session.rollback()
         except Exception:  # pragma: no cover - defensive
             pass
-        logger.exception("ingest: could not record the attempt (status %s)", status)
+        # No traceback: a database error can echo the bound parameters.
+        logger.error(
+            "ingest: could not record the attempt (status %s): %s",
+            int(status),
+            sys.exc_info()[0].__name__,
+        )
         return
     finally:
         if own_session and session is not None:
@@ -356,12 +434,12 @@ def record_ingest_attempt(
     logger.log(
         level,
         "ingest: %s → %s%s | token=%s | type=%s | payload=%s",
-        log_safe(path, 200),
+        log_safe(path, 200, secret),
         int(status),
-        f" {log_safe(detail, 500)}" if detail else "",
-        log_safe(prefix, 12) or "-",
-        log_safe(content_type, 100) or "-",
-        log_safe(payload_text, MAX_LOG_PAYLOAD_CHARS) or "-",
+        f" {log_safe(detail, 500, secret)}" if detail else "",
+        log_safe(prefix, 12, secret) or "-",
+        log_safe(content_type, 100, secret) or "-",
+        log_safe(payload_text, MAX_LOG_PAYLOAD_CHARS, secret) or "-",
     )
 
 

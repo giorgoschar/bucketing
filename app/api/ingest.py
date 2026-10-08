@@ -117,6 +117,7 @@ def apple_pay(
     attempt = {
         "db": db,
         "token": token,
+        "raw_token": bearer_token(request),
         "payload": raw_body(request),
         "content_type": request.headers.get("content-type"),
         "path": request.url.path,
