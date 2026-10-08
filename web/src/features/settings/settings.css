@@ -91,3 +91,7 @@ a.settings__row:active { background: var(--surface-2); }
 .settings__labeltitle { font-weight: 600; font-size: 15px; }
 .settings__test { align-self: flex-start; }
 .settings__toggle-row { min-height: 52px; padding-top: 4px; padding-bottom: 4px; }
+
+/* Appearance: one full-width segmented control, 44pt options. */
+.settings__appearance { display: flex; flex-direction: column; gap: 10px; }
+.settings__appearance .ui-seg__opt { flex: 1; min-height: 44px; }

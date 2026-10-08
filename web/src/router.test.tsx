@@ -49,4 +49,11 @@ describe('router', () => {
     const detail = paths.indexOf('plan/pantry/:id')
     if (detail !== -1) expect(list).toBeLessThan(detail)
   })
+
+  it('has the lazy Settings › Appearance screen under the shell', () => {
+    const routes = router.routes[0].children ?? []
+    const r = routes.find((x) => x.path === 'settings/appearance')
+    expect(((r?.element as ReactElement | undefined)?.type as { $$typeof?: symbol } | undefined)?.$$typeof)
+      .toBe(Symbol.for('react.lazy'))
+  })
 })

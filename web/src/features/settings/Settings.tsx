@@ -1,6 +1,7 @@
 import { Link } from 'react-router'
 import { usePushState } from '../../pwa/pushClient'
 import { useSession } from '../../session/SessionProvider'
+import { THEME_LABELS, useTheme } from '../../shell/theme'
 import { BackHeader } from '../../ui/BackHeader'
 import { ChevronRightIcon } from '../../ui/icons'
 import { useCategories, useHousehold, useNotificationPrefs, useProfile, useRules, useSecurity, useTokens } from './hooks'
@@ -13,6 +14,7 @@ const ROWS = [
   { key: 'categories', title: 'Categories & rules', to: '/settings/categories' },
   { key: 'automations', title: 'Automations', to: '/settings/automations' },
   { key: 'notifications', title: 'Notifications', to: '/settings/notifications' },
+  { key: 'appearance', title: 'Appearance', to: '/settings/appearance' },
 ] as const
 
 const HEX = /^#[0-9a-f]{6}$/i
@@ -21,15 +23,19 @@ const HEX = /^#[0-9a-f]{6}$/i
 export function Settings() {
   const { me, signOut } = useSession()
   const profile = useProfile().data
-  const subs = hubSubtitles({
-    security: useSecurity().data,
-    household: useHousehold().data,
-    categories: useCategories().data,
-    rules: useRules().data,
-    tokens: useTokens().data,
-    prefs: useNotificationPrefs().data,
-    push: usePushState().state,
-  })
+  const theme = useTheme()
+  const subs = {
+    ...hubSubtitles({
+      security: useSecurity().data,
+      household: useHousehold().data,
+      categories: useCategories().data,
+      rules: useRules().data,
+      tokens: useTokens().data,
+      prefs: useNotificationPrefs().data,
+      push: usePushState().state,
+    }),
+    appearance: THEME_LABELS[theme],
+  }
   const name = profile?.display_name || me?.display_name || me?.username || ''
   const email = profile?.email ?? me?.email ?? null
   const tint = profile?.avatar_color && HEX.test(profile.avatar_color) ? profile.avatar_color : undefined

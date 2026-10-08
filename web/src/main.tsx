@@ -12,6 +12,10 @@ import { queryClient } from './queryClient'
 import { registerSW } from 'virtual:pwa-register'
 import { setupPwaUpdates } from './pwa/update'
 import { listenForSwNavigation } from './pwa/swMessages'
+import { bootTheme } from './shell/theme'
+
+// Settings › Appearance: data-theme and the status bar colour before React renders, so there is no flash.
+bootTheme()
 
 setupPwaUpdates({ register: (opts) => registerSW(opts) })
 // A notification tap on an open app window: the worker asks the page to navigate (src/sw.ts).
