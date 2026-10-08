@@ -74,7 +74,7 @@ describe('Apple Pay › Recent attempts', () => {
   it('the empty state says how to get one', async () => {
     fakeApi({ [ATTEMPTS]: () => ({ items: [] }) })
     renderWithProviders(<RecentAttempts />)
-    expect(await screen.findByText('No attempts yet. Run the Shortcut or pay with Apple Pay, then pull to refresh.')).toBeInTheDocument()
+    expect(await screen.findByText('No attempts yet. Run the Shortcut or pay with Apple Pay, then tap Refresh.')).toBeInTheDocument()
   })
 
   it('Refresh fetches again and shows the new attempt', async () => {

@@ -23,7 +23,7 @@ const Broken = lazy(() => Promise.reject(new TypeError('Failed to fetch dynamica
 
 describe('a screen that fails to load', () => {
   it('shows "This screen didn’t load" with Reload, and the tab bar stays', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
     const reload = vi.fn()
     vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, reload } as Location)
     const router = createMemoryRouter(
@@ -33,6 +33,9 @@ describe('a screen that fails to load', () => {
     render(<RouterProvider router={router} />)
     expect(await screen.findByText('This screen didn’t load')).toBeInTheDocument()
     expect(screen.getByRole('navigation', { name: 'Main' })).toBeInTheDocument()
+    // The error is logged, not swallowed (review M-1).
+    const ours = logged.mock.calls.filter(([e]) => e instanceof TypeError && /dynamically imported module/.test(e.message))
+    expect(ours.length).toBeGreaterThanOrEqual(1)
     fireEvent.click(screen.getByRole('button', { name: 'Reload' }))
     expect(reload).toHaveBeenCalledTimes(1)
   })

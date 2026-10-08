@@ -23,7 +23,7 @@ import { ACTIVITY_WRITES, type Txn, useCounts, useRefData, useTotals } from './h
 import { useHeldDeletes } from './heldDeletes'
 import { OptionSheet } from './OptionSheet'
 import { RecentBulk } from './RecentBulk'
-import { OFF, type Selection, isSelected, reduce, selectedCount } from './selection'
+import { BULK_MAX_ROWS, OFF, type Selection, allMode, isSelected, reduce, selectedCount } from './selection'
 import { useDeleteWithUndo } from './useDeleteWithUndo'
 import { useUndoBulk } from './useUndoBulk'
 import { formatMoney } from '../../ui/format'
@@ -118,20 +118,26 @@ export function Activity() {
     ? loaded.rows.filter((r) => sel.ids.includes(r.id) && r.type === 'expense')
       .reduce((sum, r) => sum + r.amount * (r.exchange_rate || 1), 0)
     : previewed?.sel === sel ? previewed.out : null
-  // "All" is the filter on the server, unless a matching row is pending (a queued edit or delete) or in its
-  // swipe-delete hold: the server would change it too, and the queued write would undo that later (P3 M1).
-  // With every row loaded, All then picks the selectable rows by id; with more to load it waits for the sync.
-  const byId = loaded.excluded > 0 && loaded.complete
-  const allBlocked = loaded.pending && !loaded.complete
-  const allCount = byId ? loaded.ids.length : loaded.total
-  // Select by filter needs a filter: the server refuses an empty one (400).
-  const canSelectAll = !allBlocked && allCount > 0 && (byId || !isEmpty(f))
-  const all = () => dispatch(byId ? { type: 'pick', ids: loaded.ids } : { type: 'all', filter: f, total: loaded.total })
+  // What "All" does (selection.ts allMode): the server filter, the selectable rows by id, or off with a reason.
+  const mode = allMode({
+    total: loaded.total, selectable: loaded.ids.length, excluded: loaded.excluded, complete: loaded.complete,
+    pending: loaded.pending, emptyFilter: isEmpty(f),
+  })
+  const canSelectAll = mode.kind !== 'off'
+  const allCount = mode.kind === 'off' ? 0 : mode.count
+  const all = () => {
+    if (mode.kind === 'ids') dispatch({ type: 'pick', ids: loaded.ids })
+    else if (mode.kind === 'filter') dispatch({ type: 'all', filter: f, total: loaded.total })
+  }
   const selectAll = () => {
     dispatch({ type: 'enter' })
     all()
   }
-  const allPicked = sel.kind === 'picked' && byId && sel.ids.length === allCount
+  const allPicked = sel.kind === 'picked' && mode.kind === 'ids' && sel.ids.length === allCount
+  const allNote = mode.kind !== 'off' ? null
+    : mode.reason === 'pending' ? 'All is off until the changes waiting to sync are sent.'
+      : mode.reason === 'too-many' ? `All works for up to ${BULK_MAX_ROWS.toLocaleString('en-GB')} payments. Narrow the filter.`
+        : null
 
   return (
     <>
@@ -183,8 +189,8 @@ export function Activity() {
             Select all {allCount}
           </button>
         )}
-        {selecting && allBlocked && !state.dups && (
-          <p className="select-note" role="status">All is off until the changes waiting to sync are sent.</p>
+        {selecting && allNote && !state.dups && (
+          <p className="select-note" role="status">{allNote}</p>
         )}
         {!state.dups && <FilterTotal filter={f} />}
         {state.dups ? <Duplicates /> : (

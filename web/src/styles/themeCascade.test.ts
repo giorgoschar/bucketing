@@ -56,13 +56,48 @@ describe('tokens honour [data-theme] over prefers-color-scheme', () => {
     expect(token('bg', 'dark', null)).toBe(THEME_COLORS.dark)
     expect(token('bg', 'light', null)).toBe(THEME_COLORS.light)
   })
-  it('dark tokens apply with data-theme="dark" under a light OS setting', () => {
-    for (const t of ['bg', 'ink', 'surface', 'muted', 'scrim']) expect(token(t, 'light', 'dark'), t).toBe(token(t, 'dark', null))
+  // Every custom property any theme block sets (the base :root block and the light blocks), parsed from the
+  // file: a token added to one block only fails here (review M-3).
+  const names = [...new Set(blocks().flatMap((b) => [...b.body.matchAll(/--([\w-]+)\s*:/g)].map((m) => m[1])))]
+  const lightOnly = [...new Set(blocks().filter((b) => b.media || b.selectors.some((x) => x.includes('data-theme="light"')))
+    .flatMap((b) => [...b.body.matchAll(/--([\w-]+)\s*:/g)].map((m) => m[1])))]
+
+  it('finds the whole token set', () => {
+    expect(names.length).toBeGreaterThan(30)
+    expect(lightOnly.length).toBeGreaterThan(20)
+    for (const t of ['bg', 'ink', 'surface', 'muted', 'accent', 'warn', 'neg', 'pos', 'c1', 'scrim']) expect(names, t).toContain(t)
+  })
+  it('every token: data-theme="dark" under a light OS gives exactly the dark-OS value', () => {
+    for (const t of names) expect(token(t, 'light', 'dark'), `--${t}`).toBe(token(t, 'dark', null))
     expect(token('bg', 'light', 'dark')).toBe(THEME_COLORS.dark)
   })
-  it('light tokens apply with data-theme="light" under a dark OS setting', () => {
-    for (const t of ['bg', 'ink', 'surface', 'muted', 'scrim']) expect(token(t, 'dark', 'light'), t).toBe(token(t, 'light', null))
+  it('every token: data-theme="light" under a dark OS gives exactly the light-OS value', () => {
+    for (const t of names) expect(token(t, 'dark', 'light'), `--${t}`).toBe(token(t, 'light', null))
     expect(token('bg', 'dark', 'light')).toBe(THEME_COLORS.light)
+  })
+  it('every token the light theme changes really differs from dark, so the checks above are not vacuous', () => {
+    const changed = lightOnly.filter((t) => token(t, 'light', null) !== token(t, 'dark', null))
+    expect(changed.length).toBeGreaterThan(20)
+  })
+  it('::backdrop (the sheet scrim) follows the attribute too', () => {
+    const scrim = (os: 'light' | 'dark', theme: 'light' | 'dark' | null) => {
+      let best: { spec: number; order: number; value: string } | undefined
+      for (const b of blocks()) {
+        if (b.media && !b.media.includes(`prefers-color-scheme: ${os}`)) continue
+        const value = /--scrim:\s*([^;]+);/.exec(b.body)?.[1]?.trim()
+        if (!value) continue
+        for (const sel of b.selectors) {
+          if (!sel.endsWith('::backdrop')) continue
+          const spec = sel === '::backdrop' ? 1 : match(sel.replace(/\s*::backdrop$/, ''), theme)
+          if (spec === null) continue
+          if (!best || spec > best.spec || (spec === best.spec && b.order > best.order)) best = { spec, order: b.order, value }
+        }
+      }
+      return best?.value
+    }
+    expect(scrim('light', 'dark')).toBe(scrim('dark', null))
+    expect(scrim('dark', 'light')).toBe(scrim('light', null))
+    expect(scrim('light', null)).not.toBe(scrim('dark', null))
   })
   it('no other stylesheet switches on prefers-color-scheme behind the attribute’s back', () => {
     // Only tokens.css may read the OS scheme; everything else uses the tokens.

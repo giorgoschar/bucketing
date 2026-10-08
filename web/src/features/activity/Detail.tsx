@@ -149,13 +149,14 @@ export function Detail() {
   const created = pending.creates.find((p) => p.id === id)
   const queuedEdit = pending.edits.get(id)
   const gone = held.has(id) || pending.hidden.has(id)
-  const base = query.data ?? listedRow(qc, id)
+  // The server's 404 is definite: no cached feed copy reopens a row that is gone (review I-3).
+  const error = qc.getQueryState(keys.transactions.one(id))?.error
+  const notFound = gone || (error instanceof ApiError && error.status === 404)
+  const base = query.data ?? (notFound ? undefined : listedRow(qc, id))
   const t: Txn | undefined = created ?? (base && queuedEdit ? toPendingTxn(queuedEdit, base) : base)
   if (!t || gone) {
     // Gone only when the server says so (404) or it is deleted here; offline is "not saved", any other
     // failure can be retried.
-    const error = qc.getQueryState(keys.transactions.one(id))?.error
-    const notFound = gone || (error instanceof ApiError && error.status === 404)
     const failed = !notFound && query.isError && !query.offline
     const unsaved = !notFound && !failed && query.noData
     return (

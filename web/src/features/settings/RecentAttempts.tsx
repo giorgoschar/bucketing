@@ -58,7 +58,7 @@ export function RecentAttempts() {
           {items.map((a) => <Row key={a.id} a={a} />)}
         </ul>
       ) : items ? (
-        <p className="settings__help">No attempts yet. Run the Shortcut or pay with Apple Pay, then pull to refresh.</p>
+        <p className="settings__help">No attempts yet. Run the Shortcut or pay with Apple Pay, then tap Refresh.</p>
       ) : q.offline ? (
         <p className="settings__help">Recent attempts need a connection.</p>
       ) : q.isError ? (

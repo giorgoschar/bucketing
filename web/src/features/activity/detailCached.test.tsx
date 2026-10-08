@@ -41,3 +41,15 @@ it('online, a 404 says it is gone; another failure offers Retry', async () => {
   screen.getByRole('button', { name: 'Retry' }).click()
   expect(await screen.findByRole('heading', { name: 'Back again' })).toBeInTheDocument()
 })
+
+// Review I-3: the server's 404 is definite. A stale copy in a cached feed page must not reopen the row.
+it('online, a 404 says gone even when a cached feed page still holds the row', async () => {
+  const row = makeTxn({ id: 'deleted-elsewhere', merchant: 'Sklavenitis' })
+  const client = testQueryClient()
+  client.setQueryData(keys.transactions.list({ q: 'skl' }, 1), pageOf([row]))
+  fakeApi({ ...refRoutes(), 'GET /api/v1/transactions/{txn_id}': () => new Response(null, { status: 404 }) })
+  renderWithProviders(<Routes><Route path="/activity/:id" element={<Detail />} /></Routes>, { route: '/activity/deleted-elsewhere', client })
+  expect(await screen.findByText('This transaction is gone.')).toBeInTheDocument()
+  expect(screen.queryByRole('heading', { name: 'Sklavenitis' })).toBeNull()
+  expect(screen.queryByRole('link', { name: 'Edit' })).toBeNull()
+})
