@@ -1,5 +1,5 @@
 """polish round: shopping_lines.stock_item_id index, cash_movements.client_id,
-price_snapshots.source
+price_snapshots.source, ingest_attempts
 
 * ``ix_shopping_lines_stock_item_id``: untick by item and the per-item tick
   lookups (the partial unique index only covers active ticks).
@@ -9,7 +9,11 @@ price_snapshots.source
 * ``price_snapshots.source``: ``posokanei`` (the server default, so every
   existing row is one) or ``manual`` (a price the user logged).
 
-Additive: the downgrade drops the two columns and the two indexes.
+* ``ingest_attempts``: the last 50 Apple Pay ingest requests per member and
+  household (pruned by the app on insert), with the outcome and the reason for a
+  rejection, so a member can debug their Shortcut.
+
+Additive: the downgrade drops the table, the two columns and the two indexes.
 
 Revision ID: f2a3b4c5d6e7
 Revises: e1f2a3b4c5d6
@@ -38,8 +42,45 @@ def upgrade() -> None:
             sa.Column("source", sa.String(length=16), nullable=True, server_default="posokanei")
         )
 
+    op.create_table(
+        "ingest_attempts",
+        sa.Column("id", sa.String(), primary_key=True),
+        sa.Column(
+            "household_id",
+            sa.String(),
+            sa.ForeignKey("households.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column(
+            "token_id",
+            sa.String(),
+            sa.ForeignKey("personal_api_tokens.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+        sa.Column(
+            "user_id", sa.String(), sa.ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+        ),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("status_code", sa.Integer(), nullable=False),
+        sa.Column("outcome", sa.String(length=16), nullable=False),
+        sa.Column("reason", sa.String(length=300), nullable=True),
+        sa.Column("merchant", sa.String(length=80), nullable=True),
+        sa.Column("amount_raw", sa.String(length=40), nullable=True),
+        sa.Column(
+            "transaction_id",
+            sa.String(),
+            sa.ForeignKey("transactions.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+    )
+    op.create_index(
+        "ix_ingest_attempts_hh_created", "ingest_attempts", ["household_id", "created_at"]
+    )
+
 
 def downgrade() -> None:
+    op.drop_index("ix_ingest_attempts_hh_created", table_name="ingest_attempts")
+    op.drop_table("ingest_attempts")
     with op.batch_alter_table("price_snapshots") as batch:
         batch.drop_column("source")
     with op.batch_alter_table("cash_movements") as batch:

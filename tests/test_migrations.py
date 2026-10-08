@@ -457,7 +457,8 @@ def test_polish_migration_round_trip(tmp_path):
     """Polish M1: f2a3b4c5d6e7 follows e1f2a3b4c5d6 and is additive: an index
     on shopping_lines.stock_item_id, cash_movements.client_id (indexed with
     the household, not unique), and price_snapshots.source defaulting to
-    'posokanei' for existing rows. The downgrade drops them all."""
+    'posokanei' for existing rows, and the ingest_attempts table (S5). The
+    downgrade drops them all."""
     import importlib.util
     import uuid
 
@@ -504,6 +505,32 @@ def test_polish_migration_round_trip(tmp_path):
     assert "ix_shopping_lines_stock_item_id" in {
         i["name"] for i in insp.get_indexes("shopping_lines")
     }
+    assert {c["name"] for c in insp.get_columns("ingest_attempts")} == {
+        "id",
+        "household_id",
+        "token_id",
+        "user_id",
+        "created_at",
+        "status_code",
+        "outcome",
+        "reason",
+        "merchant",
+        "amount_raw",
+        "transaction_id",
+    }
+    fks = {
+        fk["referred_table"]: fk["options"].get("ondelete")
+        for fk in insp.get_foreign_keys("ingest_attempts")
+    }
+    assert fks == {
+        "households": "CASCADE",
+        "personal_api_tokens": "SET NULL",
+        "users": "SET NULL",
+        "transactions": "SET NULL",
+    }
+    assert "ix_ingest_attempts_hh_created" in {
+        i["name"] for i in insp.get_indexes("ingest_attempts")
+    }
     with engine.begin() as conn:
         assert conn.execute(text("SELECT source FROM price_snapshots")).scalar() == "posokanei"
         conn.execute(
@@ -522,6 +549,7 @@ def test_polish_migration_round_trip(tmp_path):
     insp = inspect(create_engine(db_url))
     assert "client_id" not in {c["name"] for c in insp.get_columns("cash_movements")}
     assert "source" not in {c["name"] for c in insp.get_columns("price_snapshots")}
+    assert "ingest_attempts" not in insp.get_table_names()
     assert "ix_shopping_lines_stock_item_id" not in {
         i["name"] for i in insp.get_indexes("shopping_lines")
     }

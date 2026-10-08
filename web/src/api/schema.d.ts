@@ -415,6 +415,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ingest/attempts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Attempts
+         * @description Your last 50 Apple Pay ingest requests in this household (the ones
+         *     your own tokens sent), newest first, with the reason for each rejection.
+         *     Tokens are personal: no role sees another member's.
+         */
+        get: operations["attempts_api_v1_ingest_attempts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/insights": {
         parameters: {
             query?: never;
@@ -1834,23 +1856,6 @@ export interface components {
             label: string;
             /** Type */
             type: string;
-        };
-        /** ApplePayIn */
-        ApplePayIn: {
-            /** Amount */
-            amount: string | number;
-            /** Card */
-            card?: string | null;
-            /** Currency */
-            currency?: string | null;
-            /** Exchange Rate */
-            exchange_rate?: string | number | null;
-            /** Merchant */
-            merchant: string;
-            /** Notes */
-            notes?: string | null;
-            /** Occurred At */
-            occurred_at?: string | null;
         };
         /** AppliedOut */
         AppliedOut: {
@@ -3323,6 +3328,38 @@ export interface components {
              * @default
              */
             transaction_date: string;
+        };
+        /** IngestAttemptOut */
+        IngestAttemptOut: {
+            /** Amount Raw */
+            amount_raw: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: string;
+            /** Merchant */
+            merchant: string | null;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "created" | "duplicate" | "rejected";
+            /** Reason */
+            reason: string | null;
+            /** Status Code */
+            status_code: number;
+            /** Token Name */
+            token_name: string | null;
+            /** Transaction Id */
+            transaction_id: string | null;
+        };
+        /** IngestAttemptsOut */
+        IngestAttemptsOut: {
+            /** Items */
+            items: components["schemas"]["IngestAttemptOut"][];
         };
         /** LineCheckIn */
         LineCheckIn: {
@@ -5523,7 +5560,22 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ApplePayIn"];
+                "application/json": {
+                    /** Amount */
+                    amount: string | number;
+                    /** Card */
+                    card?: string | null;
+                    /** Currency */
+                    currency?: string | null;
+                    /** Exchange Rate */
+                    exchange_rate?: string | number | null;
+                    /** Merchant */
+                    merchant: string;
+                    /** Notes */
+                    notes?: string | null;
+                    /** Occurred At */
+                    occurred_at?: string | null;
+                };
             };
         };
         responses: {
@@ -5536,13 +5588,24 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
-            /** @description Validation Error */
-            422: {
+        };
+    };
+    attempts_api_v1_ingest_attempts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["IngestAttemptsOut"];
                 };
             };
         };

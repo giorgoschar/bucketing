@@ -189,3 +189,99 @@ def test_endpoint_bad_amount_message(client, db, ingest):  # noqa: F811
     r = _post(client, ingest, amount="-€12,50")
     assert r.status_code == 400 and r.json() == {"detail": "Amount must be greater than zero."}
     assert db.query(Transaction).count() == 0
+
+
+# ---------------------------------------------------------------- bounded work
+
+
+def _timed(fn):
+    import time
+
+    start = time.perf_counter()
+    try:
+        fn()
+    except HTTPException as exc:
+        return time.perf_counter() - start, exc
+    raise AssertionError("expected a rejection")
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "1.,2" * 25_000,  # 100 000 characters of digits and separators
+        "1," * 50_000,
+        "." * 100_000,
+        "EUR " * 25_000,  # repeated currency codes
+        "EUR" * 33_334,
+        "€" * 100_000,
+        " " * 100_000 + "1",
+        "1" + " " * 100_000,
+        "-" * 100_000,
+        "a" * 100_000,
+    ],
+    ids=[
+        "digits-separators",
+        "digit-comma",
+        "dots",
+        "codes-spaced",
+        "codes",
+        "symbols",
+        "spaces",
+        "nbsp",
+        "minus",
+        "letters",
+    ],
+)
+def test_pathological_amounts_are_rejected_at_once(raw):
+    took, exc = _timed(lambda: parse_ingest_amount(raw))
+    assert exc.status_code == 400
+    assert exc.detail.startswith("Amount must be a number like 12,50")
+    assert len(exc.detail) < 80  # echoes 20 characters at most
+    assert took < 0.05, took
+
+
+def test_an_amount_text_over_40_characters_is_refused_unread():
+    ok = "EUR 1.234.567,89"
+    assert parse_ingest_amount(ok)[0] == D("1234567.89")
+    assert parse_ingest_amount(" " * 28 + "12,50 €  ")[0] == D("12.5")  # 37 characters
+    with pytest.raises(HTTPException) as exc:
+        parse_ingest_amount(" " * 40 + "12,50")
+    assert exc.value.status_code == 400
+    with pytest.raises(HTTPException):
+        parse_ingest_amount("1" * 41)
+
+
+@pytest.mark.parametrize("raw", ["EUR USD 5", "5 EUREUR", "€ 5 USD", "E5UR"])
+def test_two_currencies_or_a_broken_code_are_rejected(raw):
+    with pytest.raises(HTTPException) as exc:
+        parse_ingest_amount(raw)
+    assert exc.value.status_code == 400
+
+
+def test_the_same_currency_twice_is_fine():
+    assert parse_ingest_amount("EUR 12,50 €") == (D("12.5"), "EUR")
+
+
+def test_endpoint_rejects_pathological_fields_quickly(client, db, ingest):  # noqa: F811
+    import time
+
+    _post(client, ingest, amount="1")  # warm up (imports, auth)
+    for body in (
+        {"amount": "1.,2" * 2_000},
+        {"amount": "EUR " * 2_000},
+        {"merchant": "A " * 3_000},
+        {"occurred_at": "2026-" * 2_000, "merchant": "Late"},
+    ):
+        start = time.perf_counter()
+        r = _post(client, ingest, **body)
+        took = time.perf_counter() - start
+        assert took < 2, (body.keys(), took)  # generous: a whole HTTP round trip
+        if "occurred_at" in body:
+            assert r.status_code == 201  # an unreadable date is ignored, as before
+        else:
+            assert r.status_code in (400, 422), r.text
+            assert len(r.text) < 200
+    r = _post(client, ingest, merchant="x" * 201)
+    assert (r.status_code, r.json()["detail"]) == (422, "Merchant must be at most 200 characters.")
+    r = _post(client, ingest, notes="n" * 20_000)
+    assert r.status_code == 413

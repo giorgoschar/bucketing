@@ -18,6 +18,7 @@ Access token claims:
 
 import hashlib
 import hmac
+import logging
 import secrets
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit
@@ -310,6 +311,7 @@ def require_api_auth_enrolling(
 
 
 PAT_PREFIX = "pat_"
+logger = logging.getLogger(__name__)
 
 
 def _ingest_unauthorized(detail: str = "Invalid ingest token") -> HTTPException:
@@ -328,6 +330,9 @@ INGEST_FAILURE_LIMIT = "20/minute"
 def _ingest_failure(request: Request | None, detail: str = "Invalid ingest token") -> HTTPException:
     """Count a failed ingest auth against the client IP: 401, or 429 once over
     the limit. Uses the shared limiter's storage (reset between tests)."""
+    # No household to file it under, so the server log is all there is. The
+    # reason is one of our own fixed strings: the token is never logged.
+    logger.warning('ingest apple-pay rejected status=401 reason="%s"', detail)
     if request is not None:
         from limits import parse
 

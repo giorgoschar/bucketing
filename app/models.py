@@ -957,6 +957,36 @@ class StockReason(str, enum.Enum):
     adjust = "adjust"
 
 
+class IngestAttempt(Base):
+    """One authenticated request to the Apple Pay ingest (polish S5), kept so
+    the member can see why their Shortcut's request was rejected. Personal,
+    like the token: only the newest 50 per member and household are kept
+    (pruned on insert), and only that member reads them. Never holds the
+    token: ``merchant`` and ``amount_raw`` are the start of what was sent.
+    """
+
+    __tablename__ = "ingest_attempts"
+    __table_args__ = (Index("ix_ingest_attempts_hh_created", "household_id", "created_at"),)
+
+    id = Column(String, primary_key=True, default=gen_id)
+    household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False)
+    token_id = Column(
+        String, ForeignKey("personal_api_tokens.id", ondelete="SET NULL"), nullable=True
+    )
+    user_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=utcnow_naive, nullable=False)
+    status_code = Column(Integer, nullable=False)
+    outcome = Column(String(16), nullable=False)  # created | duplicate | rejected
+    reason = Column(String(300), nullable=True)
+    merchant = Column(String(80), nullable=True)
+    amount_raw = Column(String(40), nullable=True)
+    transaction_id = Column(
+        String, ForeignKey("transactions.id", ondelete="SET NULL"), nullable=True
+    )
+
+    token = relationship("PersonalApiToken")
+
+
 class Product(Base):
     """A product the household keeps in stock, optionally linked to PosoKanei.
 

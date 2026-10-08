@@ -7,8 +7,9 @@ double-fire it, so every payload maps to a deterministic ``client_id``
 """
 
 import hashlib
+import json
 import logging
-import re
+import unicodedata
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -24,6 +25,7 @@ from app.models import (
     BucketType,
     Category,
     Household,
+    IngestAttempt,
     NotificationType,
     PaymentMethod,
     PersonalApiToken,
@@ -45,9 +47,14 @@ logger = logging.getLogger(__name__)
 _SYMBOLS = {"€": "EUR", "$": "USD", "£": "GBP"}
 # ISO 4217 currencies with three decimal places.
 THREE_DECIMAL_CURRENCIES = frozenset({"BHD", "IQD", "JOD", "KWD", "LYD", "OMR", "TND"})
-_GROUPING_MARKS = ("'", "\u2019")  # 1'234.56
-_LETTERS = re.compile(r"[A-Za-z]+")
-_DIGITS_AND_SEPARATORS = re.compile(r"[0-9.,]*[0-9][0-9.,]*")
+_GROUPING_MARKS = "'\u2019"  # 1'234.56
+_ASCII_DIGITS = "0123456789"
+_ASCII_LETTERS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+# Longer than any real amount ("EUR 1.234.567,89" is 16): anything beyond is
+# refused before it is looked at, so parsing costs the same whatever is sent.
+MAX_AMOUNT_TEXT = 40
+MAX_MERCHANT = 200  # app.schemas._clean_merchant's limit
+MAX_OCCURRED_AT = 40
 
 
 def parse_ingest_amount(raw, currency: str | None = None) -> tuple[Decimal, str | None]:
@@ -80,40 +87,65 @@ def parse_ingest_amount(raw, currency: str | None = None) -> tuple[Decimal, str 
       is zero: 400 "Amount must be greater than zero."
     * Anything else is a 400 that shows the start of what was sent (the
       caller's own input): "Amount must be a number like 12,50 (got: '...')".
+      So is any text longer than :data:`MAX_AMOUNT_TEXT` characters, refused
+      before it is read; the rest is one pass over the characters.
 
     Returns ``(amount, detected currency or None)``; the amount is quantized
     like ``parse_amount``'s.
     """
     if not isinstance(raw, str):
         return parse_amount(raw), None
-    if not raw.strip():
-        return parse_amount(raw), None  # 400 "Amount is required."
 
     def bad() -> HTTPException:
         return HTTPException(
             status_code=400,
-            detail=f"Amount must be a number like 12,50 (got: '{raw.strip()[:20]}')",
+            detail=f"Amount must be a number like 12,50 (got: '{raw[:40].strip()[:20]}')",
         )
 
-    text = "".join(ch for ch in raw if not ch.isspace()).replace("\u2212", "-")
-    found = {_SYMBOLS[ch] for ch in text if ch in _SYMBOLS}
-    for ch in _SYMBOLS:
-        text = text.replace(ch, "")
-    for word in _LETTERS.findall(text):
-        if len(word) != 3:
+    if len(raw) > MAX_AMOUNT_TEXT:
+        raise bad()
+    if not raw.strip():
+        return parse_amount(raw), None  # 400 "Amount is required."
+
+    # One pass over at most MAX_AMOUNT_TEXT characters (no regular
+    # expressions): digits and separators are kept, a currency symbol or a
+    # run of letters is noted, anything else is not an amount.
+    kept: list[str] = []
+    found: set[str] = set()
+    word = ""
+    negative = False
+
+    def end_word() -> None:
+        nonlocal word
+        if word:
+            if len(word) != 3:
+                raise bad()
+            found.add(word.upper())
+            word = ""
+
+    for ch in raw:
+        if ch in _ASCII_LETTERS:
+            word += ch
+            continue
+        if ch.isspace():
+            continue  # U+00A0 and U+202F included
+        end_word()
+        if ch in _ASCII_DIGITS or ch in ".,":
+            kept.append(ch)
+        elif ch in _SYMBOLS:
+            found.add(_SYMBOLS[ch])
+        elif ch in _GROUPING_MARKS:
+            continue
+        elif ch in "-\u2212" and not kept and not negative:
+            negative = True  # only before the number: "-€12,50", "€-12,50"
+        else:
             raise bad()
-        found.add(word.upper())
-    text = _LETTERS.sub("", text)
+    end_word()
     if len(found) > 1:
         raise bad()
     detected = next(iter(found), None)
-
-    negative = text.startswith("-")
-    if negative:
-        text = text[1:]
-    for mark in _GROUPING_MARKS:
-        text = text.replace(mark, "")
-    if not _DIGITS_AND_SEPARATORS.fullmatch(text):
+    text = "".join(kept)
+    if not any(ch in _ASCII_DIGITS for ch in text):
         raise bad()
 
     dots, commas = text.count("."), text.count(",")
@@ -146,6 +178,9 @@ def parse_occurred_at(raw: str | None) -> datetime | None:
     sent an odd date format is worse than dating it "now".
     """
     if not raw or not str(raw).strip():
+        return None
+    if len(str(raw)) > MAX_OCCURRED_AT:
+        logger.info("ingest: ignoring an over-long occurred_at")
         return None
     try:
         moment = datetime.fromisoformat(str(raw).strip())
@@ -224,7 +259,13 @@ def ingest_apple_pay(
     no bucket) and propagates DeletedTransactionReplay (the caller maps it to
     409: a deleted expense is never resurrected by a retry).
     """
-    merchant = " ".join((merchant or "").split())
+    merchant = merchant or ""
+    # Checked before anything scans it (the rules match on the merchant).
+    if len(merchant) > 4 * MAX_MERCHANT or len(" ".join(merchant.split())) > MAX_MERCHANT:
+        raise HTTPException(
+            status_code=422, detail=f"Merchant must be at most {MAX_MERCHANT} characters."
+        )
+    merchant = " ".join(merchant.split())
     if not merchant:
         raise HTTPException(status_code=422, detail="Merchant is required.")
     household = db.get(Household, token.household_id)
@@ -296,3 +337,174 @@ def notify_ingest_created(db: Session, txn: Transaction) -> None:
     except Exception:
         db.rollback()
         logger.exception("ingest: notification for transaction %s failed", txn.id)
+
+
+# ---------------------------------------------------------------------------
+# The attempts log (polish S5)
+# ---------------------------------------------------------------------------
+
+ATTEMPTS_KEPT = 50
+CREATED, DUPLICATE, REJECTED = "created", "duplicate", "rejected"
+_LOG_VALUE_MAX = 40
+
+
+# The payload's own keys; any other key name is counted, never logged.
+KNOWN_KEYS = frozenset(
+    {"merchant", "amount", "currency", "card", "occurred_at", "notes", "exchange_rate"}
+)
+
+
+def safe_text(value, limit: int = _LOG_VALUE_MAX) -> str:
+    """``value`` made safe to log or store: control and format characters (CR,
+    LF, NUL, escape, bidi overrides, U+2028/9...) dropped and at most
+    ``limit`` characters kept. Only the first ``4 * limit`` characters are
+    ever looked at. Request-derived text goes through this before it reaches
+    a log line or an ``ingest_attempts`` row, so it cannot forge a log line."""
+    text = str(value)[: 4 * limit]
+    kept = [ch for ch in text if unicodedata.category(ch) not in _UNSAFE_CATEGORIES]
+    return "".join(kept)[:limit]
+
+
+# Cc control, Cf format (bidi), Cs surrogate, Co private use, Cn unassigned,
+# Zl / Zp line and paragraph separators.
+_UNSAFE_CATEGORIES = frozenset({"Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp"})
+
+
+def _json_type(value) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "bool"
+    return {str: "str", int: "int", float: "float", list: "list", dict: "dict"}.get(
+        type(value), "other"
+    )
+
+
+def _first(value):
+    """What a one-element Shortcuts list holds (see ApplePayIn)."""
+    return value[0] if isinstance(value, list) and value else value
+
+
+def attempt_fields(payload) -> tuple[str | None, str | None]:
+    """``(merchant, amount_raw)`` for the log from a parsed JSON body: the
+    start of what was sent (80 and 40 characters), cleaned (:func:`safe_text`),
+    whatever its shape."""
+    if not isinstance(payload, dict):
+        return None, None
+    merchant = _first(payload.get("merchant"))
+    # Cut before anything scans it: at most 320 characters are ever touched.
+    merchant = (
+        safe_text(" ".join(merchant[:320].split()), 80) or None
+        if isinstance(merchant, str)
+        else None
+    )
+    amount = payload.get("amount")
+    if amount is None:
+        raw = None
+    elif isinstance(amount, str):
+        raw = safe_text(amount[:160].strip(), 40) or None
+    elif isinstance(amount, bool | int | float):
+        raw = safe_text(repr(amount), 40)
+    else:
+        # A list or object: its shape and the start of its first element,
+        # never a dump of all of it.
+        first = _first(amount) if isinstance(amount, list) else None
+        inner = safe_text(repr(first), 30) if isinstance(first, str | int | float) else "…"
+        raw = f"[{inner}]" if isinstance(amount, list) else "{…}"
+    return merchant, raw
+
+
+def describe_payload(payload) -> str:
+    """A safe one-line summary of a body for the server log: which of the
+    known keys it has, how many others, and the shape of the amount and
+    merchant. Nothing the client chose is in it: no values, no key names
+    beyond :data:`KNOWN_KEYS`."""
+    if not isinstance(payload, dict):
+        return f"body_type={_json_type(payload)}"
+    known = sorted(k for k in KNOWN_KEYS if k in payload)
+    merchant = _first(payload.get("merchant"))
+    return (
+        f"keys=[{','.join(known)}] "
+        f"unknown_keys={len(payload) - len(known)} "
+        f"amount_type={_json_type(payload['amount']) if 'amount' in payload else 'missing'} "
+        f"merchant_len={len(merchant) if isinstance(merchant, str) else 0}"
+    )
+
+
+def log_rejection(status_code: int, reason: str, payload) -> None:
+    """Every rejected ingest, at WARNING, with the reason. Never the token.
+    One record, one line: the reason (the only part that can echo input, at
+    most 20 characters of the amount) is cleaned by :func:`safe_text` and
+    JSON-quoted."""
+    logger.warning(
+        "ingest apple-pay rejected status=%s reason=%s %s",
+        int(status_code),
+        json.dumps(safe_text(reason, 300), ensure_ascii=False),
+        describe_payload(payload),
+    )
+
+
+def record_attempt(
+    db: Session,
+    *,
+    household_id: str,
+    token_id: str | None,
+    user_id: str | None,
+    status_code: int,
+    outcome: str,
+    reason: str | None = None,
+    merchant: str | None = None,
+    amount_raw: str | None = None,
+    transaction_id: str | None = None,
+) -> None:
+    """Store one attempt and drop that member's rows (in the household)
+    beyond the newest :data:`ATTEMPTS_KEPT`; commits. ``household_id`` and
+    ``user_id`` are the authenticated token's, never the request's. Best effort: a failure here is logged and
+    never changes the ingest's own response."""
+    try:
+        db.rollback()  # a rejected save may have left the session mid-transaction
+        db.add(
+            IngestAttempt(
+                household_id=household_id,
+                token_id=token_id,
+                user_id=user_id,
+                status_code=status_code,
+                outcome=outcome,
+                reason=(safe_text(reason, 300) or None) if reason is not None else None,
+                merchant=(safe_text(merchant, 80) or None) if merchant else None,
+                amount_raw=(safe_text(amount_raw, 40) or None) if amount_raw else None,
+                transaction_id=transaction_id,
+            )
+        )
+        db.flush()
+        # Tokens are personal, so is the log: the newest 50 per member.
+        mine = [IngestAttempt.household_id == household_id, IngestAttempt.user_id == user_id]
+        keep = (
+            db.query(IngestAttempt.id)
+            .filter(*mine)
+            .order_by(IngestAttempt.created_at.desc(), IngestAttempt.id.desc())
+            .limit(ATTEMPTS_KEPT)
+        )
+        db.query(IngestAttempt).filter(*mine, IngestAttempt.id.notin_([i for (i,) in keep])).delete(
+            synchronize_session=False
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("ingest: recording the attempt failed")
+
+
+def list_attempts(db: Session, household_id: str, user_id: str) -> list[IngestAttempt]:
+    """The member's own attempts in the household (what their tokens sent),
+    newest first, at most :data:`ATTEMPTS_KEPT`. Never another member's:
+    tokens are personal, whatever the caller's role."""
+    from sqlalchemy.orm import joinedload
+
+    return (
+        db.query(IngestAttempt)
+        .options(joinedload(IngestAttempt.token))
+        .filter(IngestAttempt.household_id == household_id, IngestAttempt.user_id == user_id)
+        .order_by(IngestAttempt.created_at.desc(), IngestAttempt.id.desc())
+        .limit(ATTEMPTS_KEPT)
+        .all()
+    )
