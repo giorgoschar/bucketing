@@ -415,6 +415,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ingest/apple-pay/{transaction_id}/classify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Classify
+         * @description Save first, then ask: set the category and/or bucket of a purchase this
+         *     same token added less than 15 minutes ago. Needs a token created with the
+         *     classify scope (403 otherwise). Anything that is not the token's own,
+         *     recent, live purchase is a bare 404. Returns the ingest result again.
+         */
+        post: operations["classify_api_v1_ingest_apple_pay__transaction_id__classify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ingest/attempts": {
         parameters: {
             query?: never;
@@ -423,12 +446,11 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Attempts
-         * @description Your last 50 Apple Pay ingest requests in this household (the ones
-         *     your own tokens sent), newest first, with the reason for each rejection.
-         *     Tokens are personal: no role sees another member's.
+         * List Attempts
+         * @description Your newest 50 ingest attempts (made with your own tokens), newest
+         *     first. Attempts no token can be attributed to are never listed.
          */
-        get: operations["attempts_api_v1_ingest_attempts_get"];
+        get: operations["list_attempts_api_v1_ingest_attempts_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1857,6 +1879,34 @@ export interface components {
             /** Type */
             type: string;
         };
+        /**
+         * ApplePayIn
+         * @description The Shortcut's JSON body, accepted as-is and coerced downstream.
+         *
+         *     Fields are deliberately untyped: FastAPI's own checks would only answer
+         *     "Input should be a valid string", which says nothing about *what*
+         *     arrived. A Shortcuts row set to the whole transaction record sends a
+         *     dictionary; a row left empty sends null. app/services/ingest.py turns
+         *     what it can into text or a number, and refuses the rest with a message
+         *     naming the field and the shape it got — which is what the log on
+         *     Settings → Automations then shows.
+         */
+        ApplePayIn: {
+            /** Amount */
+            amount?: unknown;
+            /** Card */
+            card?: unknown;
+            /** Currency */
+            currency?: unknown;
+            /** Exchange Rate */
+            exchange_rate?: unknown;
+            /** Merchant */
+            merchant?: unknown;
+            /** Notes */
+            notes?: unknown;
+            /** Occurred At */
+            occurred_at?: unknown;
+        };
         /** AppliedOut */
         AppliedOut: {
             /** After */
@@ -2236,6 +2286,11 @@ export interface components {
         };
         /** Body_create_token_settings_automations_tokens_post */
         Body_create_token_settings_automations_tokens_post: {
+            /**
+             * Allow Classify
+             * @default
+             */
+            allow_classify: string;
             /**
              * Default Bucket Id
              * @default
@@ -3140,6 +3195,19 @@ export interface components {
             /** Unit Price */
             unit_price: number | null;
         };
+        /**
+         * ClassifyIn
+         * @description Untyped on purpose, like ApplePayIn: a Choose from List result can be
+         *     text, a list or a dictionary; the values are coerced with ``_text_value``.
+         *     ``category``/``bucket``: an id or an exact name (trimmed, case-insensitive),
+         *     at least one. Other keys (a ``remember`` from an older recipe) are ignored.
+         */
+        ClassifyIn: {
+            /** Bucket */
+            bucket?: unknown;
+            /** Category */
+            category?: unknown;
+        };
         /** CountsOut */
         CountsOut: {
             /** Duplicate Groups */
@@ -3331,30 +3399,28 @@ export interface components {
         };
         /** IngestAttemptOut */
         IngestAttemptOut: {
-            /** Amount Raw */
-            amount_raw: string | null;
             /**
              * Created At
              * Format: date-time
              */
             created_at: string;
+            /** Detail */
+            detail?: string | null;
             /** Id */
             id: string;
-            /** Merchant */
-            merchant: string | null;
             /**
              * Outcome
              * @enum {string}
              */
-            outcome: "created" | "duplicate" | "rejected";
-            /** Reason */
-            reason: string | null;
-            /** Status Code */
-            status_code: number;
-            /** Token Name */
-            token_name: string | null;
+            outcome: "created" | "duplicate" | "rejected" | "classified";
+            /** Payload */
+            payload?: string | null;
+            /** Status */
+            status: number;
+            /** Token Prefix */
+            token_prefix?: string | null;
             /** Transaction Id */
-            transaction_id: string | null;
+            transaction_id?: string | null;
         };
         /** IngestAttemptsOut */
         IngestAttemptsOut: {
@@ -4340,6 +4406,8 @@ export interface components {
         };
         /** TokenIn */
         TokenIn: {
+            /** Allow Classify */
+            allow_classify?: boolean | null;
             /** Default Bucket Id */
             default_bucket_id?: string | null;
             /** Name */
@@ -5560,22 +5628,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": {
-                    /** Amount */
-                    amount: string | number;
-                    /** Card */
-                    card?: string | null;
-                    /** Currency */
-                    currency?: string | null;
-                    /** Exchange Rate */
-                    exchange_rate?: string | number | null;
-                    /** Merchant */
-                    merchant: string;
-                    /** Notes */
-                    notes?: string | null;
-                    /** Occurred At */
-                    occurred_at?: string | null;
-                };
+                "application/json": components["schemas"]["ApplePayIn"];
             };
         };
         responses: {
@@ -5588,9 +5641,53 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
         };
     };
-    attempts_api_v1_ingest_attempts_get: {
+    classify_api_v1_ingest_apple_pay__transaction_id__classify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                transaction_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClassifyIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_attempts_api_v1_ingest_attempts_get: {
         parameters: {
             query?: never;
             header?: never;
