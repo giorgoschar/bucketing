@@ -130,39 +130,6 @@
         <li>Tap <strong>Done</strong>. Pay with Apple Pay once and check that the expense appears — you also get a notification so you can fix the category or bucket.</li>
       </ol>
 
-      <div>
-        <p class="text-sm font-semibold">Ask for a category</p>
-        <p class="text-xs text-gray-400 mt-0.5 mb-2">
-          Optional. The purchase is saved first; when none of your rules knows the merchant,
-          the Shortcut can then ask you for the category. Add these actions after
-          <strong>Get Contents of URL</strong>:
-        </p>
-        <ol class="list-decimal pl-5 space-y-2 text-gray-700 dark:text-gray-300">
-          <li><strong>Get Dictionary Value</strong>: get the value for <code>category_names</code> in
-            <em>Contents of URL</em>. The reply has this list only when the purchase still needs a
-            category (<code>needs_category</code> is then <code>true</code>).</li>
-          <li><strong>If</strong> <em>Dictionary Value</em> <strong>has any value</strong>:
-            <ul class="list-disc pl-5 mt-1 space-y-1 text-xs">
-              <li><strong>Choose from List</strong>: choose from <em>Dictionary Value</em> (your category names).</li>
-              <li><strong>Get Dictionary Value</strong>: get the value for <code>id</code> in <em>Contents of URL</em>.</li>
-              <li>A second <strong>Get Contents of URL</strong>:
-                URL <code class="break-all">{{ ingest_url }}/</code><em>Dictionary Value</em><code>/classify</code>
-                (the <code>id</code> from the step before), Method <strong>POST</strong>, the same
-                <code>Authorization</code> header, Request Body <strong>JSON</strong> with
-                <code>category</code> = <em>Chosen Item</em> (Text) and
-                <code>remember</code> = <strong>true</strong> (Boolean).</li>
-            </ul>
-          </li>
-          <li><strong>End If</strong>.</li>
-        </ol>
-        <p class="text-xs text-gray-400 mt-2">
-          With <code>remember</code> on, the merchant gets a rule, so you are asked once per merchant.
-          To pick the bucket too, do the same with <code>bucket_names</code> and send
-          <code>bucket</code> = the chosen name. It works for 15 minutes after the purchase, and only
-          with the token that added it.
-        </p>
-      </div>
-
       <div class="px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800 rounded-xl text-xs text-amber-800 dark:text-amber-300 space-y-1">
         <p>
           <strong>Known iOS flakiness:</strong> Transaction automations sometimes time out or
@@ -186,7 +153,59 @@
         The category comes from your <a href="/settings" class="underline">auto-categorisation rules</a>;
         the bucket is the token’s default, otherwise your first day-to-day bucket.
       </p>
+
+      <div class="px-4 py-3 bg-sky-50 dark:bg-sky-900/20 border border-sky-100 dark:border-sky-800 rounded-xl text-xs text-sky-900 dark:text-sky-200 space-y-1">
+        <p>
+          <strong>Didn’t arrive?</strong> The <em>Recent ingest attempts</em> section below shows every
+          request the Shortcut has made — the exact payload the phone sent and the reason it was refused —
+          and the same lines land in the server log (grep <code class="font-mono">ingest:</code>).
+        </p>
+        <p>
+          The two most common mistakes are: Request Body left as <strong>Form</strong> instead of
+          <strong>JSON</strong>, and a value row that picks the whole transaction record instead of one
+          field — <code>amount</code> must be a number, <code>merchant</code>/<code>card</code> plain text.
+        </p>
+      </div>
     </div>
+  </div>
+
+  <!-- ===== Recent ingest attempts ===== -->
+  <div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
+    <div class="px-6 py-4 border-b border-gray-50 dark:border-gray-800">
+      <p class="text-sm font-semibold">Recent ingest attempts</p>
+      <p class="text-xs text-gray-400 mt-0.5">
+        Everything your Shortcut has sent recently — each attempt, its outcome and the raw payload.
+        Attempts are kept per household (newest first); a “no attempts yet” list is a normal, healthy
+        state before the next run.
+      </p>
+    </div>
+    {% if attempts %}
+    <ul id="ingest-attempts" class="divide-y divide-gray-50 dark:divide-gray-800">
+      {% for a in attempts %}
+      <li class="px-6 py-3 space-y-1">
+        <div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 flex-wrap">
+          <span class="px-1.5 py-0.5 rounded-md font-semibold
+                       {% if a.status < 400 %}bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300
+                       {% elif a.status == 429 %}bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300
+                       {% elif a.status < 500 %}bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300
+                       {% else %}bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300{% endif %}">{{ a.status }}</span>
+          <span>{{ a.created_at | dt }}</span>
+          {% if a.token_prefix %}<code class="font-mono">{{ a.token_prefix }}…</code>{% endif %}
+          <span class="ml-auto font-mono text-[10px]">{{ a.content_type or '—' }}</span>
+        </div>
+        <p class="text-sm text-gray-800 dark:text-gray-200">{{ a.detail or '—' }}</p>
+        {% if a.payload %}
+        <pre class="text-[11px] leading-snug font-mono bg-gray-50 dark:bg-gray-800/60 rounded-lg px-2.5 py-2 text-gray-600 dark:text-gray-300 whitespace-pre-wrap break-all">{{ a.payload | truncate(180) }}</pre>
+        {% endif %}
+        {% if a.transaction_id %}
+        <a href="/transactions/{{ a.transaction_id }}/edit" class="text-xs font-semibold text-primary-600 hover:text-primary-700">→ open the expense</a>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="px-6 py-5 text-sm text-gray-400">No attempts yet — the next time the Shortcut runs (pay with Apple Pay), it will show up here.</p>
+    {% endif %}
   </div>
 
 </div>

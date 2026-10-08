@@ -3,6 +3,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -14,9 +16,11 @@ from starlette.middleware.sessions import SessionMiddleware
 import app.models  # noqa: F401
 from app import web_app
 from app.api import router as api_router
+from app.api.ingest import bearer_token, is_ingest_path, raw_body
 from app.auth import COOKIE_NAME, CSRF_COOKIE_NAME, PENDING_COOKIE_NAME, CSRFError
 from app.core.config import settings
 from app.core.database import Base, engine
+from app.core.logging import configure_logging
 from app.core.ratelimit import limiter  # single shared instance
 from app.routes import (
     auth,
@@ -36,8 +40,13 @@ from app.routes import settings as settings_router
 from app.routes import settlement as settlement_router
 from app.routes import stock as stock_router
 from app.scheduler import start_scheduler, stop_scheduler
+from app.services import record_ingest_attempt
 
 logger = logging.getLogger(__name__)
+
+# Before anything can log: uvicorn configures only its own loggers, so without
+# this every line the app writes (ingest diagnostics included) is dropped.
+configure_logging()
 
 
 @asynccontextmanager
@@ -62,7 +71,55 @@ app = FastAPI(
 )
 
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+# ---------------------------------------------------------------------------
+# Ingest diagnostics — app-wide handlers for the two failures that happen
+# *around* POST /api/v1/ingest/apple-pay rather than inside it. Both keep
+# FastAPI's/slowapi's original response and only add a recorded attempt, so a
+# payment flow can never be broken by its own logging.
+# ---------------------------------------------------------------------------
+async def _record_validation_error(request: Request, exc: RequestValidationError) -> None:
+    """A body FastAPI refused before the endpoint ran: wrong key names, a
+    whole transaction record sent as a value, form-encoded instead of JSON,
+    invalid JSON. Only this handler sees it — and only it has the raw bytes."""
+    if not is_ingest_path(request.url.path):
+        return
+    detail = "; ".join(
+        f"{'.'.join(str(part) for part in error.get('loc', ()))}: {error.get('msg')}"
+        for error in exc.errors()
+    )
+    record_ingest_attempt(
+        status=422,
+        detail=detail or "Invalid payload",
+        payload=getattr(exc, "body", None),
+        content_type=request.headers.get("content-type"),
+        raw_token=bearer_token(request),
+        path=request.url.path,
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, exc: RequestValidationError):
+    await _record_validation_error(request, exc)
+    # FastAPI's own handler, so the response body is exactly what it was.
+    return await request_validation_exception_handler(request, exc)
+
+
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    if is_ingest_path(request.url.path):
+        record_ingest_attempt(
+            status=429,
+            detail="Rate limit exceeded — the Shortcut may send at most 60 purchases per hour",
+            payload=raw_body(request),
+            content_type=request.headers.get("content-type"),
+            raw_token=bearer_token(request),
+            path=request.url.path,
+        )
+    return _rate_limit_exceeded_handler(request, exc)
+
+
+app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
 
 # Authlib keeps the OIDC state, nonce and PKCE verifier here between /app/auth/login
 # and the callback. Lax, because the callback is a cross-site top-level redirect.

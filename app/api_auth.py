@@ -18,7 +18,6 @@ Access token claims:
 
 import hashlib
 import hmac
-import logging
 import secrets
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit
@@ -311,7 +310,6 @@ def require_api_auth_enrolling(
 
 
 PAT_PREFIX = "pat_"
-logger = logging.getLogger(__name__)
 
 
 def _ingest_unauthorized(detail: str = "Invalid ingest token") -> HTTPException:
@@ -330,9 +328,6 @@ INGEST_FAILURE_LIMIT = "20/minute"
 def _ingest_failure(request: Request | None, detail: str = "Invalid ingest token") -> HTTPException:
     """Count a failed ingest auth against the client IP: 401, or 429 once over
     the limit. Uses the shared limiter's storage (reset between tests)."""
-    # No household to file it under, so the server log is all there is. The
-    # reason is one of our own fixed strings: the token is never logged.
-    logger.warning('ingest apple-pay rejected status=401 reason="%s"', detail)
     if request is not None:
         from limits import parse
 
@@ -357,30 +352,47 @@ def require_ingest_token(
     here), a stored hash matches, not revoked, scope includes ``ingest``, the
     owner still exists and is still a member of the token's household. Records
     ``last_used_at``. Returns the token row. The token itself is never logged.
+
+    A rejection is logged and recorded (Settings → Automations) so a broken
+    wake-up is diagnosable even when the failure is here and not in the
+    payload — a revoked token says not a word about the request body.
     """
-    if not credentials or not credentials.credentials.startswith(PAT_PREFIX):
-        raise _ingest_failure(request, "A personal ingest token is required")
+    try:
+        if not credentials or not credentials.credentials.startswith(PAT_PREFIX):
+            raise _ingest_failure(request, "A personal ingest token is required")
 
-    from app.services.personal_tokens import INGEST_SCOPE, hash_personal_token
+        from app.services.personal_tokens import INGEST_SCOPE, hash_personal_token
 
-    digest = hash_personal_token(credentials.credentials)
-    # Lookup is by the SHA-256 of a 192-bit random secret, so query timing
-    # reveals nothing usable; the compare_digest is belt and braces.
-    record = db.query(PersonalApiToken).filter_by(token_hash=digest).first()
-    if record is None or not hmac.compare_digest(record.token_hash, digest):
-        raise _ingest_failure(request)
-    if record.revoked_at is not None:
-        raise _ingest_failure(request, "Token revoked")
-    if INGEST_SCOPE not in record.scope_list:
-        raise _ingest_failure(request, "Token scope is not valid for this endpoint")
-    if db.get(User, record.user_id) is None or not _is_member(
-        db, record.household_id, record.user_id
-    ):
-        raise _ingest_failure(request, "Not a member of this household")
+        digest = hash_personal_token(credentials.credentials)
+        # Lookup is by the SHA-256 of a 192-bit random secret, so query timing
+        # reveals nothing usable; the compare_digest is belt and braces.
+        record = db.query(PersonalApiToken).filter_by(token_hash=digest).first()
+        if record is None or not hmac.compare_digest(record.token_hash, digest):
+            raise _ingest_failure(request)
+        if record.revoked_at is not None:
+            raise _ingest_failure(request, "Token revoked")
+        if INGEST_SCOPE not in record.scope_list:
+            raise _ingest_failure(request, "Token scope is not valid for this endpoint")
+        if db.get(User, record.user_id) is None or not _is_member(
+            db, record.household_id, record.user_id
+        ):
+            raise _ingest_failure(request, "Not a member of this household")
 
-    record.last_used_at = utcnow_naive()
-    db.commit()
-    return record
+        record.last_used_at = utcnow_naive()
+        db.commit()
+        return record
+    except HTTPException as exc:
+        from app.services.ingest import record_ingest_attempt
+
+        record_ingest_attempt(
+            status=exc.status_code,
+            detail=exc.detail,
+            content_type=request.headers.get("content-type") if request else None,
+            raw_token=credentials.credentials if credentials else None,
+            path=request.url.path if request else None,
+            db=db,
+        )
+        raise
 
 
 def require_api_pending(

@@ -10,107 +10,86 @@ Responses:
                                                       (never resurrected)
   400 bad amount · 401 bad/revoked token · 422 no bucket / bad input · 429 rate limit
 
-Every authenticated request is kept in the token owner's attempts log (their
-newest 50, GET /api/v1/ingest/attempts) with the reason for a rejection, and
-every rejection is logged at WARNING: a Shortcut cannot be debugged from a
-bare "422". The handler therefore reads and validates the body itself, after
-the token is known.
+Every attempt is recorded (app/services/ingest.py:record_ingest_attempt) —
+including the ones rejected by auth, the rate limiter or body validation, in
+app/main.py — and logged as one ``ingest:`` line. The Shortcut is built by
+hand on the phone, so a bare "422" in the access log has to come with the
+payload that caused it.
 """
 
-import json
-from datetime import datetime
-from decimal import Decimal
-from typing import Literal
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from fastapi.encoders import jsonable_encoder
-from pydantic import BaseModel, ValidationError, field_validator, model_validator
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.api_auth import require_api_auth, require_ingest_token
+from app.api_auth import require_ingest_token
 from app.core.database import get_db
 from app.core.ratelimit import ingest_token_key, limiter
 from app.models import Bucket, Category, PersonalApiToken, Transaction
-from app.services import DeletedTransactionReplay, ingest_apple_pay, notify_ingest_created
-from app.services import ingest as ingest_svc
+from app.services import (
+    DeletedTransactionReplay,
+    ingest_apple_pay,
+    notify_ingest_created,
+    record_ingest_attempt,
+)
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
 
 
+def is_ingest_path(path: str) -> bool:
+    """True for the ingest endpoint — used by app-wide handlers (validation,
+    rate limiting) to know a request is one of ours to record."""
+    return path.rstrip("/").endswith("/api/v1/ingest/apple-pay")
+
+
 class ApplePayIn(BaseModel):
-    merchant: str
-    # Shortcuts sends the amount as a locale string ("12,50"); numbers work too.
-    amount: str | int | float | Decimal
-    currency: str | None = None
-    card: str | None = None
-    occurred_at: str | None = None
-    notes: str | None = None
-    exchange_rate: str | int | float | Decimal | None = None
+    """The Shortcut's JSON body, accepted as-is and coerced downstream.
 
-    @field_validator("*", mode="before")
-    @classmethod
-    def _unwrap(cls, v):
-        # Shortcuts actions often hand over a list ("Get Numbers from Input"
-        # gives [12.5], "Get Text" ["Sklavenitis"]): its first element is meant.
-        return v[0] if isinstance(v, list) and v else v
+    Fields are deliberately untyped: FastAPI's own checks would only answer
+    "Input should be a valid string", which says nothing about *what*
+    arrived. A Shortcuts row set to the whole transaction record sends a
+    dictionary; a row left empty sends null. app/services/ingest.py turns
+    what it can into text or a number, and refuses the rest with a message
+    naming the field and the shape it got — which is what the log on
+    Settings → Automations then shows.
+    """
 
-
-class IngestAttemptOut(BaseModel):
-    id: str
-    created_at: datetime  # naive UTC
-    status_code: int
-    outcome: Literal["created", "duplicate", "rejected", "classified"]
-    reason: str | None  # why it was rejected
-    merchant: str | None  # the start of what was sent (80 characters)
-    amount_raw: str | None  # the amount exactly as sent (40 characters)
-    transaction_id: str | None
-    token_name: str | None
+    merchant: Any = None
+    amount: Any = None
+    currency: Any = None
+    card: Any = None
+    occurred_at: Any = None
+    notes: Any = None
+    exchange_rate: Any = None
 
 
-class IngestAttemptsOut(BaseModel):
-    items: list[IngestAttemptOut]
+def raw_body(request: Request) -> str | None:
+    """The request body exactly as received, decoded.
+
+    FastAPI reads it before dependencies or validation run, so the bytes sit
+    in the request's cache; reading ``await request.body()`` again here (this
+    is a sync endpoint) would be a second read of a consumed stream.
+    """
+    body = getattr(request, "_body", None)
+    if not body:
+        return None
+    if isinstance(body, bytes):
+        return body.decode("utf-8", errors="replace")
+    return str(body)
 
 
-NOT_AN_OBJECT = "Body must be JSON with merchant and amount"
-_FIELD_NAMES = frozenset({*ApplePayIn.model_fields, "category", "bucket", "remember"})
-# A real payload is a few hundred bytes; a bigger body is refused unparsed.
-MAX_BODY_BYTES = 16 * 1024
-
-
-async def _raw_body(request: Request) -> bytes:
-    return await request.body()
-
-
-def _validation_detail(exc: ValidationError) -> list[dict]:
-    """The ``detail`` list FastAPI itself sends for a body that fails
-    validation (``loc`` starts at "body")."""
-    out = []
-    for e in exc.errors(include_url=False):
-        item = {"type": e["type"], "loc": ["body", *e["loc"]], "msg": e["msg"], "input": e["input"]}
-        if e.get("ctx"):
-            item["ctx"] = {
-                k: str(v) if isinstance(v, Exception) else v for k, v in e["ctx"].items()
-            }
-        out.append(item)
-    return jsonable_encoder(out)
-
-
-def _reason(detail) -> str:
-    """One line for the log from an error ``detail`` (a string, or FastAPI's
-    list): "merchant: Field required"."""
-    if isinstance(detail, list):
-        parts = []
-        for e in detail:
-            # Only a field of ours is named: a key the client made up is not.
-            where = ".".join(str(p) for p in e.get("loc", [])[1:2] if p in _FIELD_NAMES)
-            parts.append(f"{where}: {e.get('msg')}" if where else str(e.get("msg")))
-        return "; ".join(parts)
-    return str(detail)
+def bearer_token(request: Request) -> str | None:
+    header = request.headers.get("authorization", "")
+    scheme, _, value = header.partition(" ")
+    if value and scheme.lower() == "bearer":
+        return value.strip()
+    return header.strip() or None
 
 
 def _result(db: Session, txn: Transaction) -> dict:
     category = db.get(Category, txn.category_id) if txn.category_id else None
-    bucket = db.get(Bucket, txn.bucket_id) if txn.bucket_id else None
+    bucket = db.get(Bucket, txn.bucket_id)
     return {
         "id": txn.id,
         "amount": txn.amount,
@@ -120,64 +99,25 @@ def _result(db: Session, txn: Transaction) -> dict:
         "bucket": bucket.name if bucket else None,
         "bucket_id": txn.bucket_id,
         "transaction_date": txn.transaction_date.isoformat(),
-        # S6 (added keys): needs_category, buckets and bucket_names always;
-        # categories and category_names only while it needs a category.
-        **ingest_svc.ingest_choices(db, txn.household_id, txn),
     }
 
 
-@router.post(
-    "/apple-pay",
-    status_code=status.HTTP_201_CREATED,
-    # The handler reads the body itself (see the module docstring); this
-    # keeps it documented.
-    openapi_extra={
-        "requestBody": {
-            "required": True,
-            "content": {"application/json": {"schema": ApplePayIn.model_json_schema()}},
-        }
-    },
-)
+@router.post("/apple-pay", status_code=status.HTTP_201_CREATED)
 @limiter.limit("60/hour", key_func=ingest_token_key)
 def apple_pay(
     request: Request,
     response: Response,
+    body: ApplePayIn,
     token: PersonalApiToken = Depends(require_ingest_token),
-    raw: bytes = Depends(_raw_body),
     db: Session = Depends(get_db),
 ):
-    # Plain values: the session is rolled back before an attempt is recorded.
-    who = {"household_id": token.household_id, "token_id": token.id, "user_id": token.user_id}
-    payload = None
-    if len(raw) <= MAX_BODY_BYTES:
-        try:
-            payload = json.loads(raw)
-        except ValueError:  # not JSON (or not UTF-8)
-            payload = None
-    merchant, amount_raw = ingest_svc.attempt_fields(payload)
-
-    def reject(status_code: int, detail) -> HTTPException:
-        reason = _reason(detail)
-        ingest_svc.log_rejection(status_code, reason, payload)
-        ingest_svc.record_attempt(
-            db,
-            **who,
-            status_code=status_code,
-            outcome=ingest_svc.REJECTED,
-            reason=reason,
-            merchant=merchant,
-            amount_raw=amount_raw,
-        )
-        return HTTPException(status_code=status_code, detail=detail)
-
-    if len(raw) > MAX_BODY_BYTES:
-        raise reject(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Body is too large")
-    if not isinstance(payload, dict):
-        raise reject(422, NOT_AN_OBJECT)
-    try:
-        body = ApplePayIn.model_validate(payload)
-    except ValidationError as exc:
-        raise reject(422, _validation_detail(exc)) from None
+    attempt = {
+        "db": db,
+        "token": token,
+        "payload": raw_body(request),
+        "content_type": request.headers.get("content-type"),
+        "path": request.url.path,
+    }
     try:
         txn, created = ingest_apple_pay(
             db,
@@ -191,148 +131,28 @@ def apple_pay(
             exchange_rate=body.exchange_rate,
         )
     except DeletedTransactionReplay:
-        raise reject(
-            status.HTTP_409_CONFLICT,
-            "This purchase was already added and has since been deleted.",
-        ) from None
+        detail = "This purchase was already added and has since been deleted."
+        record_ingest_attempt(status=409, detail=detail, **attempt)
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail) from None
     except HTTPException as exc:
-        raise reject(exc.status_code, exc.detail) from None
-    result = _result(db, txn)
-    ingest_svc.record_attempt(
-        db,
-        **who,
-        status_code=201 if created else 200,
-        outcome=ingest_svc.CREATED if created else ingest_svc.DUPLICATE,
-        merchant=merchant,
-        amount_raw=amount_raw,
-        transaction_id=txn.id,
-    )
+        record_ingest_attempt(status=exc.status_code, detail=exc.detail, **attempt)
+        raise
+    except Exception as exc:  # a crash is a failed attempt too — log it, re-raise
+        record_ingest_attempt(
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"{type(exc).__name__}: {exc}",
+            **attempt,
+        )
+        raise
     if not created:
         response.status_code = status.HTTP_200_OK
-        return {**result, "duplicate": True}
-    notify_ingest_created(db, db.get(Transaction, result["id"]))
-    return result
-
-
-class ClassifyIn(BaseModel):
-    """``category`` and ``bucket``: an id or an exact name (case-insensitive,
-    trimmed); at least one. ``remember``: also teach the merchant's rule."""
-
-    category: str | None = None
-    bucket: str | None = None
-    remember: bool = False
-
-    @field_validator("*", mode="before")
-    @classmethod
-    def _unwrap(cls, v):
-        return v[0] if isinstance(v, list) and v else v  # Choose from List may give a list
-
-    @field_validator("category", "bucket")
-    @classmethod
-    def _blank(cls, v: str | None) -> str | None:
-        return (v or "").strip() or None
-
-    @model_validator(mode="after")
-    def _one(self) -> "ClassifyIn":
-        if not self.category and not self.bucket:
-            raise ValueError("Send a category or a bucket.")
-        return self
-
-
-NOT_FOUND = "Not found"
-
-
-@router.post(
-    "/apple-pay/{transaction_id}/classify",
-    openapi_extra={
-        "requestBody": {
-            "required": True,
-            "content": {"application/json": {"schema": ClassifyIn.model_json_schema()}},
-        }
-    },
-)
-@limiter.limit("60/hour", key_func=ingest_token_key)
-def classify(
-    request: Request,
-    transaction_id: str,
-    token: PersonalApiToken = Depends(require_ingest_token),
-    raw: bytes = Depends(_raw_body),
-    db: Session = Depends(get_db),
-):
-    """Save first, then ask: set the category and/or bucket of a purchase this
-    same token added in the last 15 minutes (anything else is a bare 404).
-    Returns the ingest result again, updated."""
-    who = {"household_id": token.household_id, "token_id": token.id, "user_id": token.user_id}
-    payload = None
-    if len(raw) <= MAX_BODY_BYTES:
-        try:
-            payload = json.loads(raw)
-        except ValueError:
-            payload = None
-    merchant = None
-
-    def reject(status_code: int, detail) -> HTTPException:
-        reason = _reason(detail)
-        ingest_svc.log_rejection(status_code, reason, payload, what="classify")
-        ingest_svc.record_attempt(
-            db,
-            **who,
-            status_code=status_code,
-            outcome=ingest_svc.REJECTED,
-            reason=reason,
-            merchant=merchant,
+        record_ingest_attempt(
+            status=200,
+            detail="duplicate — an expense for this purchase already exists",
+            transaction_id=txn.id,
+            **attempt,
         )
-        return HTTPException(status_code=status_code, detail=detail)
-
-    txn = ingest_svc.classifiable(db, token, transaction_id)
-    if txn is None:
-        raise reject(404, NOT_FOUND)
-    txn_id, merchant = txn.id, txn.merchant
-    if len(raw) > MAX_BODY_BYTES:
-        raise reject(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Body is too large")
-    if not isinstance(payload, dict):
-        raise reject(422, "Body must be JSON with category or bucket")
-    try:
-        body = ClassifyIn.model_validate(payload)
-    except ValidationError as exc:
-        raise reject(422, _validation_detail(exc)) from None
-    try:
-        txn = ingest_svc.classify_ingested(
-            db, token, txn, category=body.category, bucket=body.bucket, remember=body.remember
-        )
-    except HTTPException as exc:
-        raise reject(exc.status_code, exc.detail) from None
-    result = _result(db, txn)
-    ingest_svc.record_attempt(
-        db,
-        **who,
-        status_code=200,
-        outcome=ingest_svc.CLASSIFIED,
-        merchant=merchant,
-        transaction_id=txn_id,
-    )
-    return result
-
-
-@router.get("/attempts", response_model=IngestAttemptsOut)
-def attempts(auth=Depends(require_api_auth), db: Session = Depends(get_db)):
-    """Your last 50 Apple Pay ingest requests in this household (the ones
-    your own tokens sent), newest first, with the reason for each rejection.
-    Tokens are personal: no role sees another member's."""
-    user, hh_id = auth
-    return {
-        "items": [
-            {
-                "id": a.id,
-                "created_at": a.created_at,
-                "status_code": a.status_code,
-                "outcome": a.outcome,
-                "reason": a.reason,
-                "merchant": a.merchant,
-                "amount_raw": a.amount_raw,
-                "transaction_id": a.transaction_id,
-                "token_name": a.token.name if a.token else None,
-            }
-            for a in ingest_svc.list_attempts(db, hh_id, user.id)
-        ]
-    }
+        return {**_result(db, txn), "duplicate": True}
+    record_ingest_attempt(status=201, detail="created", transaction_id=txn.id, **attempt)
+    notify_ingest_created(db, txn)
+    return _result(db, txn)

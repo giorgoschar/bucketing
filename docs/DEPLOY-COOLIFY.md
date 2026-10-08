@@ -159,6 +159,7 @@ deploy (and before any redeploy that introduces a new required variable).
 | `CORS_ALLOWED_ORIGINS` | optional | Space-separated origins for API clients, e.g. `capacitor://localhost`. Empty = none. |
 | `BACKUP_KEEP_DAYS` | optional | Days of backups to keep (default 30). |
 | `BACKUP_BEFORE_MIGRATE` | optional | `true` (default) dumps the DB to `/backups/pre-migrate-*.sql.gz` before `alembic upgrade`. |
+| `LOG_LEVEL` | optional | `INFO` (default). App log lines on stderr. `DEBUG` also logs every payload the Apple Pay Shortcut sends. |
 
 The new app's variables (`NEW_APP_ENABLED`, `OIDC_*`) are listed in section 8. The compose
 stack doesn't pass them; production (the Dockerfile app) sets them in Coolify.
@@ -327,3 +328,21 @@ This drops `bulk_batches`, `bulk_batch_rows` (bulk-change undo history),
 are untouched. Then deploy the older image. Rolling back between P3 and P2 needs no
 database step. Restoring the pre-migrate dump (section 5) remains the alternative, at the
 cost of anything entered since it was taken.
+
+## 10. Diagnostics: a missing Apple Pay expense
+
+Every request the Shortcut makes to `/api/v1/ingest/apple-pay` is recorded,
+whatever its outcome, in two places:
+
+- **Server log** (`docker logs`): one `ingest: … → <status>` line per attempt,
+  with the token prefix, content type and the exact payload the phone sent —
+  grep `ingest:` in Coolify → the app service → **Logs**.
+- **In-app**: Settings → Automations → **Recent ingest attempts** shows the
+  same rows (newest first) for each household.
+
+A payment that did not arrive is therefore diagnosable from the payload in
+those rows: a `422` almost always means the Request Body is sent as
+**Form** instead of **JSON**, or a Shortcuts value picks the whole transaction
+record instead of one field. A `400` with "Amount must be a number" means the
+`amount` row is not the Amount field. A `401` means the token was revoked or
+mistyped; check the token prefix against Settings → Automations.
