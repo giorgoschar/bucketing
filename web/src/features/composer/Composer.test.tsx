@@ -105,7 +105,7 @@ it('offline: Save queues, closes with the on-phone toast, and still learns the d
   press('3')
   fireEvent.click(screen.getByRole('button', { name: /^Save 3 euro/ }))
   expect(await screen.findByText("Saved on this phone. It will sync when you're back online.")).toBeInTheDocument()
-  expect(screen.getByText('home screen')).toBeInTheDocument()
+  expect(await screen.findByText('home screen')).toBeInTheDocument() // the route renders a tick after the toast
   expect(await db.queue.count()).toBe(1)
   expect((await loadDefaults('h1')).last?.payment_method).toBe('apple_pay')
 })
