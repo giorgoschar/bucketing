@@ -17,6 +17,7 @@ hand on the phone, so a bare "422" in the access log has to come with the
 payload that caused it.
 """
 
+import re
 from datetime import datetime
 from typing import Any, Literal
 
@@ -35,15 +36,29 @@ from app.services import (
     recent_ingest_attempts,
     record_ingest_attempt,
 )
-from app.services.ingest import NO_MERCHANT_DETAIL, PLACEHOLDER_MERCHANT
+from app.services.ingest import (
+    CANNOT_CLASSIFY,
+    NO_MERCHANT_DETAIL,
+    PLACEHOLDER_MERCHANT,
+    _text_value,
+    classifiable,
+    classify_ingested,
+    ingest_choices,
+    log_safe,
+    truthy,
+)
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
+
+
+_CLASSIFY_PATH = re.compile(r"/api/v1/ingest/apple-pay/[^/]+/classify$")
 
 
 def is_ingest_path(path: str) -> bool:
     """True for the ingest endpoint — used by app-wide handlers (validation,
     rate limiting) to know a request is one of ours to record."""
-    return path.rstrip("/").endswith("/api/v1/ingest/apple-pay")
+    path = path.rstrip("/")
+    return path.endswith("/api/v1/ingest/apple-pay") or bool(_CLASSIFY_PATH.search(path))
 
 
 class ApplePayIn(BaseModel):
@@ -90,7 +105,7 @@ def bearer_token(request: Request) -> str | None:
     return header.strip() or None
 
 
-def _result(db: Session, txn: Transaction) -> dict:
+def _result(db: Session, txn: Transaction, token: PersonalApiToken) -> dict:
     category = db.get(Category, txn.category_id) if txn.category_id else None
     bucket = db.get(Bucket, txn.bucket_id)
     return {
@@ -102,6 +117,9 @@ def _result(db: Session, txn: Transaction) -> dict:
         "bucket": bucket.name if bucket else None,
         "bucket_id": txn.bucket_id,
         "transaction_date": txn.transaction_date.isoformat(),
+        # Additive (polish S6). needs_category for every token; the name lists
+        # only for a token created with the classify scope.
+        **ingest_choices(db, token, txn),
     }
 
 
@@ -156,7 +174,7 @@ def apple_pay(
             transaction_id=txn.id,
             **attempt,
         )
-        return {**_result(db, txn), "duplicate": True}
+        return {**_result(db, txn, token), "duplicate": True}
     record_ingest_attempt(
         status=201,
         detail=NO_MERCHANT_DETAIL if txn.merchant == PLACEHOLDER_MERCHANT else "created",
@@ -164,15 +182,15 @@ def apple_pay(
         **attempt,
     )
     notify_ingest_created(db, txn)
-    return _result(db, txn)
+    return _result(db, txn, token)
 
 
 class IngestAttemptOut(BaseModel):
     id: str
     created_at: datetime
     status: int
-    # created (201) | duplicate (200) | rejected (anything else)
-    outcome: Literal["created", "duplicate", "rejected"]
+    # created (201) | duplicate (200) | classified (200, a classify call) | rejected
+    outcome: Literal["created", "duplicate", "rejected", "classified"]
     detail: str | None = None
     payload: str | None = None
     token_prefix: str | None = None
@@ -183,7 +201,9 @@ class IngestAttemptsOut(BaseModel):
     items: list[IngestAttemptOut]
 
 
-def attempt_outcome(status_code: int) -> str:
+def attempt_outcome(status_code: int, detail: str | None = None) -> str:
+    if status_code == 200 and (detail or "").startswith("classified:"):
+        return "classified"
     return {201: "created", 200: "duplicate"}.get(status_code, "rejected")
 
 
@@ -199,7 +219,7 @@ def list_attempts(auth=Depends(require_api_auth), db: Session = Depends(get_db))
                 "id": a.id,
                 "created_at": a.created_at,
                 "status": a.status,
-                "outcome": attempt_outcome(a.status),
+                "outcome": attempt_outcome(a.status, a.detail),
                 "detail": a.detail,
                 "payload": a.payload,
                 "token_prefix": a.token_prefix,
@@ -208,3 +228,76 @@ def list_attempts(auth=Depends(require_api_auth), db: Session = Depends(get_db))
             for a in rows
         ]
     }
+
+
+class ClassifyIn(BaseModel):
+    """Untyped on purpose, like ApplePayIn: a Choose from List result can be
+    text, a list or a dictionary; the values are coerced with ``_text_value``.
+    ``category``/``bucket``: an id or an exact name (trimmed, case-insensitive),
+    at least one. ``remember``: also teach the merchant's category rule."""
+
+    category: Any = None
+    bucket: Any = None
+    remember: Any = None
+
+
+@router.post("/apple-pay/{transaction_id}/classify")
+@limiter.limit("60/hour", key_func=ingest_token_key)
+def classify(
+    request: Request,
+    response: Response,
+    transaction_id: str,
+    body: ClassifyIn,
+    token: PersonalApiToken = Depends(require_ingest_token),
+    db: Session = Depends(get_db),
+):
+    """Save first, then ask: set the category and/or bucket of a purchase this
+    same token added less than 15 minutes ago. Needs a token created with the
+    classify scope (403 otherwise). Anything that is not the token's own,
+    recent, live purchase is a bare 404. Returns the ingest result again."""
+    attempt = {
+        "db": db,
+        "token": token,
+        "raw_token": bearer_token(request),
+        "payload": raw_body(request),
+        "content_type": request.headers.get("content-type"),
+        "path": request.url.path,
+        "transaction_id": None,
+    }
+
+    def reject(code: int, detail: str, public: str | None = None) -> HTTPException:
+        record_ingest_attempt(status=code, detail=detail, **attempt)
+        return HTTPException(status_code=code, detail=public) if public else HTTPException(code)
+
+    if not token.can_classify:
+        raise reject(403, CANNOT_CLASSIFY, CANNOT_CLASSIFY)
+    txn = classifiable(db, token, transaction_id)
+    if txn is None:
+        raise reject(
+            404,
+            "classify: no such purchase for this token (not found, not made by this token, "
+            "older than 15 minutes, or deleted)",
+        )
+    attempt["transaction_id"] = txn.id
+    category = (_text_value(body.category) or "").strip()
+    bucket = (_text_value(body.bucket) or "").strip()
+    if not category and not bucket:
+        raise reject(422, "classify: send a category or a bucket", "Send a category or a bucket.")
+    try:
+        txn, extras = classify_ingested(
+            db,
+            token,
+            txn,
+            category=category or None,
+            bucket=bucket or None,
+            remember=truthy(body.remember),
+        )
+    except HTTPException as exc:
+        db.rollback()
+        raise reject(exc.status_code, str(exc.detail), exc.detail) from None
+    chosen = extras.pop("chosen")
+    detail = "classified: " + " / ".join(log_safe(c, 80) for c in chosen)
+    if extras.get("remembered"):
+        detail += " (rule remembered)"
+    record_ingest_attempt(status=200, detail=detail, **attempt)
+    return {**_result(db, txn, token), **extras}

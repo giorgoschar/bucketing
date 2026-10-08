@@ -945,6 +945,10 @@ class PersonalApiToken(Base):
     def scope_list(self) -> list[str]:
         return [s.strip() for s in (self.scopes or "").split(",") if s.strip()]
 
+    @property
+    def can_classify(self) -> bool:
+        return "classify" in self.scope_list
+
 
 # Apple Pay ingest diagnostics (iOS Shortcut)
 # ------------------------------------------

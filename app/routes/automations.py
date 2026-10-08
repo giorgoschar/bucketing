@@ -76,6 +76,7 @@ def create_token(
     request: Request,
     name: str = Form(...),
     default_bucket_id: str = Form(""),
+    allow_classify: str = Form(""),
     db: Session = Depends(get_db),
     auth=Depends(require_auth),
 ):
@@ -87,6 +88,7 @@ def create_token(
             household_id=hh_id,
             name=name,
             default_bucket_id=default_bucket_id or None,
+            allow_classify=bool(allow_classify),
         )
     except HTTPException as exc:
         db.rollback()
