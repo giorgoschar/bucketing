@@ -9,7 +9,13 @@ price_snapshots.source
 * ``price_snapshots.source``: ``posokanei`` (the server default, so every
   existing row is one) or ``manual`` (a price the user logged).
 
-Additive: the downgrade drops the two columns and the two indexes.
+* ``ingest_attempts`` data step: before the diagnostics keep only a summary of a
+  request, they stored the raw body. Those rows are cleaned here: ``payload``
+  and ``content_type`` are NULLed, and ``detail`` where the status could carry
+  input (everything but 200/201/401/409/429, whose detail is fixed text).
+  Idempotent; the downgrade cannot restore it.
+
+Otherwise additive: the downgrade drops the two columns and the two indexes.
 
 Revision ID: f2a3b4c5d6e7
 Revises: b0c1d2e3f4a5
@@ -37,6 +43,13 @@ def upgrade() -> None:
         batch.add_column(
             sa.Column("source", sa.String(length=16), nullable=True, server_default="posokanei")
         )
+
+
+    # Raw bodies stored by the first version of the diagnostics (see above).
+    op.execute(
+        "UPDATE ingest_attempts SET payload = NULL, content_type = NULL, "
+        "detail = CASE WHEN status IN (200, 201, 401, 409, 429) THEN detail ELSE NULL END"
+    )
 
 
 def downgrade() -> None:
