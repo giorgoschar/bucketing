@@ -8,6 +8,7 @@ double-fire it, so every payload maps to a deterministic ``client_id``
 
 import hashlib
 import logging
+import re
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -35,6 +36,106 @@ from app.services.transactions import DuplicateTransaction, create_transaction
 from app.validators import parse_amount
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# The amount, as iOS sends it
+# ---------------------------------------------------------------------------
+
+_SYMBOLS = {"€": "EUR", "$": "USD", "£": "GBP"}
+# ISO 4217 currencies with three decimal places.
+THREE_DECIMAL_CURRENCIES = frozenset({"BHD", "IQD", "JOD", "KWD", "LYD", "OMR", "TND"})
+_GROUPING_MARKS = ("'", "\u2019")  # 1'234.56
+_LETTERS = re.compile(r"[A-Za-z]+")
+_DIGITS_AND_SEPARATORS = re.compile(r"[0-9.,]*[0-9][0-9.,]*")
+
+
+def parse_ingest_amount(raw, currency: str | None = None) -> tuple[Decimal, str | None]:
+    """The amount of an Apple Pay payload, and the currency its text names.
+
+    iOS's Transaction trigger gives the amount as a locale currency string
+    ("12,50 €", "€1.234,56"), which the shared :func:`parse_amount` rejects.
+    This reads it (ingest only; numbers go straight to ``parse_amount``):
+
+    * **Spaces** anywhere are dropped: normal, non-breaking (U+00A0) and narrow
+      non-breaking (U+202F), so "1 234,56" is 1234.56.
+    * **Currency**: one symbol (€ EUR, $ USD, £ GBP) or one three-letter code,
+      anywhere, is removed and returned as the detected currency ("€12,50",
+      "12,50 €", "EUR 12.50", "12.50EUR" are all 12.50 EUR). The caller uses
+      it only when the payload has no ``currency`` of its own.
+    * **Separators**. With both "." and ",", the last one is the decimal
+      separator and the other groups thousands ("1.234,56" and "1,234.56" are
+      1234.56). One kind used more than once groups thousands ("1.234.567").
+      A single separator is the decimal separator, **except** when exactly
+      three digits follow it: then it groups thousands ("1.234" and "1,234"
+      are 1234), unless
+
+      - the currency has three decimals (:data:`THREE_DECIMAL_CURRENCIES`; the
+        code in the text, else ``currency``): "1.234" KWD is 1.234;
+      - nothing but zeros comes before it ("0.500" is a half, not 500);
+      - the three digits end in "00": that is a two-decimal amount padded to
+        three places ("12.500" is 12.50, as it has always been read here).
+
+    * A **minus** (or U+2212), i.e. a refund, is rejected as before, and so
+      is zero: 400 "Amount must be greater than zero."
+    * Anything else is a 400 that shows the start of what was sent (the
+      caller's own input): "Amount must be a number like 12,50 (got: '...')".
+
+    Returns ``(amount, detected currency or None)``; the amount is quantized
+    like ``parse_amount``'s.
+    """
+    if not isinstance(raw, str):
+        return parse_amount(raw), None
+    if not raw.strip():
+        return parse_amount(raw), None  # 400 "Amount is required."
+
+    def bad() -> HTTPException:
+        return HTTPException(
+            status_code=400,
+            detail=f"Amount must be a number like 12,50 (got: '{raw.strip()[:20]}')",
+        )
+
+    text = "".join(ch for ch in raw if not ch.isspace()).replace("\u2212", "-")
+    found = {_SYMBOLS[ch] for ch in text if ch in _SYMBOLS}
+    for ch in _SYMBOLS:
+        text = text.replace(ch, "")
+    for word in _LETTERS.findall(text):
+        if len(word) != 3:
+            raise bad()
+        found.add(word.upper())
+    text = _LETTERS.sub("", text)
+    if len(found) > 1:
+        raise bad()
+    detected = next(iter(found), None)
+
+    negative = text.startswith("-")
+    if negative:
+        text = text[1:]
+    for mark in _GROUPING_MARKS:
+        text = text.replace(mark, "")
+    if not _DIGITS_AND_SEPARATORS.fullmatch(text):
+        raise bad()
+
+    dots, commas = text.count("."), text.count(",")
+    if dots and commas:
+        decimal = "." if text.rfind(".") > text.rfind(",") else ","
+        if text.count(decimal) != 1:
+            raise bad()
+        text = text.replace("," if decimal == "." else ".", "").replace(decimal, ".")
+    elif dots + commas > 1:
+        text = text.replace(".", "").replace(",", "")
+    elif dots + commas == 1:
+        whole, _, fraction = text.replace(",", ".").partition(".")
+        groups_thousands = (
+            len(fraction) == 3
+            and whole.strip("0") != ""
+            and not fraction.endswith("00")
+            and (detected or currency or "").upper() not in THREE_DECIMAL_CURRENCIES
+        )
+        text = whole + fraction if groups_thousands else f"{whole}.{fraction}"
+    if negative:
+        raise HTTPException(status_code=400, detail="Amount must be greater than zero.")
+    return parse_amount(text), detected
 
 
 def parse_occurred_at(raw: str | None) -> datetime | None:
@@ -126,9 +227,10 @@ def ingest_apple_pay(
     merchant = " ".join((merchant or "").split())
     if not merchant:
         raise HTTPException(status_code=422, detail="Merchant is required.")
-    value = parse_amount(amount)
-    moment = parse_occurred_at(occurred_at)
     household = db.get(Household, token.household_id)
+    currency = (currency or "").strip().upper() or None
+    value, detected = parse_ingest_amount(amount, currency or household.default_currency)
+    moment = parse_occurred_at(occurred_at)
     bucket = resolve_ingest_bucket(db, token)
     # Rules only: the built-in guess fuzzy-matches a category *hint*, and
     # merchant names ("Corner Kiosk" ~ "Groceries") give false positives.
@@ -137,7 +239,8 @@ def ingest_apple_pay(
     fields = {
         "bucket_id": bucket.id,
         "amount": value,
-        "currency": (currency or "").strip().upper() or household.default_currency or "EUR",
+        # The payload's own currency, else the one its amount names ("12,50 €").
+        "currency": currency or detected or household.default_currency or "EUR",
         "paid_by": token.user_id,
         "category_id": category_id,
         "notes": _notes((card or "").strip() or None, (notes or "").strip() or None),
