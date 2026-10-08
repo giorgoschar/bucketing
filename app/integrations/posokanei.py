@@ -144,17 +144,36 @@ def _bool(value) -> bool:
     return False
 
 
+def _first(raw: dict, *keys):
+    """The first of ``keys`` present with a non-empty value (current key first,
+    older aliases after it)."""
+    for k in keys:
+        v = raw.get(k)
+        if v is not None and v != "":
+            return v
+    return None
+
+
 def _map_retailer(raw: dict) -> RetailerPrice:
     retailer = _str(raw.get("retailer")) or "unknown"
     return RetailerPrice(
         retailer=retailer[:40],
-        display_name=_str(raw.get("display_name")) or retailer,
+        display_name=_str(_first(raw, "retailer_display_name", "display_name")) or retailer,
         price=_dec(raw.get("price")),
-        unit_price=_dec(raw.get("unit_price")),
+        # The per-kg/l price is ``price_normalized`` in the current API.
+        unit_price=_dec(_first(raw, "price_normalized", "unit_price")),
         is_discount=_bool(raw.get("is_discount")),
-        discount_pct=_dec(raw.get("discount_pct")),
+        discount_pct=_dec(_first(raw, "discount_percentage", "discount_pct")),
         last_updated=_str(raw.get("last_updated")),
     )
+
+
+def _is_greek(raw: dict) -> bool:
+    """A Greek retailer's price. With ``countries=all`` the API also returns
+    other countries' chains (``country``: "IT", "PT", ...); a price without a
+    country is the older GR-only shape and counts."""
+    country = _str(raw.get("country"))
+    return country is None or country.upper() == "GR"
 
 
 def _map_history(raw) -> list[PricePoint]:
@@ -186,15 +205,18 @@ def _map_product(raw) -> ProductSummary:
     if not pid or not name:
         raise PosokaneiUnavailable("product without id/name")
 
-    prices_raw = raw.get("retailer_prices") or []
-    prices = [_map_retailer(p) for p in prices_raw if isinstance(p, dict)]
+    prices_raw = [p for p in raw.get("retailer_prices") or [] if isinstance(p, dict)]
+    greek = [p for p in prices_raw if _is_greek(p)]
+    prices = [_map_retailer(p) for p in greek]
 
     stats_raw = raw.get("price_stats")
-    if isinstance(stats_raw, dict):
+    # The API's stats cover every country it returned; with foreign prices
+    # dropped they are worked out again from the Greek ones below.
+    if isinstance(stats_raw, dict) and len(greek) == len(prices_raw):
         stats = PriceStats(
-            min=_dec(stats_raw.get("min")),
-            max=_dec(stats_raw.get("max")),
-            avg=_dec(stats_raw.get("avg")),
+            min=_dec(_first(stats_raw, "min_price", "min")),
+            max=_dec(_first(stats_raw, "max_price", "max")),
+            avg=_dec(_first(stats_raw, "avg_price", "avg")),
         )
     else:
         values = [p.price for p in prices if p.price is not None]
@@ -218,14 +240,16 @@ def _map_product(raw) -> ProductSummary:
     )
 
 
+_SEARCH_CONTAINERS = ("products", "results", "items")  # current key first
+
+
 def _map_search(payload) -> list[ProductSummary]:
-    if isinstance(payload, list):
-        items = payload
-    elif isinstance(payload, dict) and isinstance(
-        payload.get("results", payload.get("items")), list
-    ):
-        items = payload.get("results", payload.get("items"))
-    else:
+    items = payload if isinstance(payload, list) else None
+    if isinstance(payload, dict):
+        items = next(
+            (payload[k] for k in _SEARCH_CONTAINERS if isinstance(payload.get(k), list)), None
+        )
+    if items is None:
         raise PosokaneiUnavailable("unexpected search shape")
     return [_map_product(p) for p in items]
 
@@ -335,7 +359,14 @@ class PosokaneiClient:
         query = (query or "").strip()[:100]
         if not query:
             return []
-        body = {"query": query, "page": page, "page_size": page_size}
+        # The request the posokanei.gov.gr site itself sends (2026-10).
+        body = {
+            "page": page,
+            "page_size": page_size,
+            "sort_by": "name",
+            "sort_order": "asc",
+            "title": query,
+        }
         return self._call(
             ("search", query, page, page_size), _map_search, "POST", "/products/search", json=body
         )
@@ -356,11 +387,11 @@ class PosokaneiClient:
         pid = (product_id or "").strip()
         if not valid_product_id(pid):
             raise PosokaneiNotFound("invalid product id")
-        params = {
-            "countries": "GR",
-            "include_tax": "true",
-            "include_history": "true" if include_history else "false",
-        }
+        # The site's own product request (2026-10). Foreign retailers come
+        # back too and are dropped in _map_product. ``include_history`` only
+        # keys the cache now: the current API takes no such parameter, and a
+        # ``history`` list is still read when one is returned.
+        params = {"sort_retailers": "asc", "countries": "all", "include_tax": "true"}
 
         def mapper(payload):
             if payload is None:

@@ -14,9 +14,9 @@ compute its own price advice.
 
 | Function | Request | Notes |
 |---|---|---|
-| `search(query, page=1, page_size=20)` | `POST /products/search` body `{"query": q, "page": p, "page_size": n}` | add-product search box |
+| `search(query, page=1, page_size=20)` | `POST /products/search` body `{"page": p, "page_size": n, "sort_by": "name", "sort_order": "asc", "title": q}` | add-product search box; answers `{"products": [...]}` |
 | `by_barcode(barcode)` | `GET /products/barcode/{barcode}` | 404 → `None`; non-digit codes never sent |
-| `get(product_id, include_history=True)` | `GET /products/{id}?countries=GR&include_tax=true&include_history=true` | daily refresh; `history` (if present) backfills snapshots; 404 or an invalid id → `PosokaneiNotFound` |
+| `get(product_id, include_history=True)` | `GET /products/{id}?sort_retailers=asc&countries=all&include_tax=true` | daily refresh; `history` (if present) backfills snapshots; 404 or an invalid id → `PosokaneiNotFound` |
 
 Base URL `https://api.posokanei.gov.gr` (`POSOKANEI_BASE_URL`).
 
@@ -24,6 +24,15 @@ All responses map to `ProductSummary(id, name, brand, barcode, unit,
 unit_quantity, image_url, retailer_prices[RetailerPrice(retailer,
 display_name, price, unit_price, is_discount, discount_pct, last_updated)],
 price_stats(min, max, avg), history)`. Money is `Decimal`.
+
+The request format and field names follow what the posokanei.gov.gr site
+itself sends (captured 2026-10-08): `retailer_prices[].price_normalized` is
+the unit price, `retailer_display_name` the display name,
+`discount_percentage` the discount and `price_stats.{min,max,avg}_price` the
+stats (the older names are still read). Prices whose `country` is not `GR`
+are dropped, and the stats are then worked out from the Greek prices. The
+API answers 403 to non-browser clients by design; the client keeps its honest
+User-Agent and never sends browser-impersonation headers.
 
 ## Politeness and failure handling
 

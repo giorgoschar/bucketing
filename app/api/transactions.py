@@ -18,6 +18,7 @@ from app.api.transaction_models import (
     CountsOut,
     DuplicatesOut,
     HistoryOut,
+    TotalsOut,
     TransactionOut,
     TransactionPage,
 )
@@ -281,6 +282,36 @@ def create_transaction(
 
 
 # Literal paths: declared before /{txn_id}, or FastAPI reads "counts" as an id.
+
+
+@router.get("/totals", response_model=TotalsOut)
+def transaction_totals(
+    f: Annotated[FeedQuery, Query()],
+    auth=Depends(require_api_auth),
+    db: Session = Depends(get_db),
+):
+    """The Activity filter's total (polish C1): how many rows match and what
+    they add up to, over every match (``page``/``page_size`` are ignored).
+    One aggregate statement; amounts converted as Insights converts them."""
+    user, hh_id = auth
+    filtered = apply_filter(
+        db.query(Transaction).filter(Transaction.active(), Transaction.household_id == hh_id),
+        f,
+        db,
+        hh_id,
+    )
+
+    def summed(kind: TransactionType):
+        return func.coalesce(
+            func.sum(case((Transaction.type == kind, base_amount_expr()), else_=0)), 0
+        )
+
+    count, out, inn = filtered.with_entities(
+        func.count(Transaction.id),
+        summed(TransactionType.expense),
+        summed(TransactionType.income),
+    ).one()
+    return {"count": int(count or 0), "out": quantize(out), "in": quantize(inn)}
 
 
 @router.get("/counts", response_model=CountsOut)
