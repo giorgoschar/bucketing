@@ -295,11 +295,14 @@ export function shoppingRoutes(initial: ShoppingOut = shoppingOut()): Routes {
   return {
     'GET /api/v1/stock/shopping': () => structuredClone(data),
     'GET /api/v1/stock/summary': () => ({ low_count: 3, ticked_count: data.ticked_count }),
+    // Like the server (pantry fix round 1, I2): the client's `id` names the new tick; an item already ticked
+    // returns its existing tick (whatever its id); a replayed id returns the row as it is now.
     'POST /api/v1/stock/shopping/ticks': (r) => {
-      const id = (r.body as { stock_item_id: string }).stock_item_id
+      const b = r.body as { id?: string; stock_item_id: string }
+      const id = b.stock_item_id
       const found = data.items.find((i) => i.id === id)
       if (!found) return reply(404, { detail: 'Stock item not found' })
-      const tickId = found.tick_id ?? `tick-${++seq}`
+      const tickId = found.tick_id ?? b.id ?? `tick-${++seq}`
       data = { ...data, items: data.items.map((i) => (i.id === id ? { ...i, ticked: true, tick_id: tickId } : i)) }
       recount()
       return { id: tickId, stock_item_id: id, quantity: found.need_qty }
@@ -310,8 +313,10 @@ export function shoppingRoutes(initial: ShoppingOut = shoppingOut()): Routes {
       return null
     },
     'POST /api/v1/stock/shopping/lines': (r) => {
-      const b = r.body as { name: string; quantity?: number }
-      const line = { id: `l-new-${++seq}`, name: b.name, quantity: b.quantity ?? null, checked: false }
+      const b = r.body as { id?: string; name: string; quantity?: number }
+      const again = b.id ? data.lines.find((l) => l.id === b.id) : undefined
+      if (again) return Response.json(again, { status: 201 })
+      const line = { id: b.id ?? `l-new-${++seq}`, name: b.name, quantity: b.quantity ?? null, checked: false }
       data = { ...data, lines: [...data.lines, line] }
       return line
     },

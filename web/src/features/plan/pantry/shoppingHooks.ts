@@ -9,7 +9,7 @@ import { type OnlineOutcome, runOnline } from '../../../data/onlineAction'
 import { useQueue } from '../../../offline/useQueue'
 import { useToast } from '../../../ui/Toast'
 import type {
-  AppliedOut, ApplyTickedOut, ShoppingItem, ShoppingLine, ShoppingOut, StockSummary, TickOut,
+  AppliedOut, ApplyTickedOut, LineIn, ShoppingItem, ShoppingLine, ShoppingOut, StockSummary, TickIn, TickOut,
 } from './shoppingTypes'
 
 /**
@@ -94,51 +94,60 @@ export function useApplyTicked() {
 const patchList = (qc: QueryClient, fn: (s: ShoppingOut) => ShoppingOut) =>
   qc.setQueryData<ShoppingOut>(keys.shopping(), (old) => (old ? fn(old) : old))
 
-const setTicked = (id: string, ticked: boolean) => (qc: QueryClient) =>
+/** Tick (with the tick's client-made id) or untick (tickId null) one row. */
+const setTicked = (id: string, tickId: string | null) => (qc: QueryClient) =>
   patchList(qc, (s) => {
+    const ticked = tickId !== null
     const was = s.items.find((i) => i.id === id)?.ticked
     if (was === undefined || was === ticked) return s
     return {
       ...s,
-      items: s.items.map((i) => (i.id === id ? { ...i, ticked, tick_id: null } : i)),
+      items: s.items.map((i) => (i.id === id ? { ...i, ticked, tick_id: tickId } : i)),
       ticked_count: Math.max(0, s.ticked_count + (ticked ? 1 : -1)),
     }
   })
 
-export interface NewLine { tempId: string; name: string; quantity?: number | null }
+/** A one-off line to add; `id` is made on the phone (a uuid4), so the row is real from the start. */
+export interface NewLine { id: string; name: string; quantity?: number | null }
+
+/** A uuid4 for a new tick or line: the server takes it as the row's id, so a replayed create is a no-op. */
+export const newRowId = (): string => crypto.randomUUID()
 
 /**
  * Ticks and one-off lines (spec §4.5, §4.8): optimistic and queued offline, because people shop with poor
- * signal. A tick is idempotent on the server and the PATCH/DELETEs are too, so they queue on any failure; a
- * line create is not, so it queues only when offline (a failure while online could already have added it).
+ * signal. Creates carry a client-made id (pantry fix round 1, I2), so a row made offline can be unticked,
+ * checked or deleted offline too: its PATCH/DELETE queue behind its create and replay in order. Ticks and the
+ * PATCH/DELETEs queue on any failure; a line create still queues only when offline (a failure while online
+ * is rolled back and said, as before).
  */
 export function useShoppingActions() {
   const qc = useQueryClient()
   const shared = { invalidates: PANTRY_INVALIDATES }
-  const tick = useAction<ShoppingItem, TickOut>({
+  type NewTick = { item: ShoppingItem; id: string }
+  const tick = useAction<NewTick, TickOut>({
     ...shared,
     method: 'POST',
     path: '/api/v1/stock/shopping/ticks',
-    body: (i: ShoppingItem) => ({ stock_item_id: i.id }),
-    optimistic: (qc, i) => setTicked(i.id, true)(qc),
-    pendingId: (i: ShoppingItem) => i.id,
+    body: ({ item, id }: NewTick): TickIn => ({ id, stock_item_id: item.id }),
+    optimistic: (qc, { item, id }: NewTick) => setTicked(item.id, id)(qc),
+    pendingId: ({ item }: NewTick) => item.id,
   })
   const untick = useAction<ShoppingItem, null>({
     ...shared,
     method: 'DELETE',
     path: (i: ShoppingItem) => `/api/v1/stock/shopping/ticks/${i.tick_id}`,
-    optimistic: (qc, i) => setTicked(i.id, false)(qc),
+    optimistic: (qc, i) => setTicked(i.id, null)(qc),
     pendingId: (i: ShoppingItem) => i.id,
   })
   const addLine = useAction<NewLine, ShoppingLine>({
     ...shared,
     method: 'POST',
     path: '/api/v1/stock/shopping/lines',
-    body: ({ name, quantity }: NewLine) => (quantity == null ? { name } : { name, quantity }),
+    body: ({ id, name, quantity }: NewLine): LineIn => (quantity == null ? { id, name } : { id, name, quantity }),
     queue: 'offline-only',
     optimistic: (qc, l) =>
-      patchList(qc, (s) => ({ ...s, lines: [...s.lines, { id: l.tempId, name: l.name, quantity: l.quantity ?? null, checked: false }] })),
-    pendingId: (l: NewLine) => l.tempId,
+      patchList(qc, (s) => ({ ...s, lines: [...s.lines, { id: l.id, name: l.name, quantity: l.quantity ?? null, checked: false }] })),
+    pendingId: (l: NewLine) => l.id,
   })
   const checkLine = useAction<{ line: ShoppingLine; checked: boolean }, ShoppingLine>({
     ...shared,
@@ -167,13 +176,13 @@ export function useShoppingActions() {
   return {
     toggle: async (i: ShoppingItem) => {
       if (i.ticked) return untick.run(i)
-      const r = await tick.run(i)
-      // Keep the server's tick id, so the row can be unticked at once even if the refetch fails.
-      if (r.status === 'done' && r.data?.id) {
-        patchList(qc, (s) => ({
-          ...s,
-          items: s.items.map((x) => (x.id === i.id && x.ticked && !x.tick_id ? { ...x, tick_id: r.data.id } : x)),
-        }))
+      const id = newRowId()
+      const r = await tick.run({ item: i, id })
+      // The item was already ticked (another phone): the server answers with that tick. Adopt its id, so an
+      // untick deletes the real tick even if the refetch fails.
+      if (r.status === 'done' && r.data?.id && r.data.id !== id) {
+        const adopted = r.data.id
+        patchList(qc, (s) => ({ ...s, items: s.items.map((x) => (x.tick_id === id ? { ...x, tick_id: adopted } : x)) }))
       }
       return r
     },

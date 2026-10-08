@@ -22,6 +22,9 @@ const APPLY = 'POST /api/v1/stock/shopping/apply-ticked' as const
 const store = (name: string) => screen.getByRole('region', { name })
 const row = (name: string) => screen.getByRole('checkbox', { name })
 const loaded = () => screen.findByRole('region', { name: 'Lidl' })
+/** A client-made id: a uuid4, lower-case, as the server requires (pantry fix round 1, I2). */
+const UUID4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+const anId = expect.stringMatching(UUID4)
 
 it('the header counts the items and stores and shows the total', async () => {
   fakeApi(shoppingRoutes())
@@ -91,7 +94,7 @@ it('a tick is optimistic and posts the item; it never touches stock', async () =
   fireEvent.click(row('Milk × 2'))
   await waitFor(() => expect(row('Milk × 2')).toHaveAttribute('aria-checked', 'true'))
   await waitFor(() => expect(api.callsTo(TICKS)).toHaveLength(1))
-  expect(api.callsTo(TICKS)[0].body).toEqual({ stock_item_id: 's-milk' })
+  expect(api.callsTo(TICKS)[0].body).toEqual({ id: anId, stock_item_id: 's-milk' })
   expect(api.calls.some((c) => c.path.includes('/adjust') || c.path.includes('/transactions'))).toBe(false)
 })
 
@@ -104,12 +107,62 @@ it('offline, a tick is queued and stays ticked', async () => {
   await waitFor(async () => expect(await db.queue.count()).toBe(1))
   expect(api.callsTo(TICKS)).toHaveLength(0)
   expect(await listQueuedBodies('/api/v1/stock')).toEqual([
-    expect.objectContaining({ method: 'POST', path: '/api/v1/stock/shopping/ticks', body: { stock_item_id: 's-milk' } }),
+    expect.objectContaining({ method: 'POST', path: '/api/v1/stock/shopping/ticks', body: { id: anId, stock_item_id: 's-milk' } }),
   ])
   expect(row('Milk × 2')).toHaveAttribute('aria-checked', 'true')
   expect(row('Milk × 2')).toHaveTextContent('Waiting to sync')
-  // No tick id until it syncs: it can't be unticked (a DELETE /ticks/null) before then.
-  expect(row('Milk × 2')).toBeDisabled()
+  // The tick carries its own id from the start, so it can be taken back before it syncs.
+  expect(row('Milk × 2')).toBeEnabled()
+})
+
+it('offline, a tick and then an untick queue in that order and replay in order: nothing stays ticked', async () => {
+  const api = fakeApi({ ...shoppingRoutes(), 'GET /api/v1/auth/me': () => ME })
+  renderWithProviders(<ShoppingList />)
+  await loaded()
+  setOnline(false)
+  fireEvent.click(row('Milk × 2'))
+  await waitFor(async () => expect(await db.queue.count()).toBe(1))
+  fireEvent.click(row('Milk × 2'))
+  await waitFor(() => expect(row('Milk × 2')).toHaveAttribute('aria-checked', 'false'))
+  await waitFor(async () => expect(await db.queue.count()).toBe(2))
+  const [tick, untick] = await listQueuedBodies('/api/v1/stock')
+  const id = (tick.body as { id: string }).id
+  expect(tick).toMatchObject({ method: 'POST', path: '/api/v1/stock/shopping/ticks', body: { id: anId, stock_item_id: 's-milk' } })
+  expect(untick).toMatchObject({ method: 'DELETE', path: `/api/v1/stock/shopping/ticks/${id}` })
+
+  setOnline(true)
+  await replay({ force: true })
+  expect(await db.queue.count()).toBe(0)
+  expect(api.calls.filter((c) => c.path.startsWith('/api/v1/stock/shopping/ticks')).map((c) => `${c.method} ${c.path}`))
+    .toEqual(['POST /api/v1/stock/shopping/ticks', `DELETE /api/v1/stock/shopping/ticks/${id}`])
+  await waitFor(() => expect(row('Milk × 2')).toHaveAttribute('aria-checked', 'false'))
+  expect(screen.queryByRole('region', { name: 'Ticked items' })).toBeNull()
+})
+
+it('a replayed tick (its reply was lost) does not tick twice: the same id is sent again', async () => {
+  const server = shoppingRoutes()
+  const api = fakeApi({ ...server, 'GET /api/v1/auth/me': () => ME })
+  const tickHandler = server[TICKS]!
+  let lost = true
+  api.on(TICKS, async (r) => {
+    const out = await tickHandler(r)
+    if (lost) { lost = false; throw new TypeError('Failed to fetch') } // applied, but the reply never arrives
+    return out
+  })
+  renderWithProviders(<ShoppingList />)
+  await loaded()
+  setOnline(false)
+  fireEvent.click(row('Milk × 2'))
+  await waitFor(async () => expect(await db.queue.count()).toBe(1))
+  setOnline(true)
+  await replay({ force: true })
+  expect(await db.queue.count()).toBe(1)
+  await replay({ force: true })
+  expect(await db.queue.count()).toBe(0)
+  const [first, second] = api.callsTo(TICKS)
+  expect(second.body).toEqual(first.body)
+  const after = await (await fetch('/api/v1/stock/shopping')).json() as { items: { id: string; ticked: boolean }[]; ticked_count: number }
+  expect(after.ticked_count).toBe(1)
 })
 
 it('unticking deletes the tick by its id, queued offline', async () => {
@@ -139,7 +192,7 @@ it('one-off lines: add with an optional quantity', async () => {
   fireEvent.change(within(sheet).getByLabelText('Quantity (optional)'), { target: { value: '3' } })
   fireEvent.click(within(sheet).getByRole('button', { name: 'Add' }))
   await waitFor(() => expect(api.callsTo(LINES)).toHaveLength(1))
-  expect(api.callsTo(LINES)[0].body).toEqual({ name: 'Kitchen roll', quantity: 3 })
+  expect(api.callsTo(LINES)[0].body).toEqual({ id: anId, name: 'Kitchen roll', quantity: 3 })
   expect(screen.queryByRole('dialog')).toBeNull()
   expect(screen.getByRole('checkbox', { name: 'Kitchen roll × 3' })).toBeInTheDocument()
 })
@@ -168,9 +221,100 @@ it('one-off lines: add is queued offline and shows as waiting', async () => {
   expect(api.callsTo(LINES)).toHaveLength(0)
   const line = screen.getByRole('checkbox', { name: 'Kitchen roll' })
   expect(line).toHaveTextContent('Waiting to sync')
-  // No id yet: it can't be checked or deleted until it syncs.
-  expect(line).toBeDisabled()
-  expect(screen.getByRole('button', { name: 'Delete Kitchen roll' })).toBeDisabled()
+  // The line has its client-made id from the start: it can be checked or deleted before it syncs.
+  expect(line).toBeEnabled()
+  expect(screen.getByRole('button', { name: 'Delete Kitchen roll' })).toBeEnabled()
+})
+
+it('offline, a new line checked and then deleted queues create, check, delete in order and replays in order', async () => {
+  const api = fakeApi({ ...shoppingRoutes(), 'GET /api/v1/auth/me': () => ME })
+  renderWithProviders(<ShoppingList />)
+  await loaded()
+  setOnline(false)
+  fireEvent.click(screen.getByRole('button', { name: 'Add item' }))
+  const sheet = await screen.findByRole('dialog', { name: 'Add item' })
+  fireEvent.change(within(sheet).getByLabelText('Item'), { target: { value: 'Kitchen roll' } })
+  fireEvent.click(within(sheet).getByRole('button', { name: 'Add' }))
+  await waitFor(async () => expect(await db.queue.count()).toBe(1))
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Kitchen roll' }))
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Kitchen roll' })).toHaveAttribute('aria-checked', 'true'))
+  await waitFor(async () => expect(await db.queue.count()).toBe(2))
+  fireEvent.click(screen.getByRole('button', { name: 'Delete Kitchen roll' }))
+  await waitFor(() => expect(screen.queryByRole('checkbox', { name: 'Kitchen roll' })).toBeNull())
+  await waitFor(async () => expect(await db.queue.count()).toBe(3))
+
+  const queued = await listQueuedBodies('/api/v1/stock')
+  const id = (queued[0].body as { id: string }).id
+  expect(queued).toEqual([
+    expect.objectContaining({ method: 'POST', path: '/api/v1/stock/shopping/lines', body: { id: anId, name: 'Kitchen roll' } }),
+    expect.objectContaining({ method: 'PATCH', path: `/api/v1/stock/shopping/lines/${id}`, body: { checked: true } }),
+    expect.objectContaining({ method: 'DELETE', path: `/api/v1/stock/shopping/lines/${id}` }),
+  ])
+
+  setOnline(true)
+  await replay({ force: true })
+  expect(await db.queue.count()).toBe(0)
+  expect(api.calls.filter((c) => c.path.startsWith('/api/v1/stock/shopping/lines')).map((c) => c.method)).toEqual(['POST', 'PATCH', 'DELETE'])
+  expect(api.callsTo(LINE)[0].path).toBe(`/api/v1/stock/shopping/lines/${id}`)
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Batteries' })).toBeInTheDocument())
+  expect(screen.queryByRole('checkbox', { name: 'Kitchen roll' })).toBeNull()
+})
+
+it('a replayed line create (its reply was lost) does not add the line twice', async () => {
+  const server = shoppingRoutes()
+  const api = fakeApi({ ...server, 'GET /api/v1/auth/me': () => ME })
+  const create = server[LINES]!
+  let lost = true
+  api.on(LINES, async (r) => {
+    const out = await create(r)
+    if (lost) { lost = false; throw new TypeError('Failed to fetch') } // applied, but the reply never arrives
+    return out
+  })
+  renderWithProviders(<ShoppingList />)
+  await loaded()
+  setOnline(false)
+  fireEvent.click(screen.getByRole('button', { name: 'Add item' }))
+  const sheet = await screen.findByRole('dialog', { name: 'Add item' })
+  fireEvent.change(within(sheet).getByLabelText('Item'), { target: { value: 'Kitchen roll' } })
+  fireEvent.click(within(sheet).getByRole('button', { name: 'Add' }))
+  await waitFor(async () => expect(await db.queue.count()).toBe(1))
+  setOnline(true)
+  await replay({ force: true })
+  expect(await db.queue.count()).toBe(1)
+  await replay({ force: true })
+  expect(await db.queue.count()).toBe(0)
+  const [first, second] = api.callsTo(LINES)
+  expect(second.body).toEqual(first.body)
+  await waitFor(() => expect(screen.getAllByRole('checkbox', { name: 'Kitchen roll' })).toHaveLength(1))
+  const after = await (await fetch('/api/v1/stock/shopping')).json() as { lines: { name: string }[] }
+  expect(after.lines.filter((l) => l.name === 'Kitchen roll')).toHaveLength(1)
+})
+
+it('a tick answered with the item\'s existing tick adopts that id', async () => {
+  const api = fakeApi(shoppingRoutes())
+  renderWithProviders(<ShoppingList />)
+  await loaded()
+  // Another phone ticked Milk already: the server answers with that tick, not the one this phone made.
+  api.on(TICKS, () => Response.json({ id: 'tick-other', stock_item_id: 's-milk', quantity: 2 }, { status: 201 }))
+  api.on('GET /api/v1/stock/shopping', () => reply(500, { detail: 'boom' }))
+  fireEvent.click(row('Milk × 2'))
+  await waitFor(() => expect(api.callsTo(TICKS)).toHaveLength(1))
+  const sent = (api.callsTo(TICKS)[0].body as { id: string }).id
+  expect(sent).not.toBe('tick-other')
+  await waitFor(() => expect(api.callsTo('GET /api/v1/stock/shopping').length).toBeGreaterThan(1))
+  fireEvent.click(row('Milk × 2'))
+  await waitFor(() => expect(api.callsTo(UNTICK)).toHaveLength(1))
+  expect(api.callsTo(UNTICK)[0].path).toBe('/api/v1/stock/shopping/ticks/tick-other')
+})
+
+it('a row listed only because it is ticked reads "Ticked"', async () => {
+  const data = shoppingOut({ ticked_count: 1 })
+  data.items[0] = { ...data.items[0], reason: 'ticked', ticked: true, tick_id: 'tick-7' }
+  fakeApi(shoppingRoutes(data))
+  renderWithProviders(<ShoppingList />)
+  await loaded()
+  expect(row('Olive oil × 1')).toHaveAccessibleDescription('Ticked €8.49')
+  expect(row('Olive oil × 1')).not.toHaveTextContent('Low')
 })
 
 it('one-off lines: check and uncheck PATCH the line; offline it is queued', async () => {
@@ -357,7 +501,8 @@ it('I-2: an online tick keeps the server\'s tick id, so it can be unticked at on
   expect(row('Milk × 2')).toHaveAttribute('aria-checked', 'true')
   fireEvent.click(row('Milk × 2'))
   await waitFor(() => expect(api.callsTo(UNTICK)).toHaveLength(1))
-  expect(api.callsTo(UNTICK)[0].path).toBe('/api/v1/stock/shopping/ticks/tick-1')
+  const sent = (api.callsTo(TICKS)[0].body as { id: string }).id
+  expect(api.callsTo(UNTICK)[0].path).toBe(`/api/v1/stock/shopping/ticks/${sent}`)
 })
 
 it('I-3: each row describes its reason, price and sync state to screen readers', async () => {
