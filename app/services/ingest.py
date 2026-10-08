@@ -62,8 +62,9 @@ MAX_LOG_PAYLOAD_CHARS = 600
 # Non-numeric characters stripped from a Shortcut amount before parsing:
 # currency symbols, codes and separators ("€12,50", "12,50 EUR", "1 234,50").
 _NON_NUMERIC = re.compile(r"[^0-9.,-]")
-# "1.234.567" — a dot-grouped integer with no decimal part.
-_DOT_GROUPED = re.compile(r"^\d{1,3}(?:\.\d{3})+$")
+# "1.234.567" — a dot-grouped integer with no decimal part. Requires a second
+# group so "12.500" keeps parse_amount's reading (12.5, not 12500).
+_DOT_GROUPED = re.compile(r"^\d{1,3}(?:\.\d{3}){2,}$")
 # Keys a "name" might hide under when a whole record was sent instead of a
 # field. Case variants cover the Wallet record's own key spellings.
 _NAME_KEYS = (

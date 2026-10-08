@@ -733,7 +733,9 @@ class IngestAttempt(Base):
     # Shortcut shows up as itself rather than as a guess.
     payload = Column(Text, nullable=True)
     content_type = Column(String(100), nullable=True)
-    transaction_id = Column(String, ForeignKey("transactions.id", ondelete="SET NULL"), nullable=True)
+    transaction_id = Column(
+        String, ForeignKey("transactions.id", ondelete="SET NULL"), nullable=True
+    )
     created_at = Column(DateTime, default=utcnow_naive, nullable=False)
 
 

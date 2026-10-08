@@ -227,6 +227,7 @@ app/
     clock.py        #   Household timezone, today/now helpers
     ratelimit.py    #   slowapi limiter
     money.py        #   Decimal primitives, half-up rounding
+    logging.py      #   Root log handler + LOG_LEVEL (app lines to stderr)
   services/         # Business logic; routes stay thin and call these
   integrations/     # Third-party API clients (PosoKanei prices)
   api/              # JSON API under /api/v1 (used by the new app and the Shortcut)

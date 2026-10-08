@@ -104,6 +104,7 @@ deploy (and before any redeploy that introduces a new required variable).
 | `CORS_ALLOWED_ORIGINS` | optional | Space-separated origins for API clients, e.g. `capacitor://localhost`. Empty = none. |
 | `BACKUP_KEEP_DAYS` | optional | Days of backups to keep (default 30). |
 | `BACKUP_BEFORE_MIGRATE` | optional | `true` (default) dumps the DB to `/backups/pre-migrate-*.sql.gz` before `alembic upgrade`. |
+| `LOG_LEVEL` | optional | `INFO` (default). App log lines on stderr. `DEBUG` also logs every payload the Apple Pay Shortcut sends. |
 
 ## 2. Persistent storage
 
@@ -200,3 +201,21 @@ The container runs `uvicorn --workers 2`. On PostgreSQL, each process tries
 `pg_try_advisory_lock(727272)` at startup; only the winner runs the scheduler
 (the lock is held on a dedicated connection and released if the process dies).
 `ENABLE_SCHEDULER=true` can stay set everywhere.
+
+## 8. Diagnostics: a missing Apple Pay expense
+
+Every request the Shortcut makes to `/api/v1/ingest/apple-pay` is recorded,
+whatever its outcome, in two places:
+
+- **Server log** (`docker logs`): one `ingest: … → <status>` line per attempt,
+  with the token prefix, content type and the exact payload the phone sent —
+  grep `ingest:` in Coolify → the app service → **Logs**.
+- **In-app**: Settings → Automations → **Recent ingest attempts** shows the
+  same rows (newest first) for each household.
+
+A payment that did not arrive is therefore diagnosable from the payload in
+those rows: a `422` almost always means the Request Body is sent as
+**Form** instead of **JSON**, or a Shortcuts value picks the whole transaction
+record instead of one field. A `400` with "Amount must be a number" means the
+`amount` row is not the Amount field. A `401` means the token was revoked or
+mistyped; check the token prefix against Settings → Automations.
