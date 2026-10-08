@@ -1,17 +1,21 @@
 /* 2c kit additions on tokens.css (mock: access-home.html §03). */
-/* padding-block holds the chips' 44 pt hit area (chip::before), so overflow-x does not clip it; the margin cancels it. */
-.chips { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin-inline: -16px; padding-inline: 16px; padding-block: 6px; margin-block: -6px; }
+/* Production look, pinned by chips2cCss.test.ts. The Insights picker's kit (controls.css) used to share these
+   class names and, later in the bundle, set these values for this kit too: 44px chips, 14px text, pressed in
+   ink, the row flush with the screen edge. The picker is .chipset now; the values live here on purpose. */
+.chips { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin-inline: -16px; margin-block: -6px; padding-inline: 0; padding-block: 2px; }
 .chips::-webkit-scrollbar { display: none; }
 .chip {
   position: relative; flex: none; display: inline-flex; align-items: center; gap: 6px;
-  min-height: 32px; padding: 0 12px; border-radius: var(--r-pill);
+  min-height: 44px; padding: 0 14px; border-radius: var(--r-pill);
   background: var(--surface); border: 1px solid var(--line); color: var(--ink-2);
-  font: inherit; font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer;
+  font: 600 14px/1 var(--font-body); white-space: nowrap; cursor: pointer;
   -webkit-tap-highlight-color: transparent; touch-action: manipulation; user-select: none; -webkit-user-select: none;
 }
-.chip::before { content: ''; position: absolute; inset: -6px -2px; } /* 44 pt hit area */
+.chip::before { content: ''; position: absolute; inset: -6px -2px; }
 .chip:active { transform: scale(.97); }
-.chip.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.chip.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .chip:active { transform: none; } }
 .chip .count { font-family: var(--font-num); font-variant-numeric: tabular-nums; opacity: .7; }
 .chip:disabled { opacity: .4; cursor: default; }
 
