@@ -224,8 +224,8 @@ def list_attempts(auth=Depends(require_api_auth), db: Session = Depends(get_db))
                 "created_at": a.created_at,
                 "status": a.status,
                 "outcome": attempt_outcome(a.status, a.detail),
-                "detail": a.detail,
-                "payload": a.payload,
+                "detail": a.safe_detail,
+                "payload": a.safe_payload,
                 "token_prefix": a.token_prefix,
                 "transaction_id": a.transaction_id,
             }

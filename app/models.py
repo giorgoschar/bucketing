@@ -997,6 +997,31 @@ class IngestAttempt(Base):
     created_at = Column(DateTime, default=utcnow_naive, nullable=False)
 
     @property
+    def is_legacy(self) -> bool:
+        """Written before the summary existed: the payload is the raw body."""
+        from app.services.ingest import is_legacy_payload
+
+        return is_legacy_payload(self.payload)
+
+    @property
+    def safe_payload(self) -> str | None:
+        """The payload if it is a summary, else None (never a raw body)."""
+        return None if self.is_legacy else self.payload
+
+    @property
+    def safe_detail(self) -> str | None:
+        """The detail, except on a legacy row whose status could carry input."""
+        from app.services.ingest import FIXED_DETAIL_STATUSES, LEGACY_DETAIL
+
+        if self.is_legacy and self.status not in FIXED_DETAIL_STATUSES:
+            return LEGACY_DETAIL
+        return self.detail
+
+    @property
+    def safe_content_type(self) -> str | None:
+        return None if self.is_legacy else self.content_type
+
+    @property
     def payload_lines(self) -> list[str]:
         """The stored summary as ``key: preview`` lines (for the page)."""
         from app.services.ingest import summary_lines

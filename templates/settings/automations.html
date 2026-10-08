@@ -226,9 +226,9 @@
                        {% else %}bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300{% endif %}">{{ a.status }}</span>
           <span>{{ a.created_at | dt }}</span>
           {% if a.token_prefix %}<code class="font-mono">{{ a.token_prefix }}…</code>{% endif %}
-          <span class="ml-auto font-mono text-[10px]">{{ a.content_type or '—' }}</span>
+          <span class="ml-auto font-mono text-[10px]">{{ a.safe_content_type or '—' }}</span>
         </div>
-        <p class="text-sm text-gray-800 dark:text-gray-200">{{ a.detail or '—' }}</p>
+        <p class="text-sm text-gray-800 dark:text-gray-200">{{ a.safe_detail or '—' }}</p>
         {% if a.payload_lines %}
         <ul class="text-[11px] leading-snug font-mono bg-gray-50 dark:bg-gray-800/60 rounded-lg px-2.5 py-2 text-gray-600 dark:text-gray-300 break-all">
           {% for line in a.payload_lines %}<li>{{ line }}</li>{% endfor %}
