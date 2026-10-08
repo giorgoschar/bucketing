@@ -70,6 +70,9 @@ WALLET_TYPES = {
     "outs": {"number"},
     "labelled_out": {"number"},
     "not_yet_logged": {"number"},
+    # Polish C6 (added keys; /wallets and /summary must keep matching).
+    "logged_cross_month": {"number"},
+    "over_logged": {"number"},
 }
 
 

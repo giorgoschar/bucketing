@@ -126,7 +126,7 @@ export function readRoutes(): Routes {
 /** Giorgos (u1, the viewer) took €120 and logged €75: €45 not yet logged. */
 export function wallet(over: Partial<WalletOut> = {}): WalletOut {
   return {
-    carried: 0, taken: 120, put_back: 0, still_have: null, spent: 120, logged: 75, outs: 0, not_yet_logged: 45, ...over,
+    carried: 0, taken: 120, put_back: 0, still_have: null, spent: 120, logged: 75, outs: 0, not_yet_logged: 45, logged_cross_month: 0, over_logged: 0, ...over,
   }
 }
 export function walletMember(over: Partial<CashWalletMemberOut> = {}): CashWalletMemberOut {

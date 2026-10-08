@@ -16,6 +16,7 @@ the models (``planning_models.Money``); ``/summary`` keeps its older shape: a
 wallet (``/wallets`` sends it as null instead).
 """
 
+import uuid
 from datetime import date
 from decimal import Decimal
 from typing import Any, Literal
@@ -31,6 +32,7 @@ from app.core.database import get_db
 from app.core.money import quantize
 from app.models import CashMovement, Household, HouseholdMember, User
 from app.schemas import _checked
+from app.services import cash as cash_svc
 from app.services import (
     delete_own_movement,
     list_movements,
@@ -43,6 +45,7 @@ from app.services import (
     withdraw_and_spend,
 )
 from app.services.cash import FROM_BANK, FROM_STASH, STASH_COUNT, TAKE
+from app.services.transactions import DeletedTransactionReplay, DuplicateTransaction
 from app.validators import (
     parse_amount,
     require_bucket,
@@ -68,6 +71,23 @@ class MovementIn(BaseModel):
     # in this bucket, with category_id and note as its category/notes.
     spend_bucket_id: str | None = None
     category_id: str | None = None
+    # A uuid4 the client makes once per save and keeps across retries
+    # (polish C5): the same id again within 24 h answers with the movement
+    # it already made, and creates nothing (no second expense either).
+    client_id: str | None = None
+
+    @field_validator("client_id")
+    @classmethod
+    def _client_id(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        try:
+            u = uuid.UUID(str(v))
+        except ValueError:
+            raise ValueError("client_id must be a UUID (version 4).") from None
+        if u.version != 4 or str(v).strip().lower() != str(u) or str(v) != str(v).strip():
+            raise ValueError("client_id must be a UUID (version 4).")
+        return str(u)
 
     @field_validator("amount", mode="before")
     @classmethod
@@ -141,6 +161,11 @@ class WalletOut(BaseModel):
     logged: Money
     outs: Money
     not_yet_logged: Money
+    # Polish C6, so the card's sum always equals not_yet_logged: this
+    # period's cash that a later month logged, and what was logged (or put
+    # back) beyond what the period had (app.services.cash._over_logged).
+    logged_cross_month: Money
+    over_logged: Money
 
 
 class SummaryWalletOut(WalletOut):
@@ -231,6 +256,16 @@ def create_movement(
             detail=f"Cash is tracked in the household currency ({currency}).",
         )
     when = body.movement_date or local_today()
+    # One save at a time per member (until this save commits): a retry waits
+    # here, then finds the first one's movement; two recounts never read the
+    # same balance.
+    cash_svc.lock_actor_cash(db, user.id)
+    if body.client_id:
+        prior = cash_svc.find_movement_replay(db, hh_id, body.client_id)
+        if prior is not None:
+            if prior.user_id != user.id:
+                raise HTTPException(status_code=409, detail="client_id already used")
+            return _dict(prior)
     if body.kind == STASH_COUNT:
         mv = record_stash_count(
             db,
@@ -240,6 +275,7 @@ def create_movement(
             when=when,
             note=body.note,
             currency=currency,
+            client_id=body.client_id,
         )
         return _dict(mv)
     if body.spend_bucket_id:
@@ -261,14 +297,35 @@ def create_movement(
                 category_id=require_category(db, body.category_id, hh_id),
                 notes=body.note,
                 currency=currency,
+                client_id=body.client_id,
             )
         except ValidationError as exc:
             raise HTTPException(status_code=422, detail=exc.errors()[0]["msg"]) from None
+        except DeletedTransactionReplay:
+            raise HTTPException(
+                status_code=409,
+                detail="This was already saved and the expense has since been deleted.",
+            ) from None
+        except DuplicateTransaction as dup:
+            # The expense's own client_id (unique, never expires) caught a
+            # replay the movement lookup missed: answer with its take.
+            mv = (
+                db.query(CashMovement)
+                .filter(CashMovement.transaction_id == dup.existing.id)
+                .order_by(CashMovement.deleted_at.is_not(None), CashMovement.created_at)
+                .first()
+            )
+            if mv is None or mv.user_id != user.id:
+                raise HTTPException(status_code=409, detail="client_id already used") from None
+            return _dict(mv)
         mv = (
             db.query(CashMovement)
             .filter(CashMovement.transaction_id == txn.id, CashMovement.active())
             .one()
         )
+        if body.client_id:
+            mv.client_id = body.client_id
+            db.commit()
         return _dict(mv)
     mv = record_movement(
         db,
@@ -280,6 +337,7 @@ def create_movement(
         when=when,
         note=body.note,
         stash_owner_id=body.stash_owner_id,
+        client_id=body.client_id,
     )
     return _dict(mv)
 

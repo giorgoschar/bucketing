@@ -1259,6 +1259,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/stock/retailers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Retailers
+         * @description The stores a logged price can be from (the picker): each known chain
+         *     by name, then ``{"code": "other", "name": "Other"}``.
+         */
+        get: operations["retailers_api_v1_stock_retailers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/stock/shopping": {
         parameters: {
             query?: never;
@@ -1348,7 +1369,13 @@ export interface paths {
          *     existing tick unchanged. Never changes stock.
          */
         post: operations["tick_api_v1_stock_shopping_ticks_post"];
-        delete?: never;
+        /**
+         * Untick Item
+         * @description Remove the item's active tick, whoever ticked it (polish C4). 204 even
+         *     when there is none, so a queued untick that meets another phone's tick,
+         *     or a replay, still lands.
+         */
+        delete: operations["untick_item_api_v1_stock_shopping_ticks_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1402,7 +1429,11 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Stock Settings */
+        /**
+         * Stock Settings
+         * @description Change an item's settings and (polish C2) its product's details:
+         *     409 when another product of the household has the barcode.
+         */
         patch: operations["stock_settings_api_v1_stock__item_id__patch"];
         trace?: never;
     };
@@ -1437,6 +1468,27 @@ export interface paths {
          * @description Hide the product (its history stays) and clear its active tick.
          */
         post: operations["stock_archive_api_v1_stock__item_id__archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/stock/{item_id}/prices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Log Price
+         * @description Log the price you paid (polish C3): stored as a ``manual`` snapshot
+         *     for that store and day (a second one replaces it). Returns the detail.
+         */
+        post: operations["log_price_api_v1_stock__item_id__prices_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1648,6 +1700,28 @@ export interface paths {
          *     messages and result as the web route ``POST /transactions/scan/qr``.
          */
         post: operations["scan_qr_api_v1_transactions_scan_qr_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/transactions/totals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Transaction Totals
+         * @description The Activity filter's total (polish C1): how many rows match and what
+         *     they add up to, over every match (``page``/``page_size`` are ignored).
+         *     One aggregate statement; amounts converted as Insights converts them.
+         */
+        get: operations["transaction_totals_api_v1_transactions_totals_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3343,6 +3417,8 @@ export interface components {
             amount: number | string;
             /** Category Id */
             category_id?: string | null;
+            /** Client Id */
+            client_id?: string | null;
             /** Currency */
             currency?: string | null;
             /**
@@ -3452,6 +3528,18 @@ export interface components {
             transaction_count: number;
             /** User Id */
             user_id: string;
+        };
+        /**
+         * PriceIn
+         * @description ``POST /stock/{id}/prices``: the price you paid (polish C3).
+         */
+        PriceIn: {
+            /** Date */
+            date?: string | null;
+            /** Price */
+            price: number | string;
+            /** Retailer */
+            retailer: string;
         };
         /** PricePointOut */
         PricePointOut: {
@@ -3745,6 +3833,13 @@ export interface components {
             start_date: string;
             /** Total Occurrences */
             total_occurrences: number | null;
+        };
+        /** RetailerOut */
+        RetailerOut: {
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
         };
         /** RetailerPriceOut */
         RetailerPriceOut: {
@@ -4082,12 +4177,27 @@ export interface components {
             /** Unit Quantity */
             unit_quantity: number | null;
         };
-        /** StockSettingsIn */
+        /**
+         * StockSettingsIn
+         * @description ``PATCH /stock/{id}``: the settings, and (polish C2) the product's
+         *     details. Only the keys sent change; for brand, unit, size and barcode a
+         *     null (or blank) clears the field. Invalid values are a 422.
+         */
         StockSettingsIn: {
+            /** Barcode */
+            barcode?: string | null;
+            /** Brand */
+            brand?: string | null;
             /** Min Quantity */
             min_quantity?: number | string | null;
+            /** Name */
+            name?: string | null;
             /** Track Price */
             track_price?: boolean | null;
+            /** Unit */
+            unit?: string | null;
+            /** Unit Quantity */
+            unit_quantity?: number | string | null;
         };
         /** StockSummaryOut */
         StockSummaryOut: {
@@ -4156,10 +4266,14 @@ export interface components {
             labelled_out: number;
             /** Logged */
             logged: number;
+            /** Logged Cross Month */
+            logged_cross_month: number;
             /** Not Yet Logged */
             not_yet_logged: number;
             /** Outs */
             outs: number;
+            /** Over Logged */
+            over_logged: number;
             /** Put Back */
             put_back?: number | null;
             /** Spent */
@@ -4198,6 +4312,20 @@ export interface components {
         TokenRefreshRequest: {
             /** Refresh Token */
             refresh_token: string;
+        };
+        /**
+         * TotalsOut
+         * @description Over every row the feed's filter matches (not one page): ``count`` is
+         *     the feed's ``total``; ``out`` the expenses and ``in`` the income, in
+         *     household currency (transfers are in ``count`` but in neither sum).
+         */
+        TotalsOut: {
+            /** Count */
+            count: number;
+            /** In */
+            in: number;
+            /** Out */
+            out: number;
         };
         /** TotpCodeIn */
         TotpCodeIn: {
@@ -4493,10 +4621,14 @@ export interface components {
             carried: number;
             /** Logged */
             logged: number;
+            /** Logged Cross Month */
+            logged_cross_month: number;
             /** Not Yet Logged */
             not_yet_logged: number;
             /** Outs */
             outs: number;
+            /** Over Logged */
+            over_logged: number;
             /** Put Back */
             put_back: number | null;
             /** Spent */
@@ -7040,6 +7172,26 @@ export interface operations {
             };
         };
     };
+    retailers_api_v1_stock_retailers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetailerOut"][];
+                };
+            };
+        };
+    };
     shopping_api_v1_stock_shopping_get: {
         parameters: {
             query?: never;
@@ -7198,6 +7350,36 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["TickOut"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    untick_item_api_v1_stock_shopping_ticks_delete: {
+        parameters: {
+            query: {
+                /** @description The stock item whose tick to remove */
+                stock_item_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -7377,6 +7559,41 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    log_price_api_v1_stock__item_id__prices_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PriceIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StockDetailOut"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -7756,6 +7973,54 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["QrReceiptOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    transaction_totals_api_v1_transactions_totals_get: {
+        parameters: {
+            query?: {
+                q?: string | null;
+                type?: string | null;
+                category_id?: string | null;
+                bucket_id?: string | null;
+                no_bucket?: boolean;
+                paid_by?: string | null;
+                missing_payer?: boolean;
+                payment_method?: string | null;
+                recurring_bill_id?: string | null;
+                fixed?: boolean;
+                from_date?: string | null;
+                to_date?: string | null;
+                min_amount?: string | null;
+                max_amount?: string | null;
+                year?: number | null;
+                month?: number | null;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TotalsOut"];
                 };
             };
             /** @description Validation Error */
