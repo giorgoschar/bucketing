@@ -74,3 +74,30 @@ it('offline: Add to pantry is disabled with the reason', async () => {
   // A scan needs the lookup, which needs a connection.
   expect(within(sheet).getByRole('button', { name: 'Scan another' })).toBeDisabled()
 })
+
+// Pantry fix round 1, I3: a miss (404) or PosoKanei being down (503) still says whether the barcode is in the
+// pantry, in a JSON body {detail, in_pantry}.
+it.each([
+  [404, 'Product not found', 'Not on PosoKanei'],
+  [503, 'Prices unavailable', 'Prices unavailable right now'],
+])('%i with in_pantry: says "In pantry: 3" and offers Open, not Add manually', async (status, detail, head) => {
+  fakeApi({ ...pantryRoutes(), [BARCODE]: () => reply(status, { detail, in_pantry: { stock_item_id: 's1', quantity: 3 } }) })
+  const h = handlers()
+  const { router } = renderWithProviders(<BarcodeSheet code="12345678" {...h} />)
+  const sheet = await screen.findByRole('dialog', { name: 'Barcode 12345678' })
+  expect(await within(sheet).findByText(head)).toBeInTheDocument()
+  expect(sheet).toHaveTextContent('In pantry: 3')
+  expect(within(sheet).queryByRole('button', { name: 'Add manually' })).not.toBeInTheDocument()
+  fireEvent.click(within(sheet).getByRole('button', { name: 'Open' }))
+  expect(h.onClose).toHaveBeenCalled()
+  expect(router.state.location.pathname).toBe('/plan/pantry/s1')
+})
+
+it.each([404, 503])('%i with in_pantry null: no "In pantry", Add manually as before', async (status) => {
+  fakeApi({ ...pantryRoutes(), [BARCODE]: () => reply(status, { detail: 'x', in_pantry: null }) })
+  renderWithProviders(<BarcodeSheet code="12345678" {...handlers()} />)
+  const sheet = await screen.findByRole('dialog', { name: 'Barcode 12345678' })
+  expect(await within(sheet).findByRole('button', { name: 'Add manually' })).toBeInTheDocument()
+  expect(sheet).not.toHaveTextContent('In pantry')
+  expect(within(sheet).queryByRole('button', { name: 'Open' })).not.toBeInTheDocument()
+})

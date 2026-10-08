@@ -9,16 +9,25 @@ import { Sheet } from '../../../ui/Sheet'
 import { addBodyFor, useAddProduct } from './hooks'
 import { ScanIcon } from './icons'
 import { Initial } from './PantryRow'
-import { type BarcodeProduct, formatQty, sizeLabel } from './types'
+import { type BarcodeLookupError, type BarcodeProduct, formatQty, sizeLabel } from './types'
 
 export const OFFLINE_WRITE = 'Connect to change the pantry'
 
+type InPantry = NonNullable<BarcodeProduct['in_pantry']>
+
+/** `missing` (404) and `unavailable` (503) still say whether the household has this barcode (pantry I3). */
 type Lookup =
   | { state: 'loading' }
   | { state: 'found'; product: BarcodeProduct }
-  | { state: 'missing' }
-  | { state: 'unavailable' }
+  | { state: 'missing'; inPantry: InPantry | null }
+  | { state: 'unavailable'; inPantry: InPantry | null }
   | { state: 'failed'; message: string }
+
+/** The pantry match in a 404/503 body ({detail, in_pantry}); null for any other shape. */
+function inPantryOf(error: unknown): InPantry | null {
+  const match = typeof error === 'object' && error !== null ? (error as Partial<BarcodeLookupError>).in_pantry : null
+  return match && typeof match.stock_item_id === 'string' ? match : null
+}
 
 export interface BarcodeSheetProps {
   code: string
@@ -41,16 +50,18 @@ export function BarcodeSheet({ code, onClose, onScanAnother, onAddManually, onAd
     api.GET('/api/v1/products/barcode/{code}', { params: { path: { code } }, signal: ctrl.signal }).then(
       ({ data, error, response }) => {
         if (response.ok) done({ state: 'found', product: data as BarcodeProduct })
-        else if (response.status === 404) done({ state: 'missing' })
-        else if (response.status >= 500) done({ state: 'unavailable' })
+        else if (response.status === 404) done({ state: 'missing', inPantry: inPantryOf(error) })
+        else if (response.status >= 500) done({ state: 'unavailable', inPantry: inPantryOf(error) })
         else done({ state: 'failed', message: detailOf(error, response.status) })
       },
-      () => done({ state: 'unavailable' }),
+      () => done({ state: 'unavailable', inPantry: null }),
     )
     return () => ctrl.abort()
   }, [code])
 
   const title = result.state === 'found' ? result.product.name : `Barcode ${code}`
+  const missHave = result.state === 'missing' || result.state === 'unavailable' ? result.inPantry : null
+  const have = missHave && <> · <b className="pantry-lookup__have">In pantry: {formatQty(missHave.quantity)}</b></>
   const scanAnother = (
     <button type="button" className="btn" disabled={!online} onClick={onScanAnother}><ScanIcon />Scan another</button>
   )
@@ -61,7 +72,9 @@ export function BarcodeSheet({ code, onClose, onScanAnother, onAddManually, onAd
           {scanAnother}
           {result.state === 'found'
             ? <FoundAction product={result.product} online={online} onAdded={onAdded} onClose={onClose} />
-            : <button type="button" className="btn btn--primary" onClick={() => onAddManually(code)}>Add manually</button>}
+            : missHave
+              ? <OpenButton item={missHave} onClose={onClose} />
+              : <button type="button" className="btn btn--primary" onClick={() => onAddManually(code)}>Add manually</button>}
         </div>
       )}>
       <div className="pantry-lookup" aria-live="polite">
@@ -70,13 +83,19 @@ export function BarcodeSheet({ code, onClose, onScanAnother, onAddManually, onAd
         {result.state === 'missing' && (
           <div className="pantry-lookup__msg">
             <p className="pantry-lookup__head">Not on PosoKanei</p>
-            <p className="pantry-lookup__note">Barcode {code} isn’t listed. You can still add it by hand.</p>
+            <p className="pantry-lookup__note">
+              {missHave ? <>Barcode <span className="ui-num">{code}</span> isn’t listed{have}</>
+                : <>Barcode {code} isn’t listed. You can still add it by hand.</>}
+            </p>
           </div>
         )}
         {result.state === 'unavailable' && (
           <div className="pantry-lookup__msg">
             <p className="pantry-lookup__head">Prices unavailable right now</p>
-            <p className="pantry-lookup__note">PosoKanei didn’t answer. You can still add it by hand.</p>
+            <p className="pantry-lookup__note">
+              {missHave ? <>PosoKanei didn’t answer. Barcode <span className="ui-num">{code}</span>{have}</>
+                : <>PosoKanei didn’t answer. You can still add it by hand.</>}
+            </p>
           </div>
         )}
         {result.state === 'failed' && (
@@ -131,21 +150,23 @@ function Found({ product, code }: { product: BarcodeProduct; code: string }) {
   )
 }
 
+/** Open: the barcode is already in the pantry, so go to that item instead of adding it again. */
+function OpenButton({ item, onClose }: { item: InPantry; onClose: () => void }) {
+  const navigate = useNavigate()
+  return (
+    <button type="button" className="btn btn--primary" onClick={() => {
+      onClose()
+      navigate(`/plan/pantry/${encodeURIComponent(item.stock_item_id)}`)
+    }}>Open</button>
+  )
+}
+
 function FoundAction({ product, online, onAdded, onClose }: {
   product: BarcodeProduct; online: boolean; onAdded: (name: string) => void; onClose: () => void
 }) {
-  const navigate = useNavigate()
   const add = useAddProduct()
   const [busy, setBusy] = useState(false)
-  const have = product.in_pantry
-  if (have) {
-    return (
-      <button type="button" className="btn btn--primary" onClick={() => {
-        onClose()
-        navigate(`/plan/pantry/${encodeURIComponent(have.stock_item_id)}`)
-      }}>Open</button>
-    )
-  }
+  if (product.in_pantry) return <OpenButton item={product.in_pantry} onClose={onClose} />
   return (
     <button type="button" className="btn btn--primary" disabled={!online || busy} onClick={async () => {
       setBusy(true)
