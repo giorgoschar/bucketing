@@ -14,7 +14,8 @@ import { setupPwaUpdates } from './pwa/update'
 import { listenForSwNavigation } from './pwa/swMessages'
 import { bootTheme } from './shell/theme'
 
-// Settings › Appearance: data-theme and the status bar colour before React renders, so there is no flash.
+// Settings › Appearance: public/theme-boot.js (a classic script in <head>) already set data-theme before the
+// first paint; this gives the store its value and keeps the same logic for runtime changes.
 bootTheme()
 
 setupPwaUpdates({ register: (opts) => registerSW(opts) })

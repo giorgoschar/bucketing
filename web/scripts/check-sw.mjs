@@ -6,6 +6,14 @@ const sw = readFileSync(new URL('../dist/sw.js', import.meta.url), 'utf8')
 const manifest = JSON.parse(readFileSync(new URL('../dist/manifest.webmanifest', import.meta.url), 'utf8'))
 const entry = readFileSync(new URL('../dist/index.html', import.meta.url), 'utf8')
 
+function themeBootFirst(html) {
+  const tag = /<script\b[^>]*theme-boot\.js[^>]*>/.exec(html)?.[0]
+  if (!tag || /type=|async|defer/.test(tag)) return false
+  const at = html.indexOf(tag)
+  const before = (needle) => html.indexOf(needle) === -1 || at < html.indexOf(needle)
+  return at < html.indexOf('</head>') && before('type="module"') && before('rel="stylesheet"')
+}
+
 const urls = [...sw.matchAll(/"url":"([^"]+)"/g)].map((m) => m[1])
 const count = (s) => sw.split(s).length - 1
 const checks = [
@@ -22,6 +30,9 @@ const checks = [
   ['a tap on an open app window asks the page to navigate (no reload)', /type:[`"]navigate[`"]/.test(sw)],
   ['the manifest keeps the /app/ scope', manifest.scope === '/app/' && manifest.start_url === '/app/' && manifest.id === '/app/'],
   ['the page links the manifest under /app/', entry.includes('/app/manifest.webmanifest')],
+  // Settings › Appearance: the before-first-paint boot must work offline and stay render-blocking.
+  ['the theme boot script is precached', urls.includes('theme-boot.js')],
+  ['the page loads the theme boot as a classic script in head, before the module script and the stylesheet', themeBootFirst(entry)],
 ]
 
 const failed = checks.filter(([, ok]) => !ok)

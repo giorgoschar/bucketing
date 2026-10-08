@@ -3,7 +3,8 @@ import { useSyncExternalStore } from 'react'
 /** Settings › Appearance (polish A3): System follows the phone; Light and Dark pin this device. */
 export type ThemeChoice = 'system' | 'light' | 'dark'
 
-/** Per device, never synced: two people on one household can each keep their own. */
+/** Per device, never synced: two people on one household can each keep their own.
+ *  public/theme-boot.js (the before-first-paint boot, a plain file) repeats this key and THEME_COLORS. */
 export const THEME_KEY = 'tameio.theme'
 /** The page background (--bg) of each theme, which is also the status bar colour (theme-color). */
 export const THEME_COLORS = { light: '#EEF1F7', dark: '#090B10' } as const
@@ -45,7 +46,8 @@ export function applyTheme(choice: ThemeChoice, doc: Document = document): void 
 const listeners = new Set<() => void>()
 let current: ThemeChoice = 'system'
 
-/** Run from main.tsx before createRoot, so the first paint is already in the chosen theme. */
+/** Run from main.tsx before createRoot: it sets the store's value for the Appearance screen and re-applies
+ *  the theme. public/theme-boot.js has already applied it from <head>, before the first paint. */
 export function bootTheme(): void {
   current = readTheme()
   applyTheme(current)
