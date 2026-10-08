@@ -278,103 +278,47 @@ def test_classify_scope_is_opt_in_at_creation(db, ctx):
     assert ctx.smart.scope_list == ["ingest", "classify"]
 
 
-# ---------------------------------------------------------------- remember
+# ---------------------------------------------------------------- no rules from a token
 
 
 def _rules(db, ctx):
-    return db.query(CategoryRule).filter_by(household_id=ctx.hh.household_id).all()
+    return sorted(
+        (r.id, r.pattern, r.category_id)
+        for r in db.query(CategoryRule).filter_by(household_id=ctx.hh.household_id)
+    )
 
 
-def test_remember_creates_the_rule_once_and_the_next_ingest_matches(client, db, ctx):
-    before = len(_rules(db, ctx))
+@pytest.mark.parametrize("remember", [True, "true", 1, {"x": 1}])
+def test_remember_is_ignored_and_creates_no_rule(client, db, ctx, remember):
+    before = _rules(db, ctx)
     tid = _add(client, ctx.smart_h)["id"]
     r = client.post(
-        classify_url(tid), json={"category": "Coffee", "remember": True}, headers=ctx.smart_h
+        classify_url(tid), json={"category": "Coffee", "remember": remember}, headers=ctx.smart_h
     )
     assert r.status_code == 200, r.text
-    assert r.json()["remembered"] is True
-    assert len(_rules(db, ctx)) == before + 1
-    rule = next(x for x in _rules(db, ctx) if x.pattern == "corner kiosk")
-    assert rule.category_id == ctx.coffee.id and rule.created_by == ctx.hh.user_id
-    # Again: nothing new.
-    r = client.post(
-        classify_url(tid), json={"category": "Coffee", "remember": True}, headers=ctx.smart_h
-    )
-    assert r.json()["remembered"] is False and r.json()["remember_skipped"] == "rule exists"
-    assert len(_rules(db, ctx)) == before + 1
-    # The next purchase there is categorised by the rule.
-    nxt = _add(client, ctx.smart_h, amount="7")
-    assert nxt["category"] == "Coffee" and nxt["needs_category"] is False
+    assert r.json()["category"] == "Coffee"
+    assert "remembered" not in r.json() and "remember_skipped" not in r.json()
+    assert _rules(db, ctx) == before
+    # So the next purchase there is asked about again.
+    assert _add(client, ctx.smart_h, amount="9")["needs_category"] is True
 
 
-def test_remember_never_overwrites_an_existing_rule(client, db, ctx):
-    # A rule for this exact merchant already exists but another rule matched first.
-    learn_rule(db, ctx.hh.household_id, "Corner Kiosk", ctx.groceries.id, created_by=None)
-    db.commit()
-    body = _add(client, ctx.smart_h)
-    assert body["category"] == "Groceries"
-    r = client.post(
-        classify_url(body["id"]),
-        json={"category": "Coffee", "remember": True},
-        headers=ctx.smart_h,
-    )
-    assert r.status_code == 200
-    assert r.json()["category"] == "Coffee"  # this purchase is changed
-    assert r.json()["remembered"] is False and r.json()["remember_skipped"] == "rule exists"
-    rule = next(x for x in _rules(db, ctx) if x.pattern == "corner kiosk")
-    assert rule.category_id == ctx.groceries.id  # the rule is untouched
-
-
-def test_remember_is_capped_per_day(client, db, ctx):
-    for i in range(20):
-        learn_rule(
-            db, ctx.hh.household_id, f"Shop number {i}", ctx.coffee.id, created_by=ctx.hh.user_id
-        )
-    db.commit()
-    tid = _add(client, ctx.smart_h)["id"]
-    r = client.post(
-        classify_url(tid), json={"category": "Coffee", "remember": True}, headers=ctx.smart_h
-    )
-    assert r.status_code == 200, r.text
-    assert r.json()["category"] == "Coffee"  # still classified
-    assert r.json()["remembered"] is False and r.json()["remember_skipped"] == "daily limit"
-    assert not any(x.pattern == "corner kiosk" for x in _rules(db, ctx))
-
-
-def test_old_rules_do_not_count_toward_the_cap(client, db, ctx):
-    for i in range(20):
-        r = learn_rule(
-            db, ctx.hh.household_id, f"Shop number {i}", ctx.coffee.id, created_by=ctx.hh.user_id
-        )
-        r.created_at = utcnow_naive() - timedelta(days=2)
-    db.commit()
-    tid = _add(client, ctx.smart_h)["id"]
-    r = client.post(
-        classify_url(tid), json={"category": "Coffee", "remember": True}, headers=ctx.smart_h
-    )
-    assert r.json()["remembered"] is True
-
-
-def test_remember_is_skipped_for_the_placeholder_merchant(client, db, ctx):
-    before = len(_rules(db, ctx))
-    tid = client.post(URL, json={"amount": "3"}, headers=ctx.smart_h).json()["id"]
-    r = client.post(
-        classify_url(tid), json={"category": "Coffee", "remember": "true"}, headers=ctx.smart_h
-    )
-    assert r.status_code == 200
-    assert r.json()["remembered"] is False
-    assert len(_rules(db, ctx)) == before
-
-
-def test_remember_without_a_category_does_nothing(client, db, ctx):
-    before = len(_rules(db, ctx))
-    tid = _add(client, ctx.smart_h)["id"]
-    r = client.post(
-        classify_url(tid), json={"bucket": "Fun money", "remember": True}, headers=ctx.smart_h
-    )
-    assert r.status_code == 200
-    assert r.json()["remembered"] is False
-    assert len(_rules(db, ctx)) == before
+@pytest.mark.parametrize(
+    "method,path",
+    [
+        ("post", "/api/v1/settings/category-rules"),
+        ("patch", "/api/v1/settings/category-rules/x"),
+        ("put", "/api/v1/settings/category-rules/x"),
+        ("delete", "/api/v1/settings/category-rules/x"),
+        ("post", "/settings/category-rules"),
+    ],
+)
+def test_a_token_cannot_touch_rules_by_any_path(client, db, ctx, method, path):
+    before = _rules(db, ctx)
+    for headers in (ctx.plain_h, ctx.smart_h):
+        r = client.request(method, path, headers=headers, json={"pattern": "x"})
+        assert not 200 <= r.status_code < 300, (path, r.status_code)
+    assert _rules(db, ctx) == before
 
 
 # ---------------------------------------------------------------- log, limits, powers

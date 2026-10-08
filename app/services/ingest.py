@@ -661,7 +661,6 @@ def notify_ingest_created(db: Session, txn: Transaction) -> None:
 # ---------------------------------------------------------------------------
 
 CLASSIFY_WINDOW = timedelta(minutes=15)
-REMEMBER_PER_DAY = 20
 _CHOICE_MAX = 200  # a category or bucket name, or an id
 CANNOT_CLASSIFY = "This token cannot classify. Create a token with the category prompt enabled."
 
@@ -755,45 +754,6 @@ def _pick(rows, choice: str):
     return None
 
 
-def truthy(value) -> bool:
-    """A Shortcuts boolean arrives as true, "true", "Yes", 1 ..."""
-    if isinstance(value, str):
-        return value.strip().casefold() in {"true", "yes", "1", "on"}
-    return bool(value) if isinstance(value, (bool, int)) else False
-
-
-def _remember_rule(db: Session, token: PersonalApiToken, txn: Transaction, category_id: str):
-    """Teach the merchant -> category rule, carefully. Returns
-    (remembered, skipped_reason). Never overwrites or deletes a rule; at most
-    ``REMEMBER_PER_DAY`` rules created by the token's member per day."""
-    from app.models import CategoryRule
-    from app.services.category_rules import learn_rule, normalise_pattern
-
-    pattern = normalise_pattern(txn.merchant)
-    if txn.merchant == PLACEHOLDER_MERCHANT or not pattern:
-        return False, "no merchant"
-    exists = (
-        db.query(CategoryRule.id)
-        .filter(CategoryRule.household_id == token.household_id, CategoryRule.pattern == pattern)
-        .first()
-    )
-    if exists:
-        return False, "rule exists"
-    made_today = (
-        db.query(CategoryRule.id)
-        .filter(
-            CategoryRule.household_id == token.household_id,
-            CategoryRule.created_by == token.user_id,
-            CategoryRule.created_at >= utcnow_naive() - timedelta(days=1),
-        )
-        .count()
-    )
-    if made_today >= REMEMBER_PER_DAY:
-        return False, "daily limit"
-    rule = learn_rule(db, token.household_id, txn.merchant, category_id, created_by=token.user_id)
-    return (rule is not None), (None if rule is not None else "no merchant")
-
-
 def classify_ingested(
     db: Session,
     token: PersonalApiToken,
@@ -801,8 +761,7 @@ def classify_ingested(
     *,
     category=None,
     bucket=None,
-    remember: bool = False,
-) -> tuple[Transaction, dict]:
+) -> tuple[Transaction, list[str]]:
     """Set the category and/or bucket of a purchase the token just added.
 
     ``category`` and ``bucket`` are an id or an exact name (Shortcuts' Choose
@@ -810,9 +769,9 @@ def classify_ingested(
     archived bucket is HTTP 422 "Unknown category 'X'". The edit goes through
     :func:`app.services.transactions.update_transaction` with every other
     field as stored, so its rules hold (a Fixed cost stays bucket-less).
-    ``remember`` with a category also teaches the merchant's rule
-    (:func:`_remember_rule`). Returns (transaction, extras for the response).
-    Commits.
+    It never creates, changes or deletes a category rule: the merchant string
+    is chosen by whoever holds the token, so a rule from it would be planted
+    household-wide. Returns (transaction, the chosen names). Commits.
     """
     from app.schemas import SplitIn, TransactionUpdate
     from app.validators import require_bucket, require_category
@@ -860,16 +819,6 @@ def classify_ingested(
         raise HTTPException(status_code=422, detail=msg) from None
     update_transaction(db, txn, household_id=hh, user=token.user, data=data)
 
-    extras: dict = {}
-    if remember:
-        if category and category_id:
-            ok, why = _remember_rule(db, token, txn, category_id)
-        else:
-            ok, why = False, "needs a category"
-        extras["remembered"] = ok
-        if not ok:
-            extras["remember_skipped"] = why
     db.commit()
     db.refresh(txn)
-    extras["chosen"] = chosen
-    return txn, extras
+    return txn, chosen

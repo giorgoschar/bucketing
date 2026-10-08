@@ -45,7 +45,6 @@ from app.services.ingest import (
     classify_ingested,
     ingest_choices,
     log_safe,
-    truthy,
 )
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
@@ -234,11 +233,10 @@ class ClassifyIn(BaseModel):
     """Untyped on purpose, like ApplePayIn: a Choose from List result can be
     text, a list or a dictionary; the values are coerced with ``_text_value``.
     ``category``/``bucket``: an id or an exact name (trimmed, case-insensitive),
-    at least one. ``remember``: also teach the merchant's category rule."""
+    at least one. Other keys (a ``remember`` from an older recipe) are ignored."""
 
     category: Any = None
     bucket: Any = None
-    remember: Any = None
 
 
 @router.post("/apple-pay/{transaction_id}/classify")
@@ -284,20 +282,12 @@ def classify(
     if not category and not bucket:
         raise reject(422, "classify: send a category or a bucket", "Send a category or a bucket.")
     try:
-        txn, extras = classify_ingested(
-            db,
-            token,
-            txn,
-            category=category or None,
-            bucket=bucket or None,
-            remember=truthy(body.remember),
+        txn, chosen = classify_ingested(
+            db, token, txn, category=category or None, bucket=bucket or None
         )
     except HTTPException as exc:
         db.rollback()
         raise reject(exc.status_code, str(exc.detail), exc.detail) from None
-    chosen = extras.pop("chosen")
     detail = "classified: " + " / ".join(log_safe(c, 80) for c in chosen)
-    if extras.get("remembered"):
-        detail += " (rule remembered)"
     record_ingest_attempt(status=200, detail=detail, **attempt)
-    return {**_result(db, txn, token), **extras}
+    return _result(db, txn, token)

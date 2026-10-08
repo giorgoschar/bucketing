@@ -152,17 +152,16 @@
               <li>A second <strong>Get Contents of URL</strong>:
                 URL <code class="break-all">{{ ingest_url }}/</code><em>id</em><code>/classify</code>,
                 Method <strong>POST</strong>, the same <code>Authorization</code> header, Request Body
-                <strong>JSON</strong> with <code>category</code> = <em>Chosen Item</em> (Text) and
-                <code>remember</code> = <strong>true</strong> (Boolean).</li>
+                <strong>JSON</strong> with <code>category</code> = <em>Chosen Item</em> (Text).</li>
             </ul>
           </li>
           <li><strong>End If</strong>.</li>
         </ol>
         <p class="text-xs text-gray-400 mt-2">
-          With <code>remember</code> on, the merchant gets a rule (at most 20 new rules a day, and an
-          existing rule is never changed). To pick the bucket too, do the same with
-          <code>bucket_names</code> and send <code>bucket</code>. It works for 15 minutes after the
-          purchase, and only with the token that added it.
+          To pick the bucket too, do the same with <code>bucket_names</code> and send
+          <code>bucket</code>. It works for 15 minutes after the purchase, and only with the token
+          that added it. To stop being asked about a merchant, add a rule in
+          Settings › Categories &amp; rules.
         </p>
       </div>
 
