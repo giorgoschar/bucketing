@@ -41,9 +41,14 @@ from app.services.duplicates import (  # noqa: F401
     find_household_duplicates,
 )
 from app.services.ingest import (  # noqa: F401
+    coerce_amount,
     ingest_apple_pay,
     ingest_client_id,
     notify_ingest_created,
+    normalise_amount,
+    recent_ingest_attempts,
+    record_ingest_attempt,
+    token_from_raw,
 )
 from app.services.insights import (  # noqa: F401
     INSIGHT_PRESETS,

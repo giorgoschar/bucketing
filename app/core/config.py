@@ -10,6 +10,10 @@ class Settings(BaseSettings):
     field_encryption_key: str | None = None
     database_url: str = "sqlite:///./expenses.db"
     debug: bool = False
+    # App log level (root logger → stderr → `docker logs` / Coolify).
+    # uvicorn has its own level; this one covers everything the app logs,
+    # including the ingest diagnostics in app/services/ingest.py.
+    log_level: str = "INFO"
     app_name: str = "Expenses"
     allow_registration: bool = False
 

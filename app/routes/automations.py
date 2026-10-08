@@ -13,11 +13,12 @@ from sqlalchemy.orm import Session
 from app.auth import require_auth, require_csrf
 from app.core.config import settings
 from app.core.database import get_db
-from app.models import Bucket, BucketStatus
+from app.models import Bucket, BucketStatus, PersonalApiToken
 from app.services import (
     base_ctx,
     issue_personal_token,
     list_personal_tokens,
+    recent_ingest_attempts,
     revoke_personal_token,
 )
 from app.templates import templates
@@ -54,6 +55,19 @@ def _render(
             # APP_BASE_URL first: behind the proxy request.base_url is http://.
             "ingest_url": f"{(settings.app_base_url or str(request.base_url)).rstrip('/')}"
             "/api/v1/ingest/apple-pay",
+            # Attempts the household may see: its own, plus any made with a
+            # token whose prefix matches one of ours (revoked included).
+            "attempts": recent_ingest_attempts(
+                db,
+                hh_id,
+                tuple(
+                    p[0]
+                    for p in db.query(PersonalApiToken.prefix).filter(
+                        PersonalApiToken.user_id == user.id,
+                        PersonalApiToken.household_id == hh_id,
+                    )
+                ),
+            ),
         }
     )
     response = templates.TemplateResponse("settings/automations.html", ctx, status_code=status_code)
