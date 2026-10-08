@@ -243,7 +243,7 @@ export function stockDetail(over: Partial<StockDetail> = {}): StockDetail {
       { date: '2026-10-08', min_price: 1.19 },
     ],
     advice_detail: {
-      advice: 'neutral', current_min: 1.19, median_30d: 1.29, min_90d: 1.09, trend_pct_30d: -3.1, reason: null, as_of: '2026-10-08',
+      advice: 'neutral', current_min: 1.19, median_30d: 1.29, min_90d: 1.09, trend_pct_30d: -3.1, reason: 'Close to the usual price', is_discount: true, as_of: '2026-10-08',
     },
     prices_as_of: '2026-10-08',
     ...over,
@@ -254,7 +254,7 @@ export function stockDetail(over: Partial<StockDetail> = {}): StockDetail {
 export function productSummary(over: Partial<ProductSummary> = {}): ProductSummary {
   return {
     id: 'pk-feta', name: 'Dodoni Feta PDO', brand: 'Dodoni', barcode: '5201004021108', unit: 'g', unit_quantity: 400,
-    image_url: null,
+    image_url: null, history: [],
     retailer_prices: [
       { retailer: 'sklavenitis', display_name: 'Sklavenitis', price: 5.89, unit_price: 14.73, is_discount: false, discount_pct: null, last_updated: '2026-10-08' },
       { retailer: 'lidl', display_name: 'Lidl', price: 5.29, unit_price: 13.23, is_discount: false, discount_pct: null, last_updated: '2026-10-08' },
@@ -269,13 +269,13 @@ export function barcodeProduct(over: Partial<BarcodeProduct> = {}): BarcodeProdu
 }
 
 /** Handlers for the Pantry list: the household, GET /stock and the shopping list count. */
-export function pantryRoutes(o: { items?: StockItem[]; shopping?: { id: string }[] } = {}): Routes {
+export function pantryRoutes(o: { items?: StockItem[]; shopping?: ShoppingItem[] } = {}): Routes {
   // A small server: adjusts change what the next GET /stock returns.
   const items = (o.items ?? [stockItem(), lowMilk()]).map((i) => ({ ...i }))
   return {
     ...readRoutes(),
     'GET /api/v1/stock': () => items.map((i) => ({ ...i })),
-    'GET /api/v1/stock/shopping': () => ({ items: o.shopping ?? [{ id: 's2' }], groups: [], best_single_store: null, total: 0 }),
+    'GET /api/v1/stock/shopping': () => shoppingOut({ items: o.shopping ?? [shoppingItem({ id: 's2', name: 'Milk' })], groups: [], lines: [] }),
     'POST /api/v1/stock/{item_id}/adjust': (req) => {
       const it = items.find((i) => i.id === req.params.item_id)
       if (!it) return Response.json({ detail: 'Stock item not found' }, { status: 404 })
@@ -302,7 +302,7 @@ export function shoppingRoutes(initial: ShoppingOut = shoppingOut()): Routes {
       const tickId = found.tick_id ?? `tick-${++seq}`
       data = { ...data, items: data.items.map((i) => (i.id === id ? { ...i, ticked: true, tick_id: tickId } : i)) }
       recount()
-      return { id: tickId, stock_item_id: id, quantity: null }
+      return { id: tickId, stock_item_id: id, quantity: found.need_qty }
     },
     'DELETE /api/v1/stock/shopping/ticks/{tick_id}': (r) => {
       data = { ...data, items: data.items.map((i) => (i.tick_id === r.params.tick_id ? { ...i, ticked: false, tick_id: null } : i)) }
@@ -327,7 +327,7 @@ export function shoppingRoutes(initial: ShoppingOut = shoppingOut()): Routes {
       return null
     },
     'POST /api/v1/stock/shopping/apply-ticked': () => {
-      const applied = data.items.filter((i) => i.ticked).map((i) => ({ name: i.name, before: i.quantity ?? 0, after: (i.quantity ?? 0) + i.need_qty }))
+      const applied = data.items.filter((i) => i.ticked).map((i) => ({ stock_item_id: i.id, name: i.name, before: i.quantity ?? 0, after: (i.quantity ?? 0) + i.need_qty }))
       const cleared = data.lines.filter((l) => l.checked).length
       data = { ...data, items: data.items.map((i) => ({ ...i, ticked: false, tick_id: null })), lines: data.lines.filter((l) => !l.checked), ticked_count: 0 }
       return { applied, cleared_lines: cleared }

@@ -1,7 +1,7 @@
 import { fireEvent, screen, within } from '@testing-library/react'
 import { afterEach, expect, it } from 'vitest'
 import { fakeApi } from '../../test/fakeApi'
-import { budgetRow, categoryUsual, day, entry, monthPicture, readRoutes, yearMonth, yearOut } from '../../test/fixtures'
+import { budgetRow, categoryUsual, day, entry, monthPicture, readRoutes, shoppingOut, yearMonth, yearOut } from '../../test/fixtures'
 import { renderWithProviders, resetTestEnv } from '../../test/render'
 import { Plan } from './Plan'
 
@@ -50,7 +50,7 @@ it('the segments read exactly Upcoming, Month, Budgets, Cash, Pantry', () => {
 })
 
 it('?view=pantry opens Pantry', async () => {
-  fakeApi({ ...routes(), 'GET /api/v1/stock': () => [], 'GET /api/v1/stock/shopping': () => ({ items: [], groups: [], best_single_store: null, total: 0 }) })
+  fakeApi({ ...routes(), 'GET /api/v1/stock': () => [], 'GET /api/v1/stock/shopping': () => shoppingOut({ items: [], groups: [], lines: [] }) })
   const { router } = renderWithProviders(<Plan />, { route: '/plan' })
   fireEvent.click(planView().getByRole('button', { name: 'Pantry' }))
   expect(router.state.location.search).toBe('?view=pantry')

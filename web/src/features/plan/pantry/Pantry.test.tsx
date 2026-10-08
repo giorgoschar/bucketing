@@ -3,7 +3,7 @@ import { afterEach, expect, it } from 'vitest'
 import { db } from '../../../offline/db'
 import { open } from '../../../offline/crypto'
 import { fakeApi, hang, reply } from '../../../test/fakeApi'
-import { lowMilk, pantryRoutes, stockItem } from '../../../test/fixtures'
+import { lowMilk, pantryRoutes, shoppingItem, stockItem } from '../../../test/fixtures'
 import { renderWithProviders, resetTestEnv, setOnline } from '../../../test/render'
 import { Pantry } from './Pantry'
 import type { StockItem } from './types'
@@ -132,10 +132,18 @@ it('tapping a row opens its detail', async () => {
 })
 
 it('"Shopping list (N)" counts the shopping list and links to it', async () => {
-  fakeApi(pantryRoutes({ shopping: [{ id: 's2' }, { id: 's9' }, { id: 's7' }] }))
+  fakeApi(pantryRoutes({ shopping: [shoppingItem({ id: 's2' }), shoppingItem({ id: 's9' }), shoppingItem({ id: 's7', reason: 'runout' })] }))
   renderWithProviders(<Pantry />)
   const link = await screen.findByRole('link', { name: 'Shopping list (3)' })
   expect(link).toHaveAttribute('href', '/plan/pantry/list')
+})
+
+it('"Shopping list (N)" leaves out rows listed only because they are ticked', async () => {
+  fakeApi(pantryRoutes({
+    shopping: [shoppingItem({ id: 's2' }), shoppingItem({ id: 's7', reason: 'runout' }), shoppingItem({ id: 's9', reason: 'ticked', ticked: true, tick_id: 't9' })],
+  }))
+  renderWithProviders(<Pantry />)
+  expect(await screen.findByRole('link', { name: 'Shopping list (2)' })).toBeInTheDocument()
 })
 
 it('"Shopping list" without a count while the list is loading', async () => {

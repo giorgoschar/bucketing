@@ -223,7 +223,7 @@ it('Add to pantry calls apply-ticked and toasts what went in', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Add to pantry' }))
   expect(await screen.findByText('Olive oil 1 → 2 · Milk 0 → 2')).toBeInTheDocument()
   expect(api.callsTo(APPLY)).toHaveLength(1)
-  expect(api.callsTo(APPLY)[0].body).toEqual({})
+  expect(api.callsTo(APPLY)[0].body).toBeUndefined() // the route takes no body
 })
 
 it('Add to pantry is online only: disabled offline, never queued', async () => {

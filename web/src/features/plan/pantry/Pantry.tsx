@@ -92,9 +92,9 @@ function PantryBody({ items, onAdd }: { items: StockItem[]; onAdd: () => void })
   )
 }
 
-/** "Shopping list (N)": N is the list's items, low or running out (spec §4.2). */
+/** "Shopping list (N)": N is the list's low and running-out items, not the ticked-only ones (spec §4.2). */
 function ShoppingListButton() {
-  const count = usePantryShoppingCount().data?.items.length
+  const count = usePantryShoppingCount()
   return (
     <Link to="/plan/pantry/list" className="btn btn--primary btn--lg pantry-float">
       <CartIcon />{count === undefined ? 'Shopping list' : `Shopping list (${count})`}

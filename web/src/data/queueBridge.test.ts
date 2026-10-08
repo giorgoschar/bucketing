@@ -69,7 +69,7 @@ it('wipe (sign-out, account switch) clears the markers', async () => {
 it('after a replay: invalidates every pantry read under the stock prefix', async () => {
   fakeApi({
     'GET /api/v1/auth/me': () => ME,
-    'POST /api/v1/stock/shopping/ticks': () => ({ id: 'tick-1', stock_item_id: 's-milk', quantity: null }),
+    'POST /api/v1/stock/shopping/ticks': () => ({ id: 'tick-1', stock_item_id: 's-milk', quantity: 1 }),
   })
   const client = testQueryClient()
   const pantry = [keys.shopping(), keys.stockSummary(), ['stock', 'list'], ['stock', 'item', 's-milk']]

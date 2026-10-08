@@ -6,11 +6,10 @@ import { useCachedQuery } from '../../../data/cachedQuery'
 import { unwrap } from '../../../data/http'
 import { keys } from '../../../data/keys'
 import { type OnlineOutcome, runOnline } from '../../../data/onlineAction'
-import type { RawResult } from '../../../data/rawJson'
 import { useQueue } from '../../../offline/useQueue'
 import { useToast } from '../../../ui/Toast'
 import type {
-  AppliedOut, ApplyTickedOut, LineIn, ShoppingItem, ShoppingLine, ShoppingOut, StockSummary, TickOut,
+  AppliedOut, ApplyTickedOut, ShoppingItem, ShoppingLine, ShoppingOut, StockSummary, TickOut,
 } from './shoppingTypes'
 
 /**
@@ -33,13 +32,10 @@ export function useQueuedChanges(): number {
 
 export const syncingText = (n: number) => `Waiting to sync ${n === 1 ? '1 change' : `${n} changes`}`
 
-// The new stock routes are not in the generated schema until the pantry integration runs gen:api. They go
-// through the typed client untyped (like data/action.ts does), so the CSRF header and 401 handling still apply.
-const get = <T,>(path: string, signal: AbortSignal) =>
-  unwrap(api.GET(path as never, { signal } as never) as unknown as Promise<RawResult<T>>)
-
-export const fetchShopping = (signal: AbortSignal) => get<ShoppingOut>('/api/v1/stock/shopping', signal)
-export const fetchStockSummary = (signal: AbortSignal) => get<StockSummary>('/api/v1/stock/summary', signal)
+export const fetchShopping = (signal: AbortSignal): Promise<ShoppingOut> =>
+  unwrap(api.GET('/api/v1/stock/shopping', { signal }))
+export const fetchStockSummary = (signal: AbortSignal): Promise<StockSummary> =>
+  unwrap(api.GET('/api/v1/stock/summary', { signal }))
 
 export function useShopping() {
   return useCachedQuery(keys.shopping(), fetchShopping)
@@ -82,8 +78,7 @@ export function useApplyTicked() {
   const qc = useQueryClient()
   const toast = useToast()
   return useCallback(async (): Promise<OnlineOutcome<ApplyTickedOut>> => {
-    const out = await runOnline(() =>
-      api.POST('/api/v1/stock/shopping/apply-ticked' as never, { body: {} } as never) as unknown as Promise<RawResult<ApplyTickedOut>>)
+    const out = await runOnline(() => api.POST('/api/v1/stock/shopping/apply-ticked'))
     if (out.ok) {
       await Promise.all(PANTRY_INVALIDATES.map((queryKey) => qc.invalidateQueries({ queryKey })))
       toast.show(appliedText(out.data))
@@ -110,7 +105,7 @@ const setTicked = (id: string, ticked: boolean) => (qc: QueryClient) =>
     }
   })
 
-export interface NewLine extends LineIn { tempId: string }
+export interface NewLine { tempId: string; name: string; quantity?: number | null }
 
 /**
  * Ticks and one-off lines (spec §4.5, §4.8): optimistic and queued offline, because people shop with poor

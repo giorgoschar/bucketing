@@ -1,150 +1,55 @@
+import type { components } from '../../../api/schema'
+
 /**
- * Plan › Pantry wire types, hand-written from the pantry spec §3.2 while the server (stream B) is built in
- * parallel. The integration step turns these into aliases of the generated schema (plan, Integration 2).
+ * Plan › Pantry wire types: aliases of the generated schema (pantry spec §3.2).
  *
- * Numbers: every quantity, price and unit price is a JSON number on the wire, as GET /stock sends them today
- * (Decimal through FastAPI's encoder). The new list fields are optional to older servers, so they may be
- * missing; read them through the helpers below.
+ * Numbers: every quantity, price and unit price is a JSON number on the wire (the server's `Num`: a whole
+ * Decimal is a JSON int, otherwise a float).
  */
+type S = components['schemas']
 
 /** `price_advice`'s verdict; `buy_now` turns the price chip green. */
-export type PriceAdvice = 'buy_now' | 'wait' | 'neutral' | 'unknown'
+export type PriceAdvice = S['StockItemOut']['advice']
 
 /** The cheapest latest snapshot of an item (GET /stock `cheapest`). */
-export interface CheapestPrice {
-  retailer: string
-  retailer_name: string
-  price: number | null
-  unit_price: number | null
-  is_discount: boolean
-  /** YYYY-MM-DD */
-  date: string
-}
+export type CheapestPrice = S['CheapestOut']
 
-/** One GET /stock row, and what the stock writes return. */
-export interface StockItem {
-  id: string
-  product_id: string
-  name: string
-  brand: string | null
-  barcode: string | null
-  posokanei_id: string | null
-  quantity: number
-  min_quantity: number
-  track_price: boolean
-  /** quantity <= min_quantity */
-  low: boolean
-  cheapest: CheapestPrice | null
-  // Added by the pantry spec §3.2.
-  unit?: string | null
-  unit_quantity?: number | null
-  image_url?: string | null
-  /** restock_quantity: max(1, ceil(2*min − qty)) */
-  need_qty?: number | null
-  runout_days?: number | null
-  advice?: PriceAdvice | null
-  ticked?: boolean
-  tick_id?: string | null
-}
+/** One GET /stock row, and what the stock writes (POST /stock, adjust, PATCH) return. */
+export type StockItem = S['StockItemOut']
 
 /** One store's latest price on the detail page. */
-export interface PriceToday {
-  retailer: string
-  retailer_name: string
-  price: number | null
-  unit_price: number | null
-  is_discount: boolean
-}
+export type PriceToday = S['PriceTodayOut']
 
 /** One day's lowest price across retailers. */
-export interface HistoryPoint {
-  /** YYYY-MM-DD */
-  date: string
-  min_price: number
-}
+export type HistoryPoint = S['HistoryPointOut']
 
 /** `price_advice`'s dict. */
-export interface AdviceDetail {
-  advice?: PriceAdvice
-  current_min: number | null
-  median_30d: number | null
-  min_90d: number | null
-  trend_pct_30d: number | null
-  reason: string | null
-  as_of: string | null
-}
+export type AdviceDetail = S['AdviceDetailOut']
 
 /** GET /stock/{id} and POST /stock/{id}/refresh. */
-export interface StockDetail extends StockItem {
-  /** Cheapest unit price first. */
-  prices_today: PriceToday[]
-  /** One point per day over the last 183 days. */
-  history: HistoryPoint[]
-  advice_detail: AdviceDetail | null
-  prices_as_of: string | null
-}
+export type StockDetail = S['StockDetailOut']
 
 /** POST /stock. */
-export interface StockAddBody {
-  name: string
-  brand?: string | null
-  barcode?: string | null
-  posokanei_id?: string | null
-  unit?: string | null
-  unit_quantity?: number | null
-  image_url?: string | null
-  quantity?: number
-  min_quantity?: number
-}
+export type StockAddBody = S['StockAdd']
 
 /** PATCH /stock/{id}. */
-export interface StockSettingsBody {
-  min_quantity?: number
-  track_price?: boolean
-}
+export type StockSettingsBody = S['StockSettingsIn']
 
 /** POST /stock/{id}/adjust: a relative delta; `client_id` makes a replayed queued adjust apply once. */
-export interface StockAdjustBody {
-  delta: number
-  client_id: string
-}
+export type StockAdjustBody = S['StockAdjust']
 
-// ---- PosoKanei lookups (GET /products/search, GET /products/barcode/{code}), unchanged but for in_pantry.
+// ---- PosoKanei lookups (GET /products/search, GET /products/barcode/{code}).
 
-export interface RetailerPrice {
-  retailer: string
-  display_name: string
-  price: number | null
-  unit_price: number | null
-  is_discount: boolean
-  discount_pct: number | null
-  last_updated: string | null
-}
+export type RetailerPrice = S['RetailerPriceOut']
 
-export interface ProductSummary {
-  id: string
-  name: string
-  brand: string | null
-  barcode: string | null
-  unit: string | null
-  unit_quantity: number | null
-  image_url: string | null
-  retailer_prices: RetailerPrice[]
-  price_stats: { min: number | null; max: number | null; avg: number | null }
-}
+/** A search result. */
+export type ProductSummary = S['ProductOut']
 
-export interface BarcodeProduct extends ProductSummary {
-  /** The household's item with this barcode, if any. */
-  in_pantry?: { stock_item_id: string; quantity: number } | null
-}
+/** A barcode lookup; `in_pantry` is the household's item with this barcode (or PosoKanei id), if any. */
+export type BarcodeProduct = S['ProductLookupOut']
 
-/**
- * The part of GET /stock/shopping the list's "Shopping list (N)" button reads: N is its items (low or
- * running out). Stream Wb owns the full shopping types; this is named so it never clashes with them.
- */
-export interface PantryShoppingCount {
-  items: { id: string }[]
-}
+/** The barcode lookup's 404 / 503 body: `detail` plus the pantry match, which a miss can still have. */
+export type BarcodeLookupError = S['ProductLookupErrorOut']
 
 /** A quantity as people write it: 2, 1.5, 0.25 (never 2.00). */
 export function formatQty(n: number | null | undefined): string {

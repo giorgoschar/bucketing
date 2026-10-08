@@ -8,7 +8,7 @@ import { pantryRoutes, productSummary, stockDetail, stockItem } from '../../../t
 import { renderWithProviders, resetTestEnv, testQueryClient } from '../../../test/render'
 import { AddSheet } from './AddSheet'
 import { Detail } from './Detail'
-import { PANTRY_INVALIDATES, PANTRY_SHOPPING_COUNT_KEY } from './hooks'
+import { PANTRY_INVALIDATES } from './shoppingHooks'
 import { Pantry } from './Pantry'
 
 afterEach(resetTestEnv)
@@ -16,7 +16,7 @@ afterEach(resetTestEnv)
 // Pantry spec §4.8 / §5 "Invalidation after writes": the list, the shopping list, the item and Home.
 // Inactive seeded queries stay invalidated after the write, so isInvalidated proves the write asked for them.
 const HOME = keys.home.overdue('2026-09-01', '2026-10-06')
-const STALE: QueryKey[] = [keys.stockList(), PANTRY_SHOPPING_COUNT_KEY, keys.stockItem('s9'), HOME]
+const STALE: QueryKey[] = [keys.stockList(), keys.shopping(), keys.stockItem('s9'), HOME]
 function seeded(): QueryClient {
   const client = testQueryClient()
   for (const k of STALE) client.setQueryData(k, { seeded: true })
@@ -74,7 +74,7 @@ it('a settings PATCH and a refresh refetch the item and invalidate the rest', as
   renderWithProviders(<Detail id="s1" />, { client })
   fireEvent.click(await screen.findByRole('switch', { name: 'Track price' }))
   await waitFor(() => expect(fake.callsTo(DETAIL)).toHaveLength(2))
-  await waitFor(() => expect(client.getQueryState(PANTRY_SHOPPING_COUNT_KEY)?.isInvalidated).toBe(true))
+  await waitFor(() => expect(client.getQueryState(keys.shopping())?.isInvalidated).toBe(true))
   expect(client.getQueryState(HOME)?.isInvalidated).toBe(true)
 
   fireEvent.click(screen.getByRole('button', { name: 'Refresh prices' }))

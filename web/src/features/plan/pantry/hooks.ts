@@ -1,33 +1,19 @@
-import { type QueryClient, type QueryKey, useQueryClient } from '@tanstack/react-query'
+import { type QueryClient, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect } from 'react'
 import { api } from '../../../api/client'
 import { useAction } from '../../../data/action'
 import { useCachedQuery } from '../../../data/cachedQuery'
 import { runOnline, useOnlineAction } from '../../../data/onlineAction'
-import type { RawResult } from '../../../data/rawJson'
 import { unwrap } from '../../../data/http'
 import { onQueueDrained } from '../../../offline/queueDrain'
 import { keys } from '../../../data/keys'
-import type {
-  PantryShoppingCount, ProductSummary, StockAddBody, StockAdjustBody, StockDetail, StockItem, StockSettingsBody,
-} from './types'
+import { PANTRY_INVALIDATES, useShopping } from './shoppingHooks'
+import type { ProductSummary, StockAddBody, StockAdjustBody, StockDetail, StockItem, StockSettingsBody } from './types'
 
 /**
- * The shopping list's count, for "Shopping list (N)". Stream Wb owns keys.shopping; until the integration
- * joins them this read has its own key under the 'stock' prefix.
- */
-export const PANTRY_SHOPPING_COUNT_KEY = ['stock', 'shopping-count'] as const
-
-/**
- * Everything a pantry write makes stale (pantry spec §4.8). The 'stock' prefix covers the list, every item
- * and the shopping count. The integration adds Wb's keys.shopping and keys.stockSummary here.
- */
-export const PANTRY_INVALIDATES: readonly QueryKey[] = [['stock'], keys.home.all]
-
-/**
- * After the offline queue replays, refetch the pantry: a queued adjust's row would otherwise keep its
- * optimistic numbers (the queue bridge refreshes affects.sync, which has no stock key until the integration
- * adds it). Mounted by the Pantry list and the product detail.
+ * After the offline queue replays, refetch the pantry while the list or the detail is mounted. The queue
+ * bridge's affects.sync covers ['stock'] too; this keeps the mounted screen's numbers honest even where the
+ * bridge isn't installed. Mounted by the Pantry list and the product detail.
  */
 export function usePantryReplaySync() {
   const qc = useQueryClient()
@@ -38,22 +24,22 @@ export function usePantryReplaySync() {
 
 /** GET /stock. */
 export function useStockList() {
-  return useCachedQuery(keys.stockList(), async (signal) =>
-    (await unwrap(api.GET('/api/v1/stock', { signal }))) as StockItem[])
+  return useCachedQuery(keys.stockList(), (signal) => unwrap(api.GET('/api/v1/stock', { signal })))
 }
 
-/** GET /stock/shopping, read only for its item count. */
-export function usePantryShoppingCount() {
-  return useCachedQuery(PANTRY_SHOPPING_COUNT_KEY, async (signal): Promise<PantryShoppingCount> => {
-    const out = (await unwrap(api.GET('/api/v1/stock/shopping', { signal }))) as PantryShoppingCount
-    return { items: (out.items ?? []).map((i) => ({ id: i.id })) }
-  })
+/**
+ * "Shopping list (N)": N is the low and running-out rows of GET /stock/shopping (spec §4.2). Rows listed only
+ * because they are ticked (`reason: 'ticked'`) are not counted. Shares keys.shopping() with the list screen.
+ */
+export function usePantryShoppingCount(): number | undefined {
+  const items = useShopping().data?.items
+  return items?.filter((i) => i.reason !== 'ticked').length
 }
 
-/** GET /stock/{id}: not in the generated schema yet, so through the client untyped (CSRF and 401 still apply). */
+/** GET /stock/{id}. */
 export function useStockDetail(id: string) {
-  return useCachedQuery(keys.stockItem(id), async (signal) =>
-    (await unwrap(api.GET(`/api/v1/stock/${encodeURIComponent(id)}` as never, { signal } as never))) as StockDetail)
+  return useCachedQuery(keys.stockItem(id), (signal) =>
+    unwrap(api.GET('/api/v1/stock/{item_id}', { params: { path: { item_id: id } }, signal })))
 }
 
 /** The restock quantity the server would compute: max(1, ceil(2*min − qty)). */
@@ -92,10 +78,7 @@ export function useAdjustStock(item: { id: string }) {
 export function useAddProduct() {
   const act = useOnlineAction()
   return (body: StockAddBody) =>
-    act<StockItem>(
-      () => api.POST('/api/v1/stock', { body: body as never }) as Promise<RawResult<StockItem>>,
-      { invalidates: PANTRY_INVALIDATES },
-    )
+    act(() => api.POST('/api/v1/stock', { body }), { invalidates: PANTRY_INVALIDATES })
 }
 
 /**
@@ -110,8 +93,6 @@ export function addBodyFor(p: ProductSummary): StockAddBody {
   }
 }
 
-const itemPath = (id: string) => `/api/v1/stock/${encodeURIComponent(id)}`
-
 /** The detail's online-only writes (spec §4.4, §4.8): settings, refresh and archive. */
 export function useStockWrites(id: string) {
   const qc = useQueryClient()
@@ -123,9 +104,7 @@ export function useStockWrites(id: string) {
   return {
     /** PATCH /stock/{id}: the list item comes back; the detail keeps its prices and history. */
     settings: async (body: StockSettingsBody) => {
-      const out = await act<StockItem>(
-        () => api.PATCH(itemPath(id) as never, { body } as never) as Promise<RawResult<StockItem>>,
-      )
+      const out = await act(() => api.PATCH('/api/v1/stock/{item_id}', { params: { path: { item_id: id } }, body }))
       if (out.ok) {
         qc.setQueryData<StockDetail>(keys.stockItem(id), (d) => (d ? { ...d, ...out.data } : d))
         await invalidate()
@@ -134,9 +113,7 @@ export function useStockWrites(id: string) {
     },
     /** POST /stock/{id}/refresh: 503 when PosoKanei is unavailable; the caller says so inline (not a toast). */
     refresh: async () => {
-      const out = await runOnline<StockDetail>(
-        () => api.POST(`${itemPath(id)}/refresh` as never, {} as never) as Promise<RawResult<StockDetail>>,
-      )
+      const out = await runOnline(() => api.POST('/api/v1/stock/{item_id}/refresh', { params: { path: { item_id: id } } }))
       if (out.ok) {
         qc.setQueryData(keys.stockItem(id), out.data)
         await invalidate()
@@ -145,9 +122,7 @@ export function useStockWrites(id: string) {
     },
     /** POST /stock/{id}/archive (204). */
     archive: async () => {
-      const out = await act<null>(
-        () => api.POST(`${itemPath(id)}/archive` as never, {} as never) as Promise<RawResult<null>>,
-      )
+      const out = await act(() => api.POST('/api/v1/stock/{item_id}/archive', { params: { path: { item_id: id } } }))
       if (out.ok) {
         // The item is gone: never refetch it (a 404) while the screen leaves; everything else refreshes.
         await Promise.all(PANTRY_INVALIDATES.map((queryKey) => qc.invalidateQueries({
