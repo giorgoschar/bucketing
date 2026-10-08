@@ -71,13 +71,13 @@ it('a count that fails is retried with the same client_id', async () => {
 
 // ---- C6: the wallet's full sum
 
-it('cash of this month logged in another month: "− Logged from last month", and the sum adds up', async () => {
+it('cash of this month logged in another month: "− Logged in another month", and the sum adds up', async () => {
   // Took 100 on 28 Sep, logged 60 in September and 40 in October (Cash final review m2, scenario A).
   const me = walletMember({ wallet: terms({ taken: 100, logged: 60, logged_cross_month: 40, not_yet_logged: 0 }) })
   await renderCash({ wallets: cashWallets({ members: [me] }) })
   const c = await card()
-  expect(c).toHaveTextContent('Took €100.00 − Logged €60.00 − Logged from last month €40.00')
-  expect(within(c).getByText('− Logged from last month')).toBeVisible()
+  expect(c).toHaveTextContent('Took €100.00 − Logged €60.00 − Logged in another month €40.00')
+  expect(within(c).getByText('− Logged in another month')).toBeVisible()
   expect(c).toHaveTextContent('All logged')
 })
 
@@ -101,7 +101,7 @@ it('no extra lines when both terms are zero', async () => {
 
 it('your own Took never shows below zero (Cash final review m3)', async () => {
   // Took 100 in September, put 20 back in October with no takes: October's taken − put back is −20.
-  const me = walletMember({ wallet: terms({ taken: 0, put_back: 20, logged: 0, spent: 0, over_logged: 20, not_yet_logged: 0 }) })
+  const me = walletMember({ wallet: terms({ taken: 0, put_back: 20, logged: 0, spent: 0, over_logged: 0, not_yet_logged: 0 }) })
   await renderCash({ wallets: cashWallets({ members: [me] }) })
   const c = await card()
   expect(c).toHaveTextContent('Took €0.00 − Logged €0.00')
@@ -109,13 +109,25 @@ it('your own Took never shows below zero (Cash final review m3)', async () => {
   expect(c.querySelector('.cash-terms')).toBeNull()
 })
 
+// Fix round 1 (review C-1): the server's over_logged is already against the floored Took (stream S
+// `_over_logged`), so the card adds it as it comes.
+it('put back beyond the takes, then logged: "+ Logged more than taken" as the server sends it, and the sum adds up', async () => {
+  // October: no takes, €20 put back, €15 logged. S: Took max(0 − 20, 0) = 0, over_logged = 0 − (0 − 15) = 15.
+  const me = walletMember({ wallet: terms({ taken: 0, put_back: 20, logged: 15, spent: 0, over_logged: 15, not_yet_logged: 0 }) })
+  await renderCash({ wallets: cashWallets({ members: [me] }) })
+  const c = await card()
+  expect(c).toHaveTextContent('Took €0.00 − Logged €15.00 + Logged more than taken €15.00')
+  expect(within(c).getByText('+ Logged more than taken')).toBeInTheDocument()
+  expect(c).toHaveTextContent('All logged')
+})
+
 it.each<[string, Partial<WalletWithTerms>]>([
   ['plain', { carried: 10, taken: 130, put_back: 20, still_have: 15, logged: 70, outs: 5, not_yet_logged: 30 }],
   ['cross-month', { taken: 100, logged: 60, logged_cross_month: 40, not_yet_logged: 0 }],
   ['excess', { taken: 100, still_have: 0, logged: 70, over_logged: 20, not_yet_logged: 50 }],
   ['both', { carried: 5, taken: 80, logged: 30, outs: 5, logged_cross_month: 25, over_logged: 10, not_yet_logged: 35 }],
-  ['put back beyond takes', { taken: 0, put_back: 20, logged: 0, over_logged: 20, not_yet_logged: 0 }],
-  ['put back beyond takes, then logged', { taken: 0, put_back: 20, logged: 15, over_logged: 35, not_yet_logged: 0 }],
+  ['put back beyond takes', { taken: 0, put_back: 20, logged: 0, over_logged: 0, not_yet_logged: 0 }],
+  ['put back beyond takes, then logged', { taken: 0, put_back: 20, logged: 15, over_logged: 15, not_yet_logged: 0 }],
 ])('the shown sum equals not_yet_logged: %s', (_name, w) => {
   const s = walletSum(walletMember({ wallet: terms({ carried: 0, put_back: 0, still_have: null, outs: 0, ...w }) }))
   const shown = s.took - (s.inHand ?? 0) - s.logged - s.crossMonth + s.overLogged

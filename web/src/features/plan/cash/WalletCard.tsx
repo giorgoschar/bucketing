@@ -21,7 +21,7 @@ export function WalletCard({ member, index, currency, canWrite, current, onLogIt
   const e = (v: number) => euros(v, currency)
   // The terms the cells leave out, only when they count (polish C6): with them the shown sum is the server's.
   const terms = [
-    ...(crossMonth > CENT_EPS ? [{ op: '−', k: 'Logged from last month', v: crossMonth }] : []),
+    ...(crossMonth > CENT_EPS ? [{ op: '−', k: 'Logged in another month', v: crossMonth }] : []),
     ...(overLogged > CENT_EPS ? [{ op: '+', k: 'Logged more than taken', v: overLogged }] : []),
   ]
   const sentence =

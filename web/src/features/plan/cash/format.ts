@@ -17,21 +17,19 @@ export const tint = (i: number) => `var(--c${(i % 6) + 1})`
 
 /**
  * The parts of the wallet sum (spec §4.2.2, polish C6):
- * Took − [In hand] − Logged − Logged from last month + Logged more than taken = not yet logged.
+ * Took − [In hand] − Logged − Logged in another month + Logged more than taken = not yet logged.
  *
- * Took never shows below 0 (Cash final review m3): a put back beyond this month's takes is cash that left
- * the wallet beyond what was taken, so the shortfall is shown with "Logged more than taken" instead, and the
- * shown sum still adds up.
+ * Took never shows below 0 (Cash final review m3). The server's `over_logged` is already worked out against
+ * that floored Took (stream S `_over_logged`), so it is added as it comes and the shown sum still adds up.
  */
 export function walletSum(m: CashWalletMemberOut) {
   const w = m.wallet as WalletWithTerms
-  const rawTook = num(w.carried) + num(w.taken) - num(w.put_back)
   return {
-    took: Math.max(0, rawTook),
+    took: Math.max(0, num(w.carried) + num(w.taken) - num(w.put_back)),
     inHand: w.still_have === null || w.still_have === undefined ? null : num(w.still_have),
     logged: num(w.logged) + num(w.outs),
     crossMonth: num(w.logged_cross_month),
-    overLogged: Math.max(0, num(w.over_logged) + Math.min(0, rawTook)),
+    overLogged: num(w.over_logged),
     notLogged: num(w.not_yet_logged),
   }
 }
