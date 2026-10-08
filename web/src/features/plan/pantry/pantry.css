@@ -36,10 +36,11 @@
 .pantry-row__left--low { color: var(--warn); font-weight: 650; }
 .pantry-row__pending { font-weight: 600; color: var(--accent); }
 
-/* An initial on a tinted tile (no product photos: the CSP serves images from 'self' only). */
+/* An initial on a tinted tile (no product photos: the CSP serves images from 'self' only). The letter is the
+   tint pulled toward --ink, so it reads at 4.5:1 or better on its tile in both themes (pantry review M-4). */
 .pantry-tile {
   width: 36px; height: 36px; flex: none; border-radius: var(--r-sm); display: grid; place-items: center;
-  background: color-mix(in srgb, var(--tint, var(--c6)) 18%, var(--surface)); color: var(--tint, var(--c6));
+  background: color-mix(in srgb, var(--tint, var(--c6)) 18%, var(--surface)); color: color-mix(in srgb, var(--tint, var(--c6)) 60%, var(--ink));
   font-family: var(--font-display); font-weight: 650; font-size: 16px;
 }
 .pantry-tile--lg { width: 52px; height: 52px; border-radius: var(--r-md); font-size: 22px; }

@@ -13,7 +13,8 @@ import { ShoppingList } from './ShoppingList'
 afterEach(resetTestEnv)
 
 const TICKS = 'POST /api/v1/stock/shopping/ticks' as const
-const UNTICK = 'DELETE /api/v1/stock/shopping/ticks/{tick_id}' as const
+// C4 (polish P2): an untick names the item, not the tick.
+const UNTICK = 'DELETE /api/v1/stock/shopping/ticks' as const
 const LINES = 'POST /api/v1/stock/shopping/lines' as const
 const LINE = 'PATCH /api/v1/stock/shopping/lines/{line_id}' as const
 const LINE_DEL = 'DELETE /api/v1/stock/shopping/lines/{line_id}' as const
@@ -126,15 +127,14 @@ it('offline, a tick and then an untick queue in that order and replay in order: 
   await waitFor(() => expect(row('Milk × 2')).toHaveAttribute('aria-checked', 'false'))
   await waitFor(async () => expect(await db.queue.count()).toBe(2))
   const [tick, untick] = await listQueuedBodies('/api/v1/stock')
-  const id = (tick.body as { id: string }).id
   expect(tick).toMatchObject({ method: 'POST', path: '/api/v1/stock/shopping/ticks', body: { id: anId, stock_item_id: 's-milk' } })
-  expect(untick).toMatchObject({ method: 'DELETE', path: `/api/v1/stock/shopping/ticks/${id}` })
+  expect(untick).toMatchObject({ method: 'DELETE', path: '/api/v1/stock/shopping/ticks?stock_item_id=s-milk' })
 
   setOnline(true)
   await replay({ force: true })
   expect(await db.queue.count()).toBe(0)
   expect(api.calls.filter((c) => c.path.startsWith('/api/v1/stock/shopping/ticks')).map((c) => `${c.method} ${c.path}`))
-    .toEqual(['POST /api/v1/stock/shopping/ticks', `DELETE /api/v1/stock/shopping/ticks/${id}`])
+    .toEqual(['POST /api/v1/stock/shopping/ticks', 'DELETE /api/v1/stock/shopping/ticks'])
   await waitFor(() => expect(row('Milk × 2')).toHaveAttribute('aria-checked', 'false'))
   expect(screen.queryByRole('region', { name: 'Ticked items' })).toBeNull()
 })
@@ -177,7 +177,7 @@ it('unticking deletes the tick by its id, queued offline', async () => {
   await waitFor(() => expect(row('Milk × 2')).toHaveAttribute('aria-checked', 'false'))
   await waitFor(async () => expect(await db.queue.count()).toBe(1))
   expect(await listQueuedBodies('/api/v1/stock')).toEqual([
-    expect.objectContaining({ method: 'DELETE', path: '/api/v1/stock/shopping/ticks/tick-9' }),
+    expect.objectContaining({ method: 'DELETE', path: '/api/v1/stock/shopping/ticks?stock_item_id=s-milk' }),
   ])
   expect(api.callsTo(UNTICK)).toHaveLength(0)
 })
@@ -304,7 +304,7 @@ it('a tick answered with the item\'s existing tick adopts that id', async () => 
   await waitFor(() => expect(api.callsTo('GET /api/v1/stock/shopping').length).toBeGreaterThan(1))
   fireEvent.click(row('Milk × 2'))
   await waitFor(() => expect(api.callsTo(UNTICK)).toHaveLength(1))
-  expect(api.callsTo(UNTICK)[0].path).toBe('/api/v1/stock/shopping/ticks/tick-other')
+  expect(api.callsTo(UNTICK)[0].query.get('stock_item_id')).toBe('s-milk')
 })
 
 it('a row listed only because it is ticked reads "Ticked"', async () => {
@@ -501,8 +501,7 @@ it('I-2: an online tick keeps its tick id across a failed refetch, so it can be 
   expect(row('Milk × 2')).toHaveAttribute('aria-checked', 'true')
   fireEvent.click(row('Milk × 2'))
   await waitFor(() => expect(api.callsTo(UNTICK)).toHaveLength(1))
-  const sent = (api.callsTo(TICKS)[0].body as { id: string }).id
-  expect(api.callsTo(UNTICK)[0].path).toBe(`/api/v1/stock/shopping/ticks/${sent}`)
+  expect(api.callsTo(UNTICK)[0].query.get('stock_item_id')).toBe('s-milk')
 })
 
 it('I-3: each row describes its reason, price and sync state to screen readers', async () => {
@@ -550,8 +549,10 @@ it('I-4: a rejected line check rolls back', async () => {
   expect(screen.getByRole('checkbox', { name: 'Batteries' })).toHaveAttribute('aria-checked', 'false')
 })
 
-it('I-4: a line add that fails while online is rolled back, not queued (it may have been added)', async () => {
-  const api = fakeApi(shoppingRoutes())
+// Polish P2 (pantry review M-2): a line create is idempotent on its client-made id, so a failure while online
+// queues it like a tick, instead of rolling it back (this test pinned the old 'offline-only' rollback).
+it('I-4: a line add that fails while online is queued with its id, and stays on the list', async () => {
+  const api = fakeApi({ ...shoppingRoutes(), 'GET /api/v1/auth/me': () => ME })
   api.on(LINES, () => reply(500, { detail: 'boom' }))
   renderWithProviders(<ShoppingList />)
   await loaded()
@@ -560,10 +561,12 @@ it('I-4: a line add that fails while online is rolled back, not queued (it may h
   const sheet = await screen.findByRole('dialog', { name: 'Add item' })
   fireEvent.change(within(sheet).getByLabelText('Item'), { target: { value: 'Soap' } })
   fireEvent.click(within(sheet).getByRole('button', { name: 'Add' }))
-  expect(await screen.findByRole('alert')).toHaveTextContent('Couldn’t confirm the change')
-  await waitFor(() => expect(api.callsTo('GET /api/v1/stock/shopping').length).toBeGreaterThan(1))
-  expect(screen.queryByRole('checkbox', { name: 'Soap' })).toBeNull()
-  expect(await db.queue.count()).toBe(0)
+  await waitFor(async () => expect(await db.queue.count()).toBe(1))
+  const [queued] = await listQueuedBodies('/api/v1/stock')
+  expect(queued).toMatchObject({ method: 'POST', path: '/api/v1/stock/shopping/lines', body: { id: anId, name: 'Soap' } })
+  expect((queued.body as { id: string }).id).toBe((api.callsTo(LINES)[0].body as { id: string }).id)
+  expect(screen.getByRole('checkbox', { name: 'Soap' })).toHaveAccessibleDescription('Waiting to sync')
+  expect(screen.queryByText('Couldn’t confirm the change')).toBeNull()
 })
 
 it('a run-out estimate is rounded up to a whole day', async () => {

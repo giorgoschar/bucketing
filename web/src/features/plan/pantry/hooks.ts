@@ -62,7 +62,8 @@ const newClientId = (): string => crypto.randomUUID()
 
 /**
  * The ± stepper (pantry spec §4.8): optimistic, queued offline with a "Waiting to sync" marker. An adjust is
- * a relative delta, so each tap carries its own client_id and the server applies a replay once.
+ * a relative delta, so each tap carries its own client_id and the server applies a replay once. Online, the
+ * taps on one item are sent in order, never overlapping.
  */
 export function useAdjustStock(item: { id: string }) {
   const { run, busy } = useAction<number, StockItem>({
@@ -72,6 +73,8 @@ export function useAdjustStock(item: { id: string }) {
     optimistic: (qc, delta) => patchItem(qc, item.id, (i) => adjusted(i, delta)),
     invalidates: PANTRY_INVALIDATES,
     pendingId: item.id,
+    // Taps on one item are sent one after another (polish P2); the count still moves at once.
+    serial: `stock:${item.id}`,
   })
   return { adjust: run, busy }
 }

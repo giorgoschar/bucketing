@@ -4,8 +4,9 @@ import { api } from '../api/client'
 import { enqueue, kick } from '../offline/queue'
 import { toast } from '../ui/Toast'
 import { detailOf } from './http'
+import { inLane, laneLength } from './lanes'
 import { isOnline } from './online'
-import { markPending } from './pending'
+import { isPending, markPending } from './pending'
 
 export type ActionMethod = 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 export type ActionResult<T> =
@@ -36,6 +37,12 @@ export interface ActionSpec<V, T> {
    *   Non-idempotent creates must use this; item create (`POST /api/v1/recurring`) in particular.
    */
   queue?: 'always' | 'offline-only'
+  /**
+   * A row's send lane (polish P2). Writes in one lane are sent one after another, never overlapping; the
+   * optimistic patch still applies at once. While the row has a change in the offline queue (its pendingId
+   * is marked), a later write in the lane queues behind it instead of overtaking it online.
+   */
+  serial?: OrFn<V, string>
   /** Unused at runtime; carries the response type. */
   readonly _result?: T
 }
@@ -108,25 +115,37 @@ export async function perform<V, T>(qc: QueryClient, s: ActionSpec<V, T>, vars: 
   const offlineOnly = s.queue === 'offline-only'
 
   if (!isOnline()) return queue(false)
-  let res: Raw
-  try {
-    res = await send(s.method, path, body)
-  } catch {
-    // Failed at the network level, or timed out.
-    return offlineOnly ? unconfirmed(0) : queue(true)
-  }
-  if (res.response.ok) {
+  const lane = s.serial === undefined ? undefined : resolve(s.serial, vars)
+  if (!lane) return sendOnline()
+  return inLane(lane, () => {
+    // Waited behind an earlier write: the connection may have gone, or that write may sit in the queue.
+    if (!isOnline()) return queue(false)
+    if (pendingId && isPending(pendingId)) return queue(true)
+    return sendOnline()
+  })
+
+  async function sendOnline(): Promise<ActionResult<T>> {
+    let res: Raw
+    try {
+      res = await send(s.method, path, body)
+    } catch {
+      // Failed at the network level, or timed out.
+      return offlineOnly ? unconfirmed(0) : queue(true)
+    }
+    if (res.response.ok) {
+      // Later writes to the row are still to be sent: refetching now would briefly undo their patches.
+      if (!lane || laneLength(lane) <= 1) invalidate()
+      return { status: 'done', data: res.data as T }
+    }
+    const code = res.response.status
+    if (queueable(code)) return offlineOnly ? unconfirmed(code) : queue(true)
+    rollback()
+    const detail = detailOf(res.error, code)
+    if (code === 401) return { status: 'rejected', code, detail }
+    if (s.toastRejections !== false) toast(detail, { tone: 'error' })
     invalidate()
-    return { status: 'done', data: res.data as T }
+    return { status: 'rejected', code, detail }
   }
-  const code = res.response.status
-  if (queueable(code)) return offlineOnly ? unconfirmed(code) : queue(true)
-  rollback()
-  const detail = detailOf(res.error, code)
-  if (code === 401) return { status: 'rejected', code, detail }
-  if (s.toastRejections !== false) toast(detail, { tone: 'error' })
-  invalidate()
-  return { status: 'rejected', code, detail }
 }
 
 export function useAction<V = void, T = unknown>(spec: ActionSpec<V, T>): { run: (vars: V) => Promise<ActionResult<T>>; busy: boolean } {

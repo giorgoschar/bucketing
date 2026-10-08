@@ -4,6 +4,7 @@ import { api } from '../../../api/client'
 import { useAction } from '../../../data/action'
 import { useCachedQuery } from '../../../data/cachedQuery'
 import { unwrap } from '../../../data/http'
+import { lanesSettled } from '../../../data/lanes'
 import { keys } from '../../../data/keys'
 import { type OnlineOutcome, runOnline } from '../../../data/onlineAction'
 import { useQueue } from '../../../offline/useQueue'
@@ -29,6 +30,11 @@ export const PANTRY_OFFLINE = 'Connect to change the pantry'
 export function useQueuedChanges(): number {
   return useQueue().pending
 }
+
+/** The send lanes of the shopping list's rows (polish P2): a tick and its untick never overlap. */
+export const SHOPPING_LANE = 'shopping:'
+const tickLane = (itemId: string) => `${SHOPPING_LANE}tick:${itemId}`
+const lineLane = (lineId: string) => `${SHOPPING_LANE}line:${lineId}`
 
 export const syncingText = (n: number) => `Waiting to sync ${n === 1 ? '1 change' : `${n} changes`}`
 
@@ -78,6 +84,8 @@ export function useApplyTicked() {
   const qc = useQueryClient()
   const toast = useToast()
   return useCallback(async (): Promise<OnlineOutcome<ApplyTickedOut>> => {
+    // Ticks still on their way must land first, or the apply would miss them (pantry review M-5).
+    await lanesSettled(SHOPPING_LANE)
     const out = await runOnline(() => api.POST('/api/v1/stock/shopping/apply-ticked'))
     if (out.ok) {
       await Promise.all(PANTRY_INVALIDATES.map((queryKey) => qc.invalidateQueries({ queryKey })))
@@ -116,9 +124,10 @@ export const newRowId = (): string => crypto.randomUUID()
 /**
  * Ticks and one-off lines (spec §4.5, §4.8): optimistic and queued offline, because people shop with poor
  * signal. Creates carry a client-made id (pantry fix round 1, I2), so a row made offline can be unticked,
- * checked or deleted offline too: its PATCH/DELETE queue behind its create and replay in order. Ticks and the
- * PATCH/DELETEs queue on any failure; a line create still queues only when offline (a failure while online
- * is rolled back and said, as before).
+ * checked or deleted offline too: its PATCH/DELETE queue behind its create and replay in order. Every write
+ * queues on any failure: creates are idempotent on their client-made id (pantry review M-2). Online, the
+ * writes to one row are sent one after another (polish P2), and an untick is item-scoped (C4), so it removes
+ * whichever tick the item has, even one another phone made.
  */
 export function useShoppingActions() {
   const qc = useQueryClient()
@@ -131,23 +140,25 @@ export function useShoppingActions() {
     body: ({ item, id }: NewTick): TickIn => ({ id, stock_item_id: item.id }),
     optimistic: (qc, { item, id }: NewTick) => setTicked(item.id, id)(qc),
     pendingId: ({ item }: NewTick) => item.id,
+    serial: ({ item }: NewTick) => tickLane(item.id),
   })
   const untick = useAction<ShoppingItem, null>({
     ...shared,
     method: 'DELETE',
-    path: (i: ShoppingItem) => `/api/v1/stock/shopping/ticks/${i.tick_id}`,
+    path: (i: ShoppingItem) => `/api/v1/stock/shopping/ticks?stock_item_id=${encodeURIComponent(i.id)}`,
     optimistic: (qc, i) => setTicked(i.id, null)(qc),
     pendingId: (i: ShoppingItem) => i.id,
+    serial: (i: ShoppingItem) => tickLane(i.id),
   })
   const addLine = useAction<NewLine, ShoppingLine>({
     ...shared,
     method: 'POST',
     path: '/api/v1/stock/shopping/lines',
     body: ({ id, name, quantity }: NewLine): LineIn => (quantity == null ? { id, name } : { id, name, quantity }),
-    queue: 'offline-only',
     optimistic: (qc, l) =>
       patchList(qc, (s) => ({ ...s, lines: [...s.lines, { id: l.id, name: l.name, quantity: l.quantity ?? null, checked: false }] })),
     pendingId: (l: NewLine) => l.id,
+    serial: (l: NewLine) => lineLane(l.id),
   })
   const checkLine = useAction<{ line: ShoppingLine; checked: boolean }, ShoppingLine>({
     ...shared,
@@ -161,6 +172,7 @@ export function useShoppingActions() {
         ticked_count: line.checked === checked ? s.ticked_count : Math.max(0, s.ticked_count + (checked ? 1 : -1)),
       })),
     pendingId: ({ line }: { line: ShoppingLine }) => line.id,
+    serial: ({ line }: { line: ShoppingLine }) => lineLane(line.id),
   })
   const deleteLine = useAction<ShoppingLine, null>({
     ...shared,
@@ -172,9 +184,12 @@ export function useShoppingActions() {
         lines: s.lines.filter((l) => l.id !== line.id),
         ticked_count: line.checked ? Math.max(0, s.ticked_count - 1) : s.ticked_count,
       })),
+    serial: (l: ShoppingLine) => lineLane(l.id),
   })
   return {
-    toggle: async (i: ShoppingItem) => {
+    toggle: async (shown: ShoppingItem) => {
+      // The cached row, not the rendered one: a second tap before the re-render still sees the first.
+      const i = qc.getQueryData<ShoppingOut>(keys.shopping())?.items.find((x) => x.id === shown.id) ?? shown
       if (i.ticked) return untick.run(i)
       const id = newRowId()
       const r = await tick.run({ item: i, id })
