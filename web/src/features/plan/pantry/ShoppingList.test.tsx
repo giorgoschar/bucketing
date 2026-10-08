@@ -574,3 +574,15 @@ it('a run-out estimate is rounded up to a whole day', async () => {
   await loaded()
   expect(row('Barilla spaghetti × 2')).toHaveTextContent('Runs out in ~5 d')
 })
+
+it('the row title is "name × need_qty": the pack-size unit never follows the count ("Pasta × 1", not "× 1 g")', async () => {
+  const data = shoppingOut()
+  data.items[2] = { ...data.items[2], unit: 'g' }
+  data.items[1] = { ...data.items[1], unit: 'L' }
+  fakeApi(shoppingRoutes(data))
+  renderWithProviders(<ShoppingList />)
+  await loaded()
+  expect(row('Barilla spaghetti × 2')).toBeInTheDocument()
+  expect(row('Milk × 2')).toBeInTheDocument()
+  expect(screen.queryByText(/× \d+ (g|L)\b/)).toBeNull()
+})

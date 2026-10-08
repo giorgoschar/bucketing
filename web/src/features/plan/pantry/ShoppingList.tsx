@@ -16,7 +16,8 @@ import {
 import type { ShoppingItem, ShoppingLine, ShoppingOut } from './shoppingTypes'
 import './shopping.css'
 
-const itemTitle = (i: ShoppingItem) => `${i.name} × ${formatQty(i.need_qty)}${i.unit ? ` ${i.unit}` : ''}`
+// `unit` is the pack size's unit (500 g), not what need_qty counts (packs), so it never follows the count.
+const itemTitle = (i: ShoppingItem) => `${i.name} × ${formatQty(i.need_qty)}`
 const lineTitle = (l: ShoppingLine) => (l.quantity == null ? l.name : `${l.name} × ${formatQty(l.quantity)}`)
 
 function reasonText(i: ShoppingItem): string {
