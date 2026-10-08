@@ -35,6 +35,7 @@ from app.services import (
     recent_ingest_attempts,
     record_ingest_attempt,
 )
+from app.services.ingest import NO_MERCHANT_DETAIL, PLACEHOLDER_MERCHANT
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
 
@@ -155,7 +156,12 @@ def apple_pay(
             **attempt,
         )
         return {**_result(db, txn), "duplicate": True}
-    record_ingest_attempt(status=201, detail="created", transaction_id=txn.id, **attempt)
+    record_ingest_attempt(
+        status=201,
+        detail=NO_MERCHANT_DETAIL if txn.merchant == PLACEHOLDER_MERCHANT else "created",
+        transaction_id=txn.id,
+        **attempt,
+    )
     notify_ingest_created(db, txn)
     return _result(db, txn)
 

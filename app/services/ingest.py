@@ -161,18 +161,6 @@ def _text_value(value, _depth: int = 0) -> str | None:
     return None
 
 
-def _field_text(value, *, field: str, required: bool = False) -> str | None:
-    """``_text_value`` with a message that names the field when it fails."""
-    text = _text_value(value)
-    if text is None and value is not None and required:
-        raise HTTPException(
-            status_code=422,
-            detail=f"{field} could not be read: send {field} as text, "
-            "not the whole transaction record.",
-        )
-    return text
-
-
 def normalise_amount(raw) -> str:
     """Shortcut amount → the plain decimal string :func:`parse_amount` wants.
 
@@ -461,8 +449,15 @@ def resolve_ingest_bucket(db: Session, token: PersonalApiToken) -> Bucket:
     return bucket
 
 
-def _notes(card: str | None, extra: str | None) -> str | None:
-    parts = [f"Apple Pay · {card}"] if card else []
+PLACEHOLDER_MERCHANT = "Apple Pay purchase"
+NO_MERCHANT_NOTE = "Merchant not received from the Shortcut"
+NO_MERCHANT_DETAIL = "created without a merchant — the Shortcut sent no merchant"
+
+
+def _notes(card: str | None, extra: str | None, *, no_merchant: bool = False) -> str | None:
+    parts = [NO_MERCHANT_NOTE] if no_merchant else []
+    if card:
+        parts.append(f"Apple Pay · {card}")
     if extra:
         parts.append(extra)
     return " · ".join(parts) or None
@@ -484,13 +479,17 @@ def ingest_apple_pay(
 
     Every field is coerced rather than trusted: the Shortcut may send text,
     numbers or a whole record. Raises HTTPException 400 (missing/unreadable
-    amount), 422 (blank merchant, unreadable currency, bad currency,
+    amount), 422 (unreadable currency, bad currency,
     no bucket) and propagates DeletedTransactionReplay (the caller maps it to
     409: a deleted expense is never resurrected by a retry).
     """
-    merchant = " ".join((_field_text(merchant, field="Merchant", required=True) or "").split())
-    if not merchant:
-        raise HTTPException(status_code=422, detail="Merchant is required.")
+    # A missing, blank or unreadable merchant must not lose a real purchase:
+    # the amount decides (below); the merchant falls back to a placeholder.
+    merchant = " ".join((_text_value(merchant) or "").split())
+    no_merchant = not merchant
+    value = coerce_amount(amount)
+    if no_merchant:
+        merchant = PLACEHOLDER_MERCHANT
     if currency is not None:
         currency = _text_value(currency)
         if currency is None:
@@ -505,13 +504,16 @@ def ingest_apple_pay(
             log_safe(repr(raw_card), 200),
         )
     notes = _text_value(notes)
-    value = coerce_amount(amount)
     moment = parse_occurred_at(occurred_at)
     household = db.get(Household, token.household_id)
     bucket = resolve_ingest_bucket(db, token)
     # Rules only: the built-in guess fuzzy-matches a category *hint*, and
     # merchant names ("Corner Kiosk" ~ "Groceries") give false positives.
-    category_id = resolve_category(db, token.household_id, merchant=merchant, hint=None)
+    category_id = (
+        None
+        if no_merchant
+        else resolve_category(db, token.household_id, merchant=merchant, hint=None)
+    )
 
     fields = {
         "bucket_id": bucket.id,
@@ -519,7 +521,9 @@ def ingest_apple_pay(
         "currency": (currency or "").strip().upper() or household.default_currency or "EUR",
         "paid_by": token.user_id,
         "category_id": category_id,
-        "notes": _notes((card or "").strip() or None, (notes or "").strip() or None),
+        "notes": _notes(
+            (card or "").strip() or None, (notes or "").strip() or None, no_merchant=no_merchant
+        ),
         "transaction_date": moment.astimezone(tz()).date() if moment else local_today(),
         "client_id": ingest_client_id(token.id, merchant, value, moment),
         "payment_method": PaymentMethod.apple_pay.value,

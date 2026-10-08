@@ -325,10 +325,11 @@ def test_merchant_dict_with_name_parses(client, db, ingest):
     assert db.get(Transaction, r.json()["id"]).merchant == "Sklavenitis"
 
 
-def test_merchant_whole_record_is_422_naming_the_field(client, db, ingest):
+def test_merchant_whole_record_is_saved_without_a_merchant(client, db, ingest):
+    # Polish R4: an unreadable merchant no longer loses the purchase.
     r = _post(client, ingest, merchant={"total": 1, "currency": "EUR"})
-    assert r.status_code == 422
-    assert "Merchant could not be read" in r.json()["detail"]
+    assert r.status_code == 201, r.text
+    assert db.get(Transaction, r.json()["id"]).merchant == "Apple Pay purchase"
 
 
 def test_card_dict_with_name_goes_into_notes(client, db, ingest):
