@@ -53,6 +53,14 @@ router = APIRouter(prefix="/ingest", tags=["ingest"])
 _CLASSIFY_PATH = re.compile(r"/api/v1/ingest/apple-pay/[^/]+/classify$")
 
 
+# One hourly budget per token and endpoint. The scope names are explicit so that
+# a request refused before the endpoint runs (a body that does not validate)
+# can be counted against the same budget (see :func:`gate_rejected_request`).
+TOKEN_RATE = "60/hour"
+INGEST_RATE_SCOPE = "ingest-apple-pay"
+CLASSIFY_RATE_SCOPE = "ingest-classify"
+
+
 def is_ingest_path(path: str) -> bool:
     """True for the ingest endpoint — used by app-wide handlers (validation,
     rate limiting) to know a request is one of ours to record."""
@@ -123,7 +131,7 @@ def _result(db: Session, txn: Transaction, token: PersonalApiToken) -> dict:
 
 
 @router.post("/apple-pay", status_code=status.HTTP_201_CREATED)
-@limiter.limit("60/hour", key_func=ingest_token_key)
+@limiter.shared_limit(TOKEN_RATE, scope=INGEST_RATE_SCOPE, key_func=ingest_token_key)
 def apple_pay(
     request: Request,
     response: Response,
@@ -245,7 +253,7 @@ class ClassifyIn(BaseModel):
 
 
 @router.post("/apple-pay/{transaction_id}/classify")
-@limiter.limit("60/hour", key_func=ingest_token_key)
+@limiter.shared_limit(TOKEN_RATE, scope=CLASSIFY_RATE_SCOPE, key_func=ingest_token_key)
 def classify(
     request: Request,
     response: Response,
@@ -297,3 +305,78 @@ def classify(
     result = _result(db, txn, token)
     record_ingest_attempt(status=200, detail=detail, **attempt)
     return result
+
+
+def _rate_scope(path: str) -> str:
+    return CLASSIFY_RATE_SCOPE if path.rstrip("/").endswith("/classify") else INGEST_RATE_SCOPE
+
+
+def gate_rejected_request(request: Request, *, status_code: int, detail: str, payload) -> bool:
+    """Count and record a request refused BEFORE its endpoint ran (a body that
+    does not validate). Synchronous: callers run it in a thread.
+
+    - A live token: counted against that token's hourly budget (the same
+      counter as the endpoint's). Past it the request is answered 429 and a
+      single "rate limited" row is written per token per hour.
+    - Anything else: counted against the per-IP failure limiter that guards
+      token guessing; past it, 429 and nothing is recorded. Within it the
+      attempt is recorded as unattributed (itself capped per source IP).
+
+    Returns True when the response must be 429 instead of the original error.
+    """
+    from limits import parse
+
+    from app.api_auth import INGEST_FAILURE_LIMIT
+    from app.core.ratelimit import client_key
+    from app.services.ingest import live_token_id
+
+    raw = bearer_token(request)
+    common = {
+        "payload": payload,
+        "content_type": request.headers.get("content-type"),
+        "raw_token": raw,
+        "path": request.url.path,
+        "client_ip": client_key(request),
+    }
+    token_id = live_token_id(raw)
+    if token_id is not None:
+        if limiter.limiter.hit(
+            parse(TOKEN_RATE), ingest_token_key(request), _rate_scope(request.url.path)
+        ):
+            record_ingest_attempt(status=status_code, detail=detail, **common)
+            return False
+        if limiter.limiter.hit(parse("1/hour"), "ingest-429-row", token_id):
+            record_ingest_attempt(status=429, detail=RATE_LIMIT_DETAIL, **common)
+        return True
+    if not limiter.limiter.hit(parse(INGEST_FAILURE_LIMIT), "ingest-fail", common["client_ip"]):
+        return True
+    record_ingest_attempt(status=status_code, detail=detail, **common)
+    return False
+
+
+RATE_LIMIT_DETAIL = "Rate limit exceeded — the Shortcut may send at most 60 purchases per hour"
+
+
+def record_rate_limited(request: Request) -> None:
+    """The endpoint's own limiter said no: one "rate limited" row per token per
+    hour (a flood must not fill the log). Synchronous: run it in a thread."""
+    from limits import parse
+
+    from app.core.ratelimit import client_key
+    from app.services.ingest import live_token_id
+
+    raw = bearer_token(request)
+    token_id = live_token_id(raw)
+    if token_id is not None and not limiter.limiter.hit(
+        parse("1/hour"), "ingest-429-row", token_id
+    ):
+        return
+    record_ingest_attempt(
+        status=429,
+        detail=RATE_LIMIT_DETAIL,
+        payload=raw_body(request),
+        content_type=request.headers.get("content-type"),
+        raw_token=raw,
+        path=request.url.path,
+        client_ip=client_key(request),
+    )

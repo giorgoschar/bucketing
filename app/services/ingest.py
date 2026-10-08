@@ -415,11 +415,13 @@ def _keep_newest(db: Session, scope, count: int) -> None:
     )
 
 
-def _prune(db: Session, *, household_id: str | None, token_prefix: str | None) -> None:
-    """Keep the near-term history of this attempt's scope (and the global cap
-    on unattributed rows)."""
-    if household_id:
-        _keep_newest(db, IngestAttempt.household_id == household_id, KEEP_PER_SCOPE)
+def _prune(
+    db: Session, *, token_id: str | None, household_id: str | None, token_prefix: str | None
+) -> None:
+    """Keep the newest ``KEEP_PER_SCOPE`` rows of each TOKEN (so one token's
+    flood cannot evict another's), and a global cap on unattributed rows."""
+    if token_id:
+        _keep_newest(db, IngestAttempt.token_id == token_id, KEEP_PER_SCOPE)
     else:
         if token_prefix:
             _keep_newest(
@@ -443,6 +445,7 @@ def record_ingest_attempt(
     token: PersonalApiToken | None = None,
     transaction_id: str | None = None,
     path: str = "/api/v1/ingest/apple-pay",
+    client_ip: str | None = None,
     db: Session | None = None,
 ) -> None:
     """Persist one attempt and log one line. Never raises.
@@ -480,8 +483,10 @@ def record_ingest_attempt(
         logger.error("ingest: could not summarise an attempt")
         return
 
+    written = False
     try:
-        _store_attempt(
+        written = _store_attempt(
+            client_ip=client_ip,
             raw_token=raw_token,
             token_id=token_id,
             prefix=prefix,
@@ -494,6 +499,13 @@ def record_ingest_attempt(
     except Exception:
         # Fixed text on purpose: an error can echo the bound parameters.
         logger.error("ingest: could not record an attempt")
+        written = True  # still log the line below: it is all there is
+
+    if not written:
+        # Past the per-source allowance: write nothing, say so once a minute.
+        if _hit("1/minute", "ingest-suppressed", "all"):
+            logger.warning("ingest: unattributed attempts are being suppressed")
+        return
 
     try:
         logger.log(
@@ -510,6 +522,56 @@ def record_ingest_attempt(
         logger.error("ingest: could not log an attempt")
 
 
+UNATTRIBUTED_PER_IP = "20/hour"
+
+
+def _hit(rate: str, scope: str, key: str | None) -> bool:
+    """One hit on the shared limiter; True while within ``rate``. A broken
+    limiter never blocks a payment or a log row."""
+    from limits import parse
+
+    from app.core.ratelimit import limiter
+
+    try:
+        return bool(limiter.limiter.hit(parse(rate), scope, key or "unknown"))
+    except Exception:  # pragma: no cover
+        return True
+
+
+def is_live_token(db: Session, token: PersonalApiToken) -> bool:
+    """Not revoked, and its owner is still a member of its household."""
+    from app.models import HouseholdMember
+
+    if token.revoked_at is not None:
+        return False
+    return (
+        db.query(HouseholdMember.id)
+        .filter(
+            HouseholdMember.household_id == token.household_id,
+            HouseholdMember.user_id == token.user_id,
+        )
+        .first()
+        is not None
+    )
+
+
+def live_token_id(raw: str | None) -> str | None:
+    """The id of the live token a plaintext value belongs to, else None. Opens
+    its own session; any failure is None (the request is then unattributed)."""
+    if not raw or not raw.startswith("pat_"):
+        return None
+    from app.core.database import SessionLocal
+
+    session = SessionLocal()
+    try:
+        token = token_from_raw(session, raw[:128])
+        return token.id if token is not None and is_live_token(session, token) else None
+    except Exception:
+        return None
+    finally:
+        session.close()
+
+
 def _store_attempt(
     *,
     raw_token,
@@ -520,7 +582,10 @@ def _store_attempt(
     payload,
     content_type,
     transaction_id,
-) -> None:
+    client_ip=None,
+) -> bool:
+    """Write one row in its own session; False when it was suppressed (an
+    unattributed attempt past its per-source-IP hourly allowance)."""
     from app.core.database import SessionLocal
 
     session = SessionLocal()
@@ -528,6 +593,12 @@ def _store_attempt(
         token = session.get(PersonalApiToken, token_id) if token_id else None
         if token is None and raw_token:
             token = token_from_raw(session, raw_token)
+        # Only a live token of a current member owns an attempt; a revoked or
+        # orphaned one is unattributed (and throttled like an unknown one).
+        if token is not None and not is_live_token(session, token):
+            token = None
+        if token is None and not _hit(UNATTRIBUTED_PER_IP, "ingest-unattributed", client_ip):
+            return False
         row = IngestAttempt(
             household_id=token.household_id if token is not None else None,
             token_id=token.id if token is not None else None,
@@ -540,8 +611,14 @@ def _store_attempt(
         )
         session.add(row)
         session.flush()
-        _prune(session, household_id=row.household_id, token_prefix=row.token_prefix)
+        _prune(
+            session,
+            token_id=row.token_id,
+            household_id=row.household_id,
+            token_prefix=row.token_prefix,
+        )
         session.commit()
+        return True
     except Exception:
         session.rollback()
         raise

@@ -10,13 +10,14 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.sessions import SessionMiddleware
 
 # Import models so Alembic / create_all picks them up
 import app.models  # noqa: F401
 from app import web_app
 from app.api import router as api_router
-from app.api.ingest import bearer_token, is_ingest_path, raw_body
+from app.api.ingest import gate_rejected_request, is_ingest_path, record_rate_limited
 from app.auth import COOKIE_NAME, CSRF_COOKIE_NAME, PENDING_COOKIE_NAME, CSRFError
 from app.core.config import settings
 from app.core.database import Base, engine
@@ -40,7 +41,6 @@ from app.routes import settings as settings_router
 from app.routes import settlement as settlement_router
 from app.routes import stock as stock_router
 from app.scheduler import start_scheduler, stop_scheduler
-from app.services import record_ingest_attempt
 
 logger = logging.getLogger(__name__)
 
@@ -79,43 +79,40 @@ app.state.limiter = limiter
 # FastAPI's/slowapi's original response and only add a recorded attempt, so a
 # payment flow can never be broken by its own logging.
 # ---------------------------------------------------------------------------
-async def _record_validation_error(request: Request, exc: RequestValidationError) -> None:
-    """A body FastAPI refused before the endpoint ran: wrong key names, a
-    whole transaction record sent as a value, form-encoded instead of JSON,
-    invalid JSON. Only this handler sees it — and only it has the raw bytes."""
-    if not is_ingest_path(request.url.path):
-        return
-    detail = "; ".join(
-        f"{'.'.join(str(part) for part in error.get('loc', ()))}: {error.get('msg')}"
-        for error in exc.errors()
-    )
-    record_ingest_attempt(
-        status=422,
-        detail=detail or "Invalid payload",
-        payload=getattr(exc, "body", None),
-        content_type=request.headers.get("content-type"),
-        raw_token=bearer_token(request),
-        path=request.url.path,
+def _validation_detail(exc: RequestValidationError) -> str:
+    return (
+        "; ".join(
+            f"{'.'.join(str(part) for part in error.get('loc', ()))}: {error.get('msg')}"
+            for error in exc.errors()
+        )
+        or "Invalid payload"
     )
 
 
 @app.exception_handler(RequestValidationError)
 async def validation_error_handler(request: Request, exc: RequestValidationError):
-    await _record_validation_error(request, exc)
+    if is_ingest_path(request.url.path):
+        # Counted and recorded in a thread: the database work must not run on
+        # the event loop. Past the token's (or the source's) allowance the
+        # answer is 429 and the log stays quiet.
+        limited = await run_in_threadpool(
+            gate_rejected_request,
+            request,
+            status_code=422,
+            detail=_validation_detail(exc),
+            payload=getattr(exc, "body", None),
+        )
+        if limited:
+            return JSONResponse(
+                status_code=429, content={"error": "Rate limit exceeded: too many requests"}
+            )
     # FastAPI's own handler, so the response body is exactly what it was.
     return await request_validation_exception_handler(request, exc)
 
 
 async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     if is_ingest_path(request.url.path):
-        record_ingest_attempt(
-            status=429,
-            detail="Rate limit exceeded — the Shortcut may send at most 60 purchases per hour",
-            payload=raw_body(request),
-            content_type=request.headers.get("content-type"),
-            raw_token=bearer_token(request),
-            path=request.url.path,
-        )
+        await run_in_threadpool(record_rate_limited, request)
     return _rate_limit_exceeded_handler(request, exc)
 
 

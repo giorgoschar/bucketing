@@ -384,7 +384,11 @@ def require_ingest_token(
     except HTTPException as exc:
         from app.services.ingest import record_ingest_attempt
 
+        if exc.status_code == 429:
+            raise  # the failure limiter tripped: answer, and write nothing
         db.rollback()  # nothing of ours is pending: just end the read before the log row
+        from app.core.ratelimit import client_key
+
         kwargs = {"path": request.url.path} if request else {}
         record_ingest_attempt(
             status=exc.status_code,
@@ -392,6 +396,7 @@ def require_ingest_token(
             payload=getattr(request, "_body", None) or None,
             content_type=request.headers.get("content-type") if request else None,
             raw_token=credentials.credentials if credentials else None,
+            client_ip=client_key(request) if request else None,
             **kwargs,
         )
         raise

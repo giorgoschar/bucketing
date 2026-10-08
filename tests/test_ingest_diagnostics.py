@@ -180,7 +180,7 @@ def test_unknown_token_records_401_with_prefix_snippet(client, db):
     assert a.token_prefix == ("pat_" + "A" * 32)[:12]
 
 
-def test_revoked_token_records_401_attributed(db, client, ingest):
+def test_revoked_token_records_401_unattributed(db, client, ingest):
     _post(client, ingest)  # a good run first
     revoke_personal_token(
         db, token_id=ingest.token.id, user_id=ingest.hh.user_id, household_id=ingest.hh.household_id
@@ -191,7 +191,9 @@ def test_revoked_token_records_401_attributed(db, client, ingest):
     assert r.status_code == 401
     a = _attempts(db)[-1]
     assert a.status == 401
-    assert a.household_id == ingest.hh.household_id
+    # Polish review I-2: a dead token owns nothing, so a flood of its attempts
+    # cannot evict the household's log. The prefix still identifies it.
+    assert a.household_id is None and a.token_id is None
     assert a.token_prefix == ingest.token.prefix
     assert "revoked" in a.detail.lower()
 
