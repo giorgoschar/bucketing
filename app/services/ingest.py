@@ -10,14 +10,14 @@ import hashlib
 import json
 import logging
 import unicodedata
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from fastapi import HTTPException
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from app.core.clock import local_today, tz, utcnow
+from app.core.clock import local_today, tz, utcnow, utcnow_naive
 from app.core.money import quantize
 from app.models import (
     Bucket,
@@ -345,6 +345,7 @@ def notify_ingest_created(db: Session, txn: Transaction) -> None:
 
 ATTEMPTS_KEPT = 50
 CREATED, DUPLICATE, REJECTED = "created", "duplicate", "rejected"
+CLASSIFIED = "classified"
 _LOG_VALUE_MAX = 40
 
 
@@ -431,11 +432,19 @@ def describe_payload(payload) -> str:
     )
 
 
-def log_rejection(status_code: int, reason: str, payload) -> None:
+def log_rejection(status_code: int, reason: str, payload, *, what: str = "apple-pay") -> None:
     """Every rejected ingest, at WARNING, with the reason. Never the token.
     One record, one line: the reason (the only part that can echo input, at
     most 20 characters of the amount) is cleaned by :func:`safe_text` and
     JSON-quoted."""
+    if what != "apple-pay":
+        logger.warning(
+            "ingest %s rejected status=%s reason=%s",
+            "classify",
+            int(status_code),
+            json.dumps(safe_text(reason, 300), ensure_ascii=False),
+        )
+        return
     logger.warning(
         "ingest apple-pay rejected status=%s reason=%s %s",
         int(status_code),
@@ -485,9 +494,16 @@ def record_attempt(
             .order_by(IngestAttempt.created_at.desc(), IngestAttempt.id.desc())
             .limit(ATTEMPTS_KEPT)
         )
-        db.query(IngestAttempt).filter(*mine, IngestAttempt.id.notin_([i for (i,) in keep])).delete(
-            synchronize_session=False
+        # Rows that still say "this token added that purchase" outlive the
+        # cut for as long as the purchase can be classified (15 minutes).
+        marker = (
+            IngestAttempt.outcome.in_((CREATED, DUPLICATE))
+            & IngestAttempt.transaction_id.isnot(None)
+            & (IngestAttempt.created_at >= utcnow_naive() - timedelta(minutes=15))
         )
+        db.query(IngestAttempt).filter(
+            *mine, IngestAttempt.id.notin_([i for (i,) in keep]), ~marker
+        ).delete(synchronize_session=False)
         db.commit()
     except Exception:
         db.rollback()
@@ -508,3 +524,172 @@ def list_attempts(db: Session, household_id: str, user_id: str) -> list[IngestAt
         .limit(ATTEMPTS_KEPT)
         .all()
     )
+
+
+# ---------------------------------------------------------------------------
+# Save first, then ask (polish S6)
+# ---------------------------------------------------------------------------
+
+CLASSIFY_WINDOW = timedelta(minutes=15)
+_CHOICE_MAX = 200  # a category or bucket name, or an id
+
+
+def ingest_choices(db: Session, household_id: str, txn: Transaction) -> dict:
+    """What the Shortcut may ask about a purchase it has just added:
+    ``needs_category`` (no rule matched), then, only when it does, the
+    household's categories in the app picker's order (defaults first, then
+    by name), and always the active buckets, the purchase's own first.
+    ``*_names`` are the same lists as plain strings: Shortcuts' Choose from
+    List takes a list of text as it is. Nothing else about the household is
+    ever given to an ingest token."""
+    out: dict = {"needs_category": txn.category_id is None}
+    if out["needs_category"]:
+        cats = (
+            db.query(Category.id, Category.name)
+            .filter(Category.household_id == household_id)
+            .order_by(Category.is_default.desc(), Category.name, Category.id)
+            .all()
+        )
+        out["categories"] = [{"id": c.id, "name": c.name} for c in cats]
+        out["category_names"] = [c.name for c in cats]
+    buckets = (
+        db.query(Bucket.id, Bucket.name)
+        .filter(Bucket.household_id == household_id, Bucket.status == BucketStatus.active)
+        .order_by(Bucket.created_at, Bucket.id)
+        .all()
+    )
+    buckets.sort(key=lambda b: b.id != txn.bucket_id)  # stable: the chosen one first
+    out["buckets"] = [{"id": b.id, "name": b.name} for b in buckets]
+    out["bucket_names"] = [b.name for b in buckets]
+    return out
+
+
+def classifiable(db: Session, token: PersonalApiToken, transaction_id: str) -> Transaction | None:
+    """The purchase, if this token may classify it: an active transaction of
+    the token's household that THIS token's ingest added (an attempts row
+    says so: transactions carry no token) in the last 15 minutes. None for
+    anything else, with no hint as to which check failed."""
+    if not transaction_id or len(transaction_id) > 64:
+        return None
+    txn = db.get(Transaction, transaction_id)
+    if (
+        txn is None
+        or txn.household_id != token.household_id
+        or txn.deleted_at is not None
+        or txn.created_at is None
+        or txn.created_at < utcnow_naive() - CLASSIFY_WINDOW
+    ):
+        return None
+    mine = (
+        db.query(IngestAttempt.id)
+        .filter(
+            IngestAttempt.household_id == token.household_id,
+            IngestAttempt.token_id == token.id,
+            IngestAttempt.transaction_id == txn.id,
+            IngestAttempt.outcome.in_((CREATED, DUPLICATE)),
+        )
+        .first()
+    )
+    return txn if mine is not None else None
+
+
+def _unknown(kind: str, choice: str) -> HTTPException:
+    return HTTPException(status_code=422, detail=f"Unknown {kind} '{safe_text(choice)}'")
+
+
+def _pick(rows, choice: str):
+    """The row whose id is ``choice``, else the one whose name is (trimmed,
+    case-insensitive; the first in picker order if two share a name)."""
+    wanted = choice.strip()
+    for row in rows:
+        if row.id == wanted:
+            return row
+    folded = wanted.casefold()
+    for row in rows:
+        if (row.name or "").strip().casefold() == folded:
+            return row
+    return None
+
+
+def classify_ingested(
+    db: Session,
+    token: PersonalApiToken,
+    txn: Transaction,
+    *,
+    category: str | None = None,
+    bucket: str | None = None,
+    remember: bool = False,
+) -> Transaction:
+    """Set the category and/or bucket of a purchase the token just added.
+
+    ``category`` and ``bucket`` are an id or an exact name (Shortcuts'
+    Choose from List returns the name); an unknown one, another household's
+    or an archived bucket is HTTP 422 "Unknown category 'X'". The edit goes
+    through :func:`app.services.transactions.update_transaction` with every
+    other field as stored, so its rules hold (a Fixed cost stays bucket-less,
+    nothing else may). ``remember`` with a category teaches the household's
+    merchant rule (:func:`app.services.category_rules.learn_rule`, the one
+    Settings uses): an existing rule for the merchant is re-pointed, never
+    duplicated. Commits.
+    """
+    from app.schemas import SplitIn, TransactionUpdate
+    from app.services.category_rules import learn_rule
+    from app.services.transactions import update_transaction
+    from app.validators import require_bucket, require_category
+
+    hh = token.household_id
+    category_id, bucket_id = txn.category_id, txn.bucket_id
+    if category:
+        if len(category) > _CHOICE_MAX:
+            raise _unknown("category", category)
+        cats = (
+            db.query(Category.id, Category.name)
+            .filter(Category.household_id == hh)
+            .order_by(Category.is_default.desc(), Category.name, Category.id)
+            .all()
+        )
+        found = _pick(cats, category)
+        if found is None:
+            raise _unknown("category", category)
+        category_id = require_category(db, found.id, hh)
+    if bucket:
+        if len(bucket) > _CHOICE_MAX:
+            raise _unknown("bucket", bucket)
+        buckets = (
+            db.query(Bucket.id, Bucket.name)
+            .filter(Bucket.household_id == hh, Bucket.status == BucketStatus.active)
+            .order_by(Bucket.created_at, Bucket.id)
+            .all()
+        )
+        found = _pick(buckets, bucket)
+        if found is None:
+            raise _unknown("bucket", bucket)
+        bucket_id = require_bucket(db, found.id, hh).id
+
+    try:
+        data = TransactionUpdate(
+            bucket_id=bucket_id,
+            amount=txn.amount,
+            currency=txn.currency,
+            exchange_rate=txn.exchange_rate,
+            type=txn.type,
+            paid_by=txn.paid_by,
+            payer_mode=txn.payer_mode,
+            category_id=category_id,
+            notes=txn.notes,
+            transaction_date=txn.transaction_date,
+            payment_method=txn.payment_method,
+            merchant=txn.merchant,
+            exclude_from_forecast=txn.exclude_from_forecast,
+            exclude_from_settlement=txn.exclude_from_settlement,
+            splits=[SplitIn(user_id=s.user_id, amount=s.amount) for s in txn.splits],
+        )
+    except ValidationError as exc:
+        msg = "; ".join(str(e["msg"]).removeprefix("Value error, ") for e in exc.errors())
+        raise HTTPException(status_code=422, detail=msg) from None
+    update_transaction(db, txn, household_id=hh, user=token.user, data=data)
+    if remember and category and category_id:
+        learn_rule(db, hh, txn.merchant, category_id, created_by=token.user_id)
+    db.commit()
+    db.refresh(txn)
+    return txn

@@ -21,7 +21,7 @@ def test_created_and_duplicate_bodies_are_unchanged(client, db, ingest):  # noqa
     r = _post(client, ingest, card="Visa", occurred_at=AT)
     assert r.status_code == 201
     body = r.json()
-    assert body == {
+    pinned = {
         "id": body["id"],
         "amount": 12.5,
         "currency": "EUR",
@@ -31,10 +31,13 @@ def test_created_and_duplicate_bodies_are_unchanged(client, db, ingest):  # noqa
         "bucket_id": ingest.hh.bucket_id,
         "transaction_date": "2026-10-01",
     }
+    # S6 only adds keys (needs_category, buckets, ...): every key above stays.
+    assert {k: body[k] for k in pinned} == pinned
     assert '"amount":12.5' in r.text
     again = _post(client, ingest, card="Visa", occurred_at=AT)
     assert again.status_code == 200
-    assert again.json() == {**body, "duplicate": True}
+    assert {k: again.json()[k] for k in pinned} == pinned
+    assert again.json()["duplicate"] is True
 
 
 def test_validation_422_keeps_fastapis_detail_list(client, db, ingest):  # noqa: F811

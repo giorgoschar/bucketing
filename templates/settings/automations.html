@@ -130,6 +130,39 @@
         <li>Tap <strong>Done</strong>. Pay with Apple Pay once and check that the expense appears — you also get a notification so you can fix the category or bucket.</li>
       </ol>
 
+      <div>
+        <p class="text-sm font-semibold">Ask for a category</p>
+        <p class="text-xs text-gray-400 mt-0.5 mb-2">
+          Optional. The purchase is saved first; when none of your rules knows the merchant,
+          the Shortcut can then ask you for the category. Add these actions after
+          <strong>Get Contents of URL</strong>:
+        </p>
+        <ol class="list-decimal pl-5 space-y-2 text-gray-700 dark:text-gray-300">
+          <li><strong>Get Dictionary Value</strong>: get the value for <code>category_names</code> in
+            <em>Contents of URL</em>. The reply has this list only when the purchase still needs a
+            category (<code>needs_category</code> is then <code>true</code>).</li>
+          <li><strong>If</strong> <em>Dictionary Value</em> <strong>has any value</strong>:
+            <ul class="list-disc pl-5 mt-1 space-y-1 text-xs">
+              <li><strong>Choose from List</strong>: choose from <em>Dictionary Value</em> (your category names).</li>
+              <li><strong>Get Dictionary Value</strong>: get the value for <code>id</code> in <em>Contents of URL</em>.</li>
+              <li>A second <strong>Get Contents of URL</strong>:
+                URL <code class="break-all">{{ ingest_url }}/</code><em>Dictionary Value</em><code>/classify</code>
+                (the <code>id</code> from the step before), Method <strong>POST</strong>, the same
+                <code>Authorization</code> header, Request Body <strong>JSON</strong> with
+                <code>category</code> = <em>Chosen Item</em> (Text) and
+                <code>remember</code> = <strong>true</strong> (Boolean).</li>
+            </ul>
+          </li>
+          <li><strong>End If</strong>.</li>
+        </ol>
+        <p class="text-xs text-gray-400 mt-2">
+          With <code>remember</code> on, the merchant gets a rule, so you are asked once per merchant.
+          To pick the bucket too, do the same with <code>bucket_names</code> and send
+          <code>bucket</code> = the chosen name. It works for 15 minutes after the purchase, and only
+          with the token that added it.
+        </p>
+      </div>
+
       <div class="px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800 rounded-xl text-xs text-amber-800 dark:text-amber-300 space-y-1">
         <p>
           <strong>Known iOS flakiness:</strong> Transaction automations sometimes time out or

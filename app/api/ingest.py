@@ -24,7 +24,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.encoders import jsonable_encoder
-from pydantic import BaseModel, ValidationError, field_validator
+from pydantic import BaseModel, ValidationError, field_validator, model_validator
 from sqlalchemy.orm import Session
 
 from app.api_auth import require_api_auth, require_ingest_token
@@ -59,7 +59,7 @@ class IngestAttemptOut(BaseModel):
     id: str
     created_at: datetime  # naive UTC
     status_code: int
-    outcome: Literal["created", "duplicate", "rejected"]
+    outcome: Literal["created", "duplicate", "rejected", "classified"]
     reason: str | None  # why it was rejected
     merchant: str | None  # the start of what was sent (80 characters)
     amount_raw: str | None  # the amount exactly as sent (40 characters)
@@ -72,6 +72,7 @@ class IngestAttemptsOut(BaseModel):
 
 
 NOT_AN_OBJECT = "Body must be JSON with merchant and amount"
+_FIELD_NAMES = frozenset({*ApplePayIn.model_fields, "category", "bucket", "remember"})
 # A real payload is a few hundred bytes; a bigger body is refused unparsed.
 MAX_BODY_BYTES = 16 * 1024
 
@@ -101,7 +102,7 @@ def _reason(detail) -> str:
         parts = []
         for e in detail:
             # Only a field of ours is named: a key the client made up is not.
-            where = ".".join(str(p) for p in e.get("loc", [])[1:2] if p in ApplePayIn.model_fields)
+            where = ".".join(str(p) for p in e.get("loc", [])[1:2] if p in _FIELD_NAMES)
             parts.append(f"{where}: {e.get('msg')}" if where else str(e.get("msg")))
         return "; ".join(parts)
     return str(detail)
@@ -109,7 +110,7 @@ def _reason(detail) -> str:
 
 def _result(db: Session, txn: Transaction) -> dict:
     category = db.get(Category, txn.category_id) if txn.category_id else None
-    bucket = db.get(Bucket, txn.bucket_id)
+    bucket = db.get(Bucket, txn.bucket_id) if txn.bucket_id else None
     return {
         "id": txn.id,
         "amount": txn.amount,
@@ -119,6 +120,9 @@ def _result(db: Session, txn: Transaction) -> dict:
         "bucket": bucket.name if bucket else None,
         "bucket_id": txn.bucket_id,
         "transaction_date": txn.transaction_date.isoformat(),
+        # S6 (added keys): needs_category, buckets and bucket_names always;
+        # categories and category_names only while it needs a category.
+        **ingest_svc.ingest_choices(db, txn.household_id, txn),
     }
 
 
@@ -207,6 +211,106 @@ def apple_pay(
         response.status_code = status.HTTP_200_OK
         return {**result, "duplicate": True}
     notify_ingest_created(db, db.get(Transaction, result["id"]))
+    return result
+
+
+class ClassifyIn(BaseModel):
+    """``category`` and ``bucket``: an id or an exact name (case-insensitive,
+    trimmed); at least one. ``remember``: also teach the merchant's rule."""
+
+    category: str | None = None
+    bucket: str | None = None
+    remember: bool = False
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _unwrap(cls, v):
+        return v[0] if isinstance(v, list) and v else v  # Choose from List may give a list
+
+    @field_validator("category", "bucket")
+    @classmethod
+    def _blank(cls, v: str | None) -> str | None:
+        return (v or "").strip() or None
+
+    @model_validator(mode="after")
+    def _one(self) -> "ClassifyIn":
+        if not self.category and not self.bucket:
+            raise ValueError("Send a category or a bucket.")
+        return self
+
+
+NOT_FOUND = "Not found"
+
+
+@router.post(
+    "/apple-pay/{transaction_id}/classify",
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {"application/json": {"schema": ClassifyIn.model_json_schema()}},
+        }
+    },
+)
+@limiter.limit("60/hour", key_func=ingest_token_key)
+def classify(
+    request: Request,
+    transaction_id: str,
+    token: PersonalApiToken = Depends(require_ingest_token),
+    raw: bytes = Depends(_raw_body),
+    db: Session = Depends(get_db),
+):
+    """Save first, then ask: set the category and/or bucket of a purchase this
+    same token added in the last 15 minutes (anything else is a bare 404).
+    Returns the ingest result again, updated."""
+    who = {"household_id": token.household_id, "token_id": token.id, "user_id": token.user_id}
+    payload = None
+    if len(raw) <= MAX_BODY_BYTES:
+        try:
+            payload = json.loads(raw)
+        except ValueError:
+            payload = None
+    merchant = None
+
+    def reject(status_code: int, detail) -> HTTPException:
+        reason = _reason(detail)
+        ingest_svc.log_rejection(status_code, reason, payload, what="classify")
+        ingest_svc.record_attempt(
+            db,
+            **who,
+            status_code=status_code,
+            outcome=ingest_svc.REJECTED,
+            reason=reason,
+            merchant=merchant,
+        )
+        return HTTPException(status_code=status_code, detail=detail)
+
+    txn = ingest_svc.classifiable(db, token, transaction_id)
+    if txn is None:
+        raise reject(404, NOT_FOUND)
+    txn_id, merchant = txn.id, txn.merchant
+    if len(raw) > MAX_BODY_BYTES:
+        raise reject(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Body is too large")
+    if not isinstance(payload, dict):
+        raise reject(422, "Body must be JSON with category or bucket")
+    try:
+        body = ClassifyIn.model_validate(payload)
+    except ValidationError as exc:
+        raise reject(422, _validation_detail(exc)) from None
+    try:
+        txn = ingest_svc.classify_ingested(
+            db, token, txn, category=body.category, bucket=body.bucket, remember=body.remember
+        )
+    except HTTPException as exc:
+        raise reject(exc.status_code, exc.detail) from None
+    result = _result(db, txn)
+    ingest_svc.record_attempt(
+        db,
+        **who,
+        status_code=200,
+        outcome=ingest_svc.CLASSIFIED,
+        merchant=merchant,
+        transaction_id=txn_id,
+    )
     return result
 
 
