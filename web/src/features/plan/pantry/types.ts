@@ -57,6 +57,21 @@ export function formatQty(n: number | null | undefined): string {
   return String(Math.round(n * 100) / 100)
 }
 
+/** "1,5" or "1.5" → 1.5; blank → the fallback; anything else → NaN. */
+export function num(text: string, blank: number | null): number | null {
+  const s = text.trim().replace(',', '.')
+  if (s === '') return blank
+  return /^\d+(\.\d+)?$/.test(s) ? Number(s) : NaN
+}
+
+/** A typed price ("1,29", "1.29", "2") as a number of euros: above 0, at most 2 decimals; null otherwise. */
+export function typedPrice(text: string): number | null {
+  const s = text.trim().replace(/[\s€]/g, '').replace(',', '.')
+  if (!/^\d+(\.\d{1,2})?$/.test(s)) return null
+  const n = Number(s)
+  return n > 0 ? n : null
+}
+
 /** "500 g", "1 L", or '' when the size is unknown. */
 export function sizeLabel(p: { unit_quantity?: number | null; unit?: string | null }): string {
   if (p.unit_quantity == null || !p.unit) return ''

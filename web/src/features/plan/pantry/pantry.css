@@ -160,6 +160,15 @@
 .pantry-card__rule { height: 1px; background: var(--line); }
 .pantry-card__problem { margin: 0; padding: 9px 12px; border-radius: var(--r-md); background: var(--warn-soft); color: var(--warn); font-size: 13px; font-weight: 650; }
 .pantry-card__btn { border: 1px solid var(--line); background: transparent; color: var(--ink); }
+.pantry-card__acts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.pantry-card__acts .btn { min-width: 0; padding-inline: 10px; }
+
+/* Detail › Edit in the header; Log a price's € field. */
+.pantry-edit { padding-inline: 8px; }
+.pantry-edit:disabled { color: var(--muted); cursor: default; }
+.pantry-price-in { position: relative; display: flex; }
+.pantry-price-in .ui-input { flex: 1; min-width: 0; padding-left: 30px; }
+.pantry-price-in__sym { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--muted); font-weight: 600; pointer-events: none; }
 
 /* Prices today: bars from 0, so a small gap looks small; the cheapest in --pos, the rest neutral. */
 .pantry-cmp { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, auto) minmax(48px, 1fr) auto; align-items: center; gap: 9px 10px; }

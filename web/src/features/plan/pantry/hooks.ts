@@ -1,5 +1,5 @@
 import { type QueryClient, useQueryClient } from '@tanstack/react-query'
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { api } from '../../../api/client'
 import { useAction } from '../../../data/action'
 import { useCachedQuery } from '../../../data/cachedQuery'
@@ -7,6 +7,8 @@ import { runOnline, useOnlineAction } from '../../../data/onlineAction'
 import { unwrap } from '../../../data/http'
 import { onQueueDrained } from '../../../offline/queueDrain'
 import { keys } from '../../../data/keys'
+import type { RawResult } from '../../../data/rawJson'
+import type { PriceIn, Retailer, StockEditBody } from './contractTypes'
 import { PANTRY_INVALIDATES, useShopping } from './shoppingHooks'
 import type { ProductSummary, StockAddBody, StockAdjustBody, StockDetail, StockItem, StockSettingsBody } from './types'
 
@@ -93,7 +95,34 @@ export function addBodyFor(p: ProductSummary): StockAddBody {
   }
 }
 
-/** The detail's online-only writes (spec §4.4, §4.8): settings, refresh and archive. */
+/**
+ * A polish-round route that is not in the generated schema yet (contracts C3): sent through the typed client
+ * untyped, as useAction does, so the CSRF header and the 401 handling still apply.
+ */
+function untyped<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<RawResult<T>> {
+  const init = (body === undefined ? {} : { body }) as never
+  return (method === 'GET' ? api.GET(path as never, init) : api.POST(path as never, init)) as unknown as Promise<RawResult<T>>
+}
+
+/** The stores for Log a price (GET /stock/retailers, C3), "Other" last. Loaded while `open`; null until then. */
+export function useRetailers(open: boolean): Retailer[] | null {
+  const [list, setList] = useState<Retailer[] | null>(null)
+  useEffect(() => {
+    if (!open || list) return
+    let live = true
+    void untyped<Retailer[]>('GET', '/api/v1/stock/retailers').then(
+      // A failed load still offers "Other", so a price can always be logged.
+      (r) => { if (live) setList(r.response.ok && Array.isArray(r.data) ? r.data : []) },
+      () => { if (live) setList([]) },
+    )
+    return () => { live = false }
+  }, [open, list])
+  if (!list) return null
+  // "Other" is the server's catch-all code: always offered, and always last.
+  return [...list.filter((r) => r.code !== 'other'), { code: 'other', name: 'Other' }]
+}
+
+/** The detail's online-only writes (spec §4.4, §4.8): settings, edit, Log a price, refresh and archive. */
 export function useStockWrites(id: string) {
   const qc = useQueryClient()
   const act = useOnlineAction()
@@ -107,6 +136,27 @@ export function useStockWrites(id: string) {
       const out = await act(() => api.PATCH('/api/v1/stock/{item_id}', { params: { path: { item_id: id } }, body }))
       if (out.ok) {
         qc.setQueryData<StockDetail>(keys.stockItem(id), (d) => (d ? { ...d, ...out.data } : d))
+        await invalidate()
+      }
+      return out
+    },
+    /**
+     * PATCH /stock/{id} with the product's own fields (C2). Every failure comes back for the Edit sheet to
+     * show inline (a taken barcode is a 409), so nothing is toasted here.
+     */
+    edit: async (body: StockEditBody) => {
+      const out = await runOnline(() => api.PATCH('/api/v1/stock/{item_id}', { params: { path: { item_id: id } }, body }))
+      if (out.ok) {
+        qc.setQueryData<StockDetail>(keys.stockItem(id), (d) => (d ? { ...d, ...out.data } : d))
+        await invalidate()
+      }
+      return out
+    },
+    /** POST /stock/{id}/prices (C3): the detail comes back with the logged price in it. */
+    logPrice: async (body: PriceIn) => {
+      const out = await runOnline(() => untyped<StockDetail>('POST', `/api/v1/stock/${encodeURIComponent(id)}/prices`, body))
+      if (out.ok) {
+        qc.setQueryData(keys.stockItem(id), out.data)
         await invalidate()
       }
       return out
