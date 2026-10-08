@@ -7,6 +7,7 @@ import { unwrap } from '../../../data/http'
 import { lanesSettled } from '../../../data/lanes'
 import { keys } from '../../../data/keys'
 import { type OnlineOutcome, runOnline } from '../../../data/onlineAction'
+import { db } from '../../../offline/db'
 import { useQueue } from '../../../offline/useQueue'
 import { useToast } from '../../../ui/Toast'
 import type {
@@ -86,6 +87,11 @@ export function useApplyTicked() {
   return useCallback(async (): Promise<OnlineOutcome<ApplyTickedOut>> => {
     // Ticks still on their way must land first, or the apply would miss them (pantry review M-5).
     await lanesSettled(SHOPPING_LANE)
+    // One of them may have ended in the offline queue (a 503, a timeout): the server would still have a tick
+    // the user took back, so nothing is applied until the queue drains (review I-3). The button's own guard
+    // ran before the wait; the bar and the prompt show "Waiting to sync" from the same queue.
+    const queued = await db.queue.where('status').equals('pending').count()
+    if (queued > 0) return { ok: false, status: null, kind: 'rejected', message: syncingText(queued) }
     const out = await runOnline(() => api.POST('/api/v1/stock/shopping/apply-ticked'))
     if (out.ok) {
       await Promise.all(PANTRY_INVALIDATES.map((queryKey) => qc.invalidateQueries({ queryKey })))
@@ -184,6 +190,8 @@ export function useShoppingActions() {
         lines: s.lines.filter((l) => l.id !== line.id),
         ticked_count: line.checked ? Math.max(0, s.ticked_count - 1) : s.ticked_count,
       })),
+    // With its add still queued (review I-2), the delete queues behind it rather than meeting a 404 online.
+    pendingId: (l: ShoppingLine) => l.id,
     serial: (l: ShoppingLine) => lineLane(l.id),
   })
   return {

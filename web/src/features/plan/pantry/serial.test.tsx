@@ -3,7 +3,7 @@ import { afterEach, expect, it } from 'vitest'
 import { db } from '../../../offline/db'
 import { listQueuedBodies } from '../../../offline/queuedBodies'
 import { replay } from '../../../offline/queue'
-import { fakeApi } from '../../../test/fakeApi'
+import { fakeApi, reply } from '../../../test/fakeApi'
 import { pantryRoutes, shoppingOut, shoppingRoutes, stockItem } from '../../../test/fixtures'
 import { renderWithProviders, resetTestEnv, setOnline } from '../../../test/render'
 import { Pantry } from './Pantry'
@@ -129,4 +129,53 @@ it('stepper taps on one item are sent one after another; the count moves at once
   await waitFor(() => expect(within(pasta).getByTestId('pantry-qty')).toHaveTextContent('5'))
   const ids = fake.callsTo(ADJUST).map((c) => (c.body as { client_id: string }).client_id)
   expect(new Set(ids).size).toBe(2)
+})
+
+// ---- Fix round 1
+
+it('review I-2: deleting a line whose add is still queued queues behind it, and is not sent online', async () => {
+  const LINES = 'POST /api/v1/stock/shopping/lines' as const
+  const LINE_DEL = 'DELETE /api/v1/stock/shopping/lines/{line_id}' as const
+  const api = fakeApi({ ...shoppingRoutes(), 'GET /api/v1/auth/me': () => ME })
+  api.on(LINES, () => reply(503, { detail: 'busy' }))
+  renderWithProviders(<ShoppingList />)
+  await loaded()
+  fireEvent.click(screen.getByRole('button', { name: 'Add item' }))
+  const sheet = await screen.findByRole('dialog', { name: 'Add item' })
+  fireEvent.change(within(sheet).getByLabelText('Item'), { target: { value: 'Soap' } })
+  fireEvent.click(within(sheet).getByRole('button', { name: 'Add' }))
+  await waitFor(async () => expect(await db.queue.count()).toBe(1))
+  fireEvent.click(await screen.findByRole('button', { name: 'Delete Soap' }))
+  await waitFor(async () => expect(await db.queue.count()).toBe(2))
+  expect(api.callsTo(LINE_DEL)).toHaveLength(0)
+  const queued = await listQueuedBodies('/api/v1/stock')
+  const id = (queued[0].body as { id: string }).id
+  expect(queued.map((b) => `${b.method} ${b.path}`)).toEqual([
+    'POST /api/v1/stock/shopping/lines', `DELETE /api/v1/stock/shopping/lines/${id}`,
+  ])
+  expect(screen.queryByRole('checkbox', { name: 'Soap' })).toBeNull()
+  expect(screen.queryByText('Line not found')).toBeNull()
+})
+
+it('review I-3: Add to pantry does not apply when a write it waited for fell into the queue', async () => {
+  const data = shoppingOut({ ticked_count: 2 })
+  data.items[0] = { ...data.items[0], ticked: true, tick_id: 'tick-8' }
+  data.items[1] = { ...data.items[1], ticked: true, tick_id: 'tick-9' }
+  const api = fakeApi({ ...shoppingRoutes(data), 'GET /api/v1/auth/me': () => ME })
+  // The untick is held, then answered 503: it ends in the offline queue.
+  const untick = held(() => reply(503, { detail: 'busy' }))
+  api.on(UNTICK, untick.handler as never)
+  renderWithProviders(<ShoppingList />)
+  await loaded()
+  fireEvent.click(row('Milk × 2'))
+  await waitFor(() => expect(api.callsTo(UNTICK)).toHaveLength(1))
+  const bar = () => screen.getByRole('region', { name: 'Ticked items' })
+  fireEvent.click(within(bar()).getByRole('button', { name: 'Add to pantry' }))
+  untick.release()
+  await waitFor(async () => expect(await db.queue.count()).toBe(1))
+  await waitFor(() => expect(bar()).toHaveTextContent('Waiting to sync 1 change'))
+  expect(within(bar()).getByRole('button', { name: 'Add to pantry' })).toBeDisabled()
+  await new Promise((r) => setTimeout(r, 30))
+  // The server still has Milk ticked: applying now would add what the user unticked.
+  expect(api.callsTo(APPLY)).toHaveLength(0)
 })
