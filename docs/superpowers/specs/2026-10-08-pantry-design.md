@@ -219,7 +219,7 @@ Out of scope:
 
 ### 4.9 Notifications and old links
 
-- `stock_low` currently links to `/stock/shopping` and `price_drop` to `/stock`. When the new app is in use, map them to `/app/plan/pantry/list` and `/app/plan/pantry` in `web/src/pwa/appRoute.ts`, keeping the old routes working.
+- `stock_low` currently links to `/stock/shopping` and `price_drop` to `/stock`. When the new app is in use, map them to `/app/plan/pantry/list` and `/app/plan?view=pantry` in `web/src/pwa/appRoute.ts`, keeping the old routes working.
 
 ### 4.10 Accessibility and layout
 

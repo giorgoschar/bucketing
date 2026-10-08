@@ -49,3 +49,13 @@ Gaps found in the current app that the new app (web/) must cover.
 - **P3 final-review minors M1–M8** (`.superpowers/sdd/phase2/p3-final-review.md` in ~/expenses-p2): "All" selection can include pending/mid-delete rows; no router errorElement for a failed lazy chunk; "Paid out vs share" spins forever offline when uncached; Activity detail offline ignores the cached list row; swipe-delete Undo at exactly 5 s can fail; shared-device push 409 can orphan the other user's subscription; swipe/long-press untested on device; mocks use the old light `--warn`.
 - Not needed (user decision): the full Shortcut guide on the Apple Pay screen.
 - **Cash follow-ups (final review 2026-10-08):** cash saves have no idempotency key, so a lost reply followed by a retry can double a take-and-log (m1). The wallet card sum omits server terms in cross-month cases, and your own "Took" can show a negative number (m2, m3). After logging offline from Home, the cash row stays until sync (m5). Two simultaneous recounts aren't locked. The top-bar avatar contrast in dark mode is 4.10, just under AA.
+- **Pantry follow-ups (final review 2026-10-08):**
+  - Untick should target the stock item, not the tick id, so a replayed tick that met another phone's tick unticks correctly.
+  - `addLine` should be queued `'always'`, since creates are idempotent.
+  - Online writes to the same row should be serialised (a fast double tap or an Add-to-pantry while a tick is in flight).
+  - The apply-ticked "before" figure should be read under the row lock.
+  - `POST /stock` shouldn't wait on PosoKanei: move the snapshot to the background.
+  - Add an index on `shopping_lines.stock_item_id`.
+  - Find the one flaky vitest test (CI should log its name).
+  - The pantry letter tile contrast in light mode is 2.4–3.8 (decorative).
+  - The barcode scanner has not been tested on a real iPhone.
