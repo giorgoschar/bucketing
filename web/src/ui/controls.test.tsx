@@ -23,6 +23,17 @@ describe('Chips', () => {
     expect(onChange).toHaveBeenCalledTimes(1) // re-selecting the selected chip is a no-op
   })
 
+  it('uses its own class names, not the 2c Chip kit’s .chips/.chip (the Insights picker clip and wobble)', () => {
+    render(<Chips label="Period" options={[...OPTIONS]} value="a" onChange={() => {}} />)
+    const group = screen.getByRole('group', { name: 'Period' })
+    expect(group).toHaveClass('chipset')
+    expect(group).not.toHaveClass('chips')
+    for (const b of screen.getAllByRole('button')) {
+      expect(b).toHaveClass('chipset__chip')
+      expect(b).not.toHaveClass('chip')
+    }
+  })
+
   it('multi select toggles membership', () => {
     const onChange = vi.fn()
     render(<Chips multiple label="Budgets" options={[...OPTIONS]} value={['a']} onChange={onChange} />)
