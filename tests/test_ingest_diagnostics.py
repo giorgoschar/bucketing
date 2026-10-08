@@ -20,7 +20,6 @@ from app.models import (
     BucketType,
     Category,
     IngestAttempt,
-    PersonalApiToken,
     Transaction,
 )
 from app.services import (
@@ -213,30 +212,22 @@ def test_rate_limit_records_429(db, client, ingest):
 def test_other_households_do_not_see_attempts(db, client, ingest, make_household):
     _post(client, ingest)
     other = make_household()
-    assert len(recent_ingest_attempts(db, ingest.hh.household_id, ())) == 1
-    assert recent_ingest_attempts(db, other.household_id, ()) == []
+    assert len(recent_ingest_attempts(db, ingest.hh.household_id, ingest.hh.user_id)) == 1
+    assert recent_ingest_attempts(db, other.household_id, other.user_id) == []
 
 
-def test_attempts_visible_via_matching_token_prefix(db, ingest, make_household):
-    # An attempt carrying an unknown tail of our own token is unattributed (the
-    # hash lookup fails), but its first 12 characters match our token — so this
-    # household's page still shows it. No other household's page does.
+def test_unattributed_attempt_with_matching_prefix_is_not_shown_in_app(db, ingest, make_household):
+    # Polish R2c: an attempt carrying an unknown tail of our own token is
+    # unattributed (the hash lookup fails). It is recorded (and logged) but
+    # shown to nobody in the app, the near-owner included: a prefix is not
+    # proof of ownership.
     record_ingest_attempt(
         status=401, detail="no such token", raw_token=ingest.raw + "Z" * 10, db=db
     )
-    prefixes = tuple(
-        p[0]
-        for p in db.query(PersonalApiToken.prefix).filter(
-            PersonalApiToken.user_id == ingest.hh.user_id,
-            PersonalApiToken.household_id == ingest.hh.household_id,
-        )
-    )
     other = make_household()
-
-    mine = recent_ingest_attempts(db, ingest.hh.household_id, prefixes)
-    theirs = recent_ingest_attempts(db, other.household_id, ())
-    assert any(a.household_id is None and a.token_prefix == ingest.token.prefix for a in mine)
-    assert not any(a.token_prefix == ingest.token.prefix for a in theirs)
+    assert db.query(IngestAttempt).filter(IngestAttempt.household_id.is_(None)).count() == 1
+    assert recent_ingest_attempts(db, ingest.hh.household_id, ingest.hh.user_id) == []
+    assert recent_ingest_attempts(db, other.household_id, other.user_id) == []
 
 
 def test_attempts_pruned_per_household(db, client, ingest, monkeypatch):

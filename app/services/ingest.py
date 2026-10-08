@@ -21,7 +21,7 @@ from decimal import Decimal
 
 from fastapi import HTTPException
 from pydantic import ValidationError
-from sqlalchemy import and_, or_
+from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from app.core.clock import local_today, tz, utcnow
@@ -58,6 +58,42 @@ KEEP_PER_SCOPE = 100
 KEEP_UNATTRIBUTED = 200
 MAX_PAYLOAD_CHARS = 2000
 MAX_LOG_PAYLOAD_CHARS = 600
+# Longest amount string looked at before any regex work (R2d). Nothing a phone
+# sends for a price comes close; longer is refused, not parsed.
+MAX_AMOUNT_CHARS = 64
+# Raw bodies are cut to this before redaction regexes run, so work stays bounded.
+_REDACT_INPUT_CHARS = 20_000
+REDACTED_TOKEN = "pat_…redacted"
+
+# A personal token pasted anywhere in what was sent (R2a).
+_TOKEN_RE = re.compile(r"pat_[A-Za-z0-9_-]+")
+# A body field named authorization / token, quoted JSON (also truncated JSON)
+# or form-encoded; the whole value goes, whatever it is.
+_SECRET_FIELD_JSON = re.compile(
+    r'("(?:authorization|token)"\s*:\s*)("(?:[^"\\]|\\.)*(?:"|$)|[^,}\]\s]+)', re.IGNORECASE
+)
+_SECRET_FIELD_FORM = re.compile(r"((?:^|[&?\s])(?:authorization|token)=)[^&\s]*", re.IGNORECASE)
+# Anything that can end or fake a log line: C0 controls, DEL, NEL, LS, PS.
+_LOG_UNSAFE = re.compile("[\x00-\x1f\x7f\x85\u2028\u2029]")
+
+
+def redact_secrets(text: str | None) -> str | None:
+    """Replace personal tokens and ``authorization``/``token`` field values."""
+    if not text:
+        return text
+    text = text[:_REDACT_INPUT_CHARS]
+    text = _TOKEN_RE.sub(REDACTED_TOKEN, text)
+    text = _SECRET_FIELD_JSON.sub(lambda m: f'{m.group(1)}"…redacted"', text)
+    return _SECRET_FIELD_FORM.sub(lambda m: f"{m.group(1)}…redacted", text)
+
+
+def log_safe(value, limit: int | None = None) -> str:
+    """Request-derived text made safe for one log line: control characters
+    become visible escapes (``\\n``, ``\\x1b``), then the length cap applies."""
+    text = redact_secrets(str(value)) if value is not None else ""
+    text = _LOG_UNSAFE.sub(lambda m: m.group().encode("unicode_escape").decode(), text)
+    return text[:limit] if limit else text
+
 
 # Non-numeric characters stripped from a Shortcut amount before parsing:
 # currency symbols, codes and separators ("€12,50", "12,50 EUR", "1 234,50").
@@ -95,7 +131,7 @@ _AMOUNT_KEYS = (
 # ---------------------------------------------------------------------------
 
 
-def _text_value(value) -> str | None:
+def _text_value(value, _depth: int = 0) -> str | None:
     """The text inside a Shortcut value, or None when there is none.
 
     A Shortcuts row can resolve to the whole record ("Card or Pass" is a
@@ -103,7 +139,7 @@ def _text_value(value) -> str | None:
     looking for a name-ish key; anything unrecognised becomes None instead of
     a 422 the person reading the log cannot map back to their Shortcut.
     """
-    if value is None or isinstance(value, bool):
+    if value is None or isinstance(value, bool) or _depth > 6:
         return None
     if isinstance(value, str):
         return value
@@ -112,13 +148,13 @@ def _text_value(value) -> str | None:
     if isinstance(value, dict):
         for key in _NAME_KEYS:
             if key in value:
-                found = _text_value(value[key])
+                found = _text_value(value[key], _depth + 1)
                 if found:
                     return found
         return None
     if isinstance(value, (list, tuple)):
         for item in value:
-            found = _text_value(item)
+            found = _text_value(item, _depth + 1)
             if found:
                 return found
         return None
@@ -164,7 +200,7 @@ def normalise_amount(raw) -> str:
     return cleaned
 
 
-def coerce_amount(raw) -> Decimal:
+def coerce_amount(raw, _depth: int = 0) -> Decimal:
     """Any Shortcut amount → a validated Decimal, or HTTP 400.
 
     Accepts numbers, locale strings and — when a row picked the whole record —
@@ -173,12 +209,19 @@ def coerce_amount(raw) -> Decimal:
     """
     if raw is None:
         raise HTTPException(status_code=400, detail="Amount is required.")
+    if _depth > 6:
+        raise HTTPException(status_code=400, detail="Amount must be a number.")
+    if isinstance(raw, str) and len(raw) > MAX_AMOUNT_CHARS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Amount is too long ({len(raw)} characters; at most {MAX_AMOUNT_CHARS}).",
+        )
     if isinstance(raw, dict):
         for key in _AMOUNT_KEYS:
             if key in raw:
-                return coerce_amount(raw[key])
+                return coerce_amount(raw[key], _depth + 1)
         if len(raw) == 1:
-            return coerce_amount(next(iter(raw.values())))
+            return coerce_amount(next(iter(raw.values())), _depth + 1)
         raise HTTPException(
             status_code=400,
             detail="Amount must be a number: the Shortcut sent a record "
@@ -186,7 +229,7 @@ def coerce_amount(raw) -> Decimal:
         )
     if isinstance(raw, (list, tuple)):
         if len(raw) == 1:
-            return coerce_amount(raw[0])
+            return coerce_amount(raw[0], _depth + 1)
         raise HTTPException(status_code=400, detail="Amount must be a single number.")
     if isinstance(raw, bool):
         raise HTTPException(status_code=400, detail="Amount must be a number.")
@@ -218,7 +261,7 @@ def _payload_text(payload) -> str | None:
             payload = str(jsonable_encoder(payload))
         except Exception:  # pragma: no cover - a log line never breaks a payment
             payload = repr(payload)
-    payload = payload.strip()
+    payload = redact_secrets(payload.strip()) or ""
     return payload[:MAX_PAYLOAD_CHARS] or None
 
 
@@ -293,6 +336,8 @@ def record_ingest_attempt(
         payload_text = _payload_text(payload)
         if detail is not None and not isinstance(detail, str):
             detail = str(detail)
+        detail = redact_secrets(detail)
+        content_type = redact_secrets(content_type)
         row = IngestAttempt(
             household_id=token.household_id if token is not None else None,
             token_id=token.id if token is not None else None,
@@ -323,28 +368,32 @@ def record_ingest_attempt(
     logger.log(
         level,
         "ingest: %s → %s%s | token=%s | type=%s | payload=%s",
-        path,
-        status,
-        f" {detail}" if detail else "",
-        prefix or "-",
-        content_type or "-",
-        (payload_text or "-")[:MAX_LOG_PAYLOAD_CHARS],
+        log_safe(path, 200),
+        int(status),
+        f" {log_safe(detail, 500)}" if detail else "",
+        log_safe(prefix, 12) or "-",
+        log_safe(content_type, 100) or "-",
+        log_safe(payload_text, MAX_LOG_PAYLOAD_CHARS) or "-",
     )
 
 
 def recent_ingest_attempts(
-    db: Session, household_id: str, token_prefixes: tuple[str, ...] = (), limit: int = 20
+    db: Session, household_id: str, user_id: str, limit: int = 20
 ) -> list[IngestAttempt]:
-    """Newest attempts this household may see: its own, plus any whose token
-    prefix matches one of its tokens — so an attempt made with a revoked or
-    mistyped token still appears next to the token it resembles."""
-    conds = [IngestAttempt.household_id == household_id]
-    prefixes = [p for p in token_prefixes if p]
-    if prefixes:
-        conds.append(IngestAttempt.token_prefix.in_(prefixes))
+    """Newest attempts made with ``user_id``'s own tokens in this household.
+
+    Personal, like the token: another member of the household sees none of
+    them, and an attempt no token can be attributed to (null household or
+    token) is shown to nobody in-app: it exists in the server log only.
+    """
     return (
         db.query(IngestAttempt)
-        .filter(or_(*conds))
+        .join(PersonalApiToken, PersonalApiToken.id == IngestAttempt.token_id)
+        .filter(
+            IngestAttempt.household_id == household_id,
+            PersonalApiToken.user_id == user_id,
+            PersonalApiToken.household_id == household_id,
+        )
         .order_by(IngestAttempt.created_at.desc(), IngestAttempt.id.desc())
         .limit(limit)
         .all()
@@ -363,7 +412,7 @@ def parse_occurred_at(raw) -> datetime | None:
     try:
         moment = datetime.fromisoformat(str(raw).strip())
     except ValueError:
-        logger.info("ingest: ignoring unparseable occurred_at %r", str(raw)[:80])
+        logger.info("ingest: ignoring unparseable occurred_at %s", log_safe(repr(str(raw)[:80])))
         return None
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=tz())
@@ -452,7 +501,8 @@ def ingest_apple_pay(
     card = _text_value(card)
     if raw_card is not None and card is None:
         logger.info(
-            "ingest: the card value (%r) is not text — leaving it out of the notes", raw_card
+            "ingest: the card value (%s) is not text — leaving it out of the notes",
+            log_safe(repr(raw_card), 200),
         )
     notes = _text_value(notes)
     value = coerce_amount(amount)
