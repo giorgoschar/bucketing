@@ -80,6 +80,13 @@ def dmy_short(value) -> str:
     return dmy(value, with_year=False)
 
 
+def dt(value) -> str:
+    """Date + time, e.g. 08/10/2026 14:35 — for logs and recent-attempt tails."""
+    if not value:
+        return ""
+    return value.strftime("%d/%m/%Y %H:%M")
+
+
 def initials(name: str) -> str:
     parts = name.split()
     if len(parts) >= 2:
@@ -114,6 +121,7 @@ templates.env.globals["OWN_SHARE_CHOICE"] = OWN_SHARE_CHOICE
 templates.env.filters["currency"] = format_currency
 templates.env.filters["dmy"] = dmy
 templates.env.filters["dmy_short"] = dmy_short
+templates.env.filters["dt"] = dt
 templates.env.filters["initials"] = initials
 templates.env.filters["plain_number"] = plain_number
 templates.env.filters["litres"] = litres

@@ -941,6 +941,52 @@ class PersonalApiToken(Base):
         return [s.strip() for s in (self.scopes or "").split(",") if s.strip()]
 
 
+# Apple Pay ingest diagnostics (iOS Shortcut)
+# ------------------------------------------
+
+
+class IngestAttempt(Base):
+    """One HTTP attempt on ``POST /api/v1/ingest/apple-pay``, kept for debugging.
+
+    The Shortcut is configured by hand on the phone, so when a purchase does
+    not arrive the useful question is "what did the phone actually send?".
+    Attempts are recorded from every layer that can reject one — payload
+    validation, auth, rate limit, the endpoint itself — and shown on
+    Settings → Automations; the same lines go to the server log.
+
+    ``household_id`` / ``token_id`` are nullable: an attempt carrying a token
+    nobody can match is attributed to no one (it still lands in the server
+    log). Rows are pruned per household by
+    :func:`app.services.ingest.record_ingest_attempt`.
+    """
+
+    __tablename__ = "ingest_attempts"
+    __table_args__ = (
+        Index("ix_ingest_attempts_household_created", "household_id", "created_at"),
+        Index("ix_ingest_attempts_prefix_created", "token_prefix", "created_at"),
+    )
+
+    id = Column(String, primary_key=True, default=gen_id)
+    household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=True)
+    token_id = Column(
+        String, ForeignKey("personal_api_tokens.id", ondelete="SET NULL"), nullable=True
+    )
+    # First 12 characters of the token (same value the settings page shows),
+    # kept even for unknown tokens so a pattern is recognisable in the log.
+    token_prefix = Column(String(12), nullable=True)
+    status = Column(Integer, nullable=False)
+    # Why in one line: "created", "duplicate", or the rejection reason.
+    detail = Column(String(500), nullable=True)
+    # The raw request body as received (truncated), so a misconfigured
+    # Shortcut shows up as itself rather than as a guess.
+    payload = Column(Text, nullable=True)
+    content_type = Column(String(100), nullable=True)
+    transaction_id = Column(
+        String, ForeignKey("transactions.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at = Column(DateTime, default=utcnow_naive, nullable=False)
+
+
 # ---------------------------------------------------------------------------
 # Stock & prices (Phase 6)
 # ---------------------------------------------------------------------------

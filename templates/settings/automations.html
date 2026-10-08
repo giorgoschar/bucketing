@@ -153,7 +153,59 @@
         The category comes from your <a href="/settings" class="underline">auto-categorisation rules</a>;
         the bucket is the token’s default, otherwise your first day-to-day bucket.
       </p>
+
+      <div class="px-4 py-3 bg-sky-50 dark:bg-sky-900/20 border border-sky-100 dark:border-sky-800 rounded-xl text-xs text-sky-900 dark:text-sky-200 space-y-1">
+        <p>
+          <strong>Didn’t arrive?</strong> The <em>Recent ingest attempts</em> section below shows every
+          request the Shortcut has made — the exact payload the phone sent and the reason it was refused —
+          and the same lines land in the server log (grep <code class="font-mono">ingest:</code>).
+        </p>
+        <p>
+          The two most common mistakes are: Request Body left as <strong>Form</strong> instead of
+          <strong>JSON</strong>, and a value row that picks the whole transaction record instead of one
+          field — <code>amount</code> must be a number, <code>merchant</code>/<code>card</code> plain text.
+        </p>
+      </div>
     </div>
+  </div>
+
+  <!-- ===== Recent ingest attempts ===== -->
+  <div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
+    <div class="px-6 py-4 border-b border-gray-50 dark:border-gray-800">
+      <p class="text-sm font-semibold">Recent ingest attempts</p>
+      <p class="text-xs text-gray-400 mt-0.5">
+        Everything your Shortcut has sent recently — each attempt, its outcome and the raw payload.
+        Attempts are kept per household (newest first); a “no attempts yet” list is a normal, healthy
+        state before the next run.
+      </p>
+    </div>
+    {% if attempts %}
+    <ul id="ingest-attempts" class="divide-y divide-gray-50 dark:divide-gray-800">
+      {% for a in attempts %}
+      <li class="px-6 py-3 space-y-1">
+        <div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 flex-wrap">
+          <span class="px-1.5 py-0.5 rounded-md font-semibold
+                       {% if a.status < 400 %}bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300
+                       {% elif a.status == 429 %}bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300
+                       {% elif a.status < 500 %}bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300
+                       {% else %}bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300{% endif %}">{{ a.status }}</span>
+          <span>{{ a.created_at | dt }}</span>
+          {% if a.token_prefix %}<code class="font-mono">{{ a.token_prefix }}…</code>{% endif %}
+          <span class="ml-auto font-mono text-[10px]">{{ a.content_type or '—' }}</span>
+        </div>
+        <p class="text-sm text-gray-800 dark:text-gray-200">{{ a.detail or '—' }}</p>
+        {% if a.payload %}
+        <pre class="text-[11px] leading-snug font-mono bg-gray-50 dark:bg-gray-800/60 rounded-lg px-2.5 py-2 text-gray-600 dark:text-gray-300 whitespace-pre-wrap break-all">{{ a.payload | truncate(180) }}</pre>
+        {% endif %}
+        {% if a.transaction_id %}
+        <a href="/transactions/{{ a.transaction_id }}/edit" class="text-xs font-semibold text-primary-600 hover:text-primary-700">→ open the expense</a>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="px-6 py-5 text-sm text-gray-400">No attempts yet — the next time the Shortcut runs (pay with Apple Pay), it will show up here.</p>
+    {% endif %}
   </div>
 
 </div>

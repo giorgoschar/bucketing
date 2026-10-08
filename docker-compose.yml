@@ -33,6 +33,7 @@ services:
       - DEBUG=false
       - APP_BASE_URL=${APP_BASE_URL:?set APP_BASE_URL (public https URL, used in invite links)}
       - APP_NAME=Expenses
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - APP_TIMEZONE=${APP_TIMEZONE:-Europe/Athens}
       - TRUST_PROXY_HEADERS=true
       - ENABLE_SCHEDULER=true
