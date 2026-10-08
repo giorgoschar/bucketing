@@ -490,7 +490,7 @@ it('I-1: two queued changes read in the plural', async () => {
   await waitFor(() => expect(screen.getByRole('region', { name: 'Ticked items' })).toHaveTextContent('Waiting to sync 2 changes'))
 })
 
-it('I-2: an online tick keeps the server\'s tick id, so it can be unticked at once even if the refetch fails', async () => {
+it('I-2: an online tick keeps its tick id across a failed refetch, so it can be unticked at once', async () => {
   const api = fakeApi(shoppingRoutes())
   renderWithProviders(<ShoppingList />)
   await loaded()
