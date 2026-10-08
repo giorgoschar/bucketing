@@ -62,3 +62,18 @@ it('cash not logged sits after missingAmount and before budget', () => {
 it.each([0.004, 0, undefined])('no cash row at %s', (cashNotLogged) => {
   expect(buildAttention(full({ cashNotLogged })).some((i) => i.kind === 'cash')).toBe(false)
 })
+
+// Plan › Pantry §4.7: "N pantry items running low", after cash and before budget.
+it('pantry sits after cash and before budget', () => {
+  const items = buildAttention(full({ cashNotLogged: 45, pantryLow: 3 }))
+  expect(items.map((i) => i.key).slice(5, 8)).toEqual(['cash', 'pantry', 'budget:b2'])
+  expect(items.find((i) => i.kind === 'pantry')).toMatchObject({ count: 3 })
+})
+
+it.each([0, undefined])('no pantry row at %s', (pantryLow) => {
+  expect(buildAttention(full({ pantryLow })).some((i) => i.kind === 'pantry')).toBe(false)
+})
+
+it('the pantry summary does not hold back "All clear"', () => {
+  expect(attentionReady(full({ pantryLow: undefined }))).toBe(true)
+})

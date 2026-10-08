@@ -1,5 +1,6 @@
 import { vi } from 'vitest'
 import type { paths } from '../api/schema'
+import type { ShoppingReplies } from '../features/plan/pantry/shoppingTypes'
 
 type Lower = 'get' | 'post' | 'put' | 'patch' | 'delete'
 type Op<P extends keyof paths, M extends Lower> = paths[P][M]
@@ -12,12 +13,17 @@ type Success<O> = O extends { responses: infer R }
       : null
   : never
 
+/** Pantry routes the generated schema doesn't have yet (or types as `unknown`), with their hand-written
+ *  replies. The pantry integration runs gen:api and drops this. */
+type Extra = ShoppingReplies
+
 /** Every "METHOD /path" the schema declares, e.g. "POST /api/v1/recurring/entries/{entry_id}/done". */
-export type Route = {
+type SchemaRoute = {
   [P in keyof paths & string]: {
     [M in Lower]: [Op<P, M>] extends [undefined] ? never : `${Uppercase<M>} ${P}`
   }[Lower]
 }[keyof paths & string] | PantryWaRoute
+export type Route = SchemaRoute | (keyof Extra & string)
 
 /**
  * Plan › Pantry routes the server stream adds in parallel (pantry spec §3.2), not in the schema yet: their
@@ -32,7 +38,11 @@ export type PantryWaRoute =
 type PathOf<R> = R extends `${string} ${infer P}` ? P : never
 type MethodOf<R> = R extends `${infer M} ${string}` ? Lowercase<M> : never
 /** The success body the schema declares for a route (null for a 204). */
-export type Reply<R extends Route> = R extends PantryWaRoute ? unknown : Success<Op<PathOf<R> & keyof paths, MethodOf<R> & Lower>>
+export type Reply<R extends Route> = R extends PantryWaRoute
+  ? unknown
+  : R extends keyof Extra
+    ? Extra[R]
+    : Success<Op<PathOf<R> & keyof paths, MethodOf<R> & Lower>>
 
 export interface FakeRequest {
   method: string

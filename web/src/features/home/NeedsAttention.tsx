@@ -94,6 +94,18 @@ function AttentionRow({ item, onOpen }: { item: AttentionItem; onOpen: (e: Entry
             onClick={() => navigate(`/new?mode=cash&take=none&amount=${item.amount.toFixed(2)}`)}>Log it</button>
         </div>
       )
+    case 'pantry':
+      return (
+        <div className="home-attn__item">
+          <span className="ui-ico ui-ico--warn" aria-hidden="true"><PackageIcon /></span>
+          <div className="home-attn__text">
+            <div className="ui-row__title home-attn__wrapnum">
+              <span className="ui-num">{item.count}</span> {item.count === 1 ? 'pantry item' : 'pantry items'} running low
+            </div>
+          </div>
+          <button type="button" className="btn btn--sm" onClick={() => navigate('/plan/pantry/list')}>List</button>
+        </div>
+      )
     case 'failed':
       return (
         <div className="home-attn__item">
@@ -106,6 +118,16 @@ function AttentionRow({ item, onOpen }: { item: AttentionItem; onOpen: (e: Entry
         </div>
       )
   }
+}
+
+function PackageIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round"
+      aria-hidden="true" focusable="false" className="ui-icon">
+      <path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z" />
+      <path d="M12 22V12" /><path d="m3.3 7 8.7 5 8.7-5" /><path d="m7.5 4.27 9 5.15" />
+    </svg>
+  )
 }
 
 function MatchRow({ match }: { match: MatchOut }) {

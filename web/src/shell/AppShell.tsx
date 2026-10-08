@@ -8,6 +8,8 @@ import { authErrorMessage, LINKED_MESSAGE, readAuthResult } from '../session/aut
 import { useSession } from '../session/SessionProvider'
 import { SignIn } from '../session/SignIn'
 import { Toaster } from '../ui/Toast'
+import { TickedPrompt } from '../features/plan/pantry/TickedPrompt'
+import { resetTickedPrompt } from '../features/plan/pantry/tickedOffer'
 import { CloseIcon } from './icons'
 import { TabBar } from './TabBar'
 import './shell.css'
@@ -37,6 +39,7 @@ export function AppShell() {
       // Signed out: this account's markers must not outlive it. Not on unmount: /new sits outside AppShell,
       // and opening the composer must not wipe the "Waiting to sync" markers.
       clearPending()
+      resetTickedPrompt() // a pantry offer is this account's too
       return
     }
     const stopBridge = installQueueBridge(queryClient)
@@ -75,6 +78,8 @@ export function AppShell() {
       </main>
       <TabBar />
       <Toaster />
+      {/* Pantry spec §4.6: the composer's post-save offer shows here, where the composer returns. */}
+      <TickedPrompt />
     </div>
   )
 }

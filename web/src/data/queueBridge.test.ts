@@ -6,6 +6,7 @@ import { enqueue, replay } from '../offline/queue'
 import { fakeApi, reply } from '../test/fakeApi'
 import { entry } from '../test/fixtures'
 import { resetTestEnv, TEST_IDENTITY, testQueryClient } from '../test/render'
+import { keys } from './keys'
 import { isPending, markPending } from './pending'
 import { installQueueBridge } from './queueBridge'
 
@@ -62,4 +63,20 @@ it('wipe (sign-out, account switch) clears the markers', async () => {
   markPending('e1')
   await wipe()
   expect(isPending('e1')).toBe(false)
+})
+
+// Plan › Pantry §4.8: queued ticks and one-off lines refresh the pantry reads (all under ['stock']) after a drain.
+it('after a replay: invalidates every pantry read under the stock prefix', async () => {
+  fakeApi({
+    'GET /api/v1/auth/me': () => ME,
+    'POST /api/v1/stock/shopping/ticks': () => ({ id: 'tick-1', stock_item_id: 's-milk', quantity: null }),
+  })
+  const client = testQueryClient()
+  const pantry = [keys.shopping(), keys.stockSummary(), ['stock', 'list'], ['stock', 'item', 's-milk']]
+  for (const k of pantry) client.setQueryData(k, { seeded: true })
+  const stop = installQueueBridge(client)
+  await enqueue({ method: 'POST', path: '/api/v1/stock/shopping/ticks', body: { stock_item_id: 's-milk' } })
+  await replay()
+  await waitFor(() => expect(pantry.map((k) => client.getQueryState(k)?.isInvalidated)).toEqual(pantry.map(() => true)))
+  stop()
 })
