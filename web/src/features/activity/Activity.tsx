@@ -14,18 +14,35 @@ import { SearchField } from '../../ui/SearchField'
 import { Duplicates } from './Duplicates'
 import { Feed } from './Feed'
 import {
-  type FeedState, type TransactionFilter, activeFilterCount, fromSearch, isEmpty, monthLabel, monthRange, toSearch, toggle,
+  type FeedState, type TransactionFilter, activeFilterCount, fromSearch, isEmpty, isFiltered, monthLabel, monthRange,
+  toSearch, toggle,
 } from './filters'
 import { useRecurringItems } from '../../data/reads'
 import { FiltersSheet } from './FiltersSheet'
-import { ACTIVITY_WRITES, type Txn, useCounts, useRefData } from './hooks'
+import { ACTIVITY_WRITES, type Txn, useCounts, useRefData, useTotals } from './hooks'
 import { useHeldDeletes } from './heldDeletes'
 import { OptionSheet } from './OptionSheet'
 import { RecentBulk } from './RecentBulk'
 import { OFF, type Selection, isSelected, reduce, selectedCount } from './selection'
 import { useDeleteWithUndo } from './useDeleteWithUndo'
 import { useUndoBulk } from './useUndoBulk'
+import { formatMoney } from '../../ui/format'
 import './activity.css'
+
+/** "23 entries · Out €412.30 · In €0.00": every match of the filter, not only the loaded rows. Hidden when
+ *  nothing is filtered; offline it shows the saved copy, or nothing (never a spinner or an error). */
+function FilterTotal({ filter }: { filter: TransactionFilter }) {
+  const on = isFiltered(filter)
+  const totals = useTotals(filter, on).data
+  if (!on || !totals) return null
+  const noun = totals.count === 1 ? 'entry' : 'entries'
+  return (
+    <p className="activity__total" role="status">
+      <span className="ui-num">{totals.count}</span> {noun} · Out <span className="ui-num">{formatMoney(totals.out)}</span>
+      {' · In '}<span className="ui-num">{formatMoney(totals.in)}</span>
+    </p>
+  )
+}
 
 export function withoutDates(f: TransactionFilter): TransactionFilter {
   const { from_date: _f, to_date: _t, ...rest } = f
@@ -153,6 +170,7 @@ export function Activity() {
             Select all {loaded.total}
           </button>
         )}
+        {!state.dups && <FilterTotal filter={f} />}
         {state.dups ? <Duplicates /> : (
           <Feed
             filter={f}

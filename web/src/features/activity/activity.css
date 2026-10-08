@@ -1,5 +1,8 @@
 .activity { display: flex; flex-direction: column; gap: 12px; padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
 .activity .chips { overscroll-behavior-x: contain; }
+/* The filter total: one quiet line above the list. .ui-num is nowrap; this is a sentence, so it wraps. */
+.activity__total { margin: 0 2px; font-size: 13px; line-height: 1.4; color: var(--muted); }
+.activity__total .ui-num { white-space: normal; }
 .feed section + section { margin-top: 8px; }
 .feed__list { margin: 0; padding: 0; list-style: none; }
 .feed__list > li { position: relative; }
