@@ -13,8 +13,9 @@ Responses:
 Every attempt is recorded (app/services/ingest.py:record_ingest_attempt) —
 including the ones rejected by auth, the rate limiter or body validation, in
 app/main.py — and logged as one ``ingest:`` line. The Shortcut is built by
-hand on the phone, so a bare "422" in the access log has to come with the
-payload that caused it.
+hand on the phone, so a bare "422" in the access log has to come with what
+caused it: a SUMMARY of the body (type and a short preview per known key, a
+count of the others), never the body itself.
 """
 
 import re
@@ -44,7 +45,6 @@ from app.services.ingest import (
     classifiable,
     classify_ingested,
     ingest_choices,
-    log_safe,
 )
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
@@ -132,13 +132,19 @@ def apple_pay(
     db: Session = Depends(get_db),
 ):
     attempt = {
-        "db": db,
         "token": token,
         "raw_token": bearer_token(request),
         "payload": raw_body(request),
         "content_type": request.headers.get("content-type"),
         "path": request.url.path,
     }
+
+    def refuse(code: int, detail: str) -> None:
+        # The request's transaction is decided first (nothing half-done
+        # survives a refusal), then the attempt is written on its own.
+        db.rollback()
+        record_ingest_attempt(status=code, detail=detail, **attempt)
+
     try:
         txn, created = ingest_apple_pay(
             db,
@@ -153,35 +159,34 @@ def apple_pay(
         )
     except DeletedTransactionReplay:
         detail = "This purchase was already added and has since been deleted."
-        record_ingest_attempt(status=409, detail=detail, **attempt)
+        refuse(409, detail)
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail) from None
     except HTTPException as exc:
-        record_ingest_attempt(status=exc.status_code, detail=exc.detail, **attempt)
+        refuse(exc.status_code, str(exc.detail))
         raise
-    except Exception as exc:  # a crash is a failed attempt too — log it, re-raise
-        record_ingest_attempt(
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"{type(exc).__name__}: {exc}",
-            **attempt,
-        )
+    except Exception as exc:  # a crash is a failed attempt too: record, re-raise
+        # Fixed text: an exception message can echo the input.
+        refuse(500, f"unexpected error ({type(exc).__name__})")
         raise
     if not created:
         response.status_code = status.HTTP_200_OK
+        result = {**_result(db, txn, token), "duplicate": True}
         record_ingest_attempt(
             status=200,
             detail="duplicate — an expense for this purchase already exists",
             transaction_id=txn.id,
             **attempt,
         )
-        return {**_result(db, txn, token), "duplicate": True}
+        return result
+    notify_ingest_created(db, txn)  # commits its own work
+    result = _result(db, txn, token)
     record_ingest_attempt(
         status=201,
         detail=NO_MERCHANT_DETAIL if txn.merchant == PLACEHOLDER_MERCHANT else "created",
         transaction_id=txn.id,
         **attempt,
     )
-    notify_ingest_created(db, txn)
-    return _result(db, txn, token)
+    return result
 
 
 class IngestAttemptOut(BaseModel):
@@ -254,7 +259,6 @@ def classify(
     classify scope (403 otherwise). Anything that is not the token's own,
     recent, live purchase is a bare 404. Returns the ingest result again."""
     attempt = {
-        "db": db,
         "token": token,
         "raw_token": bearer_token(request),
         "payload": raw_body(request),
@@ -264,6 +268,7 @@ def classify(
     }
 
     def reject(code: int, detail: str, public: str | None = None) -> HTTPException:
+        db.rollback()
         record_ingest_attempt(status=code, detail=detail, **attempt)
         return HTTPException(status_code=code, detail=public) if public else HTTPException(code)
 
@@ -288,6 +293,7 @@ def classify(
     except HTTPException as exc:
         db.rollback()
         raise reject(exc.status_code, str(exc.detail), exc.detail) from None
-    detail = "classified: " + " / ".join(log_safe(c, 80) for c in chosen)
+    detail = "classified: " + " / ".join(c[:80] for c in chosen)
+    result = _result(db, txn, token)
     record_ingest_attempt(status=200, detail=detail, **attempt)
-    return _result(db, txn, token)
+    return result

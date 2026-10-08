@@ -384,13 +384,15 @@ def require_ingest_token(
     except HTTPException as exc:
         from app.services.ingest import record_ingest_attempt
 
+        db.rollback()  # nothing of ours is pending: just end the read before the log row
+        kwargs = {"path": request.url.path} if request else {}
         record_ingest_attempt(
             status=exc.status_code,
             detail=exc.detail,
+            payload=getattr(request, "_body", None) or None,
             content_type=request.headers.get("content-type") if request else None,
             raw_token=credentials.credentials if credentials else None,
-            path=request.url.path if request else None,
-            db=db,
+            **kwargs,
         )
         raise
 

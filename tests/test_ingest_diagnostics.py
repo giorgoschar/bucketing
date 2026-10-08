@@ -82,7 +82,7 @@ def test_created_records_attempt_with_payload_and_attribution(db, client, ingest
     assert a.token_prefix == ingest.token.prefix
     assert a.transaction_id == r.json()["id"]
     assert a.content_type == "application/json"
-    assert "12,50" in a.payload  # the raw body, exactly as sent
+    assert '"amount":{"type":"text","value":"12,50"}' in a.payload  # a summary, not the body
 
 
 def test_duplicate_replay_records_200(db, client, ingest):
@@ -133,7 +133,7 @@ def test_missing_bucket_records_422(client, db, ingest):
 # ---------------------------------------------------------------- recording: before the endpoint runs
 
 
-def test_invalid_json_records_422_with_raw_payload(db, client, ingest):
+def test_invalid_json_records_422_with_a_summary_not_the_body(db, client, ingest):
     r = client.post(
         URL,
         content=b'{"merchant": ',
@@ -142,7 +142,8 @@ def test_invalid_json_records_422_with_raw_payload(db, client, ingest):
     assert r.status_code == 422
     a = _attempts(db)[-1]
     assert a.status == 422
-    assert '{"merchant":' in (a.payload or "")
+    # Polish: never the raw body, only what it was (size and content type).
+    assert a.payload == "not a JSON object (13 bytes, application/json)"
     assert a.household_id == ingest.hh.household_id  # attributed from the bearer token
 
 
@@ -155,7 +156,7 @@ def test_form_encoded_body_records_422(db, client, ingest):
     assert r.status_code == 422
     a = _attempts(db)[-1]
     assert a.status == 422
-    assert "merchant" in (a.payload or "")  # the form bytes, recorded verbatim
+    assert a.payload == "not a JSON object (19 bytes, application/x-www-form-urlencoded)"
     assert a.household_id == ingest.hh.household_id
 
 
@@ -216,7 +217,9 @@ def test_other_households_do_not_see_attempts(db, client, ingest, make_household
     assert recent_ingest_attempts(db, other.household_id, other.user_id) == []
 
 
-def test_unattributed_attempt_with_matching_prefix_is_not_shown_in_app(db, ingest, make_household):
+def test_unattributed_attempt_with_matching_prefix_is_not_shown_in_app(
+    app, db, ingest, make_household
+):
     # Polish R2c: an attempt carrying an unknown tail of our own token is
     # unattributed (the hash lookup fails). It is recorded (and logged) but
     # shown to nobody in the app, the near-owner included: a prefix is not
@@ -244,7 +247,7 @@ def test_attempts_pruned_per_household(db, client, ingest, monkeypatch):
     assert ["created"] * 5 == [k[0] for k in kept]
 
 
-def test_unattributed_attempts_hard_capped(db, monkeypatch):
+def test_unattributed_attempts_hard_capped(app, db, monkeypatch):
     import app.services.ingest as ingest_mod
 
     monkeypatch.setattr(ingest_mod, "KEEP_UNATTRIBUTED", 3)
@@ -370,7 +373,7 @@ def test_configure_logging_rejects_bad_level(monkeypatch):
         configure_logging()
 
 
-def test_ingest_log_line_mentions_status(monkeypatch, db, ingest, make_household):
+def test_ingest_log_line_mentions_status(app, monkeypatch, db, ingest, make_household):
     """The log line carry pattern a person can grep for in Coolify."""
     import app.services.ingest as ingest_mod
 

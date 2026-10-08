@@ -986,14 +986,22 @@ class IngestAttempt(Base):
     status = Column(Integer, nullable=False)
     # Why in one line: "created", "duplicate", or the rejection reason.
     detail = Column(String(500), nullable=True)
-    # The raw request body as received (truncated), so a misconfigured
-    # Shortcut shows up as itself rather than as a guess.
+    # A summary of the request body, never the body: per known key its type
+    # and a short preview, a count of unknown keys (compact JSON); or
+    # "not a JSON object (<n> bytes, <content type>)".
     payload = Column(Text, nullable=True)
     content_type = Column(String(100), nullable=True)
     transaction_id = Column(
         String, ForeignKey("transactions.id", ondelete="SET NULL"), nullable=True
     )
     created_at = Column(DateTime, default=utcnow_naive, nullable=False)
+
+    @property
+    def payload_lines(self) -> list[str]:
+        """The stored summary as ``key: preview`` lines (for the page)."""
+        from app.services.ingest import summary_lines
+
+        return summary_lines(self.payload)
 
 
 # ---------------------------------------------------------------------------

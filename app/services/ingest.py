@@ -14,9 +14,9 @@ Settings → Automations instead of guessed at from a bare "422".
 """
 
 import hashlib
+import json
 import logging
 import re
-import sys
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from urllib.parse import unquote
@@ -58,110 +58,150 @@ KEEP_PER_SCOPE = 100
 # Cap on attempts no token can be attributed to. An attacker varying token
 # prefixes must not be able to grow the table without bound.
 KEEP_UNATTRIBUTED = 200
-MAX_PAYLOAD_CHARS = 2000
-MAX_LOG_PAYLOAD_CHARS = 600
 # Longest amount string looked at before any regex work (R2d). Nothing a phone
 # sends for a price comes close; longer is refused, not parsed.
 MAX_AMOUNT_CHARS = 64
-# Raw bodies are cut to this before redaction regexes run, so work stays bounded.
-_REDACT_INPUT_CHARS = 20_000
-REDACTED_TOKEN = "pat_…redacted"
-TOKEN_PREFIX_RAW = "pat_"
 
-# A personal token pasted anywhere in what was sent (R2a).
-_TOKEN_RE = re.compile(r"pat_[A-Za-z0-9_-]+")
-# A body field named authorization / token, quoted JSON (also truncated JSON)
-# or form-encoded; the whole value goes, whatever it is.
-_SECRET_FIELD_JSON = re.compile(
-    r'("(?:authorization|token)"\s*:\s*)("(?:[^"\\]|\\.)*(?:"|$)|[^,}\]\s]+)', re.IGNORECASE
-)
-_SECRET_FIELD_FORM = re.compile(r"((?:^|[&?\s])(?:authorization|token)=)[^&\s]*", re.IGNORECASE)
+# ---------------------------------------------------------------------------
+# What an attempt keeps of a request
+#
+# The raw body is NEVER stored or logged: it is where a pasted token, a card
+# number or an injected log line would arrive. Instead the attempt keeps a
+# summary built from the parsed body: for each known key its type and a short
+# preview of scalar values, a count of the unknown keys, nothing else. The one
+# guard left runs over those short strings we built ourselves.
+# ---------------------------------------------------------------------------
+
+KNOWN_KEYS = ("merchant", "amount", "currency", "card", "occurred_at", "notes", "exchange_rate")
+CLASSIFY_KEYS = ("category", "bucket")
+PREVIEW_CHARS = 40
+MAX_NAMES = 6
+NAME_CHARS = 20
+MAX_PARSED_BODY_CHARS = 1_000_000
+WITHHELD = "[withheld]"
+_GUARD_WINDOW = 8
 # Anything that can end or fake a log line: C0 controls, DEL, NEL, LS, PS.
 _LOG_UNSAFE = re.compile("[\x00-\x1f\x7f\x85\u2028\u2029]")
+_TOKEN_WORDS = re.compile(r"pat_|bearer", re.IGNORECASE)
+_PREFIX_OK = re.compile(r"pat_[A-Za-z0-9_-]{0,8}")
+_NAME_UNSAFE = re.compile(r"[^A-Za-z0-9_ -]")
+_CT_UNSAFE = re.compile(r"[^A-Za-z0-9/+.;=_ -]")
 
 
-_BEARER_RE = re.compile(r"bearer\s+[A-Za-z0-9._~+/=-]+", re.IGNORECASE)
-_JSON_ESCAPE = re.compile(r"\\u([0-9a-fA-F]{4})")
-_TRAILING_PARTIAL = re.compile(r"pat_[A-Za-z0-9_-]*$")
-_WINDOW = 12
-WITHHELD = "[payload withheld: it contained the token]"
+def _clean(text, limit: int) -> str:
+    """Control characters out, then the length cap."""
+    return _LOG_UNSAFE.sub("", str(text))[:limit]
 
 
-def _normalise(text: str) -> str:
-    """A copy for detection: JSON ``\\uXXXX`` and percent escapes decoded
-    (twice, for double encoding)."""
-    for _ in range(2):
-        text = _JSON_ESCAPE.sub(lambda m: chr(int(m.group(1), 16)), text).replace("\\/", "/")
-        text = unquote(text)
+def guard(text: str, secret: str | None = None) -> str:
+    """``text`` itself, or ``[withheld]`` when it looks like or holds a
+    credential: ``pat_`` or ``bearer`` anywhere (also percent-encoded or with
+    separators between the characters), or any 8+ character piece of the
+    authenticated token's plaintext when that is known. Only ever applied to
+    short strings built here, never to a raw body."""
+    if not text:
+        return text
+    pieces = (
+        [secret[i : i + _GUARD_WINDOW] for i in range(len(secret) - _GUARD_WINDOW + 1)]
+        if (secret and len(secret) >= _GUARD_WINDOW)
+        else []
+    )
+    plain = unquote(text)
+    for variant in (text, plain, re.sub(r"[^A-Za-z0-9_-]", "", plain)):
+        if _TOKEN_WORDS.search(variant) or any(piece in variant for piece in pieces):
+            return WITHHELD
     return text
 
 
-def _redact_plain(text: str) -> str:
-    text = _TOKEN_RE.sub(REDACTED_TOKEN, text)
-    text = _BEARER_RE.sub("Bearer …redacted", text)
-    text = _SECRET_FIELD_JSON.sub(lambda m: f'{m.group(1)}"…redacted"', text)
-    return _SECRET_FIELD_FORM.sub(lambda m: f"{m.group(1)}…redacted", text)
-
-
-def _mentions_secret(text: str) -> bool:
-    return bool(
-        _TOKEN_RE.search(text)
-        or _BEARER_RE.search(text)
-        or _SECRET_FIELD_JSON.search(text)
-        or _SECRET_FIELD_FORM.search(text)
-    )
-
-
-def _leaks(text: str, secret: str | None) -> bool:
-    """True when ``text`` holds the real token or any 12+ character run of
-    its secret part, also with separators (whitespace, quotes, ``+``) between
-    the characters."""
-    if not secret:
-        return False
-    body = secret[len(TOKEN_PREFIX_RAW) :] if secret.startswith(TOKEN_PREFIX_RAW) else secret
-    if len(body) < _WINDOW:
-        return secret in text
-    windows = [body[i : i + _WINDOW] for i in range(len(body) - _WINDOW + 1)]
-    variants = (text, _normalise(text))
-    for variant in variants:
-        collapsed = re.sub(r"[^A-Za-z0-9_-]", "", variant)
-        if any(w in variant or w in collapsed for w in windows):
-            return True
-    return False
-
-
-def scrub(text: str | None, secret: str | None = None, *, label: str = "payload") -> str | None:
-    """The one place stored and logged text is cleaned of credentials.
-
-    Works on the final text, whatever produced it (bytes, str, a dict run
-    through the encoder, a repr, form data, broken JSON): tokens, ``Bearer``
-    values and ``authorization``/``token`` fields are replaced, also when
-    hidden behind JSON ``\\u`` escapes or percent-encoding (then the decoded,
-    redacted text is kept instead of the original). The caller's own token,
-    when known, is a last guard: any trace of it left makes the whole text
-    withheld. Redaction runs before any truncation.
-    """
-    if not text:
-        return text
-    text = text[:_REDACT_INPUT_CHARS]
-    normalised = _normalise(text)
-    source = normalised if normalised != text and _mentions_secret(normalised) else text
-    out = _redact_plain(source)
-    if _leaks(out, secret):
-        return WITHHELD if label == "payload" else f"[{label} withheld: it contained the token]"
-    return out
-
-
-def redact_secrets(text: str | None) -> str | None:
-    return scrub(text)
-
-
 def log_safe(value, limit: int | None = None, secret: str | None = None) -> str:
-    """Request-derived text made safe for one log line: control characters
-    become visible escapes (``\\n``, ``\\x1b``), then the length cap applies."""
-    text = scrub(str(value), secret, label="text") if value is not None else ""
+    """Request-derived text made safe for one log line: guarded, control
+    characters made visible escapes, then the length cap."""
+    text = guard(str(value), secret) if value is not None else ""
     text = _LOG_UNSAFE.sub(lambda m: m.group().encode("unicode_escape").decode(), text)
     return text[:limit] if limit else text
+
+
+def log_safe_plain(value, limit: int) -> str:
+    """Control characters escaped and capped, no credential guard: for values
+    already validated to a safe shape (the 12-character token prefix)."""
+    text = _LOG_UNSAFE.sub(lambda m: m.group().encode("unicode_escape").decode(), str(value or ""))
+    return text[:limit]
+
+
+def safe_names(keys, secret: str | None = None) -> list[str]:
+    """At most 6 key names, 20 characters each, of ``[A-Za-z0-9_ -]``."""
+    names = []
+    for key in list(keys)[:MAX_NAMES]:
+        name = _NAME_UNSAFE.sub("", str(key))[:NAME_CHARS] or "?"
+        names.append(guard(name, secret))
+    return names
+
+
+def _field_summary(value, secret: str | None) -> dict:
+    if value is None:
+        return {"type": "null"}
+    if isinstance(value, bool):
+        return {"type": "text", "value": "true" if value else "false"}
+    if isinstance(value, (int, float)):
+        return {"type": "number", "value": guard(_clean(value, PREVIEW_CHARS), secret)}
+    if isinstance(value, str):
+        return {"type": "text", "value": guard(_clean(value, PREVIEW_CHARS), secret)}
+    if isinstance(value, list):
+        return {"type": "list", "value": f"{len(value)} items"}
+    if isinstance(value, dict):
+        return {"type": "record", "value": "keys: " + ", ".join(safe_names(value, secret))}
+    return {"type": "text", "value": WITHHELD}
+
+
+def summarise_payload(
+    payload, content_type: str | None = None, secret: str | None = None, keys=KNOWN_KEYS
+) -> str | None:
+    """The request body as an allow-listed, compact JSON summary (see above).
+
+    A body that is not a JSON object is described by its size and content type
+    only. ``payload`` is the raw body (bytes/str) or the already parsed value.
+    """
+    if payload is None:
+        return None
+    body, size = payload, None
+    if isinstance(payload, (bytes, str)):
+        size = len(payload)
+        try:
+            text = payload.decode("utf-8", "replace") if isinstance(payload, bytes) else payload
+            body = json.loads(text) if len(text) <= MAX_PARSED_BODY_CHARS else None
+        except (ValueError, RecursionError):
+            body = None
+    if not isinstance(body, dict):
+        ct = guard(_CT_UNSAFE.sub("", content_type or "")[:60].strip(), secret) or "no content type"
+        shown = "unknown size" if size is None else f"{size} bytes"
+        return f"not a JSON object ({shown}, {ct})"
+    out: dict = {}
+    for key in keys:
+        out[key] = _field_summary(body[key], secret) if key in body else {"type": "missing"}
+    out["unknown_keys"] = sum(1 for k in body if k not in keys)
+    return json.dumps(out, ensure_ascii=False, separators=(",", ":"))
+
+
+def summary_lines(payload: str | None) -> list[str]:
+    """A stored summary as ``key: preview`` lines for the page."""
+    if not payload:
+        return []
+    try:
+        data = json.loads(payload)
+    except ValueError:
+        return [payload]
+    if not isinstance(data, dict):
+        return [payload]
+    lines = []
+    for key, field in data.items():
+        if key == "unknown_keys":
+            if field:
+                lines.append(f"other keys: {field}")
+        elif isinstance(field, dict):
+            kind = field.get("type", "?")
+            value = field.get("value")
+            lines.append(f"{key}: {value} ({kind})" if value is not None else f"{key}: {kind}")
+    return lines
 
 
 # Non-numeric characters stripped from a Shortcut amount before parsing:
@@ -282,7 +322,7 @@ def coerce_amount(raw, _depth: int = 0) -> Decimal:
         raise HTTPException(
             status_code=400,
             detail="Amount must be a number: the Shortcut sent a record "
-            f"(keys: {', '.join(list(raw)[:6])}) — pick the Amount field, not the transaction.",
+            f"(keys: {', '.join(safe_names(raw))}) — pick the Amount field, not the transaction.",
         )
     if isinstance(raw, (list, tuple)):
         if len(raw) == 1:
@@ -304,21 +344,6 @@ def token_from_raw(db: Session, raw: str | None) -> PersonalApiToken | None:
     if not raw or not raw.startswith("pat_"):
         return None
     return db.query(PersonalApiToken).filter_by(token_hash=hash_personal_token(raw)).first()
-
-
-def _payload_text(payload) -> str | None:
-    if payload is None:
-        return None
-    if isinstance(payload, bytes):
-        payload = payload.decode("utf-8", errors="replace")
-    elif not isinstance(payload, str):
-        from fastapi.encoders import jsonable_encoder
-
-        try:
-            payload = str(jsonable_encoder(payload))
-        except Exception:  # pragma: no cover - a log line never breaks a payment
-            payload = repr(payload)
-    return payload.strip() or None
 
 
 def _keep_newest(db: Session, scope, count: int) -> None:
@@ -370,77 +395,106 @@ def record_ingest_attempt(
 ) -> None:
     """Persist one attempt and log one line. Never raises.
 
-    ``db`` is the request's session when the caller has one (same SQLite
-    connection, so no lock fight with its open reads); exception handlers pass
-    none and get their own session. A failure to record is logged and
-    swallowed: the diagnostic must never break the payment it describes.
-    """
-    own_session = db is None
-    session = db
-    prefix = None
-    try:
-        if session is None:
-            from app.core.database import SessionLocal
+    The row is written in its OWN short-lived session, never the request's:
+    this function does not flush, commit or roll back the caller's work, so a
+    failing request cannot have half of it committed (or undone) by its own
+    log. Call it after the request's transaction is decided (commit or
+    rollback). ``db`` is accepted for older callers and ignored. A failure to
+    record is logged as one fixed line and swallowed: the diagnostic must
+    never change the payment it describes.
 
-            session = SessionLocal()
+    What is kept of the body is a summary (:func:`summarise_payload`), never
+    the body.
+    """
+    try:
+        secret = (raw_token or None) and raw_token[:128]  # a header, so bounded
+        token_id = token.id if token is not None else None
+        prefix = (token.prefix if token is not None else None) or (
+            raw_token[:DISPLAY_PREFIX_LEN] if raw_token and raw_token.startswith("pat_") else None
+        )
+        if prefix and not _PREFIX_OK.fullmatch(prefix):
+            prefix = None
+        path = path or "/api/v1/ingest/apple-pay"
+        keys = CLASSIFY_KEYS if path.rstrip("/").endswith("/classify") else KNOWN_KEYS
+        summary = summarise_payload(payload, content_type, secret, keys)
+        detail_text = guard(_clean(detail, 300), secret) if detail is not None else None
+        ct_text = (
+            guard(_CT_UNSAFE.sub("", content_type or "")[:100].strip(), secret) or None
+            if content_type
+            else None
+        )
+        status = int(status)
+    except Exception:
+        logger.error("ingest: could not summarise an attempt")
+        return
+
+    try:
+        _store_attempt(
+            raw_token=raw_token,
+            token_id=token_id,
+            prefix=prefix,
+            status=status,
+            detail=detail_text,
+            payload=summary,
+            content_type=ct_text,
+            transaction_id=transaction_id,
+        )
+    except Exception:
+        # Fixed text on purpose: an error can echo the bound parameters.
+        logger.error("ingest: could not record an attempt")
+
+    try:
+        logger.log(
+            logging.INFO if status < 400 else logging.WARNING,
+            "ingest: %s → %s%s | token=%s | type=%s | payload=%r",
+            log_safe(path, 200, secret),
+            status,
+            f" {log_safe(detail_text, 300)}" if detail_text else "",
+            log_safe_plain(prefix, 12) or "-",
+            log_safe(ct_text, 100) or "-",
+            log_safe(summary, 1500) or "-",
+        )
+    except Exception:  # pragma: no cover - a log line never breaks a payment
+        logger.error("ingest: could not log an attempt")
+
+
+def _store_attempt(
+    *,
+    raw_token,
+    token_id,
+    prefix,
+    status,
+    detail,
+    payload,
+    content_type,
+    transaction_id,
+) -> None:
+    from app.core.database import SessionLocal
+
+    session = SessionLocal()
+    try:
+        token = session.get(PersonalApiToken, token_id) if token_id else None
         if token is None and raw_token:
             token = token_from_raw(session, raw_token)
-        if token is not None:
-            prefix = token.prefix
-        elif raw_token and raw_token.startswith("pat_"):
-            prefix = raw_token[:DISPLAY_PREFIX_LEN]
-        # The last step before anything is stored or logged: credentials out
-        # of the final text, then the length cap (never the other way round).
-        secret = raw_token or None
-        payload_text = scrub(_payload_text(payload), secret)
-        if payload_text:
-            payload_text = _TRAILING_PARTIAL.sub("", payload_text[:MAX_PAYLOAD_CHARS]) or None
-        if detail is not None and not isinstance(detail, str):
-            detail = str(detail)
-        detail = scrub(detail, secret, label="detail")
-        content_type = scrub(content_type, secret, label="content type")
         row = IngestAttempt(
             household_id=token.household_id if token is not None else None,
             token_id=token.id if token is not None else None,
-            token_prefix=prefix,
-            status=int(status),
-            detail=(detail or "").strip()[:500] or None,
-            payload=payload_text,
-            content_type=(content_type or "").strip()[:100] or None,
+            token_prefix=token.prefix if token is not None else prefix,
+            status=status,
+            detail=detail,
+            payload=payload,
+            content_type=content_type,
             transaction_id=transaction_id,
         )
         session.add(row)
         session.flush()
-        _prune(session, household_id=row.household_id, token_prefix=prefix)
+        _prune(session, household_id=row.household_id, token_prefix=row.token_prefix)
         session.commit()
     except Exception:
-        try:
-            if session is not None:
-                session.rollback()
-        except Exception:  # pragma: no cover - defensive
-            pass
-        # No traceback: a database error can echo the bound parameters.
-        logger.error(
-            "ingest: could not record the attempt (status %s): %s",
-            int(status),
-            sys.exc_info()[0].__name__,
-        )
-        return
+        session.rollback()
+        raise
     finally:
-        if own_session and session is not None:
-            session.close()
-
-    level = logging.INFO if status < 400 else logging.WARNING
-    logger.log(
-        level,
-        "ingest: %s → %s%s | token=%s | type=%s | payload=%s",
-        log_safe(path, 200, secret),
-        int(status),
-        f" {log_safe(detail, 500, secret)}" if detail else "",
-        log_safe(prefix, 12, secret) or "-",
-        log_safe(content_type, 100, secret) or "-",
-        log_safe(payload_text, MAX_LOG_PAYLOAD_CHARS, secret) or "-",
-    )
+        session.close()
 
 
 def recent_ingest_attempts(
@@ -478,7 +532,7 @@ def parse_occurred_at(raw) -> datetime | None:
     try:
         moment = datetime.fromisoformat(str(raw).strip())
     except ValueError:
-        logger.info("ingest: ignoring unparseable occurred_at %s", log_safe(repr(str(raw)[:80])))
+        logger.info("ingest: ignoring an unparseable occurred_at")
         return None
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=tz())
@@ -577,10 +631,7 @@ def ingest_apple_pay(
     raw_card = card
     card = _text_value(card)
     if raw_card is not None and card is None:
-        logger.info(
-            "ingest: the card value (%s) is not text — leaving it out of the notes",
-            log_safe(repr(raw_card), 200),
-        )
+        logger.info("ingest: the card value is not text — leaving it out of the notes")
     notes = _text_value(notes)
     moment = parse_occurred_at(occurred_at)
     household = db.get(Household, token.household_id)
@@ -737,7 +788,9 @@ def classifiable(db: Session, token: PersonalApiToken, transaction_id: str) -> T
 
 
 def _unknown(kind: str, choice: str) -> HTTPException:
-    return HTTPException(status_code=422, detail=f"Unknown {kind} '{log_safe(choice, 80)}'")
+    return HTTPException(
+        status_code=422, detail=f"Unknown {kind} '{_clean(choice, PREVIEW_CHARS)}'"
+    )
 
 
 def _pick(rows, choice: str):
