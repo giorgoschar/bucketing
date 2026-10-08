@@ -68,21 +68,35 @@ it('uses the rear camera, reads EAN/UPC through the self-hosted decoder, and sto
   expect(track.stop).toHaveBeenCalled()
 })
 
-it('Close and Esc leave, and the camera stops', async () => {
+it.each([
+  ['Close', () => fireEvent.click(screen.getByRole('button', { name: 'Close' }))],
+  ['Esc', () => fireEvent.keyDown(document, { key: 'Escape' })],
+])('%s leaves and stops the camera at once (still mounted)', async (_how, leave) => {
   getUserMedia.mockResolvedValue(stream)
   const onClose = vi.fn()
-  const { unmount } = render(<Scanner onDetect={() => {}} onUnavailable={() => {}} onClose={onClose} />)
+  render(<Scanner onDetect={() => {}} onUnavailable={() => {}} onClose={onClose} />)
   const dialog = screen.getByRole('dialog', { name: 'Scan barcode' })
   expect(screen.getByRole('button', { name: 'Close' })).toHaveFocus()
   expect(dialog).toHaveTextContent('Hold the barcode inside the box')
-  fireEvent.keyDown(document, { key: 'Escape' })
+  // The camera is live and reading.
+  await waitFor(() => expect(det.made).toBe(1))
+  expect(track.stop).not.toHaveBeenCalled()
+  leave()
   expect(onClose).toHaveBeenCalledTimes(1)
-  fireEvent.click(screen.getByRole('button', { name: 'Close' }))
-  expect(onClose).toHaveBeenCalledTimes(2)
+  // Not unmounted: the Scanner itself stops the stream on the way out.
+  expect(screen.getByRole('dialog', { name: 'Scan barcode' })).toBeInTheDocument()
+  expect(track.stop).toHaveBeenCalledTimes(1)
+})
+
+it('Close before the camera answers: the stream is stopped as soon as it arrives', async () => {
+  let give: (s: MediaStream) => void = () => {}
+  getUserMedia.mockReturnValue(new Promise<MediaStream>((r) => { give = r }))
+  render(<Scanner onDetect={() => {}} onUnavailable={() => {}} onClose={() => {}} />)
   await waitFor(() => expect(getUserMedia).toHaveBeenCalled())
-  await act(async () => {})
-  unmount()
-  expect(track.stop).toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+  await act(async () => { give(stream) })
+  expect(track.stop).toHaveBeenCalledTimes(1)
+  expect(det.made).toBe(0)
 })
 
 it('a denied camera falls back to the typed barcode, focused', async () => {

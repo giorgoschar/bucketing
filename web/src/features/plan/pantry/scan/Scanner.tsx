@@ -25,8 +25,15 @@ export function Scanner({ onDetect, onUnavailable, onClose }: ScannerProps) {
   const closeBtn = useRef<HTMLButtonElement>(null)
   const cb = useRef({ onDetect, onUnavailable, onClose })
   useEffect(() => { cb.current = { onDetect, onUnavailable, onClose } })
+  /** Stops the camera; set by the camera effect. */
+  const stopCamera = useRef<() => void>(() => {})
+  /** Close or Esc: the camera goes off at once, whatever the caller does with the Scanner afterwards. */
+  const leave = () => {
+    stopCamera.current()
+    cb.current.onClose()
+  }
 
-  // Camera + decode loop. Every exit (a read, Close, unmount) stops the stream's tracks.
+  // Camera + decode loop. Every exit (a read, Close, Esc, unmount) stops the stream's tracks.
   useEffect(() => {
     let live = true
     let stream: MediaStream | null = null
@@ -37,6 +44,7 @@ export function Scanner({ onDetect, onUnavailable, onClose }: ScannerProps) {
       stream?.getTracks().forEach((t) => t.stop())
       stream = null
     }
+    stopCamera.current = stop
     ;(async () => {
       const media = globalThis.navigator?.mediaDevices
       if (!media?.getUserMedia) throw new Error('No camera API')
@@ -93,7 +101,7 @@ export function Scanner({ onDetect, onUnavailable, onClose }: ScannerProps) {
       if (e.key === 'Escape') {
         e.preventDefault()
         e.stopPropagation()
-        cb.current.onClose()
+        leave()
       } else if (e.key === 'Tab' && root.current) {
         e.stopPropagation()
         trapTab(root.current, e)
@@ -107,7 +115,7 @@ export function Scanner({ onDetect, onUnavailable, onClose }: ScannerProps) {
     <div ref={root} className="bscan" role="dialog" aria-modal="true" aria-label="Scan barcode" tabIndex={-1}>
       <video ref={video} className="bscan__video" muted playsInline aria-hidden="true" />
       <div className="bscan__top">
-        <button ref={closeBtn} type="button" className="bscan__btn" aria-label="Close" onClick={() => cb.current.onClose()}>
+        <button ref={closeBtn} type="button" className="bscan__btn" aria-label="Close" onClick={leave}>
           <XIcon />
         </button>
         <h2 className="bscan__title">Scan barcode</h2>
