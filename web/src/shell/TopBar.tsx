@@ -1,9 +1,8 @@
 import { useRef, type ReactNode } from 'react'
 import { Link, useInRouterContext } from 'react-router'
 import { useSession } from '../session/SessionProvider'
+import { avatarLook } from './avatar'
 import { LogOutIcon } from './icons'
-
-const HEX = /^#[0-9a-f]{6}$/i
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean)
@@ -19,15 +18,15 @@ export function TopBar({ title, actions }: { title: string; actions?: ReactNode 
   const sheet = useRef<HTMLDialogElement>(null)
   const cancel = useRef<HTMLButtonElement>(null)
   const name = me?.display_name || me?.username || ''
-  // avatar_color is the user's own pick from the server's palette; fall back to a token.
-  const tint = me?.avatar_color && HEX.test(me.avatar_color) ? me.avatar_color : undefined
+  // avatar_color is the user's own pick from the server's palette (with an initial that reads on it); else a token.
+  const small = avatarLook(me?.avatar_color)
+  const large = avatarLook(me?.avatar_color, 'avatar--lg')
 
   const close = () => sheet.current?.close()
   const open = () => {
     sheet.current?.showModal()
     cancel.current?.focus() // start on the safe choice, not the destructive one
   }
-  const avatarClass = tint ? 'avatar' : 'avatar avatar--fallback'
 
   return (
     <header className="topbar">
@@ -41,7 +40,7 @@ export function TopBar({ title, actions }: { title: string; actions?: ReactNode 
           aria-haspopup="dialog"
           onClick={open}
         >
-          <span className={avatarClass} style={tint ? { background: tint } : undefined}>{initials(name)}</span>
+          <span className={small.className} style={small.style}>{initials(name)}</span>
         </button>
       </div>
       <dialog
@@ -55,7 +54,7 @@ export function TopBar({ title, actions }: { title: string; actions?: ReactNode 
         <div className="sheet__body">
           <div className="sheet__grab" aria-hidden="true" />
           <div className="sheet__who">
-            <span className={`${avatarClass} avatar--lg`} style={tint ? { background: tint } : undefined}>{initials(name)}</span>
+            <span className={large.className} style={large.style}>{initials(name)}</span>
             <div>
               <div className="sheet__name">{name}</div>
               {me?.email && <div className="sheet__sub">{me.email}</div>}

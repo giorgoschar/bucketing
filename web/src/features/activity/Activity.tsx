@@ -12,7 +12,7 @@ import { type BulkField, BulkSheet } from './BulkSheet'
 import { SwipeRow } from '../../ui/SwipeRow'
 import { SearchField } from '../../ui/SearchField'
 import { Duplicates } from './Duplicates'
-import { Feed } from './Feed'
+import { Feed, type LoadedInfo } from './Feed'
 import {
   type FeedState, type TransactionFilter, activeFilterCount, fromSearch, isEmpty, isFiltered, monthLabel, monthRange,
   toSearch, toggle,
@@ -96,8 +96,13 @@ export function Activity() {
   const deleteWithUndo = useDeleteWithUndo()
   const navigate = useNavigate()
   const online = useOnline()
-  const [loaded, setLoaded] = useState<{ ids: string[]; rows: Txn[]; total: number }>({ ids: [], rows: [], total: 0 })
-  const onLoaded = useCallback((rows: Txn[], total: number) => setLoaded({ ids: rows.map((r) => r.id), rows, total }), [])
+  const [loaded, setLoaded] = useState<{ ids: string[]; rows: Txn[]; total: number } & LoadedInfo>(
+    { ids: [], rows: [], total: 0, complete: true, excluded: 0, pending: false },
+  )
+  const onLoaded = useCallback(
+    (rows: Txn[], total: number, info: LoadedInfo) => setLoaded({ ids: rows.map((r) => r.id), rows, total, ...info }),
+    [],
+  )
   const [menu, setMenu] = useState(false)
   const [recentOpen, setRecentOpen] = useState(false)
   const undo = useUndoBulk()
@@ -113,12 +118,20 @@ export function Activity() {
     ? loaded.rows.filter((r) => sel.ids.includes(r.id) && r.type === 'expense')
       .reduce((sum, r) => sum + r.amount * (r.exchange_rate || 1), 0)
     : previewed?.sel === sel ? previewed.out : null
+  // "All" is the filter on the server, unless a matching row is pending (a queued edit or delete) or in its
+  // swipe-delete hold: the server would change it too, and the queued write would undo that later (P3 M1).
+  // With every row loaded, All then picks the selectable rows by id; with more to load it waits for the sync.
+  const byId = loaded.excluded > 0 && loaded.complete
+  const allBlocked = loaded.pending && !loaded.complete
+  const allCount = byId ? loaded.ids.length : loaded.total
   // Select by filter needs a filter: the server refuses an empty one (400).
-  const canSelectAll = loaded.total > 0 && !isEmpty(f)
+  const canSelectAll = !allBlocked && allCount > 0 && (byId || !isEmpty(f))
+  const all = () => dispatch(byId ? { type: 'pick', ids: loaded.ids } : { type: 'all', filter: f, total: loaded.total })
   const selectAll = () => {
     dispatch({ type: 'enter' })
-    dispatch({ type: 'all', filter: f, total: loaded.total })
+    all()
   }
+  const allPicked = sel.kind === 'picked' && byId && sel.ids.length === allCount
 
   return (
     <>
@@ -126,7 +139,7 @@ export function Activity() {
         <header className="selbar" role="toolbar" aria-label="Selection">
           <button type="button" onClick={() => dispatch({ type: 'cancel' })}>Cancel</button>
           <h1 className="selbar__title num" aria-live="polite">{count} selected</h1>
-          <button type="button" disabled={!canSelectAll} onClick={() => dispatch({ type: 'all', filter: f, total: loaded.total })}>
+          <button type="button" disabled={!canSelectAll} onClick={all}>
             All
           </button>
         </header>
@@ -165,10 +178,13 @@ export function Activity() {
           <Chip label="Income" pressed={f.type === 'income'} disabled={state.dups} onClick={() => setFilter(toggle(f, { type: 'income' }))} />
           <Chip label="Cash" pressed={f.payment_method === 'cash'} disabled={state.dups} onClick={() => setFilter(toggle(f, { payment_method: 'cash' }))} />
         </div>
-        {!state.dups && f.missing_payer && canSelectAll && sel.kind !== 'filter' && sel.kind !== 'bill' && (
+        {!state.dups && f.missing_payer && canSelectAll && sel.kind !== 'filter' && sel.kind !== 'bill' && !allPicked && (
           <button type="button" className="btn btn--ghost btn--sm select-all" onClick={selectAll}>
-            Select all {loaded.total}
+            Select all {allCount}
           </button>
+        )}
+        {selecting && allBlocked && !state.dups && (
+          <p className="select-note" role="status">All is off until the changes waiting to sync are sent.</p>
         )}
         {!state.dups && <FilterTotal filter={f} />}
         {state.dups ? <Duplicates /> : (

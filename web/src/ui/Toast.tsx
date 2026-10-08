@@ -2,7 +2,14 @@ import { useSyncExternalStore } from 'react'
 import { AlertIcon } from './icons'
 
 export interface ToastAction { label: string; onClick: () => void }
-export interface ToastOptions { action?: ToastAction; durationMs?: number; tone?: 'default' | 'error' }
+export interface ToastOptions {
+  action?: ToastAction
+  durationMs?: number
+  tone?: 'default' | 'error'
+  /** Called once when this toast leaves the screen: its time ran out, it was dismissed or acted on, or another
+   *  toast replaced it. A paused toast (finger or focus on it) is still on screen. */
+  onClose?: () => void
+}
 interface Shown extends ToastOptions { id: number; message: string }
 
 const DEFAULT_MS = 4000
@@ -30,17 +37,21 @@ function startTimer(ms: number) {
 /** Show a toast; it replaces the one on screen. Callable outside React (useAction uses it). */
 export function toast(message: string, opts: ToastOptions = {}): void {
   paused = false
+  const prev = current
   current = { ...opts, id: ++seq, message }
   emit()
   startTimer(opts.durationMs ?? DEFAULT_MS)
+  prev?.onClose?.()
 }
 
 export function dismissToast(): void {
   clearTimeout(timer)
   paused = false
   if (!current) return
+  const gone = current
   current = null
   emit()
+  gone.onClose?.()
 }
 
 /** Hold the toast while the user is reaching for its action (focus or hover). */

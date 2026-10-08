@@ -1,5 +1,6 @@
-import { createBrowserRouter, Navigate } from 'react-router'
+import { createBrowserRouter, Navigate, type RouteObject } from 'react-router'
 import { AppShell } from './shell/AppShell'
+import { ScreenError } from './shell/ScreenError'
 import { FullScreenShell } from './shell/FullScreenShell'
 import { Home } from './screens/Home'
 import { Activity } from './screens/Activity'
@@ -9,12 +10,16 @@ import {
   PantryDetail, Plan, Profile, Settings, ShoppingList,
 } from './screens/lazy'
 
+/** Each screen gets the error screen (a lazy chunk that 404s after a deploy, P3 M2). On the screen route,
+ *  not the shell, so it renders in the shell's Outlet and the tab bar stays. */
+const guarded = (routes: RouteObject[]): RouteObject[] => routes.map((r) => ({ ...r, errorElement: <ScreenError /> }))
+
 export const router = createBrowserRouter(
   [
     {
       path: '/',
       element: <AppShell />,
-      children: [
+      children: guarded([
         { index: true, element: <Home /> },
         { path: 'activity', element: <Activity /> },
         { path: 'activity/:id', element: <ActivityDetail /> },
@@ -34,15 +39,15 @@ export const router = createBrowserRouter(
         { path: 'settings/notifications', element: <Notifications /> },
         { path: 'settings/appearance', element: <Appearance /> },
         { path: '*', element: <Navigate to="/" replace /> },
-      ],
+      ]),
     },
     // The composer sits outside AppShell so no tab bar shows while composing (2b spec §3).
     {
       element: <FullScreenShell />,
-      children: [
+      children: guarded([
         { path: '/new', element: <Compose /> },
         { path: '/edit/:id', element: <Compose /> },
-      ],
+      ]),
     },
   ],
   { basename: '/app' },

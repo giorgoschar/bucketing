@@ -10,6 +10,8 @@ export type SelectionAction =
   | { type: 'enter'; id?: string }
   | { type: 'toggle'; id: string; loadedIds: string[] }
   | { type: 'all'; filter: TransactionFilter; total: number }
+  /** "All" while some matching rows are pending or mid-delete: these rows by id instead of the filter. */
+  | { type: 'pick'; ids: string[] }
   | { type: 'cancel' }
 
 export type BulkSelect = { ids: string[] } | { filter: Record<string, string | boolean> } | { bill_id: string }
@@ -29,6 +31,8 @@ export function reduce(s: Selection, a: SelectionAction): Selection {
       return OFF
     case 'enter':
       return s.kind === 'off' ? { kind: 'picked', ids: a.id ? [a.id] : [] } : s
+    case 'pick':
+      return { kind: 'picked', ids: a.ids }
     case 'all': {
       const bill = billOnly(a.filter)
       return bill ? { kind: 'bill', billId: bill, count: a.total } : { kind: 'filter', filter: a.filter, count: a.total }

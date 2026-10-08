@@ -6,10 +6,10 @@ import { QueryView } from '../../ui/QueryView'
 import { Sheet } from '../../ui/Sheet'
 import { type HouseholdInfo, type HouseholdMember, useHousehold } from './hooks'
 import { inviteUrl, useHouseholdActions } from './householdHooks'
+import { avatarLook } from '../../shell/avatar'
 import './settings.css'
 
 const nameOf = (m: HouseholdMember) => m.display_name || m.username || 'Member'
-const HEX = /^#[0-9a-f]{6}$/i
 
 const MoreIcon = () => (
   <svg viewBox="0 0 24 24" className="ui-icon" aria-hidden="true" focusable="false" fill="currentColor">
@@ -96,10 +96,10 @@ export function Household() {
                   <h2 id="members-h" className="settings__group">Members</h2>
                   <ul className="ui-list settings__members">
                     {h.members.map((m) => {
-                      const tint = m.avatar_color && HEX.test(m.avatar_color) ? m.avatar_color : undefined
+                      const avatar = avatarLook(m.avatar_color)
                       return (
                         <li key={m.user_id} className="ui-row">
-                          <span className={tint ? 'avatar' : 'avatar avatar--fallback'} style={tint ? { background: tint } : undefined} aria-hidden="true">
+                          <span className={avatar.className} style={avatar.style} aria-hidden="true">
                             {nameOf(m).slice(0, 1).toUpperCase()}
                           </span>
                           <span className="ui-row__main"><span className="ui-row__title">{m.user_id === me?.id ? `${nameOf(m)} (you)` : nameOf(m)}</span></span>

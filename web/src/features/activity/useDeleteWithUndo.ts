@@ -4,7 +4,7 @@ import { markPending } from '../../data/pending'
 import { useRecurringItems } from '../../data/reads'
 import { enqueue } from '../../offline/queue'
 import { useToast } from '../../ui/Toast'
-import { HOLD_MS, holdDelete, undoDelete } from './heldDeletes'
+import { HOLD_MS, holdDelete, settle, undoDelete } from './heldDeletes'
 import { ACTIVITY_WRITES, deleteKeepalive, patchRows, type Txn, useDeleteTransaction } from './hooks'
 
 const MONTH = new Intl.DateTimeFormat('en-GB', { month: 'short' })
@@ -33,6 +33,8 @@ export function useDeleteWithUndo() {
     }
   }
   return (t: Txn) => {
+    // Undo works for as long as its toast is on screen, even past 5 s while a finger rests on it (P3 M5).
+    let toastShown = true
     holdDelete(t.id, (reason) => {
       // Flushed early (page hidden): the delete is gone, so an Undo still on screen would do nothing.
       if (reason === 'hidden') {
@@ -40,12 +42,16 @@ export function useDeleteWithUndo() {
         if (isOnline()) return void sendOnTeardown(t.id)
       }
       void del.run({ id: t.id }) // offline it queues; on the timer it is an ordinary delete
-    })
+    }, HOLD_MS, () => toastShown)
     const bill = t.recurring_bill_id ? items?.find((i) => i.id === t.recurring_bill_id) : undefined
     const month = t.transaction_date ? MONTH.format(new Date(`${t.transaction_date}T12:00:00`)) : ''
     toast.show(bill ? `Deleted · ${bill.name} ${month} is expected again` : 'Deleted', {
       action: { label: 'Undo', onClick: () => undoDelete(t.id) },
       durationMs: HOLD_MS,
+      onClose: () => {
+        toastShown = false
+        settle(t.id)
+      },
     })
   }
 }

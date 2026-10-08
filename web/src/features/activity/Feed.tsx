@@ -18,7 +18,17 @@ type Props = {
   /** Selection mode: each day's list becomes a multi-select listbox of option rows. */
   selecting?: boolean
   rowProps?: (t: Txn) => { selecting?: boolean; selected?: boolean; onOpen?: (id: string) => void }
-  onLoaded?: (rows: Txn[], total: number) => void
+  onLoaded?: (rows: Txn[], total: number, info: LoadedInfo) => void
+}
+
+/** What "Select › All" needs to know about the list beyond its selectable rows. */
+export type LoadedInfo = {
+  /** Every server row of the filter is loaded. */
+  complete: boolean
+  /** Loaded server rows that can't be selected: a queued edit or delete, or a swipe-delete hold. */
+  excluded: number
+  /** Anything pending or held anywhere (it may match the filter on a page not loaded yet). */
+  pending: boolean
 }
 
 export function Feed(props: Props) {
@@ -75,9 +85,12 @@ function FeedList({ filter, onClear, renderRow, hidden, selecting, rowProps, onL
   // What selection may pick: rows on screen that aren't held, deleted or waiting on a queued edit.
   const selectable = rows.filter((t) => !('pending' in t))
   const selectableKey = selectable.map((t) => t.id).join()
+  const complete = !canLoadMore
+  const excluded = serverRows.length - selectable.length
+  const anyPending = pendingAll.edits.size > 0 || pendingAll.hidden.size > 0 || (hidden?.size ?? 0) > 0
   useEffect(() => {
-    onLoaded?.(selectable, total)
-  }, [selectableKey, total]) // eslint-disable-line react-hooks/exhaustive-deps
+    onLoaded?.(selectable, total, { complete, excluded, pending: anyPending })
+  }, [selectableKey, total, complete, excluded, anyPending]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const onPageLoad = useCallback(
     (i: number, p: TxnPage) => setMore((m) => (m[i] === p ? m : Object.assign([...m], { [i]: p }))),
