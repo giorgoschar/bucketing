@@ -37,3 +37,13 @@ it('the pantry tile letter is at least 4.5:1 on its tile for every tint, light a
     }
   }
 })
+
+// Fix round 1 (review M-6): at 390 px each of the two price buttons is about 160 px wide; .btn is nowrap, so
+// "Refresh prices" would spill past its border with a larger system font.
+it('the Prices today buttons let their label wrap inside the button', () => {
+  const rule = /\.pantry-card__acts \.btn \{([^}]*)\}/.exec(pantry)![1]
+  expect(rule).toMatch(/white-space:\s*normal/)
+  expect(rule).toMatch(/min-width:\s*0/)
+  expect(rule).toMatch(/min-height:\s*4[4-9]px/)
+  expect(rule).toMatch(/height:\s*auto/)
+})

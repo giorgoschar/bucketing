@@ -2,7 +2,7 @@ import { lazy, Suspense, useId, useRef, useState } from 'react'
 import { useOnline } from '../../../data/online'
 import { Sheet } from '../../../ui/Sheet'
 import { OFFLINE_WRITE } from './BarcodeSheet'
-import { editBody, type EditForm, initialForm, OTHER, UNITS } from './edit'
+import { editBody, type EditField, type EditForm, initialForm, OTHER, UNITS } from './edit'
 import { useStockWrites } from './hooks'
 import { ScanIcon } from './icons'
 import type { StockDetail } from './types'
@@ -16,7 +16,7 @@ export function EditSheet({ d, onClose }: { d: StockDetail; onClose: () => void 
   const writes = useStockWrites(d.id)
   const base = useId()
   const [f, setF] = useState<EditForm>(() => initialForm(d))
-  const [error, setError] = useState<{ text: string; barcode: boolean } | null>(null)
+  const [error, setError] = useState<{ text: string; field: EditField | null } | null>(null)
   const [busy, setBusy] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [noCamera, setNoCamera] = useState(false)
@@ -30,14 +30,14 @@ export function EditSheet({ d, onClose }: { d: StockDetail; onClose: () => void 
   const save = async () => {
     if (!online || busy) return
     const r = editBody(d, f)
-    if ('error' in r) return setError({ text: r.error, barcode: r.error.startsWith('A barcode') })
+    if ('error' in r) return setError({ text: r.error, field: r.field })
     if (Object.keys(r.body).length === 0) return onClose()
     setBusy(true)
     setError(null)
     const out = await writes.edit(r.body)
     setBusy(false)
     if (out.ok) return onClose()
-    if (out.kind !== 'auth') setError({ text: out.message, barcode: out.status === 409 })
+    if (out.kind !== 'auth') setError({ text: out.message, field: out.status === 409 ? 'barcode' : null })
   }
 
   const field = (k: 'name' | 'brand', label: string, extra: object = {}) => (
@@ -47,6 +47,8 @@ export function EditSheet({ d, onClose }: { d: StockDetail; onClose: () => void 
     </div>
   )
   const errId = `${base}-error`
+  /** The field the error is about is marked invalid and described by it (review M-4). */
+  const bad = (k: EditField) => (error?.field === k ? { 'aria-invalid': true, 'aria-describedby': errId } : {})
   return (
     <>
       <Sheet open onClose={onClose} title="Edit product" initialFocus={nameRef}
@@ -59,17 +61,18 @@ export function EditSheet({ d, onClose }: { d: StockDetail; onClose: () => void 
           </div>
         }>
         <form id={`${base}-form`} className="pantry-manual" noValidate onSubmit={(e) => { e.preventDefault(); void save() }}>
-          {field('name', 'Name', { ref: nameRef, maxLength: 200, 'aria-invalid': error?.text === 'Give it a name' || undefined })}
+          {field('name', 'Name', { ref: nameRef, maxLength: 200, ...bad('name') })}
           {field('brand', 'Brand', { maxLength: 120 })}
           <div className="pantry-manual__size">
             <div className="ui-field">
               <label className="ui-field__label" htmlFor={`${base}-size`}>Size</label>
               <input id={`${base}-size`} className="ui-input" inputMode="decimal" autoComplete="off" value={f.size}
-                onChange={set('size')} />
+                onChange={set('size')} {...bad('size')} />
             </div>
             <div className="ui-field">
               <label className="ui-field__label" htmlFor={`${base}-unit`}>Unit</label>
-              <select id={`${base}-unit`} className="ui-input" value={f.unit} onChange={set('unit')}>
+              <select id={`${base}-unit`} className="ui-input" value={f.unit} onChange={set('unit')}
+                {...(f.unit === OTHER ? {} : bad('unit'))}>
                 {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
                 <option value={OTHER}>Other…</option>
               </select>
@@ -79,15 +82,15 @@ export function EditSheet({ d, onClose }: { d: StockDetail; onClose: () => void 
             <div className="ui-field">
               <label className="ui-field__label" htmlFor={`${base}-other`}>Unit name</label>
               <input id={`${base}-other`} className="ui-input" autoComplete="off" maxLength={20} placeholder="e.g. rolls"
-                value={f.otherUnit} onChange={set('otherUnit')} />
+                value={f.otherUnit} onChange={set('otherUnit')} {...bad('unit')} />
             </div>
           )}
           <div className="ui-field">
             <label className="ui-field__label" htmlFor={`${base}-barcode`}>Barcode</label>
             <div className="pantry-add__typed">
               <input ref={barcodeRef} id={`${base}-barcode`} className="ui-input" inputMode="numeric" autoComplete="off"
-                value={f.barcode} onChange={set('barcode')} aria-invalid={error?.barcode || undefined}
-                aria-describedby={error?.barcode ? errId : noCamera ? `${base}-nocam` : undefined} />
+                value={f.barcode} onChange={set('barcode')} aria-invalid={error?.field === 'barcode' || undefined}
+                aria-describedby={error?.field === 'barcode' ? errId : noCamera ? `${base}-nocam` : undefined} />
               <button type="button" className="btn pantry-add__scan" disabled={!online}
                 onClick={() => { setNoCamera(false); setScanning(true) }}>
                 <ScanIcon />Scan

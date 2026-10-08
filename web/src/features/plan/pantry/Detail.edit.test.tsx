@@ -79,9 +79,38 @@ it('Edit: a free-text unit, a comma size, and clearing the brand', () => {
   const f = { name: 'Barilla spaghetti', brand: ' ', size: '1,5', unit: 'other', otherUnit: ' packs ', barcode: '8076802085738' }
   expect(editBody(d, f)).toEqual({ body: { brand: null, unit_quantity: 1.5, unit: 'packs' } })
   expect(editBody(d, { ...f, size: '' })).toEqual({ body: { brand: null, unit_quantity: null, unit: null } })
-  expect(editBody(d, { ...f, name: '  ' })).toEqual({ error: 'Give it a name' })
-  expect(editBody(d, { ...f, barcode: '12ab' })).toEqual({ error: 'A barcode is 6 to 14 digits' })
-  expect(editBody(d, { ...f, size: '2', otherUnit: '' })).toEqual({ error: 'Give the size a unit' })
+  expect(editBody(d, { ...f, name: '  ' })).toEqual({ error: 'Give it a name', field: 'name' })
+  expect(editBody(d, { ...f, barcode: '12ab' })).toEqual({ error: 'A barcode is 6 to 14 digits', field: 'barcode' })
+  expect(editBody(d, { ...f, size: '2', otherUnit: '' })).toEqual({ error: 'Give the size a unit', field: 'unit' })
+})
+
+// Fix round 1 (review M-4): each validation error is tied to its field.
+it.each<[string, string, string, string]>([
+  ['Name', '  ', 'Name', 'Give it a name'],
+  ['Size', 'abc', 'Size', 'Size must be a number above 0'],
+  ['Barcode', '12', 'Barcode', 'A barcode is 6 to 14 digits'],
+])('Edit: a bad %s marks that field invalid and describes it with the error', async (label, value, field, message) => {
+  const fake = fakeApi(routes())
+  renderWithProviders(<Detail id="s1" />)
+  const sheet = await openEdit()
+  fireEvent.change(within(sheet).getByLabelText(label), { target: { value } })
+  fireEvent.click(within(sheet).getByRole('button', { name: 'Save changes' }))
+  expect(await within(sheet).findByRole('alert')).toHaveTextContent(message)
+  expect(within(sheet).getByLabelText(field)).toHaveAttribute('aria-invalid', 'true')
+  expect(within(sheet).getByLabelText(field)).toHaveAccessibleDescription(message)
+  expect(fake.callsTo(PATCH)).toHaveLength(0)
+})
+
+it('Edit: a size with no unit name marks the unit name field', async () => {
+  fakeApi(routes())
+  renderWithProviders(<Detail id="s1" />)
+  const sheet = await openEdit()
+  fireEvent.change(within(sheet).getByLabelText('Unit'), { target: { value: 'other' } })
+  fireEvent.click(within(sheet).getByRole('button', { name: 'Save changes' }))
+  await within(sheet).findByRole('alert')
+  expect(within(sheet).getByLabelText('Unit name')).toHaveAttribute('aria-invalid', 'true')
+  expect(within(sheet).getByLabelText('Unit name')).toHaveAccessibleDescription('Give the size a unit')
+  expect(within(sheet).getByLabelText('Name')).not.toHaveAttribute('aria-invalid')
 })
 
 it('Edit: a barcode another product has is said inline, and the sheet stays open', async () => {

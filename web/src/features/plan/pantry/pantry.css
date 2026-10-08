@@ -162,7 +162,9 @@
 .pantry-card__problem { margin: 0; padding: 9px 12px; border-radius: var(--r-md); background: var(--warn-soft); color: var(--warn); font-size: 13px; font-weight: 650; }
 .pantry-card__btn { border: 1px solid var(--line); background: transparent; color: var(--ink); }
 .pantry-card__acts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.pantry-card__acts .btn { min-width: 0; padding-inline: 10px; }
+/* Two labels side by side at 390 px: they may wrap inside their button rather than spill past it. */
+.pantry-card__acts .btn { min-width: 0; height: auto; min-height: 48px; padding: 6px 10px; white-space: normal; text-align: center; line-height: 1.2; }
+.pantry-card__acts .btn .ui-icon { flex: none; }
 
 /* Detail › Edit in the header; Log a price's € field. */
 .pantry-edit { padding-inline: 8px; }

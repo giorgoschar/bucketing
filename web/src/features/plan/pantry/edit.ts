@@ -8,6 +8,9 @@ export const OTHER = 'other'
 
 export interface EditForm { name: string; brand: string; size: string; unit: string; otherUnit: string; barcode: string }
 
+/** The field an error is about, so the sheet can mark and describe it. */
+export type EditField = 'name' | 'size' | 'unit' | 'barcode'
+
 export function initialForm(d: StockDetail): EditForm {
   const known = d.unit != null && (UNITS as readonly string[]).includes(d.unit)
   return {
@@ -21,15 +24,15 @@ export function initialForm(d: StockDetail): EditForm {
 }
 
 /** The form as a PATCH body of only what changed (C2), or an error to show. */
-export function editBody(d: StockDetail, f: EditForm): { body: StockEditBody } | { error: string } {
+export function editBody(d: StockDetail, f: EditForm): { body: StockEditBody } | { error: string; field: EditField } {
   const name = f.name.trim()
-  if (!name) return { error: 'Give it a name' }
+  if (!name) return { error: 'Give it a name', field: 'name' }
   const size = num(f.size, null)
-  if (Number.isNaN(size) || size === 0) return { error: 'Size must be a number above 0' }
+  if (Number.isNaN(size) || size === 0) return { error: 'Size must be a number above 0', field: 'size' }
   const unit = f.unit === OTHER ? f.otherUnit.trim() : f.unit
-  if (size != null && !unit) return { error: 'Give the size a unit' }
+  if (size != null && !unit) return { error: 'Give the size a unit', field: 'unit' }
   const barcode = f.barcode.trim() || null
-  if (barcode != null && !BARCODE.test(barcode)) return { error: 'A barcode is 6 to 14 digits' }
+  if (barcode != null && !BARCODE.test(barcode)) return { error: 'A barcode is 6 to 14 digits', field: 'barcode' }
 
   const body: StockEditBody = {}
   if (name !== d.name) body.name = name
