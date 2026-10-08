@@ -451,3 +451,79 @@ def test_stock_movements_client_id_migration_round_trip(tmp_path):
     assert "client_id" not in {c["name"] for c in insp.get_columns("stock_movements")}
     up = _alembic(["upgrade", "head"], db_url)
     assert up.returncode == 0, up.stderr
+
+
+def test_polish_migration_round_trip(tmp_path):
+    """Polish M1: f2a3b4c5d6e7 follows e1f2a3b4c5d6 and is additive: an index
+    on shopping_lines.stock_item_id, cash_movements.client_id (indexed with
+    the household, not unique), and price_snapshots.source defaulting to
+    'posokanei' for existing rows. The downgrade drops them all."""
+    import importlib.util
+    import uuid
+
+    from sqlalchemy import text
+
+    spec = importlib.util.spec_from_file_location(
+        "polish_mig", ROOT / "alembic" / "versions" / "f2a3b4c5d6e7_polish_round.py"
+    )
+    mig = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mig)
+    assert (mig.revision, mig.down_revision) == ("f2a3b4c5d6e7", "e1f2a3b4c5d6")
+
+    db_url = _db_url(tmp_path, "polish.db")
+    up = _alembic(["upgrade", "e1f2a3b4c5d6"], db_url)
+    assert up.returncode == 0, up.stderr
+    hh, product = str(uuid.uuid4()), str(uuid.uuid4())
+    engine = create_engine(db_url)
+    with engine.begin() as conn:
+        conn.execute(
+            text("INSERT INTO households (id, name, default_currency) VALUES (:i, 'H', 'EUR')"),
+            {"i": hh},
+        )
+        conn.execute(
+            text("INSERT INTO products (id, household_id, name) VALUES (:i, :h, 'Milk')"),
+            {"i": product, "h": hh},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO price_snapshots (id, product_id, retailer, price, is_discount, "
+                "snapshot_date) VALUES (:i, :p, 'ab', 1.59, false, '2026-10-01')"
+            ),
+            {"i": str(uuid.uuid4()), "p": product},
+        )
+    engine.dispose()
+
+    up = _alembic(["upgrade", "head"], db_url)
+    assert up.returncode == 0, up.stderr
+    engine = create_engine(db_url)
+    insp = inspect(engine)
+    assert "client_id" in {c["name"] for c in insp.get_columns("cash_movements")}
+    idx = {i["name"]: i for i in insp.get_indexes("cash_movements")}
+    assert idx["ix_cash_movements_hh_client_id"]["column_names"] == ["household_id", "client_id"]
+    assert not idx["ix_cash_movements_hh_client_id"]["unique"]
+    assert "ix_shopping_lines_stock_item_id" in {
+        i["name"] for i in insp.get_indexes("shopping_lines")
+    }
+    with engine.begin() as conn:
+        assert conn.execute(text("SELECT source FROM price_snapshots")).scalar() == "posokanei"
+        conn.execute(
+            text(
+                "INSERT INTO price_snapshots (id, product_id, retailer, price, is_discount, "
+                "snapshot_date) VALUES (:i, :p, 'lidl', 1.29, false, '2026-10-02')"
+            ),
+            {"i": str(uuid.uuid4()), "p": product},
+        )
+        sources = conn.execute(text("SELECT source FROM price_snapshots")).scalars().all()
+        assert sources == ["posokanei", "posokanei"]
+    engine.dispose()
+
+    down = _alembic(["downgrade", "e1f2a3b4c5d6"], db_url)
+    assert down.returncode == 0, down.stderr
+    insp = inspect(create_engine(db_url))
+    assert "client_id" not in {c["name"] for c in insp.get_columns("cash_movements")}
+    assert "source" not in {c["name"] for c in insp.get_columns("price_snapshots")}
+    assert "ix_shopping_lines_stock_item_id" not in {
+        i["name"] for i in insp.get_indexes("shopping_lines")
+    }
+    up = _alembic(["upgrade", "head"], db_url)
+    assert up.returncode == 0, up.stderr

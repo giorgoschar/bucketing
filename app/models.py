@@ -471,6 +471,8 @@ class CashMovement(Base):
         Index("ix_cash_movements_hh_user_date", "household_id", "user_id", "movement_date"),
         Index("ix_cash_movements_stash_owner_id", "stash_owner_id"),
         Index("ix_cash_movements_transaction_id", "transaction_id"),
+        # The PWA's retry key (polish C5); not unique: the replay window is 24 h.
+        Index("ix_cash_movements_hh_client_id", "household_id", "client_id"),
     )
 
     id = Column(String, primary_key=True, default=gen_id)
@@ -488,6 +490,9 @@ class CashMovement(Base):
     )
     created_at = Column(DateTime, default=utcnow_naive)
     deleted_at = Column(DateTime, nullable=True)
+    # A client-generated uuid4 per cash save: a retry within 24 h returns the
+    # movement it already made (polish C5).
+    client_id = Column(String(36), nullable=True)
 
     @classmethod
     def active(cls):
@@ -1032,7 +1037,8 @@ class StockMovement(Base):
 
 
 class PriceSnapshot(Base):
-    """One retailer's price for a product on a day (from PosoKanei)."""
+    """One retailer's price for a product on a day: from PosoKanei, or one the
+    user logged (``source='manual'``, polish C3)."""
 
     __tablename__ = "price_snapshots"
     __table_args__ = (
@@ -1047,6 +1053,7 @@ class PriceSnapshot(Base):
     unit_price = Column(Numeric(10, 4), nullable=True)
     is_discount = Column(Boolean, default=False, nullable=False)
     snapshot_date = Column(Date, nullable=False)
+    source = Column(String(16), nullable=True, server_default="posokanei")  # or "manual"
 
     product = relationship("Product", back_populates="snapshots")
 
@@ -1064,6 +1071,7 @@ class ShoppingLine(Base):
     __tablename__ = "shopping_lines"
     __table_args__ = (
         Index("ix_shopping_lines_household_id", "household_id"),
+        Index("ix_shopping_lines_stock_item_id", "stock_item_id"),
         # One active tick per stock item; cleared ticks and one-off lines
         # never collide.
         Index(

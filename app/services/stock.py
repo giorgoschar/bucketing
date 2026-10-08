@@ -330,6 +330,48 @@ def update_stock_settings(
     return item
 
 
+class BarcodeTaken(Exception):
+    """Another product of the household already has this barcode (409)."""
+
+
+BARCODE_TAKEN = "Another product already has this barcode"
+
+
+def edit_product(db: Session, item: StockItem, fields: dict) -> StockItem:
+    """Change the item's product details (polish C2). ``fields`` holds only
+    what the client sent, already validated: ``name`` (non-empty), ``brand``,
+    ``unit``, ``unit_quantity`` (> 0 or None) and ``barcode`` (cleaned or
+    None); a None clears the field. Raises :class:`BarcodeTaken` when another
+    product of the household (archived ones too: the unique index covers
+    them) has the barcode."""
+    product = item.product
+    if "barcode" in fields and fields["barcode"] and fields["barcode"] != product.barcode:
+        clash = (
+            db.query(Product.id)
+            .filter(
+                Product.household_id == item.household_id,
+                Product.barcode == fields["barcode"],
+                Product.id != product.id,
+            )
+            .first()
+        )
+        if clash is not None:
+            raise BarcodeTaken(fields["barcode"])
+    limits = {"name": 200, "brand": 100, "unit": 20}
+    for key, value in fields.items():
+        if key in limits:
+            value = _clip(value, limits[key])
+        setattr(product, key, value)
+    item.updated_at = utcnow_naive()
+    try:
+        with db.begin_nested():
+            db.flush()
+    except IntegrityError:
+        # A concurrent edit or add took the barcode between the check and here.
+        raise BarcodeTaken(fields.get("barcode")) from None
+    return item
+
+
 def archive_product(db: Session, hh_id: str, item_id: str) -> StockItem | None:
     """Hide a product from the stock list. History stays (soft delete); its
     active shopping-list tick is cleared."""
@@ -431,6 +473,92 @@ def retailer_label(code: str | None) -> str:
     return _RETAILER_LABELS.get(
         code.lower(), code.replace("_", " ").replace("-", " ").title() if code.isascii() else code
     )
+
+
+OTHER_RETAILER = "other"
+MANUAL = "manual"
+MAX_PRICE = Decimal("100000")
+
+
+def retailer_choices() -> list[dict]:
+    """The stores a logged price can be from: each known chain once (by name;
+    the first code of an alias pair), by name, then "Other" last."""
+    seen: dict[str, str] = {}
+    for code, name in _RETAILER_LABELS.items():
+        seen.setdefault(name, code)
+    rows = [{"code": code, "name": name} for name, code in seen.items()]
+    rows.sort(key=lambda r: r["name"].casefold())
+    return rows + [{"code": OTHER_RETAILER, "name": "Other"}]
+
+
+def known_retailer(code: str | None) -> str | None:
+    """``code`` normalised (lower case) when it is a known chain or "other"."""
+    code = (code or "").strip().lower()
+    return code if code in _RETAILER_LABELS or code == OTHER_RETAILER else None
+
+
+# A size in these units -> how many kg / l / pieces it is, so a logged price
+# gets a unit price comparable with PosoKanei's (per kg or l).
+_UNIT_FACTORS = {
+    "kg": Decimal(1),
+    "g": Decimal("0.001"),
+    "gr": Decimal("0.001"),
+    "l": Decimal(1),
+    "lt": Decimal(1),
+    "ml": Decimal("0.001"),
+    "pcs": Decimal(1),
+}
+
+
+def unit_price_for(product: Product, price: Decimal) -> Decimal | None:
+    """``price`` per kg, l or piece from the product's size, or None when the
+    size or its unit is unknown."""
+    factor = _UNIT_FACTORS.get((product.unit or "").strip().lower())
+    size = to_decimal(product.unit_quantity) if product.unit_quantity is not None else None
+    if factor is None or not size or size <= 0:
+        return None
+    return (to_decimal(price) / (size * factor)).quantize(Decimal("0.0001"))
+
+
+def record_manual_price(
+    db: Session, product: Product, retailer: str, price: Decimal, day: date
+) -> PriceSnapshot:
+    """The price the user paid (polish C3): one ``manual`` snapshot per
+    product, retailer and day; a second entry the same day replaces it (and a
+    PosoKanei snapshot of that retailer and day). It then counts for the
+    cheapest price, today's prices, the history and the advice like any
+    other snapshot. The caller validates and commits."""
+    values = {
+        "price": to_decimal(price).quantize(Decimal("0.01")),
+        "unit_price": unit_price_for(product, price),
+        "is_discount": False,
+        "source": MANUAL,
+    }
+
+    def existing():
+        return (
+            db.query(PriceSnapshot)
+            .filter(
+                PriceSnapshot.product_id == product.id,
+                PriceSnapshot.retailer == retailer,
+                PriceSnapshot.snapshot_date == day,
+            )
+            .first()
+        )
+
+    snap = existing()
+    if snap is None:
+        snap = PriceSnapshot(product_id=product.id, retailer=retailer, snapshot_date=day, **values)
+        try:
+            with db.begin_nested():
+                db.add(snap)
+            return snap
+        except IntegrityError:
+            snap = existing()  # a concurrent save (or the daily refresh) won: update it
+    for key, value in values.items():
+        setattr(snap, key, value)
+    db.flush()
+    return snap
 
 
 def current_prices(db: Session, product_ids) -> dict[str, list[PriceSnapshot]]:
@@ -958,6 +1086,16 @@ def untick(db: Session, hh_id: str, tick_id: str) -> bool:
     return n > 0
 
 
+def untick_item(db: Session, hh_id: str, stock_item_id: str) -> int:
+    """Remove the item's active tick, whoever made it (polish C4). Returns how
+    many were removed (0 or 1); 0 is not an error, so a replay is harmless."""
+    return (
+        _active_lines(db, hh_id)
+        .filter(ShoppingLine.stock_item_id == stock_item_id)
+        .delete(synchronize_session="fetch")
+    )
+
+
 def add_line(
     db: Session,
     hh_id: str,
@@ -1037,8 +1175,10 @@ def apply_ticked(db: Session, hh_id: str, user_id: str | None) -> dict:
     applied = []
     for tick in ticks:
         tick.cleared_at = now
-        item = get_live_item(db, hh_id, tick.stock_item_id)
-        if item is None:
+        # Lock the item first: ``before`` is then the quantity as it is now,
+        # not as this session last loaded it.
+        item = lock_stock_item(db, hh_id, tick.stock_item_id)
+        if item is None or item.product.archived_at is not None:
             continue
         before = to_decimal(item.quantity)
         qty = to_decimal(tick.quantity) if tick.quantity else restock_quantity(item)

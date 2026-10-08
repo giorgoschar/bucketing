@@ -9,20 +9,23 @@ own Decimal encoding (``Num``), so a whole Decimal stays a JSON integer and a
 
 import uuid
 from dataclasses import asdict
-from decimal import Decimal
+from datetime import date as Day
+from decimal import Decimal, InvalidOperation
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, PlainSerializer, WithJsonSchema, field_validator
 from sqlalchemy.orm import Session
 
 from app.api_auth import require_api_auth
+from app.core import database
+from app.core.clock import local_today
 from app.core.database import get_db
 from app.integrations import posokanei
 from app.integrations.posokanei import PosokaneiUnavailable
 from app.services import stock as stock_svc
-from app.services.stock import ShoppingIdConflict, StockError
+from app.services.stock import BARCODE_TAKEN, BarcodeTaken, ShoppingIdConflict, StockError
 
 router = APIRouter(prefix="/stock", tags=["stock"])
 products_router = APIRouter(prefix="/products", tags=["stock"])
@@ -445,9 +448,23 @@ class StockAdjust(BaseModel):
         return v or None
 
 
+def _optional_text(v):
+    v = (v or "").strip() if isinstance(v, str) or v is None else str(v).strip()
+    return v or None
+
+
 class StockSettingsIn(BaseModel):
+    """``PATCH /stock/{id}``: the settings, and (polish C2) the product's
+    details. Only the keys sent change; for brand, unit, size and barcode a
+    null (or blank) clears the field. Invalid values are a 422."""
+
     min_quantity: float | str | None = None
     track_price: bool | None = None
+    name: str | None = None  # 1-200 characters after trimming; never cleared
+    brand: str | None = None
+    unit: str | None = None
+    unit_quantity: float | str | None = None  # the size: > 0
+    barcode: str | None = None  # 6-14 digits
 
     @field_validator("min_quantity")
     @classmethod
@@ -458,6 +475,85 @@ class StockSettingsIn(BaseModel):
             return stock_svc.parse_quantity(v, field="Minimum")
         except StockError as exc:
             raise ValueError(str(exc)) from None
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, v):
+        v = (v or "").strip()
+        if not v:
+            raise ValueError("Name is required.")
+        if len(v) > 200:
+            raise ValueError("Name must be at most 200 characters.")
+        return v
+
+    @field_validator("brand", "unit")
+    @classmethod
+    def _text(cls, v):
+        return _optional_text(v)
+
+    @field_validator("unit_quantity")
+    @classmethod
+    def _size(cls, v):
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return None
+        try:
+            return stock_svc.parse_quantity(v, field="Size", allow_zero=False)
+        except StockError as exc:
+            raise ValueError(str(exc)) from None
+
+    @field_validator("barcode")
+    @classmethod
+    def _barcode(cls, v):
+        try:
+            return stock_svc.clean_barcode(v)
+        except StockError as exc:
+            raise ValueError(str(exc)) from None
+
+
+PRODUCT_FIELDS = ("name", "brand", "unit", "unit_quantity", "barcode")
+
+
+class PriceIn(BaseModel):
+    """``POST /stock/{id}/prices``: the price you paid (polish C3)."""
+
+    price: float | str  # > 0; "1,29" is read as 1.29
+    retailer: str  # a code from GET /stock/retailers ("other" included)
+    date: Day | None = None  # default today; never in the future
+
+    @field_validator("price")
+    @classmethod
+    def _price(cls, v):
+        try:
+            d = Decimal(str(v).strip().replace(",", "."))
+        except (InvalidOperation, ValueError):
+            raise ValueError("Price must be a number.") from None
+        if not d.is_finite():
+            raise ValueError("Price must be a number.")
+        if d <= 0:
+            raise ValueError("Price must be more than 0.")
+        if d > stock_svc.MAX_PRICE:
+            raise ValueError("Price is too large.")
+        return d
+
+    @field_validator("retailer")
+    @classmethod
+    def _retailer(cls, v):
+        code = stock_svc.known_retailer(v)
+        if code is None:
+            raise ValueError("Pick a store from the list.")
+        return code
+
+    @field_validator("date")
+    @classmethod
+    def _date(cls, v):
+        if v is not None and v > local_today():
+            raise ValueError("The date can't be in the future.")
+        return v
+
+
+class RetailerOut(BaseModel):
+    code: str
+    name: str
 
 
 @router.get("", response_model=list[StockItemOut])
@@ -472,8 +568,34 @@ def stock_summary(auth=Depends(require_api_auth), db: Session = Depends(get_db))
     return stock_svc.stock_summary(db, hh_id)
 
 
+@router.get("/retailers", response_model=list[RetailerOut])
+def retailers(auth=Depends(require_api_auth)):
+    """The stores a logged price can be from (the picker): each known chain
+    by name, then ``{"code": "other", "name": "Other"}``."""
+    return stock_svc.retailer_choices()
+
+
+def snapshot_in_background(product_id: str) -> None:
+    """Today's PosoKanei prices for a just-added product, after the reply
+    (best effort, as before). Its own session: the request's is closed."""
+    db = database.SessionLocal()
+    try:
+        product = db.get(stock_svc.Product, product_id)
+        if product is not None and stock_svc.snapshot_now(db, product):
+            db.commit()
+    except Exception:  # never let a background price fetch surface anywhere
+        db.rollback()
+    finally:
+        db.close()
+
+
 @router.post("", status_code=201, response_model=StockItemOut)
-def add_stock(body: StockAdd, auth=Depends(require_api_auth), db: Session = Depends(get_db)):
+def add_stock(
+    body: StockAdd,
+    background: BackgroundTasks,
+    auth=Depends(require_api_auth),
+    db: Session = Depends(get_db),
+):
     user, hh_id = auth
     try:
         size = body.unit_quantity
@@ -498,11 +620,13 @@ def add_stock(body: StockAdd, auth=Depends(require_api_auth), db: Session = Depe
     except StockError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
     db.commit()
+    out = _payloads(db, hh_id, [item])[0]
     # Best effort, as the old app's add: no prices is not an error. After the
-    # commit, so no transaction stays open across the PosoKanei call.
-    if stock_svc.snapshot_now(db, item.product):
-        db.commit()
-    return _payloads(db, hh_id, [item])[0]
+    # reply, so adding never waits on PosoKanei (polish S2); the list shows
+    # the prices on its next fetch.
+    if item.product.posokanei_id:
+        background.add_task(snapshot_in_background, item.product_id)
+    return out
 
 
 @router.post("/{item_id}/adjust", response_model=StockItemOut)
@@ -607,6 +731,21 @@ def untick(tick_id: str, auth=Depends(require_api_auth), db: Session = Depends(g
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.delete("/shopping/ticks", status_code=204)
+def untick_item(
+    stock_item_id: str = Query(..., description="The stock item whose tick to remove"),
+    auth=Depends(require_api_auth),
+    db: Session = Depends(get_db),
+):
+    """Remove the item's active tick, whoever ticked it (polish C4). 204 even
+    when there is none, so a queued untick that meets another phone's tick,
+    or a replay, still lands."""
+    _user, hh_id = auth
+    stock_svc.untick_item(db, hh_id, stock_item_id)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.post("/shopping/lines", status_code=201, response_model=ShoppingLineOut)
 def add_line(body: LineIn, auth=Depends(require_api_auth), db: Session = Depends(get_db)):
     user, hh_id = auth
@@ -663,13 +802,37 @@ def stock_settings(
     auth=Depends(require_api_auth),
     db: Session = Depends(get_db),
 ):
+    """Change an item's settings and (polish C2) its product's details:
+    409 when another product of the household has the barcode."""
     _user, hh_id = auth
     item = _live_or_404(db, hh_id, item_id)
+    fields = {k: getattr(body, k) for k in PRODUCT_FIELDS if k in body.model_fields_set}
+    if fields:
+        try:
+            stock_svc.edit_product(db, item, fields)
+        except BarcodeTaken:
+            db.rollback()
+            raise HTTPException(status_code=409, detail=BARCODE_TAKEN) from None
     stock_svc.update_stock_settings(
         db, hh_id, item.id, min_quantity=body.min_quantity, track_price=body.track_price
     )
     db.commit()
     return _payloads(db, hh_id, [item])[0]
+
+
+@router.post("/{item_id}/prices", status_code=201, response_model=StockDetailOut)
+def log_price(
+    item_id: str, body: PriceIn, auth=Depends(require_api_auth), db: Session = Depends(get_db)
+):
+    """Log the price you paid (polish C3): stored as a ``manual`` snapshot
+    for that store and day (a second one replaces it). Returns the detail."""
+    _user, hh_id = auth
+    item = _live_or_404(db, hh_id, item_id)
+    stock_svc.record_manual_price(
+        db, item.product, body.retailer, body.price, body.date or local_today()
+    )
+    db.commit()
+    return _detail(db, hh_id, item)
 
 
 @router.post("/{item_id}/refresh", response_model=StockDetailOut)

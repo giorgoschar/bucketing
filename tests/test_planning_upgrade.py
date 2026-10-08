@@ -528,3 +528,47 @@ def test_pantry_works_on_the_upgraded_data(upgraded):
     r = client.post("/api/v1/stock/shopping/apply-ticked", json={}, headers=headers)
     assert r.status_code == 200, r.text
     assert r.json()["applied"] == [{"stock_item_id": item, "name": "Milk", "before": 0, "after": 2}]
+
+
+def test_polish_works_on_the_upgraded_data(upgraded):
+    """Polish (f2a3b4c5d6e7) on a production-shaped upgrade: a product from
+    before the upgrade can be edited, given a logged price and unticked by
+    item."""
+    client, Session, ids = upgraded
+    with Session() as db:
+        product, item = str(uuid.uuid4()), str(uuid.uuid4())
+        db.execute(
+            text("INSERT INTO products (id, household_id, name) VALUES (:i, :h, 'Milk')"),
+            {"i": product, "h": ids["hh"]},
+        )
+        db.execute(
+            text(
+                "INSERT INTO stock_items (id, household_id, product_id, quantity, min_quantity, "
+                "track_price) VALUES (:i, :h, :p, 0, 1, true)"
+            ),
+            {"i": item, "h": ids["hh"], "p": product},
+        )
+        db.commit()
+
+    r = client.post("/api/v1/auth/login", json={"username": "giorgos", "password": PASSWORD})
+    r = client.post(
+        "/api/v1/auth/totp/verify",
+        json={"pending_token": r.json()["pending_token"], "code": pyotp.TOTP(ids["secret"]).now()},
+    )
+    headers = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    r = client.patch(
+        f"/api/v1/stock/{item}", json={"name": "Γάλα", "barcode": "5201054017906"}, headers=headers
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["name"] == "Γάλα"
+    r = client.post(
+        f"/api/v1/stock/{item}/prices", json={"price": "1,29", "retailer": "lidl"}, headers=headers
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["cheapest"]["retailer"] == "lidl"
+    assert (
+        client.delete(
+            "/api/v1/stock/shopping/ticks", params={"stock_item_id": item}, headers=headers
+        ).status_code
+        == 204
+    )
