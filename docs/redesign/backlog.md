@@ -59,3 +59,7 @@ Gaps found in the current app that the new app (web/) must cover.
   - Find the one flaky vitest test (CI should log its name).
   - The pantry letter tile contrast in light mode is 2.4–3.8 (decorative).
   - The barcode scanner has not been tested on a real iPhone.
+- **Apple Pay follow-ups (2026-10-09):**
+  - "Remember for this merchant" was removed from the Shortcut token for security (rule poisoning). Instead, after a signed-in user sets the category on an Apple Pay expense, offer "Always use X for <merchant>?" in the app.
+  - In-app and online Apple Pay payments don't trigger the iOS "tap" automation. Idea: a manual "Log Apple Pay purchase" shortcut (share sheet or Back Tap) using the same API.
+  - Ask PosoKanei / the Ministry for API access (email draft offered to the user); Open Food Facts for barcode → name and size (offered, not yet approved).
