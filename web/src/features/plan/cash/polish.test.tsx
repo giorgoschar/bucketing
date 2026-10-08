@@ -69,6 +69,65 @@ it('a count that fails is retried with the same client_id', async () => {
   expect(idOf(api, 1)).toBe(idOf(api, 0))
 })
 
+// Fix round 1 (review I-1): the server answers a known id with the earlier movement whatever the body, so
+// the id holds only while the write is the same one.
+async function failedTake() {
+  const api = await renderCash()
+  api.on(MOVEMENTS, () => reply(502))
+  const stash = await screen.findByRole('region', { name: 'My stash' })
+  fireEvent.click(within(stash).getByRole('button', { name: 'Take' }))
+  const sheet = await screen.findByRole('dialog', { name: 'Take cash' })
+  fireEvent.change(within(sheet).getByLabelText('Amount'), { target: { value: '40' } })
+  fireEvent.click(within(sheet).getByRole('button', { name: 'Take €40.00' }))
+  await waitFor(() => expect(posts(api)).toHaveLength(1))
+  await waitFor(() => expect(within(sheet).getByRole('button', { name: 'Take €40.00' })).toBeEnabled())
+  return { api, sheet }
+}
+
+it('after a failed take, a changed amount is a new write: a new client_id', async () => {
+  const { api, sheet } = await failedTake()
+  fireEvent.change(within(sheet).getByLabelText('Amount'), { target: { value: '50' } })
+  fireEvent.click(within(sheet).getByRole('button', { name: 'Take €50.00' }))
+  await waitFor(() => expect(posts(api)).toHaveLength(2))
+  expect(idOf(api, 1)).not.toBe(idOf(api, 0))
+  // Changed again (even back to the first amount): not the body last sent, so another new id.
+  await waitFor(() => expect(within(sheet).getByRole('button', { name: 'Take €50.00' })).toBeEnabled())
+  fireEvent.change(within(sheet).getByLabelText('Amount'), { target: { value: '40' } })
+  fireEvent.click(within(sheet).getByRole('button', { name: 'Take €40.00' }))
+  await waitFor(() => expect(posts(api)).toHaveLength(3))
+  expect(idOf(api, 2)).not.toBe(idOf(api, 1))
+  expect(idOf(api, 2)).not.toBe(idOf(api, 0))
+})
+
+it.each<[string, (sheet: HTMLElement) => void]>([
+  ['the mode', (sheet) => fireEvent.click(within(within(sheet).getByRole('group', { name: 'Cash action' })).getByRole('button', { name: 'Put back' }))],
+  ['the note', (sheet) => fireEvent.change(within(sheet).getByLabelText('Note (optional)'), { target: { value: 'Laiki' } })],
+  ['the date', (sheet) => fireEvent.change(within(sheet).getByLabelText('Date'), { target: { value: '2026-10-05' } })],
+  ['the source', (sheet) => fireEvent.click(within(sheet).getByRole('radio', { name: /Bank or ATM/ }))],
+  ['the spend toggle', (sheet) => fireEvent.click(within(sheet).getByRole('switch', { name: /I spent it on/ }))],
+])('after a failed take, changing %s mints a new client_id', async (_what, change) => {
+  const { api, sheet } = await failedTake()
+  change(sheet)
+  fireEvent.click(within(sheet).getByRole('button', { name: /€40\.00/ }))
+  await waitFor(() => expect(posts(api)).toHaveLength(2))
+  expect(idOf(api, 1)).not.toBe(idOf(api, 0))
+})
+
+it('after a failed count, a different count is a new client_id', async () => {
+  const api = await renderCash({ wallets: cashWallets({ stash: -20 }) })
+  api.on(MOVEMENTS, () => reply(503))
+  fireEvent.click(await screen.findByRole('button', { name: 'Count now' }))
+  const sheet = await screen.findByRole('dialog', { name: 'Count your stash' })
+  fireEvent.change(within(sheet).getByLabelText('Counted'), { target: { value: '0' } })
+  fireEvent.click(within(sheet).getByRole('button', { name: 'Save count' }))
+  await waitFor(() => expect(posts(api)).toHaveLength(1))
+  await waitFor(() => expect(within(sheet).getByRole('button', { name: 'Save count' })).toBeEnabled())
+  fireEvent.change(within(sheet).getByLabelText('Counted'), { target: { value: '5' } })
+  fireEvent.click(within(sheet).getByRole('button', { name: 'Save count' }))
+  await waitFor(() => expect(posts(api)).toHaveLength(2))
+  expect(idOf(api, 1)).not.toBe(idOf(api, 0))
+})
+
 // ---- C6: the wallet's full sum
 
 it('cash of this month logged in another month: "− Logged in another month", and the sum adds up', async () => {

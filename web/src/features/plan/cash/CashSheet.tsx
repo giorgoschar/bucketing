@@ -9,10 +9,9 @@ import { ToggleRow } from '../../../ui/ToggleRow'
 import { centsToString } from '../../composer/amount'
 import { AmountField } from './AmountField'
 import type { CashSheetMode } from './Cash'
-import type { MovementWrite } from './contractTypes'
-import { CENT_EPS, euros, initial, newClientId, tint, typedCents, walletSum } from './format'
-import { useCashWrite } from './hooks'
-import type { CashWalletMemberOut } from './types'
+import { CENT_EPS, euros, initial, tint, typedCents, walletSum } from './format'
+import { useCashWrite, useWriteId } from './hooks'
+import type { CashWalletMemberOut, MovementBody } from './types'
 
 /** The server's OWN_STASH_SHORT (app/services/cash.py); the client pre-checks it with the known stash. */
 const OWN_STASH_SHORT = 'Not enough cash in your stash.'
@@ -54,8 +53,8 @@ export function CashSheet({ mode: initialMode, onClose, stash, members, currency
   const [categoryId, setCategoryId] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  /** One id per write (C5): made when the sheet opens, kept across retries, new after a success. */
-  const [clientId, setClientId] = useState(newClientId)
+  /** One id per write (C5): kept across retries of the same body, new when the body changes or after a success. */
+  const writeId = useWriteId()
   const amountRef = useRef<HTMLInputElement>(null)
   const { run } = useCashWrite()
   const online = useOnline()
@@ -83,8 +82,7 @@ export function CashSheet({ mode: initialMode, onClose, stash, members, currency
 
   const save = async () => {
     if (!ready) return
-    const body: MovementWrite = {
-      client_id: clientId,
+    const body: MovementBody = {
       kind: mode === 'add' ? 'stash_in' : mode,
       amount: centsToString(amount),
       // Still have's preview assumes today (final review m4), so it is always dated today.
@@ -100,10 +98,10 @@ export function CashSheet({ mode: initialMode, onClose, stash, members, currency
     }
     setBusy(true)
     setError(null)
-    const out = await run(body)
+    const out = await run(writeId.stamp(body))
     setBusy(false)
     if (out.ok) {
-      setClientId(newClientId())
+      writeId.done()
       onClose()
     } else if (out.kind === 'rejected') setError(out.message)
   }

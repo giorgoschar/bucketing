@@ -1,6 +1,6 @@
 import { type QueryKey, useQueryClient } from '@tanstack/react-query'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../../api/client'
 import { useCachedQuery } from '../../../data/cachedQuery'
 import { unwrap } from '../../../data/http'
@@ -9,6 +9,8 @@ import { type OnlineOutcome, runOnline } from '../../../data/onlineAction'
 import { db } from '../../../offline/db'
 import { listQueuedBodies, type QueuedBody } from '../../../offline/queuedBodies'
 import { useToast } from '../../../ui/Toast'
+import { newClientId } from './format'
+import type { MovementBody } from './types'
 import type { MovementWrite } from './contractTypes'
 import type { CashMovementOut } from './types'
 
@@ -56,6 +58,25 @@ export function useCashWrite() {
     remove: (id: string) =>
       act(() => api.DELETE('/api/v1/cash/movements/{movement_id}', { params: { path: { movement_id: id } } })),
   }
+}
+
+/**
+ * A cash write's client_id (C5) for a sheet: the same id while the body is the one last sent (a retry after a
+ * failure applies once), a new one as soon as anything in it changes (review I-1: the server answers a known
+ * id with the earlier movement whatever the body, so a changed write must not reuse it), and after a success.
+ */
+export function useWriteId() {
+  const last = useRef<{ id: string; body: string } | null>(null)
+  return useMemo(() => ({
+    /** The body to send, with its client_id. */
+    stamp: (body: MovementBody): MovementWrite => {
+      const key = JSON.stringify(body)
+      if (last.current?.body !== key) last.current = { id: newClientId(), body: key }
+      return { ...body, client_id: last.current.id }
+    },
+    /** After a success: the next write is a new one. */
+    done: () => { last.current = null },
+  }), [])
 }
 
 /** The fields of a queued POST /transactions that say whether it logs the viewer's wallet cash. */
