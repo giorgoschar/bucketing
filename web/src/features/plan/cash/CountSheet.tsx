@@ -3,7 +3,7 @@ import { useOnline } from '../../../data/online'
 import { Sheet } from '../../../ui/Sheet'
 import { centsToString } from '../../composer/amount'
 import { AmountField } from './AmountField'
-import { euros, typedCents } from './format'
+import { euros, newClientId, typedCents } from './format'
 import { useCashWrite } from './hooks'
 
 /**
@@ -14,6 +14,8 @@ export function CountSheet({ stash, currency, onClose }: { stash: number; curren
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  /** One id per count (C5): a retry after a lost reply records it once. New after a success. */
+  const [clientId, setClientId] = useState(newClientId)
   const ref = useRef<HTMLInputElement>(null)
   const { run } = useCashWrite()
   const online = useOnline()
@@ -26,9 +28,12 @@ export function CountSheet({ stash, currency, onClose }: { stash: number; curren
     if (cents === null || busy || !online) return
     setBusy(true)
     setError(null)
-    const out = await run({ kind: 'stash_count', amount: centsToString(cents) })
+    const out = await run({ client_id: clientId, kind: 'stash_count', amount: centsToString(cents) })
     setBusy(false)
-    if (out.ok) onClose()
+    if (out.ok) {
+      setClientId(newClientId())
+      onClose()
+    }
     else if (out.kind === 'rejected') setError(out.message)
   }
 

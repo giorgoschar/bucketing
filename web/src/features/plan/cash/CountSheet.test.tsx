@@ -11,6 +11,9 @@ beforeEach(() => {
 })
 afterEach(resetTestEnv)
 
+// Polish C5: every cash write carries the sheet's client_id (a uuid4).
+const anId = expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+
 const posts = (api: ReturnType<typeof fakeApi>) =>
   api.calls.filter((c) => c.method === 'POST' && c.path === '/api/v1/cash/movements')
 
@@ -25,7 +28,7 @@ it('Count now opens the count; the preview shows book → counted · correction;
   expect(within(sheet).getByTestId('count-preview')).toHaveTextContent('By the book −€20.00 → Counted €0.00 · correction +€20.00')
   fireEvent.click(within(sheet).getByRole('button', { name: 'Save count' }))
   await waitFor(() => expect(posts(api)).toHaveLength(1))
-  expect(posts(api)[0].body).toEqual({ kind: 'stash_count', amount: '0.00' })
+  expect(posts(api)[0].body).toEqual({ client_id: anId, kind: 'stash_count', amount: '0.00' })
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
 })
 
@@ -40,7 +43,7 @@ it('Count from the stash card: a lower count is a negative correction; a comma d
   expect(within(sheet).getByTestId('count-preview')).toHaveTextContent('By the book €380.00 → Counted €359.50 · correction −€20.50')
   fireEvent.click(within(sheet).getByRole('button', { name: 'Save count' }))
   await waitFor(() => expect(posts(api)).toHaveLength(1))
-  expect(posts(api)[0].body).toEqual({ kind: 'stash_count', amount: '359.50' })
+  expect(posts(api)[0].body).toEqual({ client_id: anId, kind: 'stash_count', amount: '359.50' })
 })
 
 it('a count that matches says so, and can still be saved', async () => {

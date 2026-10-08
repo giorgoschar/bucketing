@@ -8,7 +8,7 @@ import { toTransactionPage } from '../../data/reads'
 import type { EntryOut, MatchOut } from '../../data/types'
 import { useFailedQueueRows } from '../../offline/useQueue'
 import { todayISO } from '../../ui/format'
-import { useCashWallets } from '../plan/cash/hooks'
+import { useCashWallets, useQueuedCashLogged } from '../plan/cash/hooks'
 import { useStockSummary } from '../plan/pantry/shoppingHooks'
 import { patchEntryEverywhere } from '../plan/entryPatch'
 import { useBudgets, useCategoriesVsUsual, usePlanUpcoming } from '../plan/hooks'
@@ -65,7 +65,11 @@ export function useAttention(): { items: AttentionItem[]; ready: boolean } {
   const budgets = useBudgets().data
   const categories = useCategoriesVsUsual(today.slice(0, 7)).data
   const wallets = useCashWallets(today.slice(0, 7)).data
-  const cashNotLogged = wallets?.members.find((m) => m.is_me)?.wallet.not_yet_logged
+  const me = wallets?.members.find((m) => m.is_me)
+  // Cash already logged but still queued (offline) counts as logged: the row hides until the wallets catch up,
+  // and comes back if the server refuses the write (Cash final review m5).
+  const queuedCash = useQueuedCashLogged(today.slice(0, 7), me?.member_id)
+  const cashNotLogged = me && Math.max(0, Math.round((me.wallet.not_yet_logged - queuedCash) * 100) / 100)
   const pantryLow = useStockSummary().data?.low_count
   const failed = useFailedQueueRows()
   const input: AttentionInput = { today, matches, overdue, upcoming, budgets, categories, cashNotLogged, pantryLow, failed }
