@@ -1,0 +1,36 @@
+/* Split sheet (mock screen 4): a bar that updates as you type, one row per member. */
+.ck-split__total { margin: 0; display: flex; justify-content: space-between; font-size: 15px; color: var(--ink-2); }
+.ck-split__num, .ck-split__amount, .ck-split__input {
+  font-family: var(--font-num); font-variant-numeric: tabular-nums; font-weight: var(--num-weight);
+}
+.ck-split__total .ck-split__num { color: var(--ink); font-size: 17px; }
+.ck-split__card {
+  display: flex; flex-direction: column; padding: 14px 0 4px; background: var(--surface);
+  border: var(--card-border); border-radius: var(--r-lg);
+}
+.ck-split__bar { display: flex; gap: 2px; height: 10px; margin: 0 14px 8px; border-radius: 999px; overflow: hidden; background: var(--surface-2); }
+.ck-split__seg { flex-basis: 0; min-width: 0; transition: flex-grow 200ms ease-out; }
+.ck-split__row { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 6px 14px; }
+.ck-split__row + .ck-split__row { border-top: 1px solid var(--line); }
+.ck-split__avatar {
+  --tint: var(--accent);
+  flex: none; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center;
+  background: color-mix(in srgb, var(--tint) 22%, transparent); color: var(--ink); font-size: 13px; font-weight: 700;
+}
+.ck-split__who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.ck-split__name { font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ck-split__sub { font-size: 12px; color: var(--muted); }
+.ck-split__field { position: relative; display: inline-flex; align-items: center; }
+.ck-split__input {
+  width: 112px; height: 44px; box-sizing: border-box; padding: 0 12px; text-align: right; font-size: 16px;
+  border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); color: var(--ink);
+}
+.ck-split__input:focus-visible { outline: none; border: 2px solid var(--accent); padding: 0 11px; }
+.ck-split__field:has(.ck-split__unit) .ck-split__input { padding-right: 26px; }
+.ck-split__unit { position: absolute; right: 10px; font-size: 14px; color: var(--muted); pointer-events: none; }
+.ck-split__amount { font-size: 16px; padding: 0 12px; }
+.ck-split__amount--bad { color: var(--neg); }
+.ck-split__note { margin: 0; padding: 10px 12px; border-radius: var(--r-md); background: var(--surface-2); font-size: 13.5px; color: var(--ink-2); }
+.ck-split__note--bad { background: var(--neg-soft); color: var(--neg); }
+@media (prefers-reduced-motion: reduce) { .ck-split__seg { transition: none; } }
+.ck-split__input[aria-invalid="true"] { border-color: var(--neg); }

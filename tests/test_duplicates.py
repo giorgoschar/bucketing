@@ -240,3 +240,19 @@ def test_duplicates_page_is_household_scoped(client, db, authed, make_household)
 
     r = client.get("/transactions/duplicates")
     assert "VictimSecret" not in r.text
+
+
+def test_duplicates_page_honours_keep_both(client, db, authed):
+    """The legacy page drops a pair dismissed with "Keep both", like the API does."""
+    from app.models import DuplicateDismissal
+
+    a = _expense(db, authed, 61.00, notes="KeptPairA")
+    b = _expense(db, authed, 61.00, notes="KeptPairB")
+    first, second = sorted([a.id, b.id])
+    db.add(DuplicateDismissal(household_id=authed.household_id, first_id=first, second_id=second))
+    db.commit()
+
+    r = client.get("/transactions/duplicates")
+    assert r.status_code == 200
+    assert "KeptPairB" not in r.text
+    assert "Nothing looks duplicated" in r.text

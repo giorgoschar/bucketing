@@ -44,8 +44,8 @@ def test_head_loads_the_file_before_alpine(source):
     """Deferred scripts run in document order and Alpine initialises on start,
     so any factory it needs must already have been evaluated."""
     base = Path("templates/base.html").read_text()
-    src = f'src="/{source}"'
-    alpine = 'src="/static/vendor/alpine.min.js"'
+    src = f"src=\"{{{{ static_url('{source.removeprefix('static/')}') }}}}\""
+    alpine = "src=\"{{ static_url('vendor/alpine.min.js') }}\""
     assert src in base, f"{src} is not loaded"
     # Match the tags, not prose mentioning the filename.
     assert base.index(src) < base.index(alpine), f"/{source} must load before alpine.min.js"
@@ -180,7 +180,7 @@ def test_built_stylesheet_exists_and_is_substantial():
 
 def test_every_base_template_links_the_stylesheet():
     for base in ("templates/base.html", "templates/auth/base_auth.html"):
-        assert "/static/css/app.css" in Path(base).read_text(), f"{base} has no stylesheet"
+        assert "static_url('css/app.css')" in Path(base).read_text(), f"{base} has no stylesheet"
 
 
 def test_tailwind_scans_the_static_js():
@@ -323,7 +323,7 @@ def test_tooltip_listener_is_delegated_and_registered_once():
 
 def test_head_loads_the_tooltip_listener():
     head = Path("templates/base.html").read_text().split("</head>")[0]
-    assert "/static/chart-tooltip.js" in head
+    assert "static_url('chart-tooltip.js')" in head
 
 
 def test_tooltip_style_is_hand_written_not_purgeable_tailwind():
@@ -401,7 +401,7 @@ def test_lib_js_has_delegated_confirm_and_is_loaded():
     lib = (STATIC / "lib.js").read_text()
     assert "data-confirm" in lib or "[data-confirm]" in lib
     assert "confirm(" in lib
-    assert 'src="/static/lib.js"' in Path("templates/base.html").read_text()
+    assert "src=\"{{ static_url('lib.js') }}\"" in Path("templates/base.html").read_text()
     sw = (STATIC / "sw.js").read_text()
     assert "/static/lib.js" in sw
 
@@ -686,9 +686,9 @@ def test_there_is_one_csrf_token_reader():
 
 def test_lib_js_loads_before_other_scripts_that_use_it():
     head = Path("templates/base.html").read_text().split("</head>")[0]
-    lib = head.index('src="/static/lib.js"')
+    lib = head.index("src=\"{{ static_url('lib.js') }}\"")
     for src in ("receipt-scanner.js", "app-components.js", "offline.js"):
-        assert lib < head.index(f'src="/static/{src}"'), src
+        assert lib < head.index(f"src=\"{{{{ static_url('{src}') }}}}\""), src
 
 
 def test_push_is_not_auto_subscribed_on_every_page_load():
@@ -782,3 +782,27 @@ def test_stock_is_in_both_navs_and_mobile_nav_stays_at_seven():
     assert "('/stock'" in mobile
     assert mobile.count("('/") <= 7
     assert 'href="/settlement"' in Path("templates/person.html").read_text()
+
+
+def test_head_assets_are_content_versioned():
+    """The SW serves /static/ cache-first; an unversioned script URL lets a
+    freshly deployed page run against the previous release's cached JS."""
+    base = Path("templates/base.html").read_text()
+    assert not re.search(r'src="/static/[^"]+\.js"', base)
+
+
+def test_static_url_changes_with_content(tmp_path, monkeypatch):
+    from app import templates as t
+
+    monkeypatch.setattr(t, "STATIC_DIR", tmp_path)
+    monkeypatch.setattr(t, "_asset_hashes", {})
+    f = tmp_path / "a.js"
+    f.write_text("one")
+    first = t.static_url("a.js")
+    f.write_text("two")
+    import os
+
+    os.utime(f, (1, 1))
+    assert first.startswith("/static/a.js?v=")
+    assert t.static_url("a.js") != first
+    assert t.static_url("missing.js") == "/static/missing.js"

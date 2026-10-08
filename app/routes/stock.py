@@ -73,14 +73,7 @@ def _groceries_category_id(db, hh_id) -> str | None:
 
 def snapshot_now(db, product) -> bool:
     """Fetch and store today's prices for a linked product. False if unavailable."""
-    if not product.posokanei_id:
-        return False
-    try:
-        summary = posokanei.get(product.posokanei_id)
-    except PosokaneiUnavailable:
-        return False
-    stock_svc.record_snapshots(db, product, summary, local_today())
-    return True
+    return stock_svc.snapshot_now(db, product)
 
 
 @router.get("/stock", response_class=HTMLResponse)

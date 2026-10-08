@@ -10,6 +10,7 @@ Postgres instead: its public schema is dropped and recreated for every test.
 """
 
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -176,6 +177,31 @@ def make_household(db):
         )
 
     return _make
+
+
+_ID_RE = re.compile(
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+    r"|[A-Za-z0-9_\-.]{20,}"
+)
+
+
+def without_ids(text):
+    """`text` minus UUIDs and long opaque tokens (CSRF values, signed cookies,
+    hashed asset names), so a "no 777 on this page" check can't trip on a
+    random id that happens to contain those digits."""
+    return _ID_RE.sub(" ", text)
+
+
+def json_numbers(value):
+    """Every number anywhere in a parsed JSON value (bools excluded)."""
+    if isinstance(value, dict):
+        for v in value.values():
+            yield from json_numbers(v)
+    elif isinstance(value, list):
+        for v in value:
+            yield from json_numbers(v)
+    elif isinstance(value, int | float) and not isinstance(value, bool):
+        yield value
 
 
 def form_csrf(client, path):

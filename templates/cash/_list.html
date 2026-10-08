@@ -104,7 +104,7 @@
   <div class="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 divide-y divide-gray-100 dark:divide-gray-800">
     {% for mv in movements %}
     {% set mine = mv.user_id == user.id %}
-    {% set to_stash = mv.kind in ('stash_in', 'put_back') or not mine %}
+    {% set to_stash = mv.kind in ('stash_in', 'put_back', 'stash_count') or not mine %}
     <div class="flex items-center gap-3 px-4 py-3">
       <span class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0
                    {% if mv.kind == 'still_have' %}bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300{% elif to_stash %}bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400{% else %}bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400{% endif %}">
@@ -117,6 +117,7 @@
           {%- elif mv.kind == 'stash_in' %}Added to your stash
           {%- elif mv.kind == 'put_back' %}Put back into your stash
           {%- elif mv.kind == 'still_have' %}Still have: {{ mv.amount | currency(cur) }}
+          {%- elif mv.kind == 'stash_count' %}Recounted your stash ({{ '+' if mv.amount > 0 else ('−' if mv.amount < 0 else '') }}{{ (mv.amount | abs) | currency(cur) }})
           {%- elif mv.kind == 'take' and mv.stash_owner_id == user.id %}Took from your stash
           {%- elif mv.kind == 'take' and mv.stash_owner_id %}Took from {{ names.get(mv.stash_owner_id, 'a former member') }}'s stash
           {%- elif mv.kind == 'take' %}Took from the bank
@@ -127,7 +128,7 @@
           {%- if mv.transaction_id and mine %} · <a href="/transactions/{{ mv.transaction_id }}/edit" class="underline decoration-dotted">for an expense</a>{% endif %}
         </p>
       </div>
-      {% if mv.kind != 'still_have' %}
+      {% if mv.kind not in ('still_have', 'stash_count') %}
       <span class="text-sm font-semibold">{{ mv.amount | currency(cur) }}</span>
       {% endif %}
       {% if mine %}

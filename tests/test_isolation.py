@@ -9,6 +9,7 @@ household.
 from datetime import date
 
 from app.models import RecurringBill, Transaction, TransactionSplit
+from tests.conftest import without_ids
 
 
 def _make_txn(client, headers, bucket_id, amount="10"):
@@ -173,7 +174,8 @@ def test_insights_only_reports_own_household(client, db, authed, make_household)
     _make_txn(client, authed.headers, authed.bucket_id, amount="10")
     r = client.get("/insights?preset=all_time")
     assert r.status_code == 200
-    assert "9,999" not in r.text and "9999" not in r.text
+    page = without_ids(r.text)
+    assert "9,999" not in page and "9999" not in page
 
 
 def test_non_owner_cannot_rename_household(client, db, make_household, login):

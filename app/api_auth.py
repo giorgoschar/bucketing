@@ -20,6 +20,7 @@ import hashlib
 import hmac
 import secrets
 from datetime import UTC, datetime, timedelta
+from urllib.parse import urlsplit
 
 import jwt
 from fastapi import Depends, HTTPException, Request, status
@@ -142,26 +143,98 @@ def _decode_token(token: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def require_api_auth(
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
-    db: Session = Depends(get_db),
-):
-    """
-    Full API auth dependency.  Validates the Bearer access token and enforces:
-      1. Token present, valid signature, not expired
-      2. scope == 'api' (not a pending 2FA token)
-      3. User exists in DB
-      4. session_version matches (invalidated on password/TOTP change)
-      5. TOTP enrolled
+_UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
 
-    Returns (user, household_id).
+
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
+def _origin_of(url: str | None) -> str | None:
+    """Canonical scheme://host[:port] of a URL or Origin header, else None.
+
+    Lowercases scheme and host, drops a default port, path, query and userinfo, so
+    "https://Expenses.example:443/" and "https://expenses.example" compare equal.
+    "null", schemeless or malformed values give None (never equal to anything).
     """
-    if not credentials:
+    try:
+        parts = urlsplit((url or "").strip())
+        port = parts.port
+    except ValueError:
+        return None
+    scheme = parts.scheme.lower()
+    host = parts.hostname  # already lowercased, userinfo stripped
+    if scheme not in _DEFAULT_PORTS or not host:
+        return None
+    if ":" in host:
+        host = f"[{host}]"
+    if port is None or port == _DEFAULT_PORTS[scheme]:
+        return f"{scheme}://{host}"
+    return f"{scheme}://{host}:{port}"
+
+
+def _app_origin(request: Request) -> str | None:
+    # Production refuses to start without APP_BASE_URL; the request URL is the DEBUG fallback.
+    return _origin_of(settings.app_base_url or str(request.base_url))
+
+
+def _cookie_auth(request: Request, db: Session, *, allow_unenrolled: bool = False):
+    """Session-cookie auth for the new app at /app (same origin, no tokens in JS)."""
+    from app.auth import COOKIE_NAME, csrf_matches, decode_cookie
+
+    # CORS allows some origins for Bearer clients (mobile/Capacitor); the cookie is
+    # for the same-origin app only, so a cross-origin request never rides on it.
+    # Same-origin fetches send Origin on POST and often omit it on GET: both pass.
+    origin = request.headers.get("origin")
+    if origin is not None and (
+        _origin_of(origin) is None or _origin_of(origin) != _app_origin(request)
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-            headers={"WWW-Authenticate": "Bearer"},
+            detail="Cross-origin cookie requests are not allowed",
         )
+
+    unauth = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Not authenticated",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    raw = request.cookies.get(COOKIE_NAME)
+    session = decode_cookie(raw) if raw else None
+    if not session or session.get("state") != "authenticated":
+        raise unauth
+    user = db.get(User, session.get("user_id"))
+    if not user or session.get("sv", -1) != user.session_version:
+        raise unauth
+    hh_id = session.get("hh_id")
+    if not _is_member(db, hh_id, user.id):
+        raise unauth
+    if request.method in _UNSAFE and not csrf_matches(request, user.id):
+        raise HTTPException(status_code=403, detail="CSRF token missing or invalid")
+    if not allow_unenrolled and not user.totp_enabled and session.get("amr") != "oidc":
+        raise HTTPException(status_code=403, detail="TOTP enrollment required")
+    # The offline queue names the account it was saved under; the shared session cookie may have
+    # flipped to someone else since, and a queued write must never land in their household.
+    expected = request.headers.get("X-Expected-Account")
+    if expected is not None and expected != f"{user.id}:{hh_id}":
+        raise HTTPException(status_code=412, detail="Signed in as a different account")
+    # Fully validated: lets the security-headers middleware re-issue a missing CSRF cookie.
+    request.state.user = user
+    request.state.user_id = user.id
+    from app.auth import csrf_for_request
+
+    csrf_for_request(request)  # a token near its end of life is replaced via the middleware
+    return user, hh_id
+
+
+def _api_auth(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None,
+    db: Session,
+    *,
+    allow_unenrolled: bool,
+):
+    if not credentials:
+        return _cookie_auth(request, db, allow_unenrolled=allow_unenrolled)
 
     if credentials.credentials.startswith(PAT_PREFIX):
         # Personal ingest tokens only ever authenticate the ingest endpoint.
@@ -197,6 +270,7 @@ def require_api_auth(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    # allow_unenrolled is for the cookie session only; a Bearer token always needs 2FA.
     if not user.totp_enabled:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -204,6 +278,35 @@ def require_api_auth(
         )
 
     return user, claims["hh"]
+
+
+def require_api_auth(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    db: Session = Depends(get_db),
+):
+    """
+    Full API auth dependency.  Validates the Bearer access token and enforces:
+      1. Token present, valid signature, not expired
+      2. scope == 'api' (not a pending 2FA token)
+      3. User exists in DB
+      4. session_version matches (invalidated on password/TOTP change)
+      5. TOTP enrolled
+
+    Returns (user, household_id).
+    """
+    return _api_auth(request, credentials, db, allow_unenrolled=False)
+
+
+def require_api_auth_enrolling(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    db: Session = Depends(get_db),
+):
+    """require_api_auth without the "2FA enrolled" check: for the three
+    security endpoints a signed-in member needs to set 2FA up again after
+    turning it off (2d §7.5). Everything else uses require_api_auth."""
+    return _api_auth(request, credentials, db, allow_unenrolled=True)
 
 
 PAT_PREFIX = "pat_"

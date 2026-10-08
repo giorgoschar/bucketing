@@ -6,6 +6,7 @@ from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api_auth import require_api_auth, revoke_member_access
@@ -23,10 +24,12 @@ from app.core.database import get_db
 from app.core.ratelimit import limiter
 from app.models import (
     Category,
+    CategoryRule,
     Household,
     HouseholdMember,
     Invitation,
     MemberRole,
+    Transaction,
     User,
 )
 from app.services import revoke_user_tokens
@@ -88,6 +91,9 @@ def update_profile(
     db: Session = Depends(get_db),
 ):
     user, hh_id = auth
+    name = body.display_name.strip()
+    if not 1 <= len(name) <= 100:
+        raise HTTPException(status_code=400, detail="Name must be 1 to 100 characters.")
     email_clean = body.email.strip().lower() if body.email else None
     if email_clean:
         conflict = db.query(User).filter(User.email == email_clean, User.id != user.id).first()
@@ -95,7 +101,7 @@ def update_profile(
             raise HTTPException(
                 status_code=409, detail="Email already registered to another account"
             )
-    user.display_name = body.display_name.strip()
+    user.display_name = name
     user.email = email_clean
     user.avatar_color = parse_color(body.avatar_color, field="Avatar colour")
     db.commit()
@@ -122,6 +128,7 @@ def change_password(
     if len(body.new_password) < 12:
         raise HTTPException(status_code=400, detail="Password must be at least 12 characters")
     user.password_hash = hash_password(body.new_password)
+    user.oidc_subject = None  # account recovery: unlink the passkey too
     invalidate_user_sessions(db, user)  # all cookies, access and refresh tokens
     revoke_user_tokens(db, user.id)  # and personal Shortcut tokens
     db.commit()
@@ -254,6 +261,8 @@ def _category_dict(c: Category) -> dict:
 
 @router.get("/categories")
 def list_categories(auth=Depends(require_api_auth), db: Session = Depends(get_db)):
+    """Categories with how many active expenses and rules use each (2d §5.3:
+    the delete confirmation names both counts)."""
     user, hh_id = auth
     cats = (
         db.query(Category)
@@ -261,7 +270,30 @@ def list_categories(auth=Depends(require_api_auth), db: Session = Depends(get_db
         .order_by(Category.is_default.desc(), Category.name)
         .all()
     )
-    return [_category_dict(c) for c in cats]
+    expenses = dict(
+        db.query(Transaction.category_id, func.count(Transaction.id))
+        .filter(
+            Transaction.household_id == hh_id,
+            Transaction.active(),
+            Transaction.category_id.isnot(None),
+        )
+        .group_by(Transaction.category_id)
+        .all()
+    )
+    rules = dict(
+        db.query(CategoryRule.category_id, func.count(CategoryRule.id))
+        .filter(CategoryRule.household_id == hh_id)
+        .group_by(CategoryRule.category_id)
+        .all()
+    )
+    return [
+        {
+            **_category_dict(c),
+            "expense_count": expenses.get(c.id, 0),
+            "rule_count": rules.get(c.id, 0),
+        }
+        for c in cats
+    ]
 
 
 @router.post("/categories", status_code=status.HTTP_201_CREATED)
@@ -315,13 +347,17 @@ def delete_category(
 
     # Detach references first — category_id FKs have no ON DELETE rule, so a
     # referenced category cannot be deleted outright.
-    from app.models import RecurringBill, Transaction
+    from app.models import RecurringBill
 
     db.query(Transaction).filter_by(category_id=category_id).update(
         {"category_id": None}, synchronize_session=False
     )
     db.query(RecurringBill).filter_by(category_id=category_id).update(
         {"category_id": None}, synchronize_session=False
+    )
+    # The FK cascades too, but not every SQLite connection enforces FKs.
+    db.query(CategoryRule).filter_by(household_id=hh_id, category_id=category_id).delete(
+        synchronize_session=False
     )
     db.delete(cat)
     db.commit()

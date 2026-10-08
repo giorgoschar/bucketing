@@ -33,6 +33,7 @@ from app.auth import (
 )
 from app.core.database import get_db
 from app.core.ratelimit import limiter
+from app.login_alerts import alert_failed_second_factor, alert_sign_in
 from app.models import HouseholdMember, User
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -59,6 +60,15 @@ class TokenRefreshRequest(BaseModel):
 
 class LogoutRequest(BaseModel):
     refresh_token: str
+
+
+class MeOut(BaseModel):
+    id: str
+    username: str
+    display_name: str
+    email: str | None
+    avatar_color: str | None
+    household_id: str
 
 
 def _user_dict(user: User) -> dict:
@@ -145,12 +155,14 @@ def totp_verify(request: Request, body: TotpVerifyRequest, db: Session = Depends
     if not verify_totp(db, user, body.code):
         register_failed_login(db, user)
         security_logger.warning("API TOTP verify failed for user_id=%s", user.id)
+        alert_failed_second_factor(db, request, user, claims["hh"])
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP code")
     clear_failed_logins(db, user)
 
     hh_id = claims["hh"]
     access_token = create_access_token(user.id, hh_id, user.session_version)
     refresh_token = create_refresh_token(user.id, hh_id, db, user.session_version)
+    alert_sign_in(db, request, user, hh_id, method="the mobile app")
 
     return {
         "access_token": access_token,
@@ -181,7 +193,7 @@ def logout(body: LogoutRequest, db: Session = Depends(get_db)):
     revoke_refresh_token(body.refresh_token, db)
 
 
-@router.get("/me")
+@router.get("/me", response_model=MeOut)
 def me(auth=Depends(require_api_auth), db: Session = Depends(get_db)):
     """Return the authenticated user's profile."""
     user, hh_id = auth

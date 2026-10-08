@@ -10,9 +10,11 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from starlette.middleware.sessions import SessionMiddleware
 
 # Import models so Alembic / create_all picks them up
 import app.models  # noqa: F401
+from app import web_app
 from app.api import router as api_router
 from app.api.ingest import bearer_token, is_ingest_path, raw_body
 from app.auth import COOKIE_NAME, CSRF_COOKIE_NAME, PENDING_COOKIE_NAME, CSRFError
@@ -119,6 +121,18 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 
 app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
 
+# Authlib keeps the OIDC state, nonce and PKCE verifier here between /app/auth/login
+# and the callback. Lax, because the callback is a cross-site top-level redirect.
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.app_secret_key,
+    session_cookie="oidc_tx",
+    max_age=600,
+    path="/app/auth",
+    same_site="lax",
+    https_only=not settings.debug,
+)
+
 # ---------------------------------------------------------------------------
 # CORS — required for mobile apps and browser-based SPA clients.
 # Configure CORS_ALLOWED_ORIGINS env var with space-separated origins in production.
@@ -180,6 +194,23 @@ async def security_headers(request: Request, call_next):
                 max_age=settings.session_max_age_seconds,
                 secure=not settings.debug,
             )
+    # Rolling session: keeps an active user signed in past the 30-day cap.
+    if getattr(request.state, "user", None) is not None:
+        from app.auth import roll_session
+
+        roll_session(request, response)
+    new_csrf = getattr(request.state, "new_csrf", None)
+    if new_csrf and not any(
+        h.startswith(f"{CSRF_COOKIE_NAME}=") for h in response.headers.getlist("set-cookie")
+    ):
+        response.set_cookie(
+            CSRF_COOKIE_NAME,
+            new_csrf,
+            httponly=False,
+            samesite="strict",
+            max_age=settings.session_max_age_seconds,
+            secure=not settings.debug,
+        )
     pre_nonce = getattr(request.state, "pre_csrf_nonce", None)
     if pre_nonce:
         from app.auth import set_pre_csrf_cookie
@@ -194,17 +225,23 @@ async def security_headers(request: Request, call_next):
     # 'unsafe-eval' stays because Alpine compiles its expressions with
     # new Function(); it also covers WebAssembly compilation for tesseract's
     # core, so 'wasm-unsafe-eval' is not needed.
-    response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
-        "style-src 'self' 'unsafe-inline'; "
-        "worker-src blob: 'self'; "
-        "img-src 'self' data: blob:; "
-        "connect-src 'self' blob:; "
-        "object-src 'none'; "
-        "base-uri 'self'; "
-        "form-action 'self'"
-    )
+    if request.url.path == "/app" or request.url.path.startswith("/app/"):
+        response.headers["Content-Security-Policy"] = web_app.app_csp()
+    else:
+        # The Link-passkey form on /settings posts to /app/auth/link, which redirects
+        # to Pocket ID; browsers check form-action on every redirect hop.
+        form_action = web_app.form_action_sources()
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "worker-src blob: 'self'; "
+            "img-src 'self' data: blob:; "
+            "connect-src 'self' blob:; "
+            "object-src 'none'; "
+            "base-uri 'self'; "
+            f"form-action {form_action}"
+        )
     if not settings.debug:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
@@ -229,6 +266,8 @@ if settings.debug:
 # ---------------------------------------------------------------------------
 # Routers
 # ---------------------------------------------------------------------------
+app.include_router(web_app.router)
+app.include_router(web_app.spa)
 app.include_router(auth.router)
 app.include_router(dashboard.router)
 app.include_router(buckets.router)

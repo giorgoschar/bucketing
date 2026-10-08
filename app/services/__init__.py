@@ -19,6 +19,7 @@ from app.services.cash import (  # noqa: F401
     not_yet_logged,
     parse_month,
     record_movement,
+    record_stash_count,
     stash_balance,
     wallet_summaries,
     wallet_summary,
@@ -37,6 +38,7 @@ from app.services.dashboard import (  # noqa: F401
 from app.services.duplicates import (  # noqa: F401
     DUPLICATE_AMOUNT_TOLERANCE,
     DUPLICATE_WINDOW_DAYS,
+    duplicate_check,
     find_duplicate_candidates,
     find_household_duplicates,
 )

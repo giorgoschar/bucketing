@@ -33,6 +33,7 @@ services:
       - DEBUG=false
       - APP_BASE_URL=${APP_BASE_URL:?set APP_BASE_URL (public https URL, used in invite links)}
       - APP_NAME=Expenses
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - APP_TIMEZONE=${APP_TIMEZONE:-Europe/Athens}
       - TRUST_PROXY_HEADERS=true
       - ENABLE_SCHEDULER=true
@@ -95,6 +96,24 @@ services:
       start_period: 10m
       retries: 1
 
+  # Optional local Pocket ID (passkey sign-in for the new app at /app), for
+  # development only: `docker compose --profile pocketid up -d pocketid`, then
+  # see docs/POCKET-ID.md. Production runs Pocket ID as its own Coolify resource.
+  pocketid:
+    image: ghcr.io/pocket-id/pocket-id:v2
+    profiles: ["pocketid"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:1411:1411"
+    environment:
+      - APP_URL=http://localhost:1411
+      - TRUST_PROXY=false
+      # Local only. Pocket ID v2 refuses to start without a key of at least 16 bytes.
+      - ENCRYPTION_KEY=local-dev-only-key-change-me-0123456789
+    volumes:
+      - pocketid_data:/app/data
+
 volumes:
   postgres_data:
   backups:
+  pocketid_data:

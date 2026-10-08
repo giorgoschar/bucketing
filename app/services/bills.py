@@ -1,6 +1,6 @@
 """
-Generate BillOccurrence rows for a RecurringBill.
-Called when a bill is created or updated.
+Recurring items: generating their expected entries (BillOccurrence rows) and
+paying, receiving, undoing and skipping them.
 """
 
 from datetime import date, datetime
@@ -11,23 +11,33 @@ from dateutil.relativedelta import relativedelta
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.clock import local_today
+from app.core.clock import local_today, utcnow_naive
+from app.core.schedule import MAX_INTERVAL_MONTHS, Rule, RuleKind, iter_entries, period_key
 from app.models import (
     BillOccurrence,
     HouseholdMember,
+    ItemDirection,
     MemberRole,
     OccurrenceStatus,
     PayerMode,
+    PaymentMethod,
     RecurringBill,
     Transaction,
     TransactionSplit,
     TransactionType,
 )
 
-# Guard rails for open-ended bills.
-MAX_INTERVAL_MONTHS = 120  # 10 years between occurrences
-MAX_OCCURRENCES = 600  # hard ceiling on rows generated per bill
-HORIZON_YEARS = 10
+# Entries exist from start_date to this many months from today; the daily
+# planning job tops the window up (spec §3.3). Rows beyond it, left by the old
+# 10-year generation, are kept.
+HORIZON_MONTHS = 13
+
+# What generate_occurrences does with a rule date before today:
+PAST_UNPAID = "unpaid"  # an expected entry (the old behaviour; direct callers)
+PAST_SKIPPED = "skipped"  # a skipped placeholder (the old app's forms)
+PAST_NONE = "none"  # nothing (the new API and the daily top-up)
+
+MAX_OCCURRENCES = 600  # hard ceiling on rows created per call
 
 
 def normalise_interval_months(value: int | None) -> int:
@@ -46,68 +56,136 @@ def normalise_interval_months(value: int | None) -> int:
     return min(value, MAX_INTERVAL_MONTHS)
 
 
-def generate_occurrences(db: Session, bill: RecurringBill) -> None:
-    """
-    Create all BillOccurrence rows for a bill from start_date going forward.
-    Respects end_date and total_occurrences limits.
-    Skips dates that already have an occurrence.
+def horizon_end(today: date) -> date:
+    """The last date the rolling horizon generates entries for."""
+    return today + relativedelta(months=HORIZON_MONTHS)
+
+
+def item_rule(bill: RecurringBill) -> Rule:
+    """The schedule rule stored on ``bill`` (app.core.schedule)."""
+    return Rule(
+        kind=bill.rule_kind or "monthly_interval",
+        interval_months=normalise_interval_months(bill.interval_months),
+        day=bill.rule_day,
+        month=bill.rule_month,
+        adjust=bill.rule_adjust or "none",
+        days=bill.rule_days,
+        weekday=bill.rule_weekday,
+        interval_weeks=bill.rule_interval_weeks or 1,
+    )
+
+
+def generate_occurrences(
+    db: Session, bill: RecurringBill, *, today: date | None = None, past: str = PAST_UNPAID
+) -> int:
+    """Create the missing entries of ``bill`` from start_date to the horizon.
+
+    Dates come from the shared rule engine, so both apps and the scheduler
+    agree. end_date and total_occurrences count from start_date, whether or
+    not a past date gets a row. Every entry carries its rule period (the
+    month, ISO week or year before business-day adjustment, see
+    app.core.schedule.period_key), and a period that already has a row of
+    any status gets no second one (rows from before a change of rule kind
+    block nothing, see _row_period). A rule edit therefore never doubles or
+    drops a salary: paid on the 26th, the rule now says the 28th, that month
+    stays as it is and the next month gets the 28th.
+    ``past`` decides what a date before today becomes (PAST_UNPAID,
+    PAST_SKIPPED or PAST_NONE); only PAST_UNPAID, kept for direct callers,
+    creates expected entries before today. At most MAX_OCCURRENCES rows are
+    created per call. Returns the rows created.
 
     Does not commit — the caller owns the transaction so that a bill and its
-    occurrences are persisted atomically.
+    occurrences are persisted atomically. Raises RuleError for a bad rule.
     """
     bill.interval_months = normalise_interval_months(bill.interval_months)
-
-    existing_dates = {
-        row.due_date for row in db.query(BillOccurrence.due_date).filter_by(bill_id=bill.id).all()
+    today = today or local_today()
+    rule = item_rule(bill)
+    # The old app's forms generate through this same function, so its rows
+    # get their period too; rows it wrote before the planning migration were
+    # backfilled with their due month.
+    taken = {
+        _row_period(rule.kind, period, due)
+        for due, period in db.query(BillOccurrence.due_date, BillOccurrence.period)
+        .filter_by(bill_id=bill.id)
+        .all()
     }
-
-    horizon = date(local_today().year + HORIZON_YEARS, 12, 31)
-    current = bill.start_date
-    count = 0
-
-    while count < MAX_OCCURRENCES:
-        # Stop conditions
-        if bill.total_occurrences and count >= bill.total_occurrences:
+    taken.discard(None)  # rows of another kind's key format block nothing
+    created = 0
+    for due, period in iter_entries(
+        rule,
+        bill.start_date,
+        end=bill.end_date,
+        total=bill.total_occurrences,
+        until=horizon_end(today),
+    ):
+        if created >= MAX_OCCURRENCES:
             break
-        if bill.end_date and current > bill.end_date:
-            break
-        # Don't generate more than HORIZON_YEARS out for open-ended bills
-        if current > horizon:
-            break
-
-        if current not in existing_dates:
-            # A SAVEPOINT keeps a duplicate-date collision from rolling back the
-            # caller's whole transaction — a plain db.rollback() here used to
-            # discard the not-yet-committed bill these rows point at.
-            try:
-                with db.begin_nested():
-                    db.add(
-                        BillOccurrence(
-                            bill_id=bill.id,
-                            due_date=current,
-                            amount=None,  # will use bill.amount unless variable
-                            status=OccurrenceStatus.unpaid,
-                        )
+        if period in taken:
+            continue
+        status = OccurrenceStatus.unpaid
+        if due < today:
+            if past == PAST_NONE:
+                continue
+            if past == PAST_SKIPPED:
+                status = OccurrenceStatus.skipped
+        # A SAVEPOINT keeps a duplicate-date collision from rolling back the
+        # caller's whole transaction — a plain db.rollback() here used to
+        # discard the not-yet-committed bill these rows point at.
+        try:
+            with db.begin_nested():
+                db.add(
+                    BillOccurrence(
+                        bill_id=bill.id, due_date=due, amount=None, status=status, period=period
                     )
-                    db.flush()
-            except IntegrityError:
-                pass
-            existing_dates.add(current)
+                )
+                db.flush()
+            created += 1
+        except IntegrityError:
+            pass
+        taken.add(period)
+    return created
 
-        count += 1
-        current = current + relativedelta(months=bill.interval_months)
+
+def _key_format(kind_or_key: str) -> str:
+    """ "week", "year" or "month": the format of a period key, or of the keys
+    a rule kind produces (app.core.schedule.period_key)."""
+    if kind_or_key == RuleKind.weekly.value or "-W" in kind_or_key:
+        return "week"
+    if kind_or_key in (RuleKind.yearly.value, RuleKind.easter_offset.value):
+        return "year"
+    if len(kind_or_key) == 4 and kind_or_key.isdigit():
+        return "year"
+    return "month"
+
+
+def _row_period(kind: str, period: str | None, due: date) -> str | None:
+    """The period an existing row blocks under a rule of ``kind``, or None.
+
+    Rows the old app wrote have no key: they are monthly_interval entries,
+    never adjusted, so their due month is their key. A row blocks only when
+    its key has the format of the rule's keys. After a change of kind
+    (monthly to yearly, weekly to monthly) the old rows block nothing: a
+    missing future entry would go unnoticed, while a double is visible and
+    can be skipped.
+    """
+    key = period or period_key(RuleKind.monthly_interval.value, due)
+    return key if _key_format(key) == _key_format(kind) else None
 
 
 def delete_future_occurrences(db: Session, bill_id: str) -> None:
-    """Remove all unpaid future occurrences (used when editing a bill).
+    """Remove the future entries an edit may regenerate (spec §3.4.3).
 
-    Does not commit — the caller owns the transaction.
+    Only expected entries after today with no amount set and nothing linked:
+    done and skipped entries, and entries whose amount the user set, are
+    never touched. Does not commit — the caller owns the transaction.
     """
     today = local_today()
     db.query(BillOccurrence).filter(
         BillOccurrence.bill_id == bill_id,
         BillOccurrence.due_date > today,
         BillOccurrence.status == OccurrenceStatus.unpaid,
+        BillOccurrence.amount.is_(None),
+        BillOccurrence.transaction_id.is_(None),
     ).delete(synchronize_session=False)
 
 
@@ -178,6 +256,8 @@ def resolve_bill_payment(
     return paid_by or resolve_bill_payer(db, bill, fallback_user_id), mode
 
 
+EDIT_IN_NEW_APP_MSG = "This item uses a schedule the old app can't edit. Edit it in the new app."
+
 BILL_HAS_HISTORY_MSG = (
     "This bill has payment history, so it can't be deleted — deleting it would "
     "erase those payments. Deactivate it instead (the pause toggle on the bill)."
@@ -185,11 +265,19 @@ BILL_HAS_HISTORY_MSG = (
 
 
 def bill_has_payment_history(db: Session, bill_id: str) -> bool:
-    """True if any occurrence was paid, or skipped with an amount recorded.
+    """True if any occurrence was paid, or skipped with an amount recorded, or
+    any transaction (even a deleted one) is linked to the item.
 
     Deleting such a bill would cascade away the only record of those payments
-    (for bucketless bills the paid occurrence *is* the payment record).
+    (for bucketless bills the paid occurrence *is* the payment record). A
+    linked Fixed-cost expense has no bucket, so the FK's SET NULL would break
+    the transactions CHECK.
     """
+    if (
+        db.query(Transaction.id).filter(Transaction.recurring_bill_id == bill_id).first()
+        is not None
+    ):
+        return True
     return (
         db.query(BillOccurrence.id)
         .filter(
@@ -271,6 +359,17 @@ def claim_occurrence(
     return True
 
 
+def _link_transaction(db: Session, occ: BillOccurrence, txn: Transaction) -> None:
+    """Point ``occ`` at its payment ``txn`` (both the row and the loaded object).
+
+    Does not commit. The one place an entry is linked to a transaction.
+    """
+    db.query(BillOccurrence).filter(BillOccurrence.id == occ.id).update(
+        {BillOccurrence.transaction_id: txn.id}, synchronize_session=False
+    )
+    occ.transaction_id = txn.id
+
+
 def pay_occurrence(
     db: Session,
     occ: BillOccurrence,
@@ -280,7 +379,7 @@ def pay_occurrence(
     paid_on: datetime,
     split_overrides: dict[str, Decimal] | None = None,
     note_prefix: str = "Bill",
-    payment_method: str = "card",
+    payment_method: str | None = None,
     payer_mode: str = PayerMode.single.value,
 ) -> Transaction | None:
     """Mark ``occ`` paid and create its expense transaction, in one DB transaction.
@@ -288,8 +387,12 @@ def pay_occurrence(
     Returns None when the atomic claim fails (already paid). Raises ValueError
     if ``split_overrides`` do not sum to ``amount``, or for an own-share payment
     with no splits to record. Does not commit: the claim, the transaction and
-    its splits succeed or fail together with the caller's commit. Bills without
-    a bucket have no transaction — use settle_occurrence.
+    its splits succeed or fail together with the caller's commit. The expense
+    is linked to the item (``recurring_bill_id``); with no bucket it is a
+    Fixed cost (spec §3.4.2). The old app still goes through
+    settle_occurrence, which only claims bucket-less bills (spec §6.2.4).
+
+    ``payment_method`` None records the item's own method (2d §7.0).
 
     ``payer_mode`` own_share records everyone as having paid their split (the
     overrides, else the bill's scaled defaults); the transaction and the
@@ -323,18 +426,118 @@ def pay_occurrence(
         payer_mode=PayerMode.own_share.value if own_share else PayerMode.single.value,
         category_id=bill.category_id,
         notes=f"{note_prefix}: {bill.name}",
-        payment_method=payment_method,
+        payment_method=payment_method or bill.payment_method or PaymentMethod.card.value,
         transaction_date=occ.due_date,
+        recurring_bill_id=bill.id,
     )
     db.add(txn)
     db.flush()
-    db.query(BillOccurrence).filter(BillOccurrence.id == occ.id).update(
-        {BillOccurrence.transaction_id: txn.id}, synchronize_session=False
-    )
-    occ.transaction_id = txn.id
+    _link_transaction(db, occ, txn)
 
     for uid, share in splits.items():
         db.add(TransactionSplit(transaction_id=txn.id, user_id=uid, amount=share))
+    return txn
+
+
+def receive_occurrence(
+    db: Session,
+    occ: BillOccurrence,
+    *,
+    amount,
+    received_by: str | None,
+    paid_on: datetime,
+    fallback_user_id: str | None = None,
+    payment_method: str | None = None,
+) -> Transaction | None:
+    """Mark received: create the entry's income and link it (spec §3.3).
+
+    Income has no bucket and is dated on the due date. The recipient is
+    ``received_by``, else the item's "received by" (``paid_by_default``) while
+    still a member, then ``fallback_user_id``, then the owner (as for bill
+    payers, :func:`resolve_bill_payer`). Returns None when the atomic claim
+    fails (already done). Raises ValueError for an out item. Does not commit.
+    The method is ``payment_method``, else the item's (transfer unless changed).
+    """
+    bill = occ.bill
+    if bill.direction != ItemDirection.in_.value:
+        raise ValueError("Only an income item can be marked received.")
+    amount = _q(amount)
+    person = received_by or resolve_bill_payer(db, bill, fallback_user_id)
+    if not claim_occurrence(db, occ, paid_by=person, paid_on=paid_on):
+        return None
+    txn = Transaction(
+        bucket_id=None,
+        household_id=bill.household_id,
+        amount=amount,
+        currency=bill.currency,
+        type=TransactionType.income,
+        paid_by=person,
+        category_id=bill.category_id,
+        notes=f"Income: {bill.name}",
+        payment_method=payment_method or bill.payment_method or PaymentMethod.transfer.value,
+        transaction_date=occ.due_date,
+        recurring_bill_id=bill.id,
+    )
+    db.add(txn)
+    db.flush()
+    _link_transaction(db, occ, txn)
+    return txn
+
+
+def complete_entry(
+    db: Session,
+    occ: BillOccurrence,
+    *,
+    user_id: str,
+    amount=None,
+    person: str | None = None,
+    payment_method: str | None = None,
+) -> Transaction:
+    """Done, from the new app (spec §3.3): Pay for an out entry, which always
+    creates an expense (a Fixed cost when the item has no bucket), Mark
+    received for an in entry.
+
+    ``amount`` defaults to the entry's set amount, then the item's. ``person``
+    is the payer or recipient; None uses the item's default (then
+    ``user_id``). A variable item's amount, or an explicit one, is stored on
+    the entry so estimates and drift alerts see it. Raises EntryStateError
+    when the entry is not expected and ValueError when no amount is known or
+    the payment cannot be recorded. Does not commit. ``payment_method`` None
+    uses the item's.
+    """
+    if occ.status != OccurrenceStatus.unpaid:
+        raise EntryStateError("This entry is already done or skipped.")
+    bill = occ.bill
+    explicit = amount is not None
+    value = amount if explicit else (occ.amount if occ.amount is not None else bill.amount)
+    if value is None:
+        raise ValueError("Set the amount first: this item's amount varies.")
+    paid_on = utcnow_naive()
+    if bill.direction == ItemDirection.in_.value:
+        txn = receive_occurrence(
+            db,
+            occ,
+            amount=value,
+            received_by=person,
+            paid_on=paid_on,
+            fallback_user_id=user_id,
+            payment_method=payment_method,
+        )
+    else:
+        payer, mode = resolve_bill_payment(db, bill, paid_by=person, fallback_user_id=user_id)
+        txn = pay_occurrence(
+            db,
+            occ,
+            amount=value,
+            paid_by=payer,
+            payer_mode=mode,
+            paid_on=paid_on,
+            payment_method=payment_method,
+        )
+    if txn is None:
+        raise EntryStateError("This entry is already done.")
+    if explicit or bill.amount is None:
+        occ.amount = _q(value)
     return txn
 
 
@@ -347,6 +550,97 @@ def settle_occurrence(db: Session, occ: BillOccurrence, **kwargs) -> bool:
         return pay_occurrence(db, occ, **kwargs) is not None
     paid_by = None if kwargs.get("payer_mode") == PayerMode.own_share.value else kwargs["paid_by"]
     return claim_occurrence(db, occ, paid_by=paid_by, paid_on=kwargs["paid_on"])
+
+
+# ---------------------------------------------------------------------------
+# Entry lifecycle (spec §3.3): undo, skip, set amount, estimate
+# ---------------------------------------------------------------------------
+
+ESTIMATE_FROM_LAST = 3  # done amounts averaged for a variable item's estimate
+
+FIXED_COST_NEEDS_ITEM_MSG = (
+    "This expense has no bucket, so it can't stay without its bill. "
+    "Delete it too, or give it a bucket first."
+)
+
+
+class EntryStateError(Exception):
+    """The entry is not in a state that allows this action (HTTP 409).
+
+    The message is user-facing.
+    """
+
+
+def reopen_occurrence(occ: BillOccurrence) -> None:
+    """Put an entry back to expected: not paid, nothing linked. Does not commit."""
+    occ.status = OccurrenceStatus.unpaid
+    occ.paid_at = None
+    occ.paid_by = None
+    occ.transaction_id = None
+
+
+def undo_occurrence(db: Session, occ: BillOccurrence, *, delete_transaction: bool = False) -> None:
+    """Done -> expected, or skipped -> expected (spec §3.3).
+
+    A done entry's transaction is unlinked; with ``delete_transaction`` it is
+    soft-deleted too (app.services.transactions.delete_transaction, which
+    reopens the entry and commits). Kept, a bucket-less expense would break
+    the transactions CHECK, so that raises EntryStateError. Otherwise does
+    not commit.
+    """
+    if occ.status == OccurrenceStatus.skipped:
+        reopen_occurrence(occ)
+        return
+    if occ.status != OccurrenceStatus.paid:
+        raise EntryStateError("This entry is already expected.")
+    txn = db.get(Transaction, occ.transaction_id) if occ.transaction_id else None
+    if txn is None or txn.deleted_at is not None:
+        reopen_occurrence(occ)
+        return
+    if delete_transaction:
+        from app.services.transactions import delete_transaction as soft_delete
+
+        soft_delete(db, txn)
+        return
+    if txn.bucket_id is None and txn.type == TransactionType.expense:
+        raise EntryStateError(FIXED_COST_NEEDS_ITEM_MSG)
+    txn.recurring_bill_id = None
+    reopen_occurrence(occ)
+
+
+def skip_entry(occ: BillOccurrence) -> None:
+    """Expected -> skipped. A done entry has to be undone first. Does not commit."""
+    if occ.status == OccurrenceStatus.paid:
+        raise EntryStateError("This entry is done. Undo it first.")
+    occ.status = OccurrenceStatus.skipped
+
+
+def set_entry_amount(occ: BillOccurrence, amount: Decimal) -> None:
+    """Store the real amount on an expected entry (spec §3.3). Does not commit."""
+    if occ.status != OccurrenceStatus.unpaid:
+        raise EntryStateError("Only an expected entry can have its amount set.")
+    occ.amount = _q(amount)
+
+
+def estimate_amount(db: Session, bill_id: str) -> Decimal | None:
+    """The "≈" amount of a variable item: the mean of its last 3 done amounts.
+
+    None when nothing has been done with an amount yet.
+    """
+    rows = [
+        _dec(a)
+        for (a,) in db.query(BillOccurrence.amount)
+        .filter(
+            BillOccurrence.bill_id == bill_id,
+            BillOccurrence.status == OccurrenceStatus.paid,
+            BillOccurrence.amount.isnot(None),
+        )
+        .order_by(BillOccurrence.due_date.desc())
+        .limit(ESTIMATE_FROM_LAST)
+    ]
+    if not rows:
+        return None
+    return _q(sum(rows, Decimal(0)) / len(rows))
 
 
 def effective_overrides(bill: RecurringBill, submitted) -> dict[str, Decimal] | None:

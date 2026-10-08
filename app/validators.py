@@ -66,6 +66,21 @@ def parse_amount(
     return value.quantize(Decimal("0.0001"))
 
 
+def payment_method_or_400(value) -> str | None:
+    """A sent payment method, normalised; None when not sent (blank or null),
+    meaning "the item's own" (2d §7.0). An unknown method is a 400 with
+    parse_payment_method's message. parse_payment_method itself keeps mapping
+    blank to card: transactions rely on that."""
+    from app.schemas import parse_payment_method
+
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    try:
+        return parse_payment_method(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+
 def validate_currency(value: str) -> str:
     """Return the currency code if the app supports it, else raise HTTP 400."""
     from app.core.config import settings
@@ -230,3 +245,13 @@ def require_receipt_content(ext: str, content: bytes) -> None:
     """Raise 400 unless the bytes really are the type the extension claims."""
     if sniff_upload(content[:16]) != RECEIPT_KIND_BY_EXT.get(ext):
         raise HTTPException(status_code=400, detail="File content does not match its type.")
+
+
+def check_split_sum(amounts, bill_amount) -> None:
+    """HTTP 400 unless the shares add up to the bill amount (when it has one)."""
+    total = sum(amounts)
+    if bill_amount is not None and round(total, 4) != round(bill_amount, 4):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Split amounts ({total:.2f}) must sum to the bill amount ({float(bill_amount):.2f})",
+        )

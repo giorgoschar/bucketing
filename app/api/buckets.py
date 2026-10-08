@@ -2,6 +2,7 @@
 API buckets routes — CRUD + balance + settle.
 """
 
+from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -13,6 +14,7 @@ from app.core.database import get_db
 from app.core.money import quantize
 from app.models import (
     Bucket,
+    BucketKind,
     BucketStatus,
     BucketType,
     RecurringBill,
@@ -29,6 +31,7 @@ from app.services import (
     record_household_settlement,
     settlement_fingerprint,
 )
+from app.services.budgets import EVENT_BLOCKED_BY_BILLS, blocks_event_change
 from app.validators import parse_amount, parse_color, validate_split_users
 
 router = APIRouter(prefix="/buckets", tags=["buckets"])
@@ -48,6 +51,37 @@ class BucketIn(BaseModel):
     description: str | None = None
     show_income: bool = True
     enable_settlement: bool = False
+    # "monthly" or "event" (spec §4.1). Given, it sets the old type to match
+    # (event <-> trip), so both apps keep reading the bucket the same way.
+    kind: str | None = None
+    # An event's dates. Left out of an update, the stored dates stay.
+    start_date: date | None = None
+    end_date: date | None = None
+
+
+def _apply_dates(bucket: Bucket, body: BucketIn) -> None:
+    if "start_date" in body.model_fields_set:
+        bucket.start_date = body.start_date
+    if "end_date" in body.model_fields_set:
+        bucket.end_date = body.end_date
+    if bucket.start_date and bucket.end_date and bucket.end_date < bucket.start_date:
+        raise HTTPException(status_code=400, detail="The end date is before the start date.")
+
+
+def _type_for(body: BucketIn) -> BucketType:
+    try:
+        bucket_type = BucketType(body.type)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Unknown bucket type '{body.type}'") from None
+    if body.kind is None:
+        return bucket_type
+    try:
+        kind = BucketKind(body.kind)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Unknown bucket kind '{body.kind}'") from None
+    if kind == BucketKind.event:
+        return BucketType.trip
+    return BucketType.custom if bucket_type == BucketType.trip else bucket_type
 
 
 def _bucket_dict(b: Bucket, balance: dict | None = None) -> dict:
@@ -56,6 +90,9 @@ def _bucket_dict(b: Bucket, balance: dict | None = None) -> dict:
         "household_id": b.household_id,
         "name": b.name,
         "type": b.type.value,
+        "kind": b.kind,
+        "start_date": b.start_date.isoformat() if b.start_date else None,
+        "end_date": b.end_date.isoformat() if b.end_date else None,
         "color": b.color,
         "icon": b.icon,
         "status": b.status.value,
@@ -100,7 +137,7 @@ def create_bucket(
     bucket = Bucket(
         household_id=hh_id,
         name=body.name.strip(),
-        type=BucketType(body.type),
+        type=_type_for(body),
         color=parse_color(body.color),
         icon=body.icon,
         budget=body.budget,
@@ -108,6 +145,7 @@ def create_bucket(
         show_income=body.show_income,
         enable_settlement=body.enable_settlement,
     )
+    _apply_dates(bucket, body)
     db.add(bucket)
     db.commit()
     db.refresh(bucket)
@@ -139,14 +177,18 @@ def update_bucket(
     if not bucket:
         raise HTTPException(status_code=404, detail="Bucket not found")
 
+    new_type = _type_for(body)
+    if blocks_event_change(db, bucket, new_type):
+        raise HTTPException(status_code=409, detail=EVENT_BLOCKED_BY_BILLS)
     bucket.name = body.name.strip()
-    bucket.type = BucketType(body.type)
+    bucket.type = new_type
     bucket.color = parse_color(body.color)
     bucket.icon = body.icon
     bucket.budget = body.budget
     bucket.description = body.description
     bucket.show_income = body.show_income
     bucket.enable_settlement = body.enable_settlement
+    _apply_dates(bucket, body)
     db.commit()
     return _bucket_dict(bucket, get_bucket_balance(db, bucket.id))
 

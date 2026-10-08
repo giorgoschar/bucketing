@@ -50,5 +50,6 @@ static/src/
 .superpowers/
 
 # New React frontend (built separately until cutover) and design mocks
-web/
+web/node_modules/
+web/dist/
 docs/redesign/

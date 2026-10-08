@@ -16,6 +16,7 @@ from app.core.database import get_db
 from app.models import (
     BillFrequency,
     BillOccurrence,
+    ItemDirection,
     OccurrenceStatus,
     PayerMode,
     RecurringBill,
@@ -25,6 +26,9 @@ from app.schemas import parse_payment_method, payer_choice
 from app.services import full_ctx, get_overdue_bills, get_upcoming_bills
 from app.services.bills import (
     BILL_HAS_HISTORY_MSG,
+    EDIT_IN_NEW_APP_MSG,
+    PAST_NONE,
+    PAST_SKIPPED,
     backfill_bill_payer,
     bill_has_payment_history,
     delete_future_occurrences,
@@ -92,6 +96,32 @@ async def _collect_splits(
     return splits, total
 
 
+def _old_app_bill(db: Session, bill_id: str, hh_id: str) -> RecurringBill:
+    """The bill if the old app may see it: this household's, and an out item.
+
+    Income items do not exist for the old app (spec §6.2.1), so a stale page
+    or bookmark gets a 404 and can never pay one as an expense.
+    """
+    bill = db.get(RecurringBill, bill_id)
+    if not bill or bill.household_id != hh_id or bill.direction != ItemDirection.out.value:
+        raise HTTPException(status_code=404)
+    return bill
+
+
+def _old_app_occurrence(db: Session, occ_id: str, hh_id: str) -> BillOccurrence:
+    occ = db.get(BillOccurrence, occ_id)
+    if not occ:
+        raise HTTPException(status_code=404)
+    _old_app_bill(db, occ.bill_id, hh_id)
+    return occ
+
+
+def _require_old_app_editable(bill: RecurringBill) -> None:
+    """New schedule rules are read-only here (spec §6.2.2)."""
+    if not bill.old_app_editable:
+        raise HTTPException(status_code=409, detail=EDIT_IN_NEW_APP_MSG)
+
+
 def _bill_payer(db: Session, hh_id: str, value: str, splits) -> tuple[str | None, str]:
     """Resolve the bill form's "Default payer" value to (paid_by_default, payer_mode).
 
@@ -149,7 +179,9 @@ def _render_bills(
 
     BILLS_PAGE_SIZE = 20
     bills_q = (
-        db.query(RecurringBill).filter_by(household_id=hh_id).order_by(RecurringBill.created_at)
+        db.query(RecurringBill)
+        .filter_by(household_id=hh_id, direction=ItemDirection.out.value)
+        .order_by(RecurringBill.created_at)
     )
     bills_total = bills_q.count()
     bills_total_pages = max(1, -(-bills_total // BILLS_PAGE_SIZE))
@@ -228,7 +260,8 @@ async def create_bill(
     for uid, split_amount in splits:
         db.add(RecurringBillSplit(bill_id=bill.id, user_id=uid, amount=split_amount))
 
-    generate_occurrences(db, bill)
+    # Nothing before today becomes an expected entry (spec §3.4.4).
+    generate_occurrences(db, bill, past=PAST_SKIPPED)
     db.commit()
 
     return RedirectResponse("/bills", status_code=302)
@@ -241,14 +274,12 @@ async def mark_paid(
     request: Request,
     amount: str = Form(""),
     paid_by: str = Form(""),
-    payment_method: str = Form("card"),
+    payment_method: str = Form(""),
     db: Session = Depends(get_db),
     auth=Depends(require_auth),
 ):
     user, hh_id = auth
-    occ = db.get(BillOccurrence, occ_id)
-    if not occ or occ.bill.household_id != hh_id:
-        raise HTTPException(status_code=404)
+    occ = _old_app_occurrence(db, occ_id, hh_id)
 
     bill = occ.bill
 
@@ -278,8 +309,9 @@ async def mark_paid(
         payer_mode=chosen_mode if chosen_mode == PayerMode.own_share.value else None,
         fallback_user_id=user.id,
     )
+    # Blank = the bill's own method (2d §7.0).
     try:
-        pm = parse_payment_method(payment_method)
+        pm = parse_payment_method(payment_method) if payment_method.strip() else None
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
 
@@ -329,9 +361,7 @@ async def set_occurrence_amount(
     scheduler can auto-mark it paid on the due date.
     """
     user, hh_id = auth
-    occ = db.get(BillOccurrence, occ_id)
-    if not occ or occ.bill.household_id != hh_id:
-        raise HTTPException(status_code=404)
+    occ = _old_app_occurrence(db, occ_id, hh_id)
 
     if occ.status != OccurrenceStatus.unpaid:
         raise HTTPException(status_code=400, detail="This occurrence is already settled.")
@@ -357,9 +387,7 @@ def skip_occurrence(
     auth=Depends(require_auth),
 ):
     user, hh_id = auth
-    occ = db.get(BillOccurrence, occ_id)
-    if not occ or occ.bill.household_id != hh_id:
-        raise HTTPException(status_code=404)
+    occ = _old_app_occurrence(db, occ_id, hh_id)
 
     # Skipping a paid occurrence would leave its transaction behind while the
     # bill history stops reporting it as paid.
@@ -388,9 +416,8 @@ def edit_bill_page(
     auth=Depends(require_auth),
 ):
     user, hh_id = auth
-    bill = db.get(RecurringBill, bill_id)
-    if not bill or bill.household_id != hh_id:
-        raise HTTPException(status_code=404)
+    bill = _old_app_bill(db, bill_id, hh_id)
+    _require_old_app_editable(bill)
     ctx = full_ctx(db, user, hh_id)
     ctx.update({"request": request, "user": user, "bill": bill})
     return templates.TemplateResponse("bills/edit.html", ctx)
@@ -419,9 +446,8 @@ async def edit_bill(
     auth=Depends(require_auth),
 ):
     user, hh_id = auth
-    bill = db.get(RecurringBill, bill_id)
-    if not bill or bill.household_id != hh_id:
-        raise HTTPException(status_code=404)
+    bill = _old_app_bill(db, bill_id, hh_id)
+    _require_old_app_editable(bill)
 
     bill_amount = parse_amount(amount, field="Bill amount", allow_blank=True)
     splits, split_total = await _collect_splits(request, hh_id, db)
@@ -454,9 +480,9 @@ async def edit_bill(
     for uid, split_amount in splits:
         db.add(RecurringBillSplit(bill_id=bill.id, user_id=uid, amount=split_amount))
 
-    # Regenerate future occurrences
+    # Regenerate the future entries nobody touched (spec §3.4.3-4).
     delete_future_occurrences(db, bill.id)
-    generate_occurrences(db, bill)
+    generate_occurrences(db, bill, past=PAST_SKIPPED)
 
     # Optionally repair past payments saved without a payer, using the payer
     # (or own-share splits) just set.
@@ -481,10 +507,12 @@ def toggle_bill(
     auth=Depends(require_auth),
 ):
     user, hh_id = auth
-    bill = db.get(RecurringBill, bill_id)
-    if not bill or bill.household_id != hh_id:
-        raise HTTPException(status_code=404)
+    bill = _old_app_bill(db, bill_id, hh_id)
+    _require_old_app_editable(bill)
     bill.is_active = not bill.is_active
+    if bill.is_active:
+        # Resumed: fill the horizon now rather than at the next nightly run.
+        generate_occurrences(db, bill, past=PAST_NONE)
     db.commit()
     return RedirectResponse("/bills", status_code=302)
 
@@ -497,9 +525,8 @@ def delete_bill(
     auth=Depends(require_auth),
 ):
     user, hh_id = auth
-    bill = db.get(RecurringBill, bill_id)
-    if not bill or bill.household_id != hh_id:
-        raise HTTPException(status_code=404)
+    bill = _old_app_bill(db, bill_id, hh_id)
+    _require_old_app_editable(bill)
     if bill_has_payment_history(db, bill.id):
         return _render_bills(request, db, user, hh_id, error=BILL_HAS_HISTORY_MSG, status_code=409)
     db.delete(bill)
@@ -520,9 +547,7 @@ def bill_history(
     auth=Depends(require_auth),
 ):
     user, hh_id = auth
-    bill = db.get(RecurringBill, bill_id)
-    if not bill or bill.household_id != hh_id:
-        raise HTTPException(status_code=404)
+    bill = _old_app_bill(db, bill_id, hh_id)
 
     paid_occurrences = (
         db.query(BillOccurrence)

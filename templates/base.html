@@ -18,10 +18,10 @@
        the DOM and generates CSS in the browser on every single page load —
        explicitly not for production, and the largest thing on the critical
        path here. Config now lives in tailwind.config.js. -->
-  <link rel="stylesheet" href="/static/css/app.css" />
+  <link rel="stylesheet" href="{{ static_url('css/app.css') }}" />
 
   <!-- HTMX -->
-  <script src="/static/vendor/htmx.min.js" defer></script>
+  <script src="{{ static_url('vendor/htmx.min.js') }}" defer></script>
   <!-- Alpine component factories.
        MUST load before alpine.min.js: deferred scripts run in document order,
        and Alpine initialises the tree as soon as it starts, so any x-data
@@ -29,19 +29,19 @@
        hx-boost body swaps never re-evaluate or race them. -->
   <!-- lib.js is NOT deferred: it defines window.app (csrfToken/fetchJSON), which
        the inline script below uses while the head is still being parsed. -->
-  <script src="/static/lib.js"></script>
-  <script defer src="/static/insights.js"></script>
-  <script defer src="/static/expense-wizard.js"></script>
-  <script defer src="/static/app-components.js"></script>
-  <script defer src="/static/receipt-scanner.js"></script>
-  <script defer src="/static/stock.js"></script>
+  <script src="{{ static_url('lib.js') }}"></script>
+  <script defer src="{{ static_url('insights.js') }}"></script>
+  <script defer src="{{ static_url('expense-wizard.js') }}"></script>
+  <script defer src="{{ static_url('app-components.js') }}"></script>
+  <script defer src="{{ static_url('receipt-scanner.js') }}"></script>
+  <script defer src="{{ static_url('stock.js') }}"></script>
   <!-- Chart tooltips: one delegated listener on document, registered once, so
        it keeps working across hx-boost swaps and insights filter changes. -->
-  <script defer src="/static/chart-tooltip.js"></script>
+  <script defer src="{{ static_url('chart-tooltip.js') }}"></script>
   <!-- Alpine.js -->
-  <script defer src="/static/vendor/alpine.min.js"></script>
+  <script defer src="{{ static_url('vendor/alpine.min.js') }}"></script>
   <!-- Offline helpers — loaded in <head> so hx-boost body swaps don't re-execute it -->
-  <script src="/static/offline.js" defer></script>
+  <script src="{{ static_url('offline.js') }}" defer></script>
 
   <!-- CSRF token for double-submit validation -->
   <meta name="csrf-token" content="{{ request.cookies.get('csrf_token', '') }}">
@@ -74,6 +74,17 @@
       window.__csrfFieldsWired = true;
       document.addEventListener('DOMContentLoaded', _injectCsrfFields);
       document.addEventListener('htmx:afterSwap', _injectCsrfFields);
+    }
+    // Refresh the field from the cookie at submit time: the server may have rolled the
+    // CSRF cookie since this page (or a tab left open) was rendered.
+    if (!window.__csrfSubmitWired) {
+      window.__csrfSubmitWired = true;
+      document.addEventListener('submit', function (evt) {
+        var f = evt.target, val = app.csrfToken();
+        if (!val || !f || (f.method || '').toLowerCase() !== 'post') return;
+        var inp = f.querySelector('[name="_csrf_token"]');
+        if (inp) inp.value = val;
+      }, true);
     }
     _injectCsrfFields();   // run for the markup just swapped in
   </script>

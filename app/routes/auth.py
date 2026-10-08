@@ -10,8 +10,10 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.auth import (
+    clear_device_cookie,
     clear_failed_logins,
     clear_session,
+    current_iat,
     get_current_session,
     get_pending_session,
     hash_password,
@@ -31,6 +33,7 @@ from app.core.clock import utcnow_naive
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.ratelimit import limiter
+from app.login_alerts import alert_failed_second_factor, alert_sign_in
 from app.models import Household, HouseholdMember, Invitation, MemberRole, User
 from app.seed import seed_categories
 from app.templates import templates
@@ -254,10 +257,12 @@ def verify_totp_submit(
         security_logger.info("2FA success for '%s' from %s", user.username, ip)
         response = RedirectResponse("/dashboard", status_code=302)
         set_session(response, user.id, pending["hh_id"], user.session_version)
+        alert_sign_in(db, request, user, pending["hh_id"])
         return response
 
     register_failed_login(db, user)
     security_logger.warning("2FA failure for '%s' from %s", user.username, ip)
+    alert_failed_second_factor(db, request, user, pending["hh_id"])
     return templates.TemplateResponse(
         "auth/verify_totp.html",
         {"request": request, "error": "Invalid code. Please try again."},
@@ -313,6 +318,7 @@ def verify_backup_submit(
     if matched_index is None:
         register_failed_login(db, user)
         security_logger.warning("Backup code failure for '%s' from %s", user.username, ip)
+        alert_failed_second_factor(db, request, user, pending["hh_id"])
         return templates.TemplateResponse(
             "auth/verify_backup.html",
             {"request": request, "error": "Invalid backup code."},
@@ -329,6 +335,7 @@ def verify_backup_submit(
     )
     response = RedirectResponse("/dashboard", status_code=302)
     set_session(response, user.id, pending["hh_id"], user.session_version)
+    alert_sign_in(db, request, user, pending["hh_id"], method=f"a backup code ({len(codes)} left)")
     return response
 
 
@@ -350,6 +357,7 @@ def logout(request: Request, db: Session = Depends(get_db)):
             security_logger.info("Logout for '%s'", user.username)
     response = RedirectResponse("/login", status_code=302)
     clear_session(response)
+    clear_device_cookie(response)
     return response
 
 
@@ -373,7 +381,15 @@ def switch_household(
         raise HTTPException(status_code=403, detail="Not a member of that household")
 
     response = RedirectResponse("/dashboard", status_code=302)
-    set_session(response, user.id, household_id, user.session_version)
+    amr = (get_current_session(request) or {}).get("amr", "pwd")
+    set_session(
+        response,
+        user.id,
+        household_id,
+        user.session_version,
+        amr=amr,
+        iat=current_iat(request),
+    )
     return response
 
 

@@ -1,0 +1,7 @@
+/* The post-save prompt (spec §4.6). */
+.shop-prompt__text { margin: 0; font-size: 16px; font-weight: 600; }
+.shop-prompt__note { margin: 6px 0 0; font-size: 13.5px; color: var(--muted); }
+.shop-prompt__acts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.shop-prompt__acts .btn { min-width: 0; }
+/* While the prompt is open, toasts (the composer's "Saved … Undo") go to the top instead of over the sheet. */
+body:has(.shop-prompt__acts) .ui-toast-region { top: calc(env(safe-area-inset-top, 0px) + 12px); bottom: auto; }

@@ -13,9 +13,11 @@ from sqlalchemy.orm import Session
 
 from app.core.clock import utcnow_naive
 from app.models import (
+    BillOccurrence,
     CashMovement,
     Household,
     HouseholdMember,
+    OccurrenceStatus,
     PayerMode,
     PaymentMethod,
     Transaction,
@@ -94,6 +96,16 @@ def delete_transaction(db: Session, txn: Transaction, uploads_dir: str | None = 
         CashMovement.transaction_id == txn.id,
         CashMovement.active(),
     ).update({CashMovement.deleted_at: txn.deleted_at}, synchronize_session=False)
+    # A deleted payment puts its entry back to expected (spec §3.3).
+    db.query(BillOccurrence).filter(BillOccurrence.transaction_id == txn.id).update(
+        {
+            BillOccurrence.status: OccurrenceStatus.unpaid,
+            BillOccurrence.paid_at: None,
+            BillOccurrence.paid_by: None,
+            BillOccurrence.transaction_id: None,
+        },
+        synchronize_session=False,
+    )
     db.commit()
     if not txn.receipt_path:
         return
@@ -324,7 +336,25 @@ def create_transaction(
             _raise_if_replay()
         raise
     db.refresh(txn)
+    _suggest_match(db, txn)
     return txn
+
+
+def _suggest_match(db: Session, txn: Transaction) -> None:
+    """Look for an expected entry this new transaction may pay (spec §3.5).
+
+    Every source creates through create_transaction (forms, API, Apple Pay
+    ingest, offline replay, cash), so this is the one hook. A failure here
+    never fails the save.
+    """
+    from app.services.matching import suggest_for_transaction
+
+    try:
+        if suggest_for_transaction(db, txn) is not None:
+            db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("Match suggestion for transaction %s failed", txn.id)
 
 
 def update_transaction(
@@ -362,8 +392,15 @@ def update_transaction(
             raise HTTPException(status_code=400, detail=problem)
         absorb_own_share_cent(data.amount, data.splits)
 
-    # Only income may go without a bucket.
-    if not data.bucket_id and data.type != TransactionType.income:
+    # Only income, and a Fixed cost (an expense paid for a recurring item
+    # with no bucket, spec §3.4.2), may go without a bucket. A bill payment
+    # that has a bucket keeps one.
+    fixed_cost = (
+        txn.recurring_bill_id is not None
+        and txn.bucket_id is None
+        and data.type == TransactionType.expense
+    )
+    if not data.bucket_id and data.type != TransactionType.income and not fixed_cost:
         raise HTTPException(status_code=400, detail=BUCKET_REQUIRED)
     bucket = require_bucket(db, data.bucket_id, household_id, optional=True)
     # Income moved into a bucket (or an entry turned into income) must land

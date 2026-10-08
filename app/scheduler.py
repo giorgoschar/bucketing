@@ -47,6 +47,10 @@ DRIFT_MIN_ABSOLUTE = 5.0  # household currency
 DRIFT_MIN_HISTORY = 3  # prior charges needed to form a baseline
 DRIFT_LOOKBACK_DAYS = 35  # only comment on a recently-landed charge
 
+# Auto-pay pays entries due today or in the last 3 days, never older ones
+# (spec §3.4.5): a bill created or resumed late is not backfilled.
+AUTO_PAY_WINDOW_DAYS = 3
+
 # Budget warnings, as percentages of a bucket's monthly budget.
 BUDGET_THRESHOLDS = (80, 100)
 
@@ -148,9 +152,14 @@ def _auto_pay_due_bills(db, today: date) -> int:
         .filter(
             BillOccurrence.status == OccurrenceStatus.unpaid,
             BillOccurrence.due_date <= today,
+            BillOccurrence.due_date >= today - timedelta(days=AUTO_PAY_WINDOW_DAYS),
             BillOccurrence.transaction_id.is_(None),
+            # Never twice: an auto-payment the user undid or deleted (say, a
+            # duplicate of the real card charge) stays undone.
+            BillOccurrence.auto_paid_at.is_(None),
             RecurringBill.is_auto_pay.is_(True),
             RecurringBill.is_active.is_(True),
+            RecurringBill.direction == "out",
             # Fixed-amount bill OR occurrence has a pre-set amount (standing order)
             or_(RecurringBill.amount.isnot(None), BillOccurrence.amount.isnot(None)),
         )
@@ -184,6 +193,7 @@ def _auto_pay_due_bills(db, today: date) -> int:
                 "payer_mode": payer_mode,
                 "currency": bill.currency,
                 "name": bill.name,
+                "payment_method": bill.payment_method,
             }
         )
 
@@ -194,18 +204,22 @@ def _auto_pay_due_bills(db, today: date) -> int:
         # of this job) already claimed it nothing is written — this is what
         # prevents duplicate auto-pay transactions.
         occ = db.get(BillOccurrence, item["occ_id"])
+        paid_on = _utcnow()
         if not bills_service.settle_occurrence(
             db,
             occ,
             amount=item["amount"],
             paid_by=item["paid_by_default"],
             payer_mode=item["payer_mode"],
-            paid_on=_utcnow(),
+            paid_on=paid_on,
             note_prefix="Auto-pay",
+            payment_method=item["payment_method"],
         ):
             logger.info("Occurrence %s already claimed elsewhere — skipping", item["occ_id"])
             db.rollback()
             continue
+        # Committed with the claim: this entry is never auto-paid again.
+        occ.auto_paid_at = paid_on
 
         _notify_members(
             db,
@@ -248,6 +262,7 @@ def _notify_due_soon(db, today: date) -> None:
             BillOccurrence.status == OccurrenceStatus.unpaid,
             BillOccurrence.due_date == due_date,
             RecurringBill.is_active.is_(True),
+            RecurringBill.direction == "out",
         )
         .all()
     )
@@ -271,6 +286,7 @@ def _notify_due_soon(db, today: date) -> None:
 
 def _notify_overdue(db, today: date) -> None:
     """Remind members about overdue bills at fixed milestones, not every day."""
+    from sqlalchemy import or_
     from sqlalchemy.orm import joinedload
 
     from app.models import BillOccurrence, NotificationType, OccurrenceStatus, RecurringBill
@@ -284,7 +300,14 @@ def _notify_overdue(db, today: date) -> None:
             BillOccurrence.status == OccurrenceStatus.unpaid,
             BillOccurrence.due_date.in_(list(milestone_dates)),
             RecurringBill.is_active.is_(True),
-            RecurringBill.is_auto_pay.is_(False),
+            RecurringBill.direction == "out",
+            # Auto-pay items are paid by the job, so they are not nagged about
+            # while it can still pay them; one it missed (no amount, or added
+            # late) is overdue like any other.
+            or_(
+                RecurringBill.is_auto_pay.is_(False),
+                BillOccurrence.due_date < today - timedelta(days=AUTO_PAY_WINDOW_DAYS),
+            ),
         )
         .all()
     )
@@ -316,6 +339,7 @@ def _notify_contracts_expiring(db, today: date) -> None:
         .filter(
             RecurringBill.contract_end_date.in_(list(expiry_dates)),
             RecurringBill.is_active.is_(True),
+            RecurringBill.direction == "out",
         )
         .all()
     )
@@ -353,7 +377,11 @@ def _notify_bill_drift(db, today: date) -> None:
 
     lookback_start = today - timedelta(days=DRIFT_LOOKBACK_DAYS)
 
-    bills = db.query(RecurringBill).filter(RecurringBill.is_active.is_(True)).all()
+    bills = (
+        db.query(RecurringBill)
+        .filter(RecurringBill.is_active.is_(True), RecurringBill.direction == "out")
+        .all()
+    )
     members_by_hh = _members_by_household(db, {b.household_id for b in bills})
 
     for bill in bills:
@@ -409,8 +437,9 @@ def _notify_bill_drift(db, today: date) -> None:
 def _notify_budget_thresholds(db, today: date) -> None:
     """Warn when a bucket's spend for the current month crosses its budget."""
     from app.core.money import ZERO, to_decimal
-    from app.models import Bucket, BucketStatus, NotificationType
+    from app.models import Bucket, BucketKind, BucketStatus, NotificationType
     from app.services import get_bucket_spend_this_month
+    from app.services.budgets import bucket_spent
 
     buckets = (
         db.query(Bucket)
@@ -436,7 +465,12 @@ def _notify_budget_thresholds(db, today: date) -> None:
         budget = to_decimal(bucket.budget)
         if budget <= 0:
             continue
-        spent = spend_by_hh.get(bucket.household_id, {}).get(bucket.id, ZERO)
+        # An event's budget is a total over its dates (spec §4.1).
+        event = bucket.kind == BucketKind.event.value
+        if event:
+            spent = bucket_spent(db, bucket, today)
+        else:
+            spent = spend_by_hh.get(bucket.household_id, {}).get(bucket.id, ZERO)
         pct = spent / budget * 100
 
         # Highest crossed threshold only — no point saying 80% and 100% together.
@@ -457,7 +491,8 @@ def _notify_budget_thresholds(db, today: date) -> None:
             body = (
                 f"{_money(spent, currency)} of "
                 f"{_money(budget, currency)} — "
-                f"{_money(budget - spent, currency)} left this month."
+                f"{_money(budget - spent, currency)} left"
+                f"{'.' if event else ' this month.'}"
             )
 
         _notify_members(
@@ -470,7 +505,11 @@ def _notify_budget_thresholds(db, today: date) -> None:
             link=f"/buckets/{bucket.id}",
             # Per bucket, per month, per threshold: crossing 80 then later 100
             # produces two notices, but neither repeats.
-            dedupe_key=f"budget:{bucket.id}:{period}:{crossed}",
+            dedupe_key=(
+                f"budget:{bucket.id}:event:{crossed}"
+                if event
+                else f"budget:{bucket.id}:{period}:{crossed}"
+            ),
         )
     db.commit()
 
@@ -664,6 +703,70 @@ def _purge_trash(db, today: date, uploads_dir: str | None = None) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Planning (spec §3.3)
+# ---------------------------------------------------------------------------
+
+
+def _top_up_entries(db, today: date) -> int:
+    """Extend every active item's entries to the rolling horizon.
+
+    Never creates an entry dated before today. A bad rule on one item is
+    logged and skipped; the others still get their entries.
+    """
+    from app.models import RecurringBill
+    from app.services.bills import PAST_NONE, generate_occurrences
+
+    bill_ids = [
+        bill_id for (bill_id,) in db.query(RecurringBill.id).filter(RecurringBill.active_filter())
+    ]
+    created = 0
+    for bill_id in bill_ids:
+        bill = db.get(RecurringBill, bill_id)
+        if bill is None:  # deleted since the id list was read
+            continue
+        try:
+            created += generate_occurrences(db, bill, today=today, past=PAST_NONE)
+            db.commit()
+        except Exception:
+            logger.exception("Could not top up entries for recurring item %s", bill_id)
+            db.rollback()
+    if created:
+        logger.info("Created %d expected entries", created)
+    return created
+
+
+def _suggest_recent_matches(db, today: date) -> int:
+    """Match suggestions for the last 14 days of transactions (spec §3.5)."""
+    from app.services.matching import suggest_recent
+
+    return suggest_recent(db, today)
+
+
+def _planning_stages():
+    return (_top_up_entries, _suggest_recent_matches)
+
+
+def planning_daily_job() -> None:
+    """Daily planning job: top up expected entries, then suggest matches.
+
+    Each stage is isolated so a failure in one does not discard the other.
+    """
+    from app.core.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        today = today_local()
+        for stage in _planning_stages():
+            try:
+                stage(db, today)
+            except Exception:
+                logger.exception("Planning job stage %s failed", stage.__name__)
+                db.rollback()
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
 # Job entry point
 # ---------------------------------------------------------------------------
 
@@ -781,6 +884,23 @@ def start_scheduler() -> None:
     scheduler.add_job(
         auto_mark_paid_job,
         id="auto_mark_paid_startup",
+        replace_existing=True,
+        max_instances=1,
+    )
+    # Expected entries before auto-pay looks at them; a separate job so the
+    # bills job (and its tests) only ever see entries that already exist.
+    scheduler.add_job(
+        planning_daily_job,
+        CronTrigger(hour=0, minute=1, timezone=_tz()),
+        id="planning_daily",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+        misfire_grace_time=3600,
+    )
+    scheduler.add_job(
+        planning_daily_job,
+        id="planning_startup",
         replace_existing=True,
         max_instances=1,
     )

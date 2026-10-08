@@ -19,10 +19,11 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy import Enum as SAEnum
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, validates
 
 from app.core.clock import local_today, utcnow_naive
 from app.core.database import Base
+from app.core.schedule import RuleAdjust, RuleKind  # noqa: F401  (re-exported)
 
 
 def gen_id():
@@ -72,7 +73,9 @@ class CashKind(str, enum.Enum):
     their wallet, from a stash (``stash_owner_id``) or the bank (NULL).
     ``put_back``: wallet back into their own stash. ``still_have``: what was
     in their wallet on that date. ``out``: legacy, no longer offered: cash
-    that left the wallet without a logged expense.
+    that left the wallet without a logged expense. ``stash_count``: a
+    recount of the member's own stash, stored as the signed correction
+    (counted minus the balance then), so it may be negative or zero.
     """
 
     stash_in = "stash_in"
@@ -80,6 +83,7 @@ class CashKind(str, enum.Enum):
     put_back = "put_back"
     still_have = "still_have"
     out = "out"
+    stash_count = "stash_count"
 
 
 class BucketType(str, enum.Enum):
@@ -88,6 +92,40 @@ class BucketType(str, enum.Enum):
     bills = "bills"
     savings = "savings"
     custom = "custom"
+
+
+class BucketKind(str, enum.Enum):
+    """What a bucket's budget means (spec §4.1). Plain VARCHAR like PaymentMethod."""
+
+    monthly = "monthly"  # per calendar month, resets on the 1st
+    event = "event"  # a total over start_date..end_date
+
+
+def kind_for_type(bucket_type) -> str:
+    """The kind an old-app bucket type stands for: a trip is an event, every
+    other type is monthly."""
+    if BucketType(bucket_type) == BucketType.trip:
+        return BucketKind.event.value
+    return BucketKind.monthly.value
+
+
+class ItemDirection(str, enum.Enum):
+    """Which way a recurring item's money goes. Plain VARCHAR like PaymentMethod."""
+
+    out = "out"  # bills: DEH, Cosmote, rent paid
+    in_ = "in"  # salaries, rent received
+
+
+def default_payment_method(direction: str | None) -> str:
+    """How an item's payments are recorded when nobody picks a method (2d §7.0):
+    transfer for income (what Mark received always recorded), card otherwise."""
+    if direction == ItemDirection.in_.value:
+        return PaymentMethod.transfer.value
+    return PaymentMethod.card.value
+
+
+def _item_payment_method_default(context) -> str:
+    return default_payment_method(context.get_current_parameters().get("direction"))
 
 
 class BucketStatus(str, enum.Enum):
@@ -142,6 +180,8 @@ class User(Base):
     username = Column(String(50), unique=True, nullable=False, index=True)
     email = Column(String(254), unique=True, nullable=True, index=True)
     email_verified = Column(Boolean, default=False, nullable=False)
+    # Pocket ID subject ("sub"); set the first time this user signs in with a passkey.
+    oidc_subject = Column(String(255), unique=True, nullable=True)
     display_name = Column(String(100), nullable=False)
     password_hash = Column(String, nullable=False)
     avatar_color = Column(String(7), default="#6366f1")  # hex color
@@ -291,7 +331,20 @@ class Bucket(Base):
     start_date = Column(Date, nullable=True)
     end_date = Column(Date, nullable=True)
     goal_amount = Column(Numeric(12, 4), nullable=True)
+    # monthly or event (spec §4.1). Follows ``type`` (see kind_for_type), so
+    # the old app's forms keep it right without knowing about it.
+    kind = Column(
+        String(8),
+        default=BucketKind.monthly.value,
+        server_default=BucketKind.monthly.value,
+        nullable=False,
+    )
     created_at = Column(DateTime, default=utcnow_naive)
+
+    @validates("type")
+    def _kind_follows_type(self, _key, value):
+        self.kind = kind_for_type(value)
+        return value
 
     household = relationship("Household", back_populates="buckets")
     transactions = relationship("Transaction", back_populates="bucket")
@@ -302,9 +355,12 @@ class Bucket(Base):
 # Transactions
 # ---------------------------------------------------------------------------
 
-# Expenses and transfers need a bucket; income may have none. The enum is
+# Expenses and transfers need a bucket; income may have none, and neither may
+# an expense paid for a recurring item (a Fixed cost, spec §3.4). The enum is
 # stored by name ('income'), on SQLite and in the Postgres enum alike.
-BUCKET_UNLESS_INCOME_SQL = "bucket_id IS NOT NULL OR type = 'income'"
+BUCKET_UNLESS_INCOME_SQL = (
+    "bucket_id IS NOT NULL OR type = 'income' OR recurring_bill_id IS NOT NULL"
+)
 
 
 class Transaction(Base):
@@ -315,6 +371,7 @@ class Transaction(Base):
         Index("ix_transactions_deleted_at", "deleted_at"),
         Index("ix_transactions_paid_by", "paid_by"),
         Index("ix_transactions_category_id", "category_id"),
+        Index("ix_transactions_recurring_bill_id", "recurring_bill_id"),
         # NULLs do not collide, so only offline submissions are constrained.
         UniqueConstraint("household_id", "client_id", name="uq_transaction_client_id"),
         # Only income may go without a bucket (see TransactionCreate).
@@ -362,6 +419,15 @@ class Transaction(Base):
     # retried after the response was lost, so the server must recognise the
     # repeat instead of creating a second transaction.
     client_id = Column(String(64), nullable=True)
+    # The recurring item this expense pays or this income receives (spec
+    # §3.3): set by Pay, Mark received and Link. A bucket-less expense needs it.
+    recurring_bill_id = Column(
+        String,
+        ForeignKey(
+            "recurring_bills.id", ondelete="SET NULL", name="fk_transactions_recurring_bill_id"
+        ),
+        nullable=True,
+    )
     created_at = Column(DateTime, default=utcnow_naive)
     # Soft delete: set (naive UTC) instead of removing the row. Every read
     # query must filter with Transaction.active().
@@ -482,7 +548,53 @@ class RecurringBill(Base):
     notes = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True)
     is_auto_pay = Column(Boolean, default=False, nullable=False)
+    # Planning redesign (spec §3.1-3.2): which way the money goes and the
+    # schedule rule (app.core.schedule). Rows from before it are out +
+    # monthly_interval, whose dates are exactly the old generator's.
+    direction = Column(
+        String(8),
+        default=ItemDirection.out.value,
+        server_default=ItemDirection.out.value,
+        nullable=False,
+    )
+    rule_kind = Column(
+        String(24),
+        default=RuleKind.monthly_interval.value,
+        server_default=RuleKind.monthly_interval.value,
+        nullable=False,
+    )
+    rule_day = Column(Integer, nullable=True)  # monthly_day, yearly
+    rule_month = Column(Integer, nullable=True)  # yearly
+    rule_adjust = Column(
+        String(24),
+        default=RuleAdjust.none.value,
+        server_default=RuleAdjust.none.value,
+        nullable=False,
+    )
+    rule_days = Column(Integer, nullable=True)  # easter_offset: days from Easter Sunday
+    rule_weekday = Column(Integer, nullable=True)  # weekly: 0 = Monday
+    rule_interval_weeks = Column(Integer, nullable=True)  # weekly
+    # How a payment of this item is recorded when the payer picks none: one-tap
+    # Pay, auto-pay, Mark received (2d §7.0). Plain VARCHAR like PaymentMethod.
+    payment_method = Column(
+        String(16),
+        default=_item_payment_method_default,
+        server_default=PaymentMethod.card.value,
+        nullable=False,
+    )
     created_at = Column(DateTime, default=utcnow_naive)
+
+    @property
+    def old_app_editable(self) -> bool:
+        """The old app edits only out items on the legacy rule (spec §6.2)."""
+        return (self.direction or ItemDirection.out.value) == ItemDirection.out.value and (
+            self.rule_kind or RuleKind.monthly_interval.value
+        ) == RuleKind.monthly_interval.value
+
+    @classmethod
+    def active_filter(cls):
+        """Filter expression: not paused (spec §3.4.1). NULL counts as active."""
+        return cls.is_active.isnot(False)
 
     household = relationship("Household", back_populates="recurring_bills")
     bucket = relationship("Bucket", back_populates="recurring_bills")
@@ -498,6 +610,7 @@ class BillOccurrence(Base):
     __table_args__ = (
         UniqueConstraint("bill_id", "due_date", name="uq_bill_occurrence"),
         Index("ix_bill_occurrences_bill_status", "bill_id", "due_date", "status"),
+        Index("ix_bill_occurrences_bill_period", "bill_id", "period"),
     )
 
     id = Column(String, primary_key=True, default=gen_id)
@@ -508,9 +621,131 @@ class BillOccurrence(Base):
     paid_at = Column(DateTime, nullable=True)
     paid_by = Column(String, ForeignKey("users.id"), nullable=True)
     transaction_id = Column(String, ForeignKey("transactions.id"), nullable=True)
+    # The rule's period for this entry, before business-day adjustment:
+    # "YYYY-MM", "YYYY-Www" (weekly) or "YYYY" (app.core.schedule.period_key).
+    # An item never gets two entries in one period. NULL on rows the old app
+    # writes; generation reads those by their due date's month.
+    period = Column(String(10), nullable=True)
+    # When auto-pay settled this entry. Auto-pay never claims an entry it has
+    # settled before, so an undone or deleted auto-payment stays undone.
+    # Undo and delete leave it set.
+    auto_paid_at = Column(DateTime, nullable=True)
 
     bill = relationship("RecurringBill", back_populates="occurrences")
     transaction = relationship("Transaction", back_populates="bill_occurrence")
+
+
+class MatchSuggestion(Base):
+    """ "Looks like Cosmote · Oct": a transaction that may be an expected entry
+    (spec §3.5). Nothing is linked without a tap: Link marks the entry done,
+    Not this sets ``dismissed`` and the pair is never suggested again."""
+
+    __tablename__ = "match_suggestions"
+    __table_args__ = (
+        UniqueConstraint("transaction_id", "occurrence_id", name="uq_match_suggestion"),
+        Index("ix_match_suggestions_household", "household_id", "dismissed"),
+        Index("ix_match_suggestions_occurrence", "occurrence_id"),
+    )
+
+    id = Column(String, primary_key=True, default=gen_id)
+    household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False)
+    transaction_id = Column(
+        String, ForeignKey("transactions.id", ondelete="CASCADE"), nullable=False
+    )
+    occurrence_id = Column(
+        String, ForeignKey("bill_occurrences.id", ondelete="CASCADE"), nullable=False
+    )
+    dismissed = Column(Boolean, default=False, server_default=text("false"), nullable=False)
+    created_at = Column(DateTime, default=utcnow_naive)
+
+    transaction = relationship("Transaction")
+    occurrence = relationship("BillOccurrence")
+
+
+# ---------------------------------------------------------------------------
+# Bulk changes and dismissed duplicates (2c spec §5.3-5.5)
+# ---------------------------------------------------------------------------
+
+
+class BulkBatch(Base):
+    """One applied bulk change: what it set, on how many rows, and the
+    recurring item it moved. Undone at most once, within 24 hours of
+    ``created_at`` (app.services.bulk). Never purged."""
+
+    __tablename__ = "bulk_batches"
+    __table_args__ = (Index("ix_bulk_batches_household_created", "household_id", "created_at"),)
+
+    id = Column(String, primary_key=True, default=gen_id)
+    household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False)
+    created_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    undone_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=utcnow_naive, nullable=False)
+    undone_at = Column(DateTime, nullable=True)
+    selection = Column(String(8), nullable=False)  # ids | filter | bill
+    fields = Column(String(64), nullable=False)  # comma list: bucket,category,payer,method
+    summary = Column(String(200), nullable=False)
+    row_count = Column(Integer, nullable=False)
+    total_out = Column(Numeric(12, 4), nullable=False)
+    total_in = Column(Numeric(12, 4), nullable=False)
+    bill_id = Column(String, ForeignKey("recurring_bills.id", ondelete="SET NULL"), nullable=True)
+    bill_bucket_old = Column(String, nullable=True)
+    bill_bucket_new = Column(String, nullable=True)
+    bill_moved = Column(Boolean, default=False, server_default=text("false"), nullable=False)
+
+    rows = relationship("BulkBatchRow", back_populates="batch", cascade="all, delete-orphan")
+
+
+class BulkBatchRow(Base):
+    """The old and new values of one transaction in a batch. Plain strings
+    with no FKs, so the history reads the same after a bucket, category or
+    member is gone (undo then skips the row, U3)."""
+
+    __tablename__ = "bulk_batch_rows"
+    __table_args__ = (
+        UniqueConstraint("batch_id", "transaction_id", name="uq_bulk_batch_row"),
+        Index("ix_bulk_batch_rows_transaction_id", "transaction_id"),
+    )
+
+    id = Column(String, primary_key=True, default=gen_id)
+    batch_id = Column(String, ForeignKey("bulk_batches.id", ondelete="CASCADE"), nullable=False)
+    transaction_id = Column(
+        String, ForeignKey("transactions.id", ondelete="CASCADE"), nullable=False
+    )
+    old_bucket_id = Column(String, nullable=True)
+    new_bucket_id = Column(String, nullable=True)
+    old_category_id = Column(String, nullable=True)
+    new_category_id = Column(String, nullable=True)
+    old_paid_by = Column(String, nullable=True)
+    new_paid_by = Column(String, nullable=True)
+    old_payer_mode = Column(String(16), nullable=True)
+    new_payer_mode = Column(String(16), nullable=True)
+    old_payment_method = Column(String(16), nullable=True)
+    new_payment_method = Column(String(16), nullable=True)
+    # The bill entry whose paid_by followed a single payer (R18), and its old value.
+    occurrence_id = Column(String, nullable=True)
+    old_occurrence_paid_by = Column(String, nullable=True)
+    restored = Column(Boolean, default=False, server_default=text("false"), nullable=False)
+
+    batch = relationship("BulkBatch", back_populates="rows")
+
+
+class DuplicateDismissal(Base):
+    """ "Keep both": a pair the duplicate finder must not show again, for
+    every member. Stored smaller id first, once."""
+
+    __tablename__ = "duplicate_dismissals"
+    __table_args__ = (
+        UniqueConstraint("first_id", "second_id", name="uq_duplicate_dismissal"),
+        CheckConstraint("first_id < second_id", name="ck_duplicate_dismissals_order"),
+        Index("ix_duplicate_dismissals_household", "household_id"),
+    )
+
+    id = Column(String, primary_key=True, default=gen_id)
+    household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False)
+    first_id = Column(String, ForeignKey("transactions.id", ondelete="CASCADE"), nullable=False)
+    second_id = Column(String, ForeignKey("transactions.id", ondelete="CASCADE"), nullable=False)
+    created_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=utcnow_naive, nullable=False)
 
 
 class CategoryRule(Base):
@@ -631,6 +866,19 @@ class PushSubscription(Base):
     created_at = Column(DateTime, default=utcnow_naive)
 
     user = relationship("User")
+
+
+class NotificationMute(Base):
+    """An alert type one member turned off in one household (2d §7.6). A row
+    means muted; the default is everything on. create_notification checks it,
+    so muting stops both the in-app notification and the push."""
+
+    __tablename__ = "notification_mutes"
+
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), primary_key=True)
+    # A NotificationType value as plain VARCHAR: never the native PG enum.
+    type = Column(String(32), primary_key=True)
 
 
 # ---------------------------------------------------------------------------
@@ -811,7 +1059,10 @@ class StockMovement(Base):
     """Consumption/purchase log; drives run-out prediction."""
 
     __tablename__ = "stock_movements"
-    __table_args__ = (Index("ix_stock_movements_item_created", "stock_item_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_stock_movements_item_created", "stock_item_id", "created_at"),
+        Index("ix_stock_movements_client_id", "client_id"),
+    )
 
     id = Column(String, primary_key=True, default=gen_id)
     stock_item_id = Column(String, ForeignKey("stock_items.id", ondelete="CASCADE"), nullable=False)
@@ -819,6 +1070,9 @@ class StockMovement(Base):
     reason = Column(String(12), nullable=False)  # StockReason value
     created_at = Column(DateTime, default=utcnow_naive)
     created_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    # The PWA's queued ± stepper sends one per tap; a replay of the same id
+    # within 24 h (same household) is not applied again (Pantry spec §4.8).
+    client_id = Column(String(64), nullable=True)
 
     stock_item = relationship("StockItem", back_populates="movements")
 
@@ -841,3 +1095,40 @@ class PriceSnapshot(Base):
     snapshot_date = Column(Date, nullable=False)
 
     product = relationship("Product", back_populates="snapshots")
+
+
+class ShoppingLine(Base):
+    """A line on the household's shopping list (Plan › Pantry).
+
+    With ``stock_item_id`` set it is a **tick** on a computed item (low or
+    running out): picked up, not yet in the pantry; apply-ticked adds
+    ``quantity`` to stock. Without it, a **one-off line** the user typed
+    (``name`` required). ``checked_at`` is when it was ticked; a cleared line
+    (``cleared_at``) is history. Nothing here touches transactions.
+    """
+
+    __tablename__ = "shopping_lines"
+    __table_args__ = (
+        Index("ix_shopping_lines_household_id", "household_id"),
+        # One active tick per stock item; cleared ticks and one-off lines
+        # never collide.
+        Index(
+            "uq_shopping_lines_active_tick",
+            "stock_item_id",
+            unique=True,
+            sqlite_where=text("cleared_at IS NULL AND stock_item_id IS NOT NULL"),
+            postgresql_where=text("cleared_at IS NULL AND stock_item_id IS NOT NULL"),
+        ),
+    )
+
+    id = Column(String(36), primary_key=True, default=gen_id)
+    household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False)
+    stock_item_id = Column(String, ForeignKey("stock_items.id", ondelete="CASCADE"), nullable=True)
+    name = Column(String(200), nullable=True)
+    quantity = Column(Numeric(10, 2), nullable=True)
+    checked_at = Column(DateTime, nullable=True)
+    created_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=utcnow_naive, nullable=False)
+    cleared_at = Column(DateTime, nullable=True)
+
+    stock_item = relationship("StockItem")

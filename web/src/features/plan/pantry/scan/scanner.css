@@ -1,0 +1,35 @@
+/* The barcode camera (mock: Pantry › Barcode scan). A camera view, so its colours are fixed, white on black. */
+.bscan {
+  position: fixed; inset: 0; z-index: 40; overflow: hidden; background: #000; color: #fff;
+  overscroll-behavior: contain; touch-action: none;
+}
+.bscan__video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.bscan__top {
+  position: absolute; z-index: 2; top: 0; left: 0; right: 0; display: grid; grid-template-columns: 44px 1fr 44px;
+  align-items: center; gap: 8px; padding: calc(env(safe-area-inset-top, 0px) + 10px) 16px 10px;
+}
+.bscan__title { margin: 0; text-align: center; font-size: 16px; font-weight: 650; }
+.bscan__btn {
+  width: 44px; height: 44px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%;
+  background: rgba(255, 255, 255, .16); color: #fff; cursor: pointer; touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.bscan__btn .ui-icon { width: 20px; height: 20px; }
+.bscan__btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+/* Wide and short, the shape of a barcode; the dim around it comes from its own shadow. */
+.bscan__box {
+  position: absolute; left: 50%; top: 42%; width: min(82vw, 340px); aspect-ratio: 2.3; transform: translate(-50%, -50%);
+  border-radius: 18px; box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .5); outline: 3px solid rgba(255, 255, 255, .92);
+  outline-offset: -3px; overflow: hidden;
+}
+.bscan__line {
+  position: absolute; left: 8%; right: 8%; top: 50%; height: 2px; border-radius: 1px; background: #ff5a5f;
+  box-shadow: 0 0 10px #ff5a5f; animation: bscan-sweep 1.8s ease-in-out infinite alternate;
+}
+@keyframes bscan-sweep { from { transform: translateY(-34px); } to { transform: translateY(34px); } }
+.bscan__hint {
+  position: absolute; z-index: 2; left: 50%; top: calc(42% + min(41vw, 170px) / 2.3 + 22px); transform: translateX(-50%);
+  margin: 0; padding: 8px 14px; border-radius: 999px; background: #fff; color: #000; font-size: 13px; font-weight: 700;
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) { .bscan__line { animation: none; } }

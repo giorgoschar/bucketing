@@ -255,9 +255,11 @@ def test_split_routers_still_resolve_static_paths(client, authed):
     assert client.get("/transactions/search").status_code == 200
     assert client.get("/transactions/scan").status_code == 200
 
-    from app.main import app
+    # FastAPI >= 0.140 no longer flattens included routers into app.routes, so
+    # read the paths from the split routers themselves.
+    from app.routes import scan, transactions_search
 
-    paths = [getattr(r, "path", "") for r in app.routes]
+    paths = [r.path for m in (scan, transactions_search) for r in m.router.routes]
     for p in (
         "/transactions/search",
         "/transactions/scan",

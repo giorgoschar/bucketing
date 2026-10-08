@@ -329,3 +329,125 @@ def test_stock_migration_tables_and_barcode_uniqueness(tmp_path):
     assert not {"products", "stock_items", "stock_movements", "price_snapshots"} & tables
     up = _alembic(["upgrade", "head"], db_url)
     assert up.returncode == 0, up.stderr
+
+
+def test_notification_mutes_migration_chain_and_round_trip(tmp_path):
+    """2d §7.6: d0e1f2a3b4c5 follows 2c's c9d0e1f2a3b4 and round-trips."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "mutes_mig", ROOT / "alembic" / "versions" / "d0e1f2a3b4c5_notification_mutes.py"
+    )
+    mig = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mig)
+    assert (mig.revision, mig.down_revision) == ("d0e1f2a3b4c5", "c9d0e1f2a3b4")
+
+    db_url = _db_url(tmp_path, "mutes.db")
+    up = _alembic(["upgrade", "head"], db_url)
+    assert up.returncode == 0, up.stderr
+    cols = {c["name"] for c in inspect(create_engine(db_url)).get_columns("notification_mutes")}
+    assert cols == {"user_id", "household_id", "type"}
+    down = _alembic(["downgrade", "c9d0e1f2a3b4"], db_url)
+    assert down.returncode == 0, down.stderr
+    assert "notification_mutes" not in inspect(create_engine(db_url)).get_table_names()
+    up = _alembic(["upgrade", "head"], db_url)
+    assert up.returncode == 0, up.stderr
+
+
+def test_shopping_lines_migration_round_trip_and_active_tick_index(tmp_path):
+    """Pantry §3.1: e1f2a3b4c5d6 follows d0e1f2a3b4c5, adds shopping_lines and
+    round-trips; the partial unique index allows one active tick per item,
+    any number of cleared ones, and never constrains one-off lines."""
+    import importlib.util
+    import uuid
+
+    import pytest
+    from sqlalchemy import text
+    from sqlalchemy.exc import IntegrityError
+
+    spec = importlib.util.spec_from_file_location(
+        "shopping_mig", ROOT / "alembic" / "versions" / "e1f2a3b4c5d6_shopping_lines.py"
+    )
+    mig = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mig)
+    assert (mig.revision, mig.down_revision) == ("e1f2a3b4c5d6", "d0e1f2a3b4c5")
+
+    db_url = _db_url(tmp_path, "shopping.db")
+    up = _alembic(["upgrade", "head"], db_url)
+    assert up.returncode == 0, up.stderr
+    engine = create_engine(db_url)
+    cols = {c["name"] for c in inspect(engine).get_columns("shopping_lines")}
+    assert cols == {
+        "id",
+        "household_id",
+        "stock_item_id",
+        "name",
+        "quantity",
+        "checked_at",
+        "created_by",
+        "created_at",
+        "cleared_at",
+    }
+
+    hh, product, item = (str(uuid.uuid4()) for _ in range(3))
+
+    def add_line(conn, stock_item_id, cleared=None, name=None):
+        conn.execute(
+            text(
+                "INSERT INTO shopping_lines "
+                "(id, household_id, stock_item_id, name, cleared_at, created_at) "
+                "VALUES (:i, :h, :s, :n, :c, '2026-10-01 09:00:00')"
+            ),
+            {"i": str(uuid.uuid4()), "h": hh, "s": stock_item_id, "n": name, "c": cleared},
+        )
+
+    with engine.begin() as conn:
+        conn.execute(
+            text("INSERT INTO households (id, name, default_currency) VALUES (:i, 'H', 'EUR')"),
+            {"i": hh},
+        )
+        conn.execute(
+            text("INSERT INTO products (id, household_id, name) VALUES (:i, :h, 'Milk')"),
+            {"i": product, "h": hh},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO stock_items (id, household_id, product_id, quantity, min_quantity, "
+                "track_price) VALUES (:i, :h, :p, 0, 1, true)"
+            ),
+            {"i": item, "h": hh, "p": product},
+        )
+        add_line(conn, item)  # the active tick
+        add_line(conn, item, cleared="2026-10-01 10:00:00")  # cleared ticks never collide
+        add_line(conn, item, cleared="2026-10-02 10:00:00")
+        add_line(conn, None, name="Foil")  # one-off lines are not ticks
+        add_line(conn, None, name="Foil")
+    with pytest.raises(IntegrityError), engine.begin() as conn:
+        add_line(conn, item)  # a second active tick
+    engine.dispose()
+
+    down = _alembic(["downgrade", "d0e1f2a3b4c5"], db_url)
+    assert down.returncode == 0, down.stderr
+    assert "shopping_lines" not in inspect(create_engine(db_url)).get_table_names()
+    up = _alembic(["upgrade", "head"], db_url)
+    assert up.returncode == 0, up.stderr
+
+
+def test_stock_movements_client_id_migration_round_trip(tmp_path):
+    """Pantry §4.8: e1f2a3b4c5d6 also adds stock_movements.client_id (the
+    stepper's dedupe key), indexed, and drops it on downgrade."""
+    db_url = _db_url(tmp_path, "client_id.db")
+    up = _alembic(["upgrade", "head"], db_url)
+    assert up.returncode == 0, up.stderr
+    insp = inspect(create_engine(db_url))
+    assert "client_id" in {c["name"] for c in insp.get_columns("stock_movements")}
+    assert "ix_stock_movements_client_id" in {
+        i["name"] for i in insp.get_indexes("stock_movements")
+    }
+
+    down = _alembic(["downgrade", "d0e1f2a3b4c5"], db_url)
+    assert down.returncode == 0, down.stderr
+    insp = inspect(create_engine(db_url))
+    assert "client_id" not in {c["name"] for c in insp.get_columns("stock_movements")}
+    up = _alembic(["upgrade", "head"], db_url)
+    assert up.returncode == 0, up.stderr

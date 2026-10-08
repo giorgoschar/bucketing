@@ -21,6 +21,7 @@ abort the pre-migrate backup and therefore the deploy).
 - `VAPID_PRIVATE_KEY`, `VAPID_PUBLIC_KEY`, `VAPID_CLAIMS_EMAIL` for web push.
 - `POSOKANEI_ENABLED=false` while the PosoKanei API returns 403.
 - `RATE_LIMIT_STORAGE_URI`: optional (e.g. a Coolify Redis).
+- New app (`/app`, passkeys via Pocket ID): `NEW_APP_ENABLED=true`, `OIDC_ISSUER=https://id.gch.gr`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`. See section 8 and `docs/POCKET-ID.md`.
 
 **Persistent storage** (Coolify app → Storage):
 
@@ -74,11 +75,65 @@ Do these **before** pressing Deploy:
 After the deploy, **everyone has to log in again once** — web sessions and the
 mobile app's refresh tokens from v1 are no longer accepted.
 
-**Rollback = restore the pre-migrate dump**, never `alembic downgrade`: the
+**Rollback = restore the pre-migrate dump**, never `alembic downgrade` (the one exception is the additive Phase 2 revisions, see section 9): the
 downgrades drop the v2 columns and tables (soft-deleted transactions, archived
 buckets, cash/settlement data), i.e. they destroy data entered since the upgrade.
 Redeploy the previous release and restore `/backups/pre-migrate-<date>.sql.gz`
 (or `expenses-pre-v2.sql.gz`) as in section 5.
+
+## Planning redesign upgrade (migration a7b8c9d0e1f2)
+
+Production runs commit `8b01313` (alembic head `f0a1b2c3d4e5`, user_oidc_subject).
+A database restored from a pre-Phase-1 backup is at `e9f0a1b2c3d4` and upgrades
+through `f0a1b2c3d4e5` to head; `tests/test_planning_upgrade.py` covers both
+starting points. Run the manual check below once against a real dump before
+deploying.
+
+1. Dump production (the usual pre-migrate safety net; rollback = restore it):
+   `pg_dump "$DATABASE_URL" | gzip > expenses-pre-planning.sql.gz`
+2. Restore it into a scratch database on a Postgres 18 you control:
+   `createdb expenses_upgrade_check && gunzip -c expenses-pre-planning.sql.gz | psql expenses_upgrade_check`
+   No dump at hand? Build production's schema from the deployed code instead,
+   with that code's own virtualenv (this branch's `.venv` would import this
+   branch's models and migrations, and build the wrong schema):
+   ```sh
+   git worktree add /tmp/expenses-8b01313 8b01313
+   cd /tmp/expenses-8b01313
+   python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt
+   DATABASE_URL=postgresql://localhost/expenses_upgrade_check \
+     APP_SECRET_KEY=$(openssl rand -hex 32) DEBUG=true .venv/bin/alembic upgrade head
+   .venv/bin/alembic current   # → f0a1b2c3d4e5 (head)
+   cd - && git worktree remove /tmp/expenses-8b01313
+   ```
+   Or use the production image, which has exactly the deployed code and
+   dependencies: `docker run --rm --network host --entrypoint alembic -e DATABASE_URL=postgresql://<user>:<pass>@localhost/expenses_upgrade_check -e APP_SECRET_KEY=$(openssl rand -hex 32) -e DEBUG=true <production image> upgrade head`
+   (`--network host` reaches the host's Postgres on Linux; on Docker Desktop
+   drop it and use `host.docker.internal` instead of `localhost`).
+   (A pre-Phase-1 backup: use commit `67da44c`, head `e9f0a1b2c3d4`.)
+3. Upgrade with this branch:
+   `DATABASE_URL=postgresql://localhost/expenses_upgrade_check .venv/bin/alembic upgrade head`
+4. Check the backfill:
+   - `psql expenses_upgrade_check -c "SELECT direction, rule_kind, count(*) FROM recurring_bills GROUP BY 1,2"` → only `out | monthly_interval`
+   - `psql expenses_upgrade_check -c "SELECT type, kind, count(*) FROM buckets GROUP BY 1,2"` → trip = event, the rest monthly
+   - `psql expenses_upgrade_check -c "SELECT count(*) FROM bill_occurrences o JOIN transactions t ON t.id = o.transaction_id WHERE o.status = 'paid' AND t.recurring_bill_id IS DISTINCT FROM o.bill_id"` → 0
+5. Old-app smoke test on the upgraded copy:
+   `DATABASE_URL=postgresql://localhost/expenses_upgrade_check APP_SECRET_KEY=<prod key> FIELD_ENCRYPTION_KEY=<prod key> DEBUG=true ENABLE_SCHEDULER=false .venv/bin/uvicorn app.main:app --port 8001`
+   Log in with password + TOTP. (In production people may also sign in to the
+   new app with a Pocket ID passkey; that flow returns to the production
+   callback URL, not to this local copy. Everyone who linked a passkey did so
+   after a password + TOTP login, so that path works for every account.)
+   Open the dashboard (same month totals as production), Bills (same list, pay one occurrence), Insights, a trip bucket and Search.
+6. Round trip: `.venv/bin/alembic downgrade f0a1b2c3d4e5 && .venv/bin/alembic upgrade head` (`f0a1b2c3d4e5` is the revision this migration revises).
+   The downgrade refuses, without changing anything, while the database has
+   any recurring item that is incoming (`direction = 'in'`) or uses a new
+   schedule rule (`rule_kind <> 'monthly_interval'`), any expense without a
+   bucket (a Fixed cost paid from the new app), or an undone auto-payment
+   still in the 3-day auto-pay window. A fresh copy of production has none of
+   these; if you tried the new app on the copy first, remove them (or start
+   again from the dump) before this step.
+7. Drop the scratch database.
+
+Then note the date and result in the PR description.
 
 ## 1. Environment variables
 
@@ -105,6 +160,9 @@ deploy (and before any redeploy that introduces a new required variable).
 | `BACKUP_KEEP_DAYS` | optional | Days of backups to keep (default 30). |
 | `BACKUP_BEFORE_MIGRATE` | optional | `true` (default) dumps the DB to `/backups/pre-migrate-*.sql.gz` before `alembic upgrade`. |
 | `LOG_LEVEL` | optional | `INFO` (default). App log lines on stderr. `DEBUG` also logs every payload the Apple Pay Shortcut sends. |
+
+The new app's variables (`NEW_APP_ENABLED`, `OIDC_*`) are listed in section 8. The compose
+stack doesn't pass them; production (the Dockerfile app) sets them in Coolify.
 
 ## 2. Persistent storage
 
@@ -161,7 +219,8 @@ docker compose exec backup /app/scripts/backup.sh
 
 This is also the **rollback** procedure after a failed upgrade: restore the
 `pre-migrate-*.sql.gz` taken just before it. Do not use `alembic downgrade`
-(it drops data, see section 0).
+(it drops data, see section 0), except for the additive Phase 2 revisions, where
+section 9's targeted downgrade inside the running container is the preferred path.
 
 ```sh
 # Stop the app so nothing writes during the restore.
@@ -202,7 +261,75 @@ The container runs `uvicorn --workers 2`. On PostgreSQL, each process tries
 (the lock is held on a dedicated connection and released if the process dies).
 `ENABLE_SCHEDULER=true` can stay set everywhere.
 
-## 8. Diagnostics: a missing Apple Pay expense
+## 8. New app (`/app`) and Pocket ID
+
+The new React app is served at `/app` behind a feature flag and signs in with passkeys
+through a self-hosted Pocket ID (OIDC). Production: app `https://expenses.gch.gr`, Pocket ID
+`https://id.gch.gr` (its own Coolify resource), OIDC client `Tameio` with callback
+`https://expenses.gch.gr/app/auth/callback`. Full setup, account linking, recovery and
+troubleshooting: [`docs/POCKET-ID.md`](POCKET-ID.md).
+
+Set on the expenses app (Coolify → Environment Variables), then redeploy:
+
+| Variable | Required | Value / notes |
+|---|---|---|
+| `NEW_APP_ENABLED` | for `/app` | Default `false`: `/app/*` is a 404 and nothing else changes. `true` serves the new app and the passkey routes; the app then refuses to start unless all three `OIDC_*` values are set. |
+| `OIDC_ISSUER` | with the flag | `https://id.gch.gr`, exactly Pocket ID's discovery `issuer`. Its origin is also added to the old UI's CSP `form-action` (the Link passkey form redirects there). |
+| `OIDC_CLIENT_ID` | with the flag | The `Tameio` client's ID from Pocket ID. |
+| `OIDC_CLIENT_SECRET` | with the flag | The `Tameio` client's secret. Keep it only in Coolify. |
+
+`APP_BASE_URL` must be `https://expenses.gch.gr`: the callback URL is built from it and must
+match the one registered in Pocket ID.
+
+Pocket ID itself (its own resource) needs `APP_URL=https://id.gch.gr`,
+`ENCRYPTION_KEY` (v2 requires it, at least 16 bytes; keep it, losing it loses the signing
+keys), `TRUST_PROXY=true`, and persistent storage on `/app/data`. Passkeys need a trusted
+HTTPS certificate: a plain-http `sslip.io` URL does not work.
+
+Linking is never by email: each person links once from the old UI (password + 2FA) →
+Settings → **Link passkey**. Keep Pocket ID's self sign-up off.
+
+For local development, `docker compose --profile pocketid up -d pocketid` starts a Pocket
+ID on `http://localhost:1411` (see `docs/POCKET-ID.md` → Local development).
+
+## 9. Phase 2 releases (P1, P2, P3)
+
+Phase 2 of the new app ships in three pushes. The migration chain is
+`a7b8c9d0e1f2` → `b8c9d0e1f2a3` (P1, `bill_payment_method`) → `c9d0e1f2a3b4`
+(P2, `bulk_changes`: `bulk_batches`, `bulk_batch_rows`, `duplicate_dismissals`) →
+`d0e1f2a3b4c5` (P2, `notification_mutes`). All are additive.
+
+**P3 (Activity bulk UI, Insights, Settings, push service worker) adds no migrations.**
+The head stays `d0e1f2a3b4c5`; `entrypoint.sh`'s `alembic upgrade head` is a no-op, so the
+pre-migrate dump is only the usual safety net. Nothing new is required in the environment.
+
+**Push notifications** (Settings › Notifications in `/app`) use the existing
+`VAPID_PRIVATE_KEY`, `VAPID_PUBLIC_KEY` and `VAPID_CLAIMS_EMAIL` (section 1). They are not
+required to start: without the keys the app logs a warning at startup,
+`GET /push/vapid-public-key` answers 404 so the new app cannot subscribe a device, and
+"Send test" reports that VAPID is not configured. Keep the same key pair across deploys:
+a new pair invalidates every existing subscription (each device has to turn push on
+again). The service worker is served at `/app/sw.js` with scope `/app/`; the old UI's
+`static/sw.js` is unchanged.
+
+**Rolling the image back past P2** (to a P1 or older image): the older image does not know
+revisions `c9d0e1f2a3b4` and `d0e1f2a3b4c5`, so its `alembic upgrade head` at boot fails
+against a P2 database. Before switching images, run the downgrade **inside the running
+P2 (or P3) container**, which has those migration files and the full production
+environment (`alembic/env.py` loads the app settings, so a bare `docker run` with only
+`DATABASE_URL` fails on `APP_BASE_URL` and the OIDC variables):
+
+```sh
+docker exec <running P2/P3 app container> alembic downgrade b8c9d0e1f2a3
+```
+
+This drops `bulk_batches`, `bulk_batch_rows` (bulk-change undo history),
+`duplicate_dismissals` ("Keep both") and `notification_mutes`; transactions themselves
+are untouched. Then deploy the older image. Rolling back between P3 and P2 needs no
+database step. Restoring the pre-migrate dump (section 5) remains the alternative, at the
+cost of anything entered since it was taken.
+
+## 10. Diagnostics: a missing Apple Pay expense
 
 Every request the Shortcut makes to `/api/v1/ingest/apple-pay` is recorded,
 whatever its outcome, in two places:

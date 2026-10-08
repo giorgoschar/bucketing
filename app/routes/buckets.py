@@ -32,6 +32,7 @@ from app.services import (
     record_household_settlement,
     settlement_fingerprint,
 )
+from app.services.budgets import EVENT_BLOCKED_BY_BILLS, blocks_event_change
 from app.templates import templates
 from app.validators import parse_amount, parse_color, parse_year_month, require_member
 
@@ -302,8 +303,11 @@ def edit_bucket(
     if not bucket or bucket.household_id != hh_id:
         raise HTTPException(status_code=404)
 
+    new_type = BucketType(type)
+    if blocks_event_change(db, bucket, new_type):
+        raise HTTPException(status_code=409, detail=EVENT_BLOCKED_BY_BILLS)
     bucket.name = name.strip()
-    bucket.type = BucketType(type)
+    bucket.type = new_type
     bucket.color = parse_color(color)
     bucket.icon = icon
     bucket.budget = parse_amount(budget, field="Budget", allow_blank=True)

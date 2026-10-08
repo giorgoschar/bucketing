@@ -15,6 +15,7 @@
   --pos: #3DD9A4;
   --neg: #FF6B7A;
   --warn: #FFC24B;
+  --on-neg: #0B0E17;       /* label on a --neg fill: 7.0:1 */
   --pos-soft: #0F2D27;
   --neg-soft: #33141C;
   --warn-soft: #33290F;
@@ -33,8 +34,15 @@
   --hero-bg: radial-gradient(120% 90% at 0% 0%, #1A2550 0%, #12151D 60%);
   --hero-ink: #F3F5FA;
   --hero-pos: #3DD9A4;
+  --on-c3: #0B0E17;        /* ink on the amber --c3 (7.0:1 light, 11.0:1 dark) */
   color-scheme: dark;
 }
+/* ::backdrop doesn't inherit from :root in older engines, so the scrim is declared on both. */
+:root, ::backdrop { --scrim: rgba(0, 0, 0, .55); }
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]), :root:not([data-theme="dark"]) ::backdrop { --scrim: rgba(11, 14, 23, .38); }
+}
+:root[data-theme="light"], :root[data-theme="light"] ::backdrop { --scrim: rgba(11, 14, 23, .38); }
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
   --bg: #EEF1F7;
@@ -42,14 +50,15 @@
   --surface-2: #E4E8F1;
   --ink: #0B0E17;
   --ink-2: #353B4D;
-  --muted: #687089;
+  --muted: #5F6780;   /* AA on --bg 5.0:1, --surface-2 4.6:1 */
   --line: #D8DDE8;
   --accent: #2F55E4;
   --accent-ink: #FFFFFF;
   --accent-soft: #DFE6FF;
-  --pos: #0E9466;
-  --neg: #D6334A;
-  --warn: #B07A00;
+  --pos: #0A7550;       /* AA: 4.9:1 on --pos-soft */
+  --neg: #B4233A;       /* AA: 5.2:1 on --neg-soft */
+  --warn: #8A5F00;      /* AA: 4.9:1 on --warn-soft, 5.0:1 on --bg */
+  --on-neg: #FFFFFF;    /* label on a --neg fill: 6.5:1 */
   --pos-soft: #D9F3E9;
   --neg-soft: #FBE0E4;
   --warn-soft: #FBEFD2;
@@ -68,14 +77,15 @@
   --surface-2: #E4E8F1;
   --ink: #0B0E17;
   --ink-2: #353B4D;
-  --muted: #687089;
+  --muted: #5F6780;   /* AA on --bg 5.0:1, --surface-2 4.6:1 */
   --line: #D8DDE8;
   --accent: #2F55E4;
   --accent-ink: #FFFFFF;
   --accent-soft: #DFE6FF;
-  --pos: #0E9466;
-  --neg: #D6334A;
-  --warn: #B07A00;
+  --pos: #0A7550;       /* AA: 4.9:1 on --pos-soft */
+  --neg: #B4233A;       /* AA: 5.2:1 on --neg-soft */
+  --warn: #8A5F00;      /* AA: 4.9:1 on --warn-soft, 5.0:1 on --bg */
+  --on-neg: #FFFFFF;    /* label on a --neg fill: 6.5:1 */
   --pos-soft: #D9F3E9;
   --neg-soft: #FBE0E4;
   --warn-soft: #FBEFD2;

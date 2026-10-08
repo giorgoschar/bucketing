@@ -16,15 +16,19 @@ from app.core.money import quantize
 from app.models import (
     BillFrequency,
     BillOccurrence,
+    ItemDirection,
     OccurrenceStatus,
     PayerMode,
+    PaymentMethod,
     RecurringBill,
     RecurringBillSplit,
 )
-from app.schemas import parse_payer_mode, parse_payment_method
+from app.schemas import parse_payer_mode
 from app.services import get_overdue_bills, get_upcoming_bills
 from app.services.bills import (
     BILL_HAS_HISTORY_MSG,
+    EDIT_IN_NEW_APP_MSG,
+    PAST_SKIPPED,
     backfill_bill_payer,
     bill_has_payment_history,
     delete_future_occurrences,
@@ -35,7 +39,9 @@ from app.services.bills import (
     settle_occurrence,
 )
 from app.validators import (
+    check_split_sum,
     parse_amount,
+    payment_method_or_400,
     require_bucket,
     require_category,
     require_member,
@@ -115,6 +121,7 @@ class BillIn(BaseModel):
     # "single" (paid_by_default pays) or "own_share" (each member pays their
     # split directly; needs splits).
     payer_mode: str = PayerMode.single.value
+    payment_method: str | None = None  # None: card on create, unchanged on update
     # Update only: also give past payments with no payer this bill's payer.
     apply_to_past: bool = False
 
@@ -129,13 +136,8 @@ class PayOccurrenceIn(BaseModel):
     paid_by: str | None = None
     # None: paid_by if given, else the bill's payer mode.
     payer_mode: str | None = None
-    payment_method: str = "card"
+    payment_method: str | None = None  # None: the bill's
     splits: list[BillSplitIn] = []
-
-    @field_validator("payment_method", mode="before")
-    @classmethod
-    def _payment_method(cls, v):
-        return parse_payment_method(v)
 
     @field_validator("payer_mode", mode="before")
     @classmethod
@@ -160,6 +162,7 @@ def _bill_dict(b: RecurringBill) -> dict:
         "total_occurrences": b.total_occurrences,
         "paid_by_default": b.paid_by_default,
         "payer_mode": b.payer_mode,
+        "payment_method": b.payment_method,
         "notes": b.notes,
         "is_auto_pay": b.is_auto_pay,
         "is_active": b.is_active,
@@ -181,7 +184,8 @@ def _occ_dict(o: BillOccurrence) -> dict:
 
 
 def _assert_bill_in_household(bill: RecurringBill | None, hh_id: str):
-    if not bill or bill.household_id != hh_id:
+    # Income items belong to /recurring; this older API only knows bills.
+    if not bill or bill.household_id != hh_id or bill.direction != ItemDirection.out.value:
         raise HTTPException(status_code=404, detail="Bill not found")
 
 
@@ -198,7 +202,11 @@ def list_bills(
     db: Session = Depends(get_db),
 ):
     user, hh_id = auth
-    q = db.query(RecurringBill).filter_by(household_id=hh_id).order_by(RecurringBill.created_at)
+    q = (
+        db.query(RecurringBill)
+        .filter_by(household_id=hh_id, direction=ItemDirection.out.value)
+        .order_by(RecurringBill.created_at)
+    )
     total = q.count()
     bills = q.offset((page - 1) * page_size).limit(page_size).all()
 
@@ -222,6 +230,7 @@ def create_bill(
     db: Session = Depends(get_db),
 ):
     user, hh_id = auth
+    method = payment_method_or_400(body.payment_method)
     _validate_bill_refs(body, hh_id, db)
     amount = parse_amount(body.amount, field="Bill amount", allow_blank=True)
 
@@ -242,21 +251,17 @@ def create_bill(
         payer_mode=body.payer_mode,
         notes=body.notes,
         is_auto_pay=body.is_auto_pay,
+        payment_method=method or PaymentMethod.card.value,
     )
     db.add(bill)
     db.flush()
 
     if body.splits:
-        split_total = sum(s.amount for s in body.splits)
-        if amount is not None and round(split_total, 4) != round(amount, 4):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Split amounts ({split_total:.2f}) must sum to the bill amount ({float(amount):.2f})",
-            )
+        check_split_sum([s.amount for s in body.splits], amount)
         for s in body.splits:
             db.add(RecurringBillSplit(bill_id=bill.id, user_id=s.user_id, amount=s.amount))
 
-    generate_occurrences(db, bill)
+    generate_occurrences(db, bill, past=PAST_SKIPPED)
     db.commit()
     db.refresh(bill)
     return _bill_dict(bill)
@@ -291,16 +296,14 @@ def update_bill(
     user, hh_id = auth
     bill = db.query(RecurringBill).filter_by(id=bill_id).first()
     _assert_bill_in_household(bill, hh_id)
+    if not bill.old_app_editable:
+        raise HTTPException(status_code=409, detail=EDIT_IN_NEW_APP_MSG)
     _validate_bill_refs(body, hh_id, db)
+    method = payment_method_or_400(body.payment_method)
     amount = parse_amount(body.amount, field="Bill amount", allow_blank=True)
 
     if body.splits:
-        split_total = sum(s.amount for s in body.splits)
-        if amount is not None and round(split_total, 4) != round(amount, 4):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Split amounts ({split_total:.2f}) must sum to the bill amount ({float(amount):.2f})",
-            )
+        check_split_sum([s.amount for s in body.splits], amount)
 
     delete_future_occurrences(db, bill_id)
 
@@ -319,6 +322,8 @@ def update_bill(
     bill.payer_mode = body.payer_mode
     bill.notes = body.notes
     bill.is_auto_pay = body.is_auto_pay
+    if method is not None:
+        bill.payment_method = method
 
     # Replace splits
     for s in bill.splits:
@@ -327,7 +332,7 @@ def update_bill(
     for s in body.splits:
         db.add(RecurringBillSplit(bill_id=bill.id, user_id=s.user_id, amount=s.amount))
 
-    generate_occurrences(db, bill)
+    generate_occurrences(db, bill, past=PAST_SKIPPED)
     backfilled = None
     if body.apply_to_past:
         db.flush()
@@ -353,6 +358,8 @@ def delete_bill(
     user, hh_id = auth
     bill = db.query(RecurringBill).filter_by(id=bill_id).first()
     _assert_bill_in_household(bill, hh_id)
+    if not bill.old_app_editable:
+        raise HTTPException(status_code=409, detail=EDIT_IN_NEW_APP_MSG)
     if bill_has_payment_history(db, bill.id):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=BILL_HAS_HISTORY_MSG)
     db.delete(bill)
@@ -368,7 +375,7 @@ def pay_occurrence(
 ):
     user, hh_id = auth
     occ = db.get(BillOccurrence, occ_id)
-    if not occ or occ.bill.household_id != hh_id:
+    if not occ or occ.bill.household_id != hh_id or occ.bill.direction != ItemDirection.out.value:
         raise HTTPException(status_code=404, detail="Occurrence not found")
 
     bill = occ.bill
@@ -395,6 +402,7 @@ def pay_occurrence(
         fallback_user_id=user.id,
     )
 
+    method = payment_method_or_400(body.payment_method)
     try:
         paid = settle_occurrence(
             db,
@@ -403,7 +411,7 @@ def pay_occurrence(
             paid_by=payer,
             payer_mode=payer_mode,
             paid_on=utcnow_naive(),
-            payment_method=body.payment_method,
+            payment_method=method,
             split_overrides=effective_overrides(
                 bill, {s.user_id: Decimal(str(s.amount)) for s in body.splits}
             ),
@@ -426,7 +434,7 @@ def skip_occurrence(
 ):
     user, hh_id = auth
     occ = db.get(BillOccurrence, occ_id)
-    if not occ or occ.bill.household_id != hh_id:
+    if not occ or occ.bill.household_id != hh_id or occ.bill.direction != ItemDirection.out.value:
         raise HTTPException(status_code=404, detail="Occurrence not found")
 
     if occ.status == OccurrenceStatus.paid:

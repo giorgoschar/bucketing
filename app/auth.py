@@ -188,19 +188,51 @@ def _cookie_kwargs(max_age: int) -> dict:
     }
 
 
-def set_session(response, user_id: str, household_id: str, session_version: int):
-    """Set a full authenticated session cookie."""
+def current_iat(request: Request) -> int | None:
+    """Original sign-in time of the request's session cookie (None without a valid one).
+
+    A cookie from before iat existed falls back to its signature time: such cookies
+    were never rolled, so that is the original sign-in and a re-issue (switch,
+    create, leave, unlink) cannot restart the absolute cap."""
+    cookie = request.cookies.get(COOKIE_NAME)
+    if not cookie or get_current_session(request) is None:
+        return None
+    payload, signed_at = _serializer.loads(
+        cookie, max_age=settings.session_max_age_seconds, return_timestamp=True
+    )
+    iat = payload.get("iat")
+    return iat if isinstance(iat, int) else int(signed_at.timestamp())
+
+
+def set_session(
+    response,
+    user_id: str,
+    household_id: str,
+    session_version: int,
+    amr: str = "pwd",
+    iat: int | None = None,
+):
+    """Set a full authenticated session cookie. amr: "pwd" (password+TOTP) or "oidc" (passkey).
+
+    iat is the time of the real authentication. Only real authentications (password+TOTP,
+    backup code, TOTP enrol, OIDC callback, password change) leave it None to stamp
+    now; re-issues without re-authentication (household switch/create/leave, unlink)
+    pass current_iat(request) so they cannot extend the absolute lifetime.
+    """
     value = _serializer.dumps(
         {
             "user_id": user_id,
             "hh_id": household_id,
             "sv": session_version,
             "state": "authenticated",
+            "amr": amr,
+            "iat": int(time.time()) if iat is None else iat,
         }
     )
     response.set_cookie(COOKIE_NAME, value, **_cookie_kwargs(settings.session_max_age_seconds))
     response.delete_cookie(PENDING_COOKIE_NAME)
     response.delete_cookie(PRE_CSRF_COOKIE_NAME)
+    set_device_cookie(response, user_id, session_version)
     # Non-httponly CSRF token cookie — JS reads it for double-submit validation
     csrf_val = generate_csrf_token(user_id)
     response.set_cookie(
@@ -230,6 +262,47 @@ def _expired_session_cookie() -> str:
     return f"{COOKIE_NAME}=; Max-Age=0; Path=/; HttpOnly; SameSite=lax"
 
 
+DEVICE_COOKIE_NAME = "tameio_device"
+DEVICE_MAX_AGE = 365 * 24 * 60 * 60
+_device_serializer = URLSafeTimedSerializer(settings.app_secret_key, salt="trusted-device")
+
+
+def set_device_cookie(response, user_id: str, session_version: int) -> None:
+    """Mark this browser as one that signed in as `user_id` at `session_version`.
+
+    While it is valid, OIDC sign-in skips the forced passkey prompt; any
+    session_version bump (sign-out everywhere, 2FA change...) makes it stale, so
+    the next sign-in on this device must do a fresh passkey ceremony.
+    """
+    response.set_cookie(
+        DEVICE_COOKIE_NAME,
+        _device_serializer.dumps({"user_id": user_id, "sv": session_version}),
+        httponly=True,
+        samesite="lax",
+        secure=not settings.debug,
+        path="/",
+        max_age=DEVICE_MAX_AGE,
+    )
+
+
+def clear_device_cookie(response) -> None:
+    response.delete_cookie(DEVICE_COOKIE_NAME, path="/")
+
+
+def read_device_cookie(request: Request) -> dict | None:
+    """The verified trusted-device payload, or None (absent, tampered or expired)."""
+    raw = request.cookies.get(DEVICE_COOKIE_NAME)
+    if not raw:
+        return None
+    try:
+        data = _device_serializer.loads(raw, max_age=DEVICE_MAX_AGE)
+    except BadSignature:
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get("sv"), int):
+        return None
+    return data
+
+
 def clear_session(response):
     response.delete_cookie(COOKIE_NAME)
     response.delete_cookie(PENDING_COOKIE_NAME)
@@ -239,9 +312,87 @@ def clear_session(response):
 def decode_cookie(cookie: str, max_age: int | None = None) -> dict | None:
     """Verify signature and age (default: the session lifetime)."""
     try:
-        return _serializer.loads(cookie, max_age=max_age or settings.session_max_age_seconds)
+        data = _serializer.loads(cookie, max_age=max_age or settings.session_max_age_seconds)
     except BadSignature:  # includes SignatureExpired
         return None
+    # Absolute cap on a rolling session, counted from the real sign-in. Cookies
+    # without an iat (issued before rolling existed) just run out on their own.
+    iat = data.get("iat") if isinstance(data, dict) else None
+    if isinstance(iat, int) and time.time() - iat > settings.session_absolute_max_seconds:
+        return None
+    return data
+
+
+# Rolling session: a valid full session older than this is re-issued (same
+# payload, fresh lifetime), so a daily user is never signed out by the 30-day cap.
+SESSION_REFRESH_AFTER = 24 * 60 * 60
+# The CSRF token is replaced only once it is this old (still valid for the rest
+# of its life), so forms open in other tabs keep working in the common case.
+CSRF_REFRESH_AFTER = settings.session_max_age_seconds * 4 // 5
+
+
+def _age_seconds(signed_at: datetime) -> float:
+    return time.time() - signed_at.timestamp()
+
+
+def csrf_for_request(request: Request) -> str:
+    """The CSRF token this request's forms should carry (call after auth succeeded).
+
+    Normally the incoming cookie. Once it is CSRF_REFRESH_AFTER old, a new token is
+    minted *here*, before any template renders, and queued on request.state.new_csrf
+    for the middleware to set as the cookie, so rendered forms and cookie agree.
+    """
+    token = request.cookies.get(CSRF_COOKIE_NAME, "")
+    if not token:
+        return ""
+    try:
+        _, signed_at = _csrf_serializer.loads(
+            token, max_age=settings.session_max_age_seconds, return_timestamp=True
+        )
+    except BadSignature:
+        return token  # rejected later by the CSRF check itself
+    if _age_seconds(signed_at) > CSRF_REFRESH_AFTER:
+        token = generate_csrf_token(request.state.user_id)
+        request.state.new_csrf = token
+    return token
+
+
+def roll_session(request: Request, response) -> None:
+    """Re-issue the session cookie of a fully validated cookie-authenticated request.
+
+    Call only when request.state.user is set: the route's own auth already checked
+    signature, age, session_version and membership. The payload is re-signed
+    unchanged (a missing "amr" stays missing, "iat" is preserved). No-op when the
+    request used a Bearer token, when the route itself set or cleared the session
+    cookie, when the cookie is under a day old, when it has no "iat" (issued before
+    rolling existed: it just runs out), or when the original sign-in is older than
+    settings.session_absolute_max_seconds.
+    """
+    cookie = request.cookies.get(COOKIE_NAME)
+    if not cookie or "authorization" in request.headers:
+        return
+    if any(h.startswith(f"{COOKIE_NAME}=") for h in response.headers.getlist("set-cookie")):
+        return
+    try:
+        payload, signed_at = _serializer.loads(
+            cookie, max_age=settings.session_max_age_seconds, return_timestamp=True
+        )
+    except BadSignature:
+        return
+    if (
+        not isinstance(payload, dict)
+        or payload.get("state") != "authenticated"
+        or payload.get("user_id") != getattr(request.state, "user_id", None)
+    ):
+        return
+    iat = payload.get("iat")
+    if not isinstance(iat, int) or time.time() - iat > settings.session_absolute_max_seconds:
+        return
+    if _age_seconds(signed_at) <= SESSION_REFRESH_AFTER:
+        return
+    response.set_cookie(
+        COOKIE_NAME, _serializer.dumps(payload), **_cookie_kwargs(settings.session_max_age_seconds)
+    )
 
 
 def get_current_session(request: Request) -> dict | None:
@@ -290,6 +441,17 @@ def verify_csrf_token(token: str, user_id: str) -> bool:
     except (BadSignature, AttributeError) as exc:
         security_logger.warning("CSRF token rejected (%s)", type(exc).__name__)
         return False
+
+
+def csrf_matches(request: Request, user_id: str) -> bool:
+    """Double-submit check for JSON API calls: header must equal the cookie and be valid."""
+    header = request.headers.get("X-CSRF-Token", "")
+    cookie = request.cookies.get(CSRF_COOKIE_NAME, "")
+    return (
+        bool(header)
+        and hmac.compare_digest(header.encode("utf-8"), cookie.encode("utf-8"))
+        and verify_csrf_token(header, user_id)
+    )
 
 
 # Pre-session (login) CSRF: forms served before any session exists carry a
@@ -403,13 +565,14 @@ def require_auth(request: Request, db: Session = Depends(get_db)):
         raise stale
 
     # TOTP enrollment enforcement — every authenticated user must enroll
-    if not user.totp_enabled:
+    if not user.totp_enabled and session.get("amr") != "oidc":
         raise HTTPException(status_code=302, headers={"Location": "/settings/2fa/enroll"})
 
     # Expose CSRF token to templates via request.state; the security-headers
     # middleware only (re)issues a CSRF cookie for requests that got this far.
-    request.state.csrf_token = request.cookies.get(CSRF_COOKIE_NAME, "")
     request.state.user = user
+    request.state.user_id = user.id
+    request.state.csrf_token = csrf_for_request(request)
 
     return user, hh_id
 
@@ -430,7 +593,7 @@ def require_household_member(
     if session.get("sv", -1) != user.session_version:
         raise HTTPException(status_code=302, headers={"Location": "/login"})
 
-    if not user.totp_enabled:
+    if not user.totp_enabled and session.get("amr") != "oidc":
         raise HTTPException(status_code=302, headers={"Location": "/settings/2fa/enroll"})
 
     hh_id = session["hh_id"]
