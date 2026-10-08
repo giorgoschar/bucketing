@@ -522,12 +522,17 @@ it('I-3: each row describes its reason, price and sync state to screen readers',
   await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Soap' })).toHaveAccessibleDescription('Waiting to sync'))
 })
 
+// The rollback tests make the shopping GET fail before the action: otherwise the refetch after the rejection
+// would restore the row by itself and hide a missing rollback. (Seen red with useAction's snapshot emptied in
+// the test's own setup: vi.spyOn(client, 'getQueriesData').mockReturnValue([]).)
 it('I-4: a rejected tick rolls back and says why', async () => {
   const api = fakeApi(shoppingRoutes())
   api.on(TICKS, () => reply(404, { detail: 'Stock item not found' }))
   renderWithProviders(<ShoppingList />)
   await loaded()
+  api.on('GET /api/v1/stock/shopping', () => reply(500, { detail: 'boom' }))
   fireEvent.click(row('Milk × 2'))
+  await waitFor(() => expect(api.callsTo('GET /api/v1/stock/shopping').length).toBeGreaterThan(1))
   expect(await screen.findByRole('alert')).toHaveTextContent('Stock item not found')
   expect(row('Milk × 2')).toHaveAttribute('aria-checked', 'false')
   expect(await db.queue.count()).toBe(0)
@@ -538,8 +543,10 @@ it('I-4: a rejected line check rolls back', async () => {
   api.on(LINE, () => reply(404, { detail: 'Line not found' }))
   renderWithProviders(<ShoppingList />)
   await loaded()
+  api.on('GET /api/v1/stock/shopping', () => reply(500, { detail: 'boom' }))
   fireEvent.click(screen.getByRole('checkbox', { name: 'Batteries' }))
   expect(await screen.findByRole('alert')).toHaveTextContent('Line not found')
+  await waitFor(() => expect(api.callsTo('GET /api/v1/stock/shopping').length).toBeGreaterThan(1))
   expect(screen.getByRole('checkbox', { name: 'Batteries' })).toHaveAttribute('aria-checked', 'false')
 })
 
@@ -548,11 +555,13 @@ it('I-4: a line add that fails while online is rolled back, not queued (it may h
   api.on(LINES, () => reply(500, { detail: 'boom' }))
   renderWithProviders(<ShoppingList />)
   await loaded()
+  api.on('GET /api/v1/stock/shopping', () => reply(500, { detail: 'boom' }))
   fireEvent.click(screen.getByRole('button', { name: 'Add item' }))
   const sheet = await screen.findByRole('dialog', { name: 'Add item' })
   fireEvent.change(within(sheet).getByLabelText('Item'), { target: { value: 'Soap' } })
   fireEvent.click(within(sheet).getByRole('button', { name: 'Add' }))
   expect(await screen.findByRole('alert')).toHaveTextContent('Couldn’t confirm the change')
+  await waitFor(() => expect(api.callsTo('GET /api/v1/stock/shopping').length).toBeGreaterThan(1))
   expect(screen.queryByRole('checkbox', { name: 'Soap' })).toBeNull()
   expect(await db.queue.count()).toBe(0)
 })
