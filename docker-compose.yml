@@ -47,6 +47,8 @@ services:
       - VAPID_CLAIMS_EMAIL=${VAPID_CLAIMS_EMAIL:-admin@localhost}
       - POSOKANEI_ENABLED=${POSOKANEI_ENABLED:-true}
       - POSOKANEI_BASE_URL=${POSOKANEI_BASE_URL:-https://api.posokanei.gov.gr}
+      - OPENFOODFACTS_ENABLED=${OPENFOODFACTS_ENABLED:-true}
+      - OPENFOODFACTS_BASE_URL=${OPENFOODFACTS_BASE_URL:-https://world.openfoodfacts.org}
     depends_on:
       db:
         condition: service_healthy
