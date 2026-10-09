@@ -1,5 +1,5 @@
 """polish round: shopping_lines.stock_item_id index, cash_movements.client_id,
-price_snapshots.source
+price_snapshots.source, ingest_attempts.summary_version, transactions.ingest_token_id
 
 * ``ix_shopping_lines_stock_item_id``: untick by item and the per-item tick
   lookups (the partial unique index only covers active ticks).
@@ -16,7 +16,11 @@ price_snapshots.source
 * ``transactions.ingest_token_id``: the ingest token that created the expense (NULL
   for everything else); it authorises the Shortcut's classify call.
 
-Otherwise additive: the downgrade drops the two columns and the two indexes.
+Everything here is additive; no data is changed or deleted (the legacy raw
+attempt rows are kept, and hidden by the NULL ``summary_version``). The downgrade
+drops the four columns (``transactions.ingest_token_id`` with its foreign key,
+``ingest_attempts.summary_version``, ``price_snapshots.source``,
+``cash_movements.client_id``) and the two indexes.
 
 Revision ID: f2a3b4c5d6e7
 Revises: b0c1d2e3f4a5

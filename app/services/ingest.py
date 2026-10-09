@@ -754,12 +754,15 @@ def ingest_apple_pay(
     user = token.user
     try:
         txn = create_transaction(
-            db, household_id=token.household_id, bucket=bucket, user=user, data=data
+            db,
+            household_id=token.household_id,
+            bucket=bucket,
+            user=user,
+            data=data,
+            ingest_token_id=token.id,
         )
     except DuplicateTransaction as dup:
         return dup.existing, False
-    txn.ingest_token_id = token.id
-    db.commit()
     return txn, True
 
 

@@ -221,6 +221,7 @@ def create_transaction(
     receipt: UploadFile | None = None,
     is_shared: bool = False,
     uploads_dir: str | None = None,
+    ingest_token_id: str | None = None,
 ) -> Transaction:
     """Create a transaction (and its splits/receipt) from validated input.
 
@@ -237,6 +238,8 @@ def create_transaction(
     only (HTTP 400 otherwise); income in a bucket needs it active with "Track
     income" on (HTTP 400), or it would never be counted. A fuel expense's
     litres are worked out here from its price (app.services.fuel).
+    ``ingest_token_id`` marks an expense an Apple Pay token created; it is
+    written in this same commit.
     """
     uploads_dir = uploads_dir or UPLOADS_DIR
     if bucket is None and data.type != TransactionType.income:
@@ -306,6 +309,8 @@ def create_transaction(
         client_id=data.client_id,
         exclude_from_forecast=data.exclude_from_forecast,
         exclude_from_settlement=data.exclude_from_settlement,
+        # Set before the insert so the marker commits with the expense (O-3).
+        ingest_token_id=ingest_token_id,
     )
     try:
         db.add(txn)
