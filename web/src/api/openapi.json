@@ -245,6 +245,74 @@
         "title": "BestStoreOut",
         "type": "object"
       },
+      "BillChangeOut": {
+        "description": "The latest done entry of an item against its usual (app.services.bill_change).",
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "number"
+          },
+          "basis": {
+            "title": "Basis",
+            "type": "string"
+          },
+          "delta": {
+            "title": "Delta",
+            "type": "number"
+          },
+          "direction": {
+            "title": "Direction",
+            "type": "string"
+          },
+          "entry_id": {
+            "title": "Entry Id",
+            "type": "string"
+          },
+          "pct": {
+            "title": "Pct",
+            "type": "integer"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "reason_pct": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Pct"
+          },
+          "usual": {
+            "title": "Usual",
+            "type": "number"
+          }
+        },
+        "required": [
+          "entry_id",
+          "amount",
+          "usual",
+          "basis",
+          "delta",
+          "pct",
+          "direction",
+          "reason",
+          "reason_pct"
+        ],
+        "title": "BillChangeOut",
+        "type": "object"
+      },
       "BillIn": {
         "properties": {
           "amount": {
@@ -404,6 +472,30 @@
         "title": "BillIn",
         "type": "object"
       },
+      "BillLastOut": {
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "number"
+          },
+          "due_date": {
+            "format": "date",
+            "title": "Due Date",
+            "type": "string"
+          },
+          "entry_id": {
+            "title": "Entry Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entry_id",
+          "due_date",
+          "amount"
+        ],
+        "title": "BillLastOut",
+        "type": "object"
+      },
       "BillMoveOut": {
         "properties": {
           "bucket_after": {
@@ -444,6 +536,107 @@
           "bucket_after"
         ],
         "title": "BillMoveOut",
+        "type": "object"
+      },
+      "BillRowOut": {
+        "properties": {
+          "average_12m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average 12M"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "change": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BillChangeOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "item_id": {
+            "title": "Item Id",
+            "type": "string"
+          },
+          "last": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BillLastOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "recent": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Recent",
+            "type": "array"
+          },
+          "total_12m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total 12M"
+          },
+          "usage_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usage Unit"
+          }
+        },
+        "required": [
+          "item_id",
+          "name",
+          "category_id",
+          "usage_unit",
+          "is_active",
+          "last",
+          "recent",
+          "total_12m",
+          "average_12m",
+          "change"
+        ],
+        "title": "BillRowOut",
         "type": "object"
       },
       "BillSplitIn": {
@@ -2960,6 +3153,21 @@
               }
             ],
             "title": "Amount"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usage"
           }
         },
         "required": [
@@ -3006,6 +3214,21 @@
               }
             ],
             "title": "Person"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usage"
           }
         },
         "title": "EntryDoneIn",
@@ -3101,6 +3324,28 @@
               }
             ],
             "title": "Transaction Id"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usage"
+          },
+          "usage_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usage Unit"
           }
         },
         "required": [
@@ -3132,6 +3377,30 @@
           }
         },
         "title": "EntryUndoIn",
+        "type": "object"
+      },
+      "EntryUsageIn": {
+        "properties": {
+          "usage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usage"
+          }
+        },
+        "required": [
+          "usage"
+        ],
+        "title": "EntryUsageIn",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -3199,6 +3468,63 @@
         "title": "HistoryEventOut",
         "type": "object"
       },
+      "HistoryItemOut": {
+        "properties": {
+          "category_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "direction": {
+            "title": "Direction",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "usage_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usage Unit"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "direction",
+          "currency",
+          "usage_unit",
+          "category_id",
+          "is_active"
+        ],
+        "title": "HistoryItemOut",
+        "type": "object"
+      },
       "HistoryOut": {
         "properties": {
           "events": {
@@ -3213,24 +3539,6 @@
           "events"
         ],
         "title": "HistoryOut",
-        "type": "object"
-      },
-      "HistoryPointOut": {
-        "properties": {
-          "date": {
-            "title": "Date",
-            "type": "string"
-          },
-          "min_price": {
-            "title": "Min Price",
-            "type": "number"
-          }
-        },
-        "required": [
-          "date",
-          "min_price"
-        ],
-        "title": "HistoryPointOut",
         "type": "object"
       },
       "HouseholdIn": {
@@ -3439,6 +3747,37 @@
           "items"
         ],
         "title": "IngestAttemptsOut",
+        "type": "object"
+      },
+      "ItemHistoryOut": {
+        "properties": {
+          "change": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BillChangeOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "item": {
+            "$ref": "#/components/schemas/HistoryItemOut"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/app__api__planning_models__HistoryPointOut"
+            },
+            "title": "Points",
+            "type": "array"
+          }
+        },
+        "required": [
+          "item",
+          "points",
+          "change"
+        ],
+        "title": "ItemHistoryOut",
         "type": "object"
       },
       "LineCheckIn": {
@@ -4906,6 +5245,17 @@
               }
             ],
             "title": "Total Occurrences"
+          },
+          "usage_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usage Unit"
           }
         },
         "required": [
@@ -5131,6 +5481,17 @@
               }
             ],
             "title": "Total Occurrences"
+          },
+          "usage_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usage Unit"
           }
         },
         "required": [
@@ -6070,7 +6431,7 @@
           },
           "history": {
             "items": {
-              "$ref": "#/components/schemas/HistoryPointOut"
+              "$ref": "#/components/schemas/app__api__stock__HistoryPointOut"
             },
             "title": "History",
             "type": "array"
@@ -7836,6 +8197,84 @@
         ],
         "title": "YearOut",
         "type": "object"
+      },
+      "app__api__planning_models__HistoryPointOut": {
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "number"
+          },
+          "due_date": {
+            "format": "date",
+            "title": "Due Date",
+            "type": "string"
+          },
+          "entry_id": {
+            "title": "Entry Id",
+            "type": "string"
+          },
+          "transaction_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transaction Id"
+          },
+          "unit_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Price"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usage"
+          }
+        },
+        "required": [
+          "entry_id",
+          "due_date",
+          "amount",
+          "usage",
+          "unit_price",
+          "transaction_id"
+        ],
+        "title": "HistoryPointOut",
+        "type": "object"
+      },
+      "app__api__stock__HistoryPointOut": {
+        "properties": {
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "min_price": {
+            "title": "Min Price",
+            "type": "number"
+          }
+        },
+        "required": [
+          "date",
+          "min_price"
+        ],
+        "title": "HistoryPointOut",
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -9325,6 +9764,16 @@
               "title": "Paid By",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "months",
+            "required": false,
+            "schema": {
+              "default": "6",
+              "title": "Months",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -9353,6 +9802,37 @@
           }
         ],
         "summary": "Insights",
+        "tags": [
+          "insights"
+        ]
+      }
+    },
+    "/api/v1/insights/bills": {
+      "get": {
+        "description": "Every recurring out item that is active or has been paid, with its last\namount, a sparkline, its 12-month total and, when the latest payment is\nrecent and unusual, its change. Ignores the Insights lens and period.",
+        "operationId": "bills_api_v1_insights_bills_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BillRowOut"
+                  },
+                  "title": "Response Bills Api V1 Insights Bills Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Bills",
         "tags": [
           "insights"
         ]
@@ -10493,6 +10973,64 @@
         ]
       }
     },
+    "/api/v1/recurring/entries/{entry_id}/usage": {
+      "put": {
+        "description": "Set (or, with null, clear) the usage of an expected, done or skipped entry\nof an item that tracks usage.",
+        "operationId": "entry_usage_api_v1_recurring_entries__entry_id__usage_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entry_id",
+            "required": true,
+            "schema": {
+              "title": "Entry Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EntryUsageIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Entry Usage",
+        "tags": [
+          "recurring"
+        ]
+      }
+    },
     "/api/v1/recurring/preview": {
       "post": {
         "description": "The next ``count`` dates of a rule (2a spec \u00a76), from today or the start date, whichever is\nlater. Dates are generated from the start date, so monthly_interval and weekly keep their anchor.\nWrites nothing.",
@@ -10676,6 +11214,54 @@
           }
         ],
         "summary": "Update Item",
+        "tags": [
+          "recurring"
+        ]
+      }
+    },
+    "/api/v1/recurring/{item_id}/history": {
+      "get": {
+        "description": "The item's done entries (the most recent 240, oldest first), each with its\nusage and price per unit, and the change of the latest one against its usual.",
+        "operationId": "get_history_api_v1_recurring__item_id__history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ItemHistoryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get History",
         "tags": [
           "recurring"
         ]
@@ -12414,7 +13000,7 @@
     },
     "/api/v1/transactions": {
       "get": {
-        "description": "The Activity feed (2c spec \u00a75.1): the shared TransactionFilter, 50 a\npage (max 200), newest first, with each shown day's net.",
+        "description": "The Activity feed (2c spec \u00a75.1): the shared TransactionFilter, 50 a\npage (max 200), newest first unless ``sort`` says otherwise, with each shown\nday's net (date sorts only).",
         "operationId": "list_transactions_api_v1_transactions_get",
         "parameters": [
           {
@@ -12676,6 +13262,16 @@
               "minimum": 1,
               "title": "Page Size",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "date_desc",
+              "title": "Sort",
+              "type": "string"
             }
           }
         ],
@@ -13433,6 +14029,16 @@
               "minimum": 1,
               "title": "Page Size",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "date_desc",
+              "title": "Sort",
+              "type": "string"
             }
           }
         ],
