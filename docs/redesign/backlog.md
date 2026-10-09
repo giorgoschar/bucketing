@@ -72,3 +72,10 @@ Gaps found in the current app that the new app (web/) must cover.
   - The ingest limiter uses in-memory storage per worker unless `RATE_LIMIT_STORAGE_URI` is set.
   - The Apple Pay token row's sub line truncates at 390 px when the badge shows.
   - Two no-merchant purchases with the same amount in the same minute merge into one.
+- **Open Food Facts follow-ups (re-review 2026-10-09, verdict Ship, 5 minors; full list in `.superpowers/sdd/off/rereview.md`):**
+  - N-4: the 30/min barcode limit is checked before the pantry match, so past the limit a scan of something already in the pantry gets a 429 and loses "In pantry · Open". Move the limit to just before the Open Food Facts call.
+  - N-1: without `RATE_LIMIT_STORAGE_URI` the limit is per worker, so one user gets up to 60/min at 2 workers. Say so in the docs; recommend Redis.
+  - N-3: `WEB_CONCURRENCY` is not documented in compose, `.env.example` or the settings table. A non-numeric value stops the container; a value above 2 makes the Open Food Facts budget assumption wrong unless the client reads the same value.
+  - N-2: the deadline closes the socket from another thread. Verify once in the production image (Linux, TLS), or `shutdown()` before the close.
+  - N-5: a `Thread.start()` failure escapes as a 500.
+  - The old site's `/stock` barcode lookup does not use Open Food Facts (only the new app does).
