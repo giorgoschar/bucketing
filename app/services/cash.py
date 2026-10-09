@@ -59,6 +59,15 @@ logged is 0, not 40 counted again on top of February's 40. A still_have stops
 it: what the wallet held then is known, so nothing reaches past it, not even
 cash logged after it beyond what it held (that came from an unrecorded top-up).
 
+The wallet card adds these terms up, so it names the two the shortfall pass
+adds (polish C6): ``logged_cross_month``, this month's cash that a later
+month logged (January's 40 above), and ``over_logged``, what this month
+logged or put back beyond what it had (February's 40), plus what the floors
+cut off. Then, exactly (:func:`_over_logged`)::
+
+    took - still_have - logged - outs - logged_cross_month + over_logged
+        = not_yet_logged
+
 Insights show the household's not-yet-logged cash as "Cash (not yet logged)".
 A period that covers only part of a month counts the part of that month's
 not-yet-logged cash that came from takes dated inside it (what was carried in
@@ -84,7 +93,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from fastapi import HTTPException
-from sqlalchemy import and_, exists, func, or_
+from sqlalchemy import and_, exists, func, or_, text
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.clock import local_today, utcnow_naive
@@ -241,6 +250,7 @@ def add_movement(
     stash_owner_id: str | None = None,
     transaction_id: str | None = None,
     commit: bool = True,
+    client_id: str | None = None,
 ) -> CashMovement:
     """Store a cash movement (and commit, unless ``commit=False``).
 
@@ -261,6 +271,7 @@ def add_movement(
         category_id=(category_id or None) if kind == OUT else None,
         note=(note or "").strip() or None,
         transaction_id=transaction_id,
+        client_id=client_id,
     )
     db.add(mv)
     if commit:
@@ -291,6 +302,7 @@ def record_movement(
     when: date,
     note: str | None = None,
     stash_owner_id: str | None = None,
+    client_id: str | None = None,
 ) -> CashMovement:
     """Log one of the actor's own movements (the cash page and the API).
 
@@ -306,7 +318,16 @@ def record_movement(
             raise HTTPException(status_code=400, detail="That stash is not in this household.")
         require_stash_covers(db, household_id, owner, amount, actor_id)
     return add_movement(
-        db, household_id, actor_id, kind, amount, currency, when, note=note, stash_owner_id=owner
+        db,
+        household_id,
+        actor_id,
+        kind,
+        amount,
+        currency,
+        when,
+        note=note,
+        stash_owner_id=owner,
+        client_id=client_id,
     )
 
 
@@ -319,6 +340,7 @@ def record_stash_count(
     when: date,
     note: str | None,
     currency: str | None = None,
+    client_id: str | None = None,
 ) -> CashMovement:
     """Recount the actor's own stash: they counted ``counted`` (>= 0).
 
@@ -334,7 +356,48 @@ def record_stash_count(
         currency = db.get(Household, household_id).default_currency
     correction = quantize(Decimal(counted) - stash_balance(db, household_id, actor_id))
     return add_movement(
-        db, household_id, actor_id, STASH_COUNT, correction, currency, when, note=note
+        db,
+        household_id,
+        actor_id,
+        STASH_COUNT,
+        correction,
+        currency,
+        when,
+        note=note,
+        client_id=client_id,
+    )
+
+
+REPLAY_WINDOW = timedelta(hours=24)
+
+
+def lock_actor_cash(db: Session, actor_id: str) -> None:
+    """Serialise one member's cash saves until the current database
+    transaction ends: a Postgres advisory lock keyed on the member (their
+    stash rows and wallet), so two recounts, or a save and its retry, never
+    read the same balance or both miss each other's ``client_id``. A row
+    lock could not stop a concurrent insert. SQLite serialises writes on its
+    own, so there it does nothing."""
+    if db.get_bind().dialect.name == "postgresql":
+        db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:k, 0))"),
+            {"k": f"cash:{actor_id}"},
+        )
+
+
+def find_movement_replay(db: Session, household_id: str, client_id: str) -> CashMovement | None:
+    """The household's movement saved with ``client_id`` in the last 24 h
+    (deleted ones too: a replay never makes a deleted save again)."""
+    since = utcnow_naive() - REPLAY_WINDOW
+    return (
+        db.query(CashMovement)
+        .filter(
+            CashMovement.household_id == household_id,
+            CashMovement.client_id == client_id,
+            CashMovement.created_at >= since,
+        )
+        .order_by(CashMovement.created_at)
+        .first()
     )
 
 
@@ -478,6 +541,7 @@ def withdraw_and_spend(
     notes: str | None = None,
     merchant: str | None = None,
     currency: str | None = None,
+    client_id: str | None = None,
 ) -> Transaction:
     """Take cash for one purchase in one step.
 
@@ -503,6 +567,9 @@ def withdraw_and_spend(
         payment_method=PaymentMethod.cash.value,
         took_cash=True,
         take_from=source,
+        # The expense's own idempotency key: a replay raises
+        # DuplicateTransaction instead of making a second expense.
+        client_id=client_id,
     )
     return create_transaction(db, household_id=household_id, bucket=bucket, user=user, data=data)
 
@@ -730,10 +797,13 @@ def _breakdown(ledger: _Ledger, member_id: str, months: list[date]) -> list[dict
 
     # Latest month first: a month that logged (or put back) more than it had
     # takes the shortfall from the not-yet-logged cash of the month before,
-    # unless a still_have closed that month.
+    # unless a still_have closed that month. ``logged_cross_month`` is how
+    # much of this month's cash a later month used up that way (polish C6).
     shortfall = ZERO
     for row in reversed(out):
-        value = row["not_yet_logged"] - shortfall
+        own = row["not_yet_logged"]
+        value = own - shortfall
+        row["logged_cross_month"] = quantize(min(shortfall, max(own, ZERO)))
         row["not_yet_logged"] = quantize(max(value, ZERO))
         shortfall = ZERO if row.pop("_after_mark") else max(-value, ZERO)
     return out[: len(months)]
@@ -835,7 +905,43 @@ def not_yet_logged(db: Session, household_id: str, member_id: str, month_start: 
     ]
 
 
-_SUM_KEYS = ("taken", "put_back", "spent", "logged", "outs", "labelled_out", "not_yet_logged")
+_SUM_KEYS = (
+    "taken",
+    "put_back",
+    "spent",
+    "logged",
+    "outs",
+    "labelled_out",
+    "not_yet_logged",
+    "logged_cross_month",
+)
+
+
+def _over_logged(sums: dict, is_member: bool) -> Decimal:
+    """``over_logged`` (polish C6): what makes the wallet card's sum come out
+    at ``not_yet_logged``::
+
+        took - still_have - logged - outs - logged_cross_month + over_logged
+            = not_yet_logged
+
+    where ``took`` is carried + taken - put_back, floored at 0, for the member
+    themselves, and carried + taken (already net of put backs) for anyone
+    else. It is the cash logged (or put back) beyond what the period had,
+    drawn from earlier months or never recorded, plus what the floors on
+    spent and not_yet_logged cut off. Never negative: for another member
+    whose put backs exceed their takes the hidden put back can leave the sum
+    above not_yet_logged (taken is floored at 0 for them by design)."""
+    took = sums["carried"] + sums["taken"]
+    if is_member:
+        took = max(took - sums["put_back"], ZERO)
+    shown = (
+        took
+        - (sums["still_have"] or ZERO)
+        - sums["logged"]
+        - sums["outs"]
+        - sums["logged_cross_month"]
+    )
+    return quantize(max(sums["not_yet_logged"] - shown, ZERO))
 
 
 def wallet_summaries(
@@ -867,6 +973,7 @@ def wallet_summaries(
         if uid != viewer_id:
             # Floored: below 0 it would be the put back itself.
             sums["taken"] = quantize(max(sums["taken"] - sums.pop("put_back"), ZERO))
+        sums["over_logged"] = _over_logged(sums, uid == viewer_id)
         result[uid] = sums
     return result
 

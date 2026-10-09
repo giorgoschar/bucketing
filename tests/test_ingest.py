@@ -107,12 +107,17 @@ def test_occurred_at_sets_household_local_date(client, db, ingest, monkeypatch):
     assert db.get(Transaction, r.json()["id"]).transaction_date == date(2026, 10, 1)
 
 
-def test_bad_amount_and_missing_merchant_are_rejected(client, db, ingest):
+def test_bad_amount_is_rejected_and_a_missing_merchant_is_not(client, db, ingest):
+    # Polish R4 (approved behaviour change): a purchase without a merchant is
+    # saved under a placeholder instead of being refused with 422; only an
+    # unreadable amount is still a 400. See tests/test_ingest_no_merchant.py.
     assert _post(client, ingest, amount="abc").status_code == 400
     assert _post(client, ingest, amount="-3").status_code == 400
-    assert client.post(URL, json={"amount": "1"}, headers=ingest.headers).status_code == 422
-    assert _post(client, ingest, merchant="   ").status_code == 422
+    assert client.post(URL, json={"merchant": "x"}, headers=ingest.headers).status_code == 400
     assert db.query(Transaction).count() == 0
+    assert client.post(URL, json={"amount": "1"}, headers=ingest.headers).status_code == 201
+    assert _post(client, ingest, merchant="   ", amount="2").status_code == 201
+    assert db.query(Transaction).count() == 2
 
 
 def test_default_bucket_is_used(client, db, ingest):

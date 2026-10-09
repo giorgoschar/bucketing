@@ -20,7 +20,6 @@ from app.models import (
     BucketType,
     Category,
     IngestAttempt,
-    PersonalApiToken,
     Transaction,
 )
 from app.services import (
@@ -83,7 +82,7 @@ def test_created_records_attempt_with_payload_and_attribution(db, client, ingest
     assert a.token_prefix == ingest.token.prefix
     assert a.transaction_id == r.json()["id"]
     assert a.content_type == "application/json"
-    assert "12,50" in a.payload  # the raw body, exactly as sent
+    assert '"amount":{"type":"text","value":"12,50"}' in a.payload  # a summary, not the body
 
 
 def test_duplicate_replay_records_200(db, client, ingest):
@@ -134,7 +133,7 @@ def test_missing_bucket_records_422(client, db, ingest):
 # ---------------------------------------------------------------- recording: before the endpoint runs
 
 
-def test_invalid_json_records_422_with_raw_payload(db, client, ingest):
+def test_invalid_json_records_422_with_a_summary_not_the_body(db, client, ingest):
     r = client.post(
         URL,
         content=b'{"merchant": ',
@@ -143,7 +142,8 @@ def test_invalid_json_records_422_with_raw_payload(db, client, ingest):
     assert r.status_code == 422
     a = _attempts(db)[-1]
     assert a.status == 422
-    assert '{"merchant":' in (a.payload or "")
+    # Polish: never the raw body, only what it was (size and content type).
+    assert a.payload == "not a JSON object (13 bytes, application/json)"
     assert a.household_id == ingest.hh.household_id  # attributed from the bearer token
 
 
@@ -156,7 +156,7 @@ def test_form_encoded_body_records_422(db, client, ingest):
     assert r.status_code == 422
     a = _attempts(db)[-1]
     assert a.status == 422
-    assert "merchant" in (a.payload or "")  # the form bytes, recorded verbatim
+    assert a.payload == "not a JSON object (19 bytes, application/x-www-form-urlencoded)"
     assert a.household_id == ingest.hh.household_id
 
 
@@ -180,7 +180,7 @@ def test_unknown_token_records_401_with_prefix_snippet(client, db):
     assert a.token_prefix == ("pat_" + "A" * 32)[:12]
 
 
-def test_revoked_token_records_401_attributed(db, client, ingest):
+def test_revoked_token_records_401_unattributed(db, client, ingest):
     _post(client, ingest)  # a good run first
     revoke_personal_token(
         db, token_id=ingest.token.id, user_id=ingest.hh.user_id, household_id=ingest.hh.household_id
@@ -191,7 +191,9 @@ def test_revoked_token_records_401_attributed(db, client, ingest):
     assert r.status_code == 401
     a = _attempts(db)[-1]
     assert a.status == 401
-    assert a.household_id == ingest.hh.household_id
+    # Polish review I-2: a dead token owns nothing, so a flood of its attempts
+    # cannot evict the household's log. The prefix still identifies it.
+    assert a.household_id is None and a.token_id is None
     assert a.token_prefix == ingest.token.prefix
     assert "revoked" in a.detail.lower()
 
@@ -213,30 +215,24 @@ def test_rate_limit_records_429(db, client, ingest):
 def test_other_households_do_not_see_attempts(db, client, ingest, make_household):
     _post(client, ingest)
     other = make_household()
-    assert len(recent_ingest_attempts(db, ingest.hh.household_id, ())) == 1
-    assert recent_ingest_attempts(db, other.household_id, ()) == []
+    assert len(recent_ingest_attempts(db, ingest.hh.household_id, ingest.hh.user_id)) == 1
+    assert recent_ingest_attempts(db, other.household_id, other.user_id) == []
 
 
-def test_attempts_visible_via_matching_token_prefix(db, ingest, make_household):
-    # An attempt carrying an unknown tail of our own token is unattributed (the
-    # hash lookup fails), but its first 12 characters match our token — so this
-    # household's page still shows it. No other household's page does.
+def test_unattributed_attempt_with_matching_prefix_is_not_shown_in_app(
+    app, db, ingest, make_household
+):
+    # Polish R2c: an attempt carrying an unknown tail of our own token is
+    # unattributed (the hash lookup fails). It is recorded (and logged) but
+    # shown to nobody in the app, the near-owner included: a prefix is not
+    # proof of ownership.
     record_ingest_attempt(
         status=401, detail="no such token", raw_token=ingest.raw + "Z" * 10, db=db
     )
-    prefixes = tuple(
-        p[0]
-        for p in db.query(PersonalApiToken.prefix).filter(
-            PersonalApiToken.user_id == ingest.hh.user_id,
-            PersonalApiToken.household_id == ingest.hh.household_id,
-        )
-    )
     other = make_household()
-
-    mine = recent_ingest_attempts(db, ingest.hh.household_id, prefixes)
-    theirs = recent_ingest_attempts(db, other.household_id, ())
-    assert any(a.household_id is None and a.token_prefix == ingest.token.prefix for a in mine)
-    assert not any(a.token_prefix == ingest.token.prefix for a in theirs)
+    assert db.query(IngestAttempt).filter(IngestAttempt.household_id.is_(None)).count() == 1
+    assert recent_ingest_attempts(db, ingest.hh.household_id, ingest.hh.user_id) == []
+    assert recent_ingest_attempts(db, other.household_id, other.user_id) == []
 
 
 def test_attempts_pruned_per_household(db, client, ingest, monkeypatch):
@@ -253,7 +249,7 @@ def test_attempts_pruned_per_household(db, client, ingest, monkeypatch):
     assert ["created"] * 5 == [k[0] for k in kept]
 
 
-def test_unattributed_attempts_hard_capped(db, monkeypatch):
+def test_unattributed_attempts_hard_capped(app, db, monkeypatch):
     import app.services.ingest as ingest_mod
 
     monkeypatch.setattr(ingest_mod, "KEEP_UNATTRIBUTED", 3)
@@ -334,10 +330,11 @@ def test_merchant_dict_with_name_parses(client, db, ingest):
     assert db.get(Transaction, r.json()["id"]).merchant == "Sklavenitis"
 
 
-def test_merchant_whole_record_is_422_naming_the_field(client, db, ingest):
+def test_merchant_whole_record_is_saved_without_a_merchant(client, db, ingest):
+    # Polish R4: an unreadable merchant no longer loses the purchase.
     r = _post(client, ingest, merchant={"total": 1, "currency": "EUR"})
-    assert r.status_code == 422
-    assert "Merchant could not be read" in r.json()["detail"]
+    assert r.status_code == 201, r.text
+    assert db.get(Transaction, r.json()["id"]).merchant == "Apple Pay purchase"
 
 
 def test_card_dict_with_name_goes_into_notes(client, db, ingest):
@@ -378,7 +375,7 @@ def test_configure_logging_rejects_bad_level(monkeypatch):
         configure_logging()
 
 
-def test_ingest_log_line_mentions_status(monkeypatch, db, ingest, make_household):
+def test_ingest_log_line_mentions_status(app, monkeypatch, db, ingest, make_household):
     """The log line carry pattern a person can grep for in Coolify."""
     import app.services.ingest as ingest_mod
 

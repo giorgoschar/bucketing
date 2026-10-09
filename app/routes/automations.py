@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.auth import require_auth, require_csrf
 from app.core.config import settings
 from app.core.database import get_db
-from app.models import Bucket, BucketStatus, PersonalApiToken
+from app.models import Bucket, BucketStatus
 from app.services import (
     base_ctx,
     issue_personal_token,
@@ -55,19 +55,8 @@ def _render(
             # APP_BASE_URL first: behind the proxy request.base_url is http://.
             "ingest_url": f"{(settings.app_base_url or str(request.base_url)).rstrip('/')}"
             "/api/v1/ingest/apple-pay",
-            # Attempts the household may see: its own, plus any made with a
-            # token whose prefix matches one of ours (revoked included).
-            "attempts": recent_ingest_attempts(
-                db,
-                hh_id,
-                tuple(
-                    p[0]
-                    for p in db.query(PersonalApiToken.prefix).filter(
-                        PersonalApiToken.user_id == user.id,
-                        PersonalApiToken.household_id == hh_id,
-                    )
-                ),
-            ),
+            # Only this member's own attempts (never another member's).
+            "attempts": recent_ingest_attempts(db, hh_id, user.id),
         }
     )
     response = templates.TemplateResponse("settings/automations.html", ctx, status_code=status_code)
@@ -87,6 +76,7 @@ def create_token(
     request: Request,
     name: str = Form(...),
     default_bucket_id: str = Form(""),
+    allow_classify: str = Form(""),
     db: Session = Depends(get_db),
     auth=Depends(require_auth),
 ):
@@ -98,6 +88,7 @@ def create_token(
             household_id=hh_id,
             name=name,
             default_bucket_id=default_bucket_id or None,
+            allow_classify=bool(allow_classify),
         )
     except HTTPException as exc:
         db.rollback()

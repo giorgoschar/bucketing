@@ -120,99 +120,30 @@
         "type": "object"
       },
       "ApplePayIn": {
+        "description": "The Shortcut's JSON body, accepted as-is and coerced downstream.\n\nFields are deliberately untyped: FastAPI's own checks would only answer\n\"Input should be a valid string\", which says nothing about *what*\narrived. A Shortcuts row set to the whole transaction record sends a\ndictionary; a row left empty sends null. app/services/ingest.py turns\nwhat it can into text or a number, and refuses the rest with a message\nnaming the field and the shape it got \u2014 which is what the log on\nSettings \u2192 Automations then shows.",
         "properties": {
           "amount": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "integer"
-              },
-              {
-                "type": "number"
-              },
-              {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                "type": "string"
-              }
-            ],
             "title": "Amount"
           },
           "card": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
             "title": "Card"
           },
           "currency": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
             "title": "Currency"
           },
           "exchange_rate": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "integer"
-              },
-              {
-                "type": "number"
-              },
-              {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
             "title": "Exchange Rate"
           },
           "merchant": {
-            "title": "Merchant",
-            "type": "string"
+            "title": "Merchant"
           },
           "notes": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
             "title": "Notes"
           },
           "occurred_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
             "title": "Occurred At"
           }
         },
-        "required": [
-          "merchant",
-          "amount"
-        ],
         "title": "ApplePayIn",
         "type": "object"
       },
@@ -899,6 +830,11 @@
       },
       "Body_create_token_settings_automations_tokens_post": {
         "properties": {
+          "allow_classify": {
+            "default": "",
+            "title": "Allow Classify",
+            "type": "string"
+          },
           "default_bucket_id": {
             "default": "",
             "title": "Default Bucket Id",
@@ -2827,6 +2763,19 @@
         "title": "CheapestOut",
         "type": "object"
       },
+      "ClassifyIn": {
+        "description": "Untyped on purpose, like ApplePayIn: a Choose from List result can be\ntext, a list or a dictionary; the values are coerced with ``_text_value``.\n``category``/``bucket``: an id or an exact name (trimmed, case-insensitive),\nat least one. Other keys (a ``remember`` from an older recipe) are ignored.",
+        "properties": {
+          "bucket": {
+            "title": "Bucket"
+          },
+          "category": {
+            "title": "Category"
+          }
+        },
+        "title": "ClassifyIn",
+        "type": "object"
+      },
       "CountsOut": {
         "properties": {
           "duplicate_groups": {
@@ -3397,6 +3346,101 @@
         "title": "IncomeIn",
         "type": "object"
       },
+      "IngestAttemptOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "created",
+              "duplicate",
+              "rejected",
+              "classified"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload"
+          },
+          "status": {
+            "title": "Status",
+            "type": "integer"
+          },
+          "token_prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Prefix"
+          },
+          "transaction_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transaction Id"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "status",
+          "outcome"
+        ],
+        "title": "IngestAttemptOut",
+        "type": "object"
+      },
+      "IngestAttemptsOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/IngestAttemptOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "IngestAttemptsOut",
+        "type": "object"
+      },
       "LineCheckIn": {
         "properties": {
           "checked": {
@@ -3685,6 +3729,17 @@
               }
             ],
             "title": "Category Id"
+          },
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
           },
           "currency": {
             "anyOf": [
@@ -4052,6 +4107,44 @@
           "transaction_count"
         ],
         "title": "PersonShareOut",
+        "type": "object"
+      },
+      "PriceIn": {
+        "description": "``POST /stock/{id}/prices``: the price you paid (polish C3).",
+        "properties": {
+          "date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Price"
+          },
+          "retailer": {
+            "title": "Retailer",
+            "type": "string"
+          }
+        },
+        "required": [
+          "price",
+          "retailer"
+        ],
+        "title": "PriceIn",
         "type": "object"
       },
       "PricePointOut": {
@@ -5062,6 +5155,24 @@
           "has_history"
         ],
         "title": "RecurringItemOut",
+        "type": "object"
+      },
+      "RetailerOut": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name"
+        ],
+        "title": "RetailerOut",
         "type": "object"
       },
       "RetailerPriceOut": {
@@ -6277,7 +6388,30 @@
         "type": "object"
       },
       "StockSettingsIn": {
+        "description": "``PATCH /stock/{id}``: the settings, and (polish C2) the product's\ndetails. Only the keys sent change; for brand, unit, size and barcode a\nnull (or blank) clears the field. Invalid values are a 422.",
         "properties": {
+          "barcode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Barcode"
+          },
+          "brand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand"
+          },
           "min_quantity": {
             "anyOf": [
               {
@@ -6292,6 +6426,17 @@
             ],
             "title": "Min Quantity"
           },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
           "track_price": {
             "anyOf": [
               {
@@ -6302,6 +6447,31 @@
               }
             ],
             "title": "Track Price"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "unit_quantity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Quantity"
           }
         },
         "title": "StockSettingsIn",
@@ -6506,12 +6676,20 @@
             "title": "Logged",
             "type": "number"
           },
+          "logged_cross_month": {
+            "title": "Logged Cross Month",
+            "type": "number"
+          },
           "not_yet_logged": {
             "title": "Not Yet Logged",
             "type": "number"
           },
           "outs": {
             "title": "Outs",
+            "type": "number"
+          },
+          "over_logged": {
+            "title": "Over Logged",
             "type": "number"
           },
           "put_back": {
@@ -6553,6 +6731,8 @@
           "logged",
           "outs",
           "not_yet_logged",
+          "logged_cross_month",
+          "over_logged",
           "labelled_out"
         ],
         "title": "SummaryWalletOut",
@@ -6621,6 +6801,17 @@
       },
       "TokenIn": {
         "properties": {
+          "allow_classify": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Classify"
+          },
           "default_bucket_id": {
             "anyOf": [
               {
@@ -6654,6 +6845,30 @@
           "refresh_token"
         ],
         "title": "TokenRefreshRequest",
+        "type": "object"
+      },
+      "TotalsOut": {
+        "description": "Over every row the feed's filter matches (not one page): ``count`` is\nthe feed's ``total``; ``out`` the expenses and ``in`` the income, in\nhousehold currency (transfers are in ``count`` but in neither sum).",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "in": {
+            "title": "In",
+            "type": "number"
+          },
+          "out": {
+            "title": "Out",
+            "type": "number"
+          }
+        },
+        "required": [
+          "count",
+          "out",
+          "in"
+        ],
+        "title": "TotalsOut",
         "type": "object"
       },
       "TotpCodeIn": {
@@ -7497,12 +7712,20 @@
             "title": "Logged",
             "type": "number"
           },
+          "logged_cross_month": {
+            "title": "Logged Cross Month",
+            "type": "number"
+          },
           "not_yet_logged": {
             "title": "Not Yet Logged",
             "type": "number"
           },
           "outs": {
             "title": "Outs",
+            "type": "number"
+          },
+          "over_logged": {
+            "title": "Over Logged",
             "type": "number"
           },
           "put_back": {
@@ -7544,7 +7767,9 @@
           "spent",
           "logged",
           "outs",
-          "not_yet_logged"
+          "not_yet_logged",
+          "logged_cross_month",
+          "over_logged"
         ],
         "title": "WalletOut",
         "type": "object"
@@ -8929,6 +9154,89 @@
           }
         ],
         "summary": "Apple Pay",
+        "tags": [
+          "ingest"
+        ]
+      }
+    },
+    "/api/v1/ingest/apple-pay/{transaction_id}/classify": {
+      "post": {
+        "description": "Save first, then ask: set the category and/or bucket of a purchase this\nsame token added less than 15 minutes ago. Needs a token created with the\nclassify scope (403 otherwise). Anything that is not the token's own,\nrecent, live purchase is a bare 404. Returns the ingest result again.",
+        "operationId": "classify_api_v1_ingest_apple_pay__transaction_id__classify_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "transaction_id",
+            "required": true,
+            "schema": {
+              "title": "Transaction Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClassifyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Classify",
+        "tags": [
+          "ingest"
+        ]
+      }
+    },
+    "/api/v1/ingest/attempts": {
+      "get": {
+        "description": "Your newest 50 ingest attempts (made with your own tokens), newest\nfirst. Attempts no token can be attributed to are never listed.",
+        "operationId": "list_attempts_api_v1_ingest_attempts_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestAttemptsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Attempts",
         "tags": [
           "ingest"
         ]
@@ -11406,6 +11714,37 @@
         ]
       }
     },
+    "/api/v1/stock/retailers": {
+      "get": {
+        "description": "The stores a logged price can be from (the picker): each known chain\nby name, then ``{\"code\": \"other\", \"name\": \"Other\"}``.",
+        "operationId": "retailers_api_v1_stock_retailers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RetailerOut"
+                  },
+                  "title": "Response Retailers Api V1 Stock Retailers Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Retailers",
+        "tags": [
+          "stock"
+        ]
+      }
+    },
     "/api/v1/stock/shopping": {
       "get": {
         "operationId": "shopping_api_v1_stock_shopping_get",
@@ -11601,6 +11940,47 @@
       }
     },
     "/api/v1/stock/shopping/ticks": {
+      "delete": {
+        "description": "Remove the item's active tick, whoever ticked it (polish C4). 204 even\nwhen there is none, so a queued untick that meets another phone's tick,\nor a replay, still lands.",
+        "operationId": "untick_item_api_v1_stock_shopping_ticks_delete",
+        "parameters": [
+          {
+            "description": "The stock item whose tick to remove",
+            "in": "query",
+            "name": "stock_item_id",
+            "required": true,
+            "schema": {
+              "description": "The stock item whose tick to remove",
+              "title": "Stock Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Untick Item",
+        "tags": [
+          "stock"
+        ]
+      },
       "post": {
         "description": "Tick a shopping-list item. Idempotent: ticking it again returns the\nexisting tick unchanged. Never changes stock.",
         "operationId": "tick_api_v1_stock_shopping_ticks_post",
@@ -11760,6 +12140,7 @@
         ]
       },
       "patch": {
+        "description": "Change an item's settings and (polish C2) its product's details:\n409 when another product of the household has the barcode.",
         "operationId": "stock_settings_api_v1_stock__item_id__patch",
         "parameters": [
           {
@@ -11908,6 +12289,64 @@
           }
         ],
         "summary": "Stock Archive",
+        "tags": [
+          "stock"
+        ]
+      }
+    },
+    "/api/v1/stock/{item_id}/prices": {
+      "post": {
+        "description": "Log the price you paid (polish C3): stored as a ``manual`` snapshot\nfor that store and day (a second one replaces it). Returns the detail.",
+        "operationId": "log_price_api_v1_stock__item_id__prices_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PriceIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StockDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Log Price",
         "tags": [
           "stock"
         ]
@@ -12713,6 +13152,306 @@
           }
         ],
         "summary": "Scan Qr",
+        "tags": [
+          "transactions"
+        ]
+      }
+    },
+    "/api/v1/transactions/totals": {
+      "get": {
+        "description": "The Activity filter's total (polish C1): how many rows match and what\nthey add up to, over every match (``page``/``page_size`` are ignored).\nOne aggregate statement; amounts converted as Insights converts them.",
+        "operationId": "transaction_totals_api_v1_transactions_totals_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "category_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "bucket_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Bucket Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "no_bucket",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "No Bucket",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "paid_by",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Paid By"
+            }
+          },
+          {
+            "in": "query",
+            "name": "missing_payer",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Missing Payer",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "payment_method",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Payment Method"
+            }
+          },
+          {
+            "in": "query",
+            "name": "recurring_bill_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Recurring Bill Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fixed",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Fixed",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From Date"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To Date"
+            }
+          },
+          {
+            "in": "query",
+            "name": "min_amount",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Min Amount"
+            }
+          },
+          {
+            "in": "query",
+            "name": "max_amount",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Max Amount"
+            }
+          },
+          {
+            "in": "query",
+            "name": "year",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Year"
+            }
+          },
+          {
+            "in": "query",
+            "name": "month",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Month"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TotalsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Transaction Totals",
         "tags": [
           "transactions"
         ]

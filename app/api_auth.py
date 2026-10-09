@@ -312,6 +312,28 @@ def require_api_auth_enrolling(
 PAT_PREFIX = "pat_"
 
 
+def bearer_credential(request) -> str | None:
+    """THE reading of the Authorization header for the ingest endpoints: the
+    auth dependency, the rate-limit key, the recorders and the app-wide
+    handlers all use it, so no spelling of the header can be authenticated by
+    one and bucketed (or recorded) differently by another.
+
+    ``Bearer <credential>`` with the scheme in any case and any whitespace
+    between the two words; nothing else is a credential (a bare token, another
+    scheme, a credential with spaces inside). More than one Authorization
+    header is HTTP 400.
+    """
+    values = request.headers.getlist("authorization")
+    if len(values) > 1:
+        raise HTTPException(status_code=400, detail="Send one Authorization header.")
+    if not values:
+        return None
+    parts = values[0].split()
+    if len(parts) == 2 and parts[0].lower() == "bearer":
+        return parts[1]
+    return None
+
+
 def _ingest_unauthorized(detail: str = "Invalid ingest token") -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -357,13 +379,20 @@ def require_ingest_token(
     wake-up is diagnosable even when the failure is here and not in the
     payload — a revoked token says not a word about the request body.
     """
+    # Several Authorization headers are refused outright, before anything is
+    # counted or recorded.
+    credential = (
+        bearer_credential(request)
+        if request is not None
+        else (credentials.credentials if credentials else None)
+    )
     try:
-        if not credentials or not credentials.credentials.startswith(PAT_PREFIX):
+        if not credential or not credential.startswith(PAT_PREFIX):
             raise _ingest_failure(request, "A personal ingest token is required")
 
         from app.services.personal_tokens import INGEST_SCOPE, hash_personal_token
 
-        digest = hash_personal_token(credentials.credentials)
+        digest = hash_personal_token(credential)
         # Lookup is by the SHA-256 of a 192-bit random secret, so query timing
         # reveals nothing usable; the compare_digest is belt and braces.
         record = db.query(PersonalApiToken).filter_by(token_hash=digest).first()
@@ -380,17 +409,27 @@ def require_ingest_token(
 
         record.last_used_at = utcnow_naive()
         db.commit()
+        if request is not None:
+            # The rate-limit key is the authenticated token's id, never header text.
+            request.state.ingest_token_id = record.id
         return record
     except HTTPException as exc:
         from app.services.ingest import record_ingest_attempt
 
+        if exc.status_code == 429:
+            raise  # the failure limiter tripped: answer, and write nothing
+        db.rollback()  # nothing of ours is pending: just end the read before the log row
+        from app.core.ratelimit import client_key
+
+        kwargs = {"path": request.url.path} if request else {}
         record_ingest_attempt(
             status=exc.status_code,
             detail=exc.detail,
+            payload=getattr(request, "_body", None) or None,
             content_type=request.headers.get("content-type") if request else None,
-            raw_token=credentials.credentials if credentials else None,
-            path=request.url.path if request else None,
-            db=db,
+            raw_token=credential,
+            client_ip=client_key(request) if request else None,
+            **kwargs,
         )
         raise
 

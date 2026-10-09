@@ -19,6 +19,9 @@ TOKEN_PREFIX = "pat_"
 TOKEN_BODY_LEN = 32
 DISPLAY_PREFIX_LEN = 12
 INGEST_SCOPE = "ingest"
+# Opt-in at creation: lets the Shortcut read category/bucket names and classify
+# the purchase it just added. Existing tokens never have it.
+CLASSIFY_SCOPE = "classify"
 MAX_NAME_LEN = 60
 
 
@@ -53,6 +56,7 @@ def issue_personal_token(
     household_id: str,
     name: str,
     default_bucket_id: str | None = None,
+    allow_classify: bool = False,
 ) -> tuple[PersonalApiToken, str]:
     """Create a token for ``user_id`` in ``household_id``; return (row, plaintext).
 
@@ -80,7 +84,7 @@ def issue_personal_token(
         name=name,
         token_hash=hash_personal_token(raw),
         prefix=raw[:DISPLAY_PREFIX_LEN],
-        scopes=INGEST_SCOPE,
+        scopes=f"{INGEST_SCOPE},{CLASSIFY_SCOPE}" if allow_classify else INGEST_SCOPE,
         default_bucket_id=default_bucket_id,
     )
     db.add(record)
@@ -137,6 +141,7 @@ def token_dict(record: PersonalApiToken) -> dict:
         "name": record.name,
         "prefix": record.prefix,
         "scopes": record.scope_list,
+        "can_classify": record.can_classify,
         "default_bucket_id": record.default_bucket_id,
         "last_used_at": record.last_used_at.isoformat() if record.last_used_at else None,
         "created_at": record.created_at.isoformat() if record.created_at else None,

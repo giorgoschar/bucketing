@@ -22,6 +22,9 @@ router = APIRouter(prefix="/settings/tokens", tags=["settings"])
 class TokenIn(BaseModel):
     name: str
     default_bucket_id: str | None = None
+    # Opt-in: shares category and bucket names with the Shortcut so it can ask
+    # for a category. Fixed at creation; to change it, create a new token.
+    allow_classify: bool | None = None
 
 
 @router.get("")
@@ -41,6 +44,7 @@ def create_token(
         household_id=hh_id,
         name=body.name,
         default_bucket_id=body.default_bucket_id,
+        allow_classify=bool(body.allow_classify),
     )
     db.commit()
     db.refresh(record)

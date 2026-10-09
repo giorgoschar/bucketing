@@ -96,7 +96,14 @@ def test_search_maps_fields():
     req = rec.requests[0]
     assert req.method == "POST"
     assert str(req.url) == "https://api.posokanei.gov.gr/products/search"
-    assert json.loads(req.content) == {"query": "γάλα", "page": 1, "page_size": 20}
+    # Polish S1: the request format the site itself sends.
+    assert json.loads(req.content) == {
+        "page": 1,
+        "page_size": 20,
+        "sort_by": "name",
+        "sort_order": "asc",
+        "title": "γάλα",
+    }
     assert req.headers["user-agent"].startswith("expenses-app/1.0 (+")
 
 
@@ -129,10 +136,11 @@ def test_get_requests_history_and_maps_product():
     req = rec.requests[0]
     assert req.method == "GET"
     assert req.url.path == "/products/p-123"
+    # Polish S1: the site's own product request.
     assert dict(req.url.params) == {
-        "countries": "GR",
+        "sort_retailers": "asc",
+        "countries": "all",
         "include_tax": "true",
-        "include_history": "true",
     }
 
 
@@ -328,7 +336,169 @@ def test_items_container_accepted_but_unknown_aliases_rejected():
     )
     assert client.search("γάλα")[0].id == "p-123"
     client, _ = make_client(
-        lambda req: httpx.Response(200, json={"products": SEARCH_PAYLOAD["results"]})
+        lambda req: httpx.Response(200, json={"data": SEARCH_PAYLOAD["results"]})
     )
+    # ("products" is the current API's container since polish S1; see below.)
     with pytest.raises(PosokaneiUnavailable):
         client.search("γάλα")
+
+
+# ---------------------------------------------------------------------------
+# Polish S1: the current API's shapes (captured from posokanei.gov.gr,
+# 2026-10-08). Search: POST /products/search with the site's own body,
+# answering {"products": [...]}; product: GET /products/{id}?sort_retailers=
+# asc&countries=all&include_tax=true, the same product object.
+# ---------------------------------------------------------------------------
+
+REAL_PRODUCT = {
+    "id": "fit-300",
+    "name": "Fitness δημητριακά ολικής 300g",
+    "brand": "Nestle",
+    "images": [],
+    "category": "Πρωινό",
+    "category_ids": ["c1", "c7"],
+    "subcategory": "Δημητριακά",
+    "description": "",
+    "image_url": "https://img.example/fit-300.jpg",
+    "has_image": True,
+    "updated_at": "2026-10-08T00:00:00",
+    "image_version": 3,
+    "unit": "kg",
+    "unit_quantity": 0.3,
+    "private_label": False,
+    "price_drop": True,
+    "price_drop_percentage": 12.5,
+    "price_stats": {
+        "min_price": 1.88,
+        "max_price": 3.93,
+        "avg_price": 2.77,
+        "retailer_count": 6,
+        "min_unit_price": 6.27,
+        "last_computed": None,
+    },
+    "retailers": ["carrefour_it", "continente", "galaxias", "masoutis"],
+    "retailer_prices": [
+        {
+            "retailer": "sklavenitis",
+            "retailer_display_name": "Σκλαβενίτης",
+            "retailer_name": "",
+            "price": 1.88,
+            "price_normalized": 6.27,
+            "is_discount": True,
+            "discount_percentage": None,
+            "last_updated": "2026-10-08T00:00:00",
+            "country": "GR",
+        },
+        {
+            "retailer": "masoutis",
+            "retailer_display_name": "Μασούτης",
+            "retailer_name": "",
+            "price": 2.49,
+            "price_normalized": 8.3,
+            "is_discount": False,
+            "discount_percentage": 10,
+            "last_updated": "2026-10-08T00:00:00",
+            "country": "GR",
+        },
+        {
+            "retailer": "carrefour_it",
+            "retailer_display_name": "Carrefour",
+            "retailer_name": "",
+            "price": 3.93,
+            "price_normalized": 13.1,
+            "is_discount": False,
+            "discount_percentage": None,
+            "last_updated": "2026-10-08T00:00:00",
+            "country": "IT",
+        },
+        {
+            "retailer": "continente",
+            "retailer_display_name": "Continente",
+            "retailer_name": "",
+            "price": 1.5,
+            "price_normalized": 5.0,
+            "is_discount": False,
+            "discount_percentage": None,
+            "last_updated": "2026-10-08T00:00:00",
+            "country": "PT",
+        },
+    ],
+    "available_countries": ["GR", "IT", "PT"],
+    "is_international": True,
+}
+
+
+def test_search_reads_the_products_container_and_current_fields():
+    client, rec = make_client(lambda req: httpx.Response(200, json={"products": [REAL_PRODUCT]}))
+    [p] = client.search("fitness", page=2, page_size=15)
+
+    assert json.loads(rec.requests[0].content) == {
+        "page": 2,
+        "page_size": 15,
+        "sort_by": "name",
+        "sort_order": "asc",
+        "title": "fitness",
+    }
+    assert (p.id, p.brand, p.unit, p.unit_quantity) == ("fit-300", "Nestle", "kg", Decimal("0.3"))
+    # Only Greek retailers: the IT and PT chains are dropped.
+    assert [r.retailer for r in p.retailer_prices] == ["sklavenitis", "masoutis"]
+    sk, ma = p.retailer_prices
+    assert sk.display_name == "Σκλαβενίτης"
+    assert sk.price == Decimal("1.88") and sk.unit_price == Decimal("6.27")
+    assert sk.is_discount is True and sk.discount_pct is None
+    assert ma.discount_pct == Decimal("10")
+    assert sk.last_updated == "2026-10-08T00:00:00"
+    assert p.cheapest.retailer == "sklavenitis"  # not the cheaper Portuguese chain
+    # Stats from the Greek prices, not the API's all-country ones.
+    assert (p.price_stats.min, p.price_stats.max) == (Decimal("1.88"), Decimal("2.49"))
+    assert p.price_stats.avg == Decimal("2.18")  # 2.185, half-even
+
+
+def test_current_price_stats_keys_are_read_when_every_price_is_greek():
+    product = json.loads(json.dumps(REAL_PRODUCT))
+    product["retailer_prices"] = product["retailer_prices"][:2]
+    client, _ = make_client(lambda req: httpx.Response(200, json={"products": [product]}))
+    stats = client.search("fitness")[0].price_stats
+    assert (stats.min, stats.max, stats.avg) == (Decimal("1.88"), Decimal("3.93"), Decimal("2.77"))
+
+
+def test_get_maps_the_current_product_shape():
+    client, rec = make_client(lambda req: httpx.Response(200, json=REAL_PRODUCT))
+    p = client.get("fit-300")
+    req = rec.requests[0]
+    assert req.url.path == "/products/fit-300"
+    assert dict(req.url.params) == {
+        "sort_retailers": "asc",
+        "countries": "all",
+        "include_tax": "true",
+    }
+    assert [r.retailer for r in p.retailer_prices] == ["sklavenitis", "masoutis"]
+    assert p.retailer_prices[1].unit_price == Decimal("8.3")
+    assert p.history == []
+
+
+def test_a_price_without_a_country_still_counts():
+    product = json.loads(json.dumps(REAL_PRODUCT))
+    for rp in product["retailer_prices"]:
+        rp.pop("country")
+    client, _ = make_client(lambda req: httpx.Response(200, json=product))
+    assert len(client.get("fit-300").retailer_prices) == 4
+
+
+def test_the_user_agent_stays_honest():
+    """The API refuses non-browser clients by design (403); we respect that
+    and never pretend to be a browser."""
+
+    def handler(req):
+        body = {"products": [REAL_PRODUCT]} if req.method == "POST" else REAL_PRODUCT
+        return httpx.Response(200, json=body)
+
+    client, rec = make_client(handler)
+    client.search("fitness")
+    client.get("fit-300")
+    for req in rec.requests:
+        ua = req.headers["user-agent"]
+        assert ua.startswith("expenses-app/1.0 (+")
+        assert "Mozilla" not in ua
+        for spoof in ("origin", "referer", "sec-fetch-mode", "sec-ch-ua"):
+            assert spoof not in req.headers

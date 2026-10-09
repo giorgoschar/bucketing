@@ -159,7 +159,7 @@ deploy (and before any redeploy that introduces a new required variable).
 | `CORS_ALLOWED_ORIGINS` | optional | Space-separated origins for API clients, e.g. `capacitor://localhost`. Empty = none. |
 | `BACKUP_KEEP_DAYS` | optional | Days of backups to keep (default 30). |
 | `BACKUP_BEFORE_MIGRATE` | optional | `true` (default) dumps the DB to `/backups/pre-migrate-*.sql.gz` before `alembic upgrade`. |
-| `LOG_LEVEL` | optional | `INFO` (default). App log lines on stderr. `DEBUG` also logs every payload the Apple Pay Shortcut sends. |
+| `LOG_LEVEL` | optional | `INFO` (default). App log lines on stderr. The Apple Pay Shortcut's raw request body is never logged at any level; only a short summary of it. |
 
 The new app's variables (`NEW_APP_ENABLED`, `OIDC_*`) are listed in section 8. The compose
 stack doesn't pass them; production (the Dockerfile app) sets them in Coolify.
@@ -335,12 +335,13 @@ Every request the Shortcut makes to `/api/v1/ingest/apple-pay` is recorded,
 whatever its outcome, in two places:
 
 - **Server log** (`docker logs`): one `ingest: … → <status>` line per attempt,
-  with the token prefix, content type and the exact payload the phone sent —
+  with the token prefix, content type and a summary of what the phone sent
+  (the type and a short preview of each field, never the raw body) —
   grep `ingest:` in Coolify → the app service → **Logs**.
-- **In-app**: Settings → Automations → **Recent ingest attempts** shows the
-  same rows (newest first) for each household.
+- **In-app**: Settings → Automations → **Recent ingest attempts** shows your
+  own rows (newest first); other members' attempts are not shown.
 
-A payment that did not arrive is therefore diagnosable from the payload in
+A payment that did not arrive is therefore diagnosable from the summary in
 those rows: a `422` almost always means the Request Body is sent as
 **Form** instead of **JSON**, or a Shortcuts value picks the whole transaction
 record instead of one field. A `400` with "Amount must be a number" means the

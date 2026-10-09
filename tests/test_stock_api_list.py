@@ -153,7 +153,9 @@ def test_post_with_posokanei_id_snapshots_prices(client, db, api, fake):  # noqa
     assert r.status_code == 201, r.text
     snaps = db.query(PriceSnapshot).all()
     assert [(s.retailer, s.price) for s in snaps] == [("ab", D("1.59"))]
-    assert r.json()["cheapest"]["retailer"] == "ab"
+    # Polish S2: the snapshot runs after the reply, so the next fetch has it.
+    row = client.get("/api/v1/stock", headers=headers).json()[0]
+    assert row["cheapest"]["retailer"] == "ab"
     assert ("get", "p-1") in fake.calls
 
 

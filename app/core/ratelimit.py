@@ -13,8 +13,6 @@ is really "5 per worker". Point ``RATE_LIMIT_STORAGE_URI`` at Redis
 (e.g. ``redis://localhost:6379``) to enforce limits across workers.
 """
 
-import hashlib
-
 from slowapi import Limiter
 from starlette.requests import Request
 
@@ -42,15 +40,10 @@ limiter = Limiter(
 
 
 def ingest_token_key(request: Request) -> str:
-    """Rate-limit key for the ingest endpoint: one bucket per personal token.
-
-    Keyed on the SHA-256 of the bearer token (never the token itself, so the
-    plaintext does not sit in the limiter's storage). Falls back to the client
-    IP when there is no bearer token; such requests are rejected with 401
-    before the limit is checked anyway.
-    """
-    auth = request.headers.get("Authorization", "")
-    scheme, _, credentials = auth.partition(" ")
-    if scheme.lower() == "bearer" and credentials.strip():
-        return "pat:" + hashlib.sha256(credentials.strip().encode()).hexdigest()
+    """Rate-limit key for the ingest endpoints: one bucket per AUTHENTICATED
+    token (its id, set by the auth dependency), never anything read from the
+    Authorization header. Without an authenticated token: the client IP."""
+    token_id = getattr(request.state, "ingest_token_id", None)
+    if token_id:
+        return f"pat:{token_id}"
     return client_key(request)

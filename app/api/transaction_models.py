@@ -6,7 +6,7 @@ types say ``number``.
 
 from datetime import date, datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.planning_models import Money
 
@@ -52,6 +52,18 @@ class TransactionPage(BaseModel):
     # Each date on this page -> its net over the WHOLE filter (income -
     # expenses, base currency, transfers excluded), so it is right across pages.
     day_totals: dict[str, Money]
+
+
+class TotalsOut(BaseModel):
+    """Over every row the feed's filter matches (not one page): ``count`` is
+    the feed's ``total``; ``out`` the expenses and ``in`` the income, in
+    household currency (transfers are in ``count`` but in neither sum)."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    count: int
+    out: Money
+    in_: Money = Field(alias="in")
 
 
 class CountsOut(BaseModel):

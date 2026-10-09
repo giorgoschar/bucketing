@@ -13,17 +13,20 @@ Responses:
 Every attempt is recorded (app/services/ingest.py:record_ingest_attempt) —
 including the ones rejected by auth, the rate limiter or body validation, in
 app/main.py — and logged as one ``ingest:`` line. The Shortcut is built by
-hand on the phone, so a bare "422" in the access log has to come with the
-payload that caused it.
+hand on the phone, so a bare "422" in the access log has to come with what
+caused it: a SUMMARY of the body (type and a short preview per known key, a
+count of the others), never the body itself.
 """
 
-from typing import Any
+import re
+from datetime import UTC, datetime
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.api_auth import require_ingest_token
+from app.api_auth import bearer_credential, require_api_auth, require_ingest_token
 from app.core.database import get_db
 from app.core.ratelimit import ingest_token_key, limiter
 from app.models import Bucket, Category, PersonalApiToken, Transaction
@@ -31,16 +34,38 @@ from app.services import (
     DeletedTransactionReplay,
     ingest_apple_pay,
     notify_ingest_created,
+    recent_ingest_attempts,
     record_ingest_attempt,
+)
+from app.services.ingest import (
+    CANNOT_CLASSIFY,
+    NO_MERCHANT_DETAIL,
+    PLACEHOLDER_MERCHANT,
+    _text_value,
+    classifiable,
+    classify_ingested,
+    ingest_choices,
 )
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
 
 
+_CLASSIFY_PATH = re.compile(r"/api/v1/ingest/apple-pay/[^/]+/classify$")
+
+
+# One hourly budget per token and endpoint. The scope names are explicit so that
+# a request refused before the endpoint runs (a body that does not validate)
+# can be counted against the same budget (see :func:`gate_rejected_request`).
+TOKEN_RATE = "60/hour"
+INGEST_RATE_SCOPE = "ingest-apple-pay"
+CLASSIFY_RATE_SCOPE = "ingest-classify"
+
+
 def is_ingest_path(path: str) -> bool:
     """True for the ingest endpoint — used by app-wide handlers (validation,
     rate limiting) to know a request is one of ours to record."""
-    return path.rstrip("/").endswith("/api/v1/ingest/apple-pay")
+    path = path.rstrip("/")
+    return path.endswith("/api/v1/ingest/apple-pay") or bool(_CLASSIFY_PATH.search(path))
 
 
 class ApplePayIn(BaseModel):
@@ -80,14 +105,15 @@ def raw_body(request: Request) -> str | None:
 
 
 def bearer_token(request: Request) -> str | None:
-    header = request.headers.get("authorization", "")
-    scheme, _, value = header.partition(" ")
-    if value and scheme.lower() == "bearer":
-        return value.strip()
-    return header.strip() or None
+    """The canonical credential (see ``api_auth.bearer_credential``) for the
+    recorders, which must never raise: several headers read as none."""
+    try:
+        return bearer_credential(request)
+    except HTTPException:
+        return None
 
 
-def _result(db: Session, txn: Transaction) -> dict:
+def _result(db: Session, txn: Transaction, token: PersonalApiToken) -> dict:
     category = db.get(Category, txn.category_id) if txn.category_id else None
     bucket = db.get(Bucket, txn.bucket_id)
     return {
@@ -99,11 +125,14 @@ def _result(db: Session, txn: Transaction) -> dict:
         "bucket": bucket.name if bucket else None,
         "bucket_id": txn.bucket_id,
         "transaction_date": txn.transaction_date.isoformat(),
+        # Additive (polish S6). needs_category for every token; the name lists
+        # only for a token created with the classify scope.
+        **ingest_choices(db, token, txn),
     }
 
 
 @router.post("/apple-pay", status_code=status.HTTP_201_CREATED)
-@limiter.limit("60/hour", key_func=ingest_token_key)
+@limiter.shared_limit(TOKEN_RATE, scope=INGEST_RATE_SCOPE, key_func=ingest_token_key)
 def apple_pay(
     request: Request,
     response: Response,
@@ -112,12 +141,19 @@ def apple_pay(
     db: Session = Depends(get_db),
 ):
     attempt = {
-        "db": db,
         "token": token,
+        "raw_token": bearer_token(request),
         "payload": raw_body(request),
         "content_type": request.headers.get("content-type"),
         "path": request.url.path,
     }
+
+    def refuse(code: int, detail: str) -> None:
+        # The request's transaction is decided first (nothing half-done
+        # survives a refusal), then the attempt is written on its own.
+        db.rollback()
+        record_ingest_attempt(status=code, detail=detail, **attempt)
+
     try:
         txn, created = ingest_apple_pay(
             db,
@@ -132,27 +168,214 @@ def apple_pay(
         )
     except DeletedTransactionReplay:
         detail = "This purchase was already added and has since been deleted."
-        record_ingest_attempt(status=409, detail=detail, **attempt)
+        refuse(409, detail)
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail) from None
     except HTTPException as exc:
-        record_ingest_attempt(status=exc.status_code, detail=exc.detail, **attempt)
+        refuse(exc.status_code, str(exc.detail))
         raise
-    except Exception as exc:  # a crash is a failed attempt too — log it, re-raise
-        record_ingest_attempt(
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"{type(exc).__name__}: {exc}",
-            **attempt,
-        )
+    except Exception as exc:  # a crash is a failed attempt too: record, re-raise
+        # Fixed text: an exception message can echo the input.
+        refuse(500, f"unexpected error ({type(exc).__name__})")
         raise
     if not created:
         response.status_code = status.HTTP_200_OK
+        result = {**_result(db, txn, token), "duplicate": True}
         record_ingest_attempt(
             status=200,
             detail="duplicate — an expense for this purchase already exists",
             transaction_id=txn.id,
             **attempt,
         )
-        return {**_result(db, txn), "duplicate": True}
-    record_ingest_attempt(status=201, detail="created", transaction_id=txn.id, **attempt)
-    notify_ingest_created(db, txn)
-    return _result(db, txn)
+        return result
+    notify_ingest_created(db, txn)  # commits its own work
+    result = _result(db, txn, token)
+    record_ingest_attempt(
+        status=201,
+        detail=NO_MERCHANT_DETAIL if txn.merchant == PLACEHOLDER_MERCHANT else "created",
+        transaction_id=txn.id,
+        **attempt,
+    )
+    return result
+
+
+class IngestAttemptOut(BaseModel):
+    id: str
+    created_at: datetime
+    status: int
+    # created (201) | duplicate (200) | classified (200, a classify call) | rejected
+    outcome: Literal["created", "duplicate", "rejected", "classified"]
+    detail: str | None = None
+    payload: str | None = None
+    token_prefix: str | None = None
+    transaction_id: str | None = None
+
+
+class IngestAttemptsOut(BaseModel):
+    items: list[IngestAttemptOut]
+
+
+def attempt_outcome(status_code: int, detail: str | None = None) -> str:
+    if status_code == 200 and (detail or "").startswith("classified:"):
+        return "classified"
+    return {201: "created", 200: "duplicate"}.get(status_code, "rejected")
+
+
+@router.get("/attempts", response_model=IngestAttemptsOut)
+def list_attempts(auth=Depends(require_api_auth), db: Session = Depends(get_db)):
+    """Your newest 50 ingest attempts (made with your own tokens), newest
+    first. Attempts no token can be attributed to are never listed."""
+    user, hh_id = auth
+    rows = recent_ingest_attempts(db, hh_id, user.id, limit=50)
+    return {
+        "items": [
+            {
+                "id": a.id,
+                "created_at": a.created_at.replace(tzinfo=UTC),  # stored naive UTC
+                "status": a.status,
+                "outcome": attempt_outcome(a.status, a.detail),
+                "detail": a.safe_detail,
+                "payload": a.safe_payload,
+                "token_prefix": a.token_prefix,
+                "transaction_id": a.transaction_id,
+            }
+            for a in rows
+        ]
+    }
+
+
+class ClassifyIn(BaseModel):
+    """Untyped on purpose, like ApplePayIn: a Choose from List result can be
+    text, a list or a dictionary; the values are coerced with ``_text_value``.
+    ``category``/``bucket``: an id or an exact name (trimmed, case-insensitive),
+    at least one. Other keys (a ``remember`` from an older recipe) are ignored."""
+
+    category: Any = None
+    bucket: Any = None
+
+
+@router.post("/apple-pay/{transaction_id}/classify")
+@limiter.shared_limit(TOKEN_RATE, scope=CLASSIFY_RATE_SCOPE, key_func=ingest_token_key)
+def classify(
+    request: Request,
+    response: Response,
+    transaction_id: str,
+    body: ClassifyIn,
+    token: PersonalApiToken = Depends(require_ingest_token),
+    db: Session = Depends(get_db),
+):
+    """Save first, then ask: set the category and/or bucket of a purchase this
+    same token added less than 15 minutes ago. Needs a token created with the
+    classify scope (403 otherwise). Anything that is not the token's own,
+    recent, live purchase is a bare 404. Returns the ingest result again."""
+    attempt = {
+        "token": token,
+        "raw_token": bearer_token(request),
+        "payload": raw_body(request),
+        "content_type": request.headers.get("content-type"),
+        "path": request.url.path,
+        "transaction_id": None,
+    }
+
+    def reject(code: int, detail: str, public: str | None = None) -> HTTPException:
+        db.rollback()
+        record_ingest_attempt(status=code, detail=detail, **attempt)
+        return HTTPException(status_code=code, detail=public) if public else HTTPException(code)
+
+    if not token.can_classify:
+        raise reject(403, CANNOT_CLASSIFY, CANNOT_CLASSIFY)
+    txn = classifiable(db, token, transaction_id)
+    if txn is None:
+        raise reject(
+            404,
+            "classify: no such purchase for this token (not found, not made by this token, "
+            "older than 15 minutes, or deleted)",
+        )
+    attempt["transaction_id"] = txn.id
+    category = (_text_value(body.category) or "").strip()
+    bucket = (_text_value(body.bucket) or "").strip()
+    if not category and not bucket:
+        raise reject(422, "classify: send a category or a bucket", "Send a category or a bucket.")
+    try:
+        txn, chosen = classify_ingested(
+            db, token, txn, category=category or None, bucket=bucket or None
+        )
+    except HTTPException as exc:
+        db.rollback()
+        raise reject(exc.status_code, str(exc.detail), exc.detail) from None
+    detail = "classified: " + " / ".join(c[:80] for c in chosen)
+    result = _result(db, txn, token)
+    record_ingest_attempt(status=200, detail=detail, **attempt)
+    return result
+
+
+def _rate_scope(path: str) -> str:
+    return CLASSIFY_RATE_SCOPE if path.rstrip("/").endswith("/classify") else INGEST_RATE_SCOPE
+
+
+def gate_rejected_request(request: Request, *, status_code: int, detail: str, payload) -> bool:
+    """Count and record a request refused BEFORE its endpoint ran (a body that
+    does not validate). Synchronous: callers run it in a thread.
+
+    - A live token: counted against that token's hourly budget (the same
+      counter as the endpoint's). Past it the request is answered 429 and a
+      single "rate limited" row is written per token per hour.
+    - Anything else: counted against the per-IP failure limiter that guards
+      token guessing; past it, 429 and nothing is recorded. Within it the
+      attempt is recorded as unattributed (itself capped per source IP).
+
+    Returns True when the response must be 429 instead of the original error.
+    """
+    from limits import parse
+
+    from app.api_auth import INGEST_FAILURE_LIMIT
+    from app.core.ratelimit import client_key
+    from app.services.ingest import live_token_id
+
+    raw = bearer_token(request)
+    common = {
+        "payload": payload,
+        "content_type": request.headers.get("content-type"),
+        "raw_token": raw,
+        "path": request.url.path,
+        "client_ip": client_key(request),
+    }
+    token_id = live_token_id(raw)
+    if token_id is not None:
+        if limiter.limiter.hit(parse(TOKEN_RATE), f"pat:{token_id}", _rate_scope(request.url.path)):
+            record_ingest_attempt(status=status_code, detail=detail, **common)
+            return False
+        if limiter.limiter.hit(parse("1/hour"), "ingest-429-row", token_id):
+            record_ingest_attempt(status=429, detail=RATE_LIMIT_DETAIL, **common)
+        return True
+    if not limiter.limiter.hit(parse(INGEST_FAILURE_LIMIT), "ingest-fail", common["client_ip"]):
+        return True
+    record_ingest_attempt(status=status_code, detail=detail, **common)
+    return False
+
+
+RATE_LIMIT_DETAIL = "Rate limit exceeded — the Shortcut may send at most 60 purchases per hour"
+
+
+def record_rate_limited(request: Request) -> None:
+    """The endpoint's own limiter said no: one "rate limited" row per token per
+    hour (a flood must not fill the log). Synchronous: run it in a thread."""
+    from limits import parse
+
+    from app.core.ratelimit import client_key
+    from app.services.ingest import live_token_id
+
+    raw = bearer_token(request)
+    token_id = live_token_id(raw)
+    if token_id is not None and not limiter.limiter.hit(
+        parse("1/hour"), "ingest-429-row", token_id
+    ):
+        return
+    record_ingest_attempt(
+        status=429,
+        detail=RATE_LIMIT_DETAIL,
+        payload=raw_body(request),
+        content_type=request.headers.get("content-type"),
+        raw_token=raw,
+        path=request.url.path,
+        client_ip=client_key(request),
+    )
