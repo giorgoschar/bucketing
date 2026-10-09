@@ -155,6 +155,8 @@ deploy (and before any redeploy that introduces a new required variable).
 | `RATE_LIMIT_STORAGE_URI` | recommended | `redis://redis:6379` with the compose `redis` profile enabled (`docker compose --profile redis up`, or remove the `profiles:` line in Coolify). Without it, per-IP login limits apply per worker; the per-account lockout (10 failures → 15 min) is stored in the database and holds regardless. |
 | `POSOKANEI_ENABLED` | optional | Default `true`: fetch supermarket prices for the stock list (unofficial API, see `docs/POSOKANEI.md`). `false` stops all outbound lookups; `/stock` still works. **Recommended `false` for now**: the API currently answers 403. |
 | `POSOKANEI_BASE_URL` | optional | Default `https://api.posokanei.gov.gr`. |
+| `OPENFOODFACTS_ENABLED` | optional | Default `true`: a scanned barcode that PosoKanei does not know is looked up on Open Food Facts for its name, brand and size (see `docs/OPENFOODFACTS.md`). `false` stops all outbound lookups. |
+| `OPENFOODFACTS_BASE_URL` | optional | Default `https://world.openfoodfacts.org`. |
 | `ALLOW_REGISTRATION` | optional | Default `false`. |
 | `CORS_ALLOWED_ORIGINS` | optional | Space-separated origins for API clients, e.g. `capacitor://localhost`. Empty = none. |
 | `BACKUP_KEEP_DAYS` | optional | Days of backups to keep (default 30). |
