@@ -1,11 +1,13 @@
 import type { BudgetRowOut, CategoryUsualOut, EntryOut, MatchOut, UpcomingDayOut } from '../../data/types'
 import type { FailedQueueRow } from '../../offline/useQueue'
 import { addDays, shiftMonth } from '../../ui/format'
+import type { BillRow } from '../insights/bills/types'
 
 export type AttentionItem =
   | { kind: 'match'; key: string; match: MatchOut }
   | { kind: 'overdue'; key: string; entry: EntryOut }
   | { kind: 'missingAmount'; key: string; entry: EntryOut }
+  | { kind: 'billChange'; key: string; bill: BillRow }
   | { kind: 'cash'; key: string; amount: number }
   | { kind: 'pantry'; key: string; count: number }
   | { kind: 'budget'; key: string; row: BudgetRowOut }
@@ -24,6 +26,10 @@ export interface AttentionInput {
   cashNotLogged?: number
   /** Pantry items running low (GET /stock/summary); undefined when not cached. Never holds back "All clear". */
   pantryLow?: number
+  /** GET /insights/bills (spec §5.5); undefined when not cached, which hides the row without an error. */
+  bills?: BillRow[]
+  /** Entry ids of bill changes the user dismissed on this device. */
+  dismissedBills?: ReadonlySet<string>
   failed: FailedQueueRow[]
 }
 
@@ -52,6 +58,9 @@ export function buildAttention(i: AttentionInput): AttentionItem[] {
     ...(i.matches ?? []).map((match): AttentionItem => ({ kind: 'match', key: `match:${match.id}`, match })),
     ...overdue.map((entry): AttentionItem => ({ kind: 'overdue', key: `overdue:${entry.id}`, entry })),
     ...missing.map((entry): AttentionItem => ({ kind: 'missingAmount', key: `amount:${entry.id}`, entry })),
+    ...(i.bills ?? [])
+      .filter((b) => b.change !== null && !i.dismissedBills?.has(b.change.entry_id))
+      .map((bill): AttentionItem => ({ kind: 'billChange', key: `bill:${bill.item_id}:${bill.change?.entry_id}`, bill })),
     ...(i.cashNotLogged !== undefined && i.cashNotLogged > CASH_EPS
       ? [{ kind: 'cash', key: 'cash', amount: i.cashNotLogged } satisfies AttentionItem]
       : []),

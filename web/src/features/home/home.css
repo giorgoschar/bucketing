@@ -26,3 +26,4 @@
 @media (prefers-reduced-motion: reduce) { .ui-row.is-new { animation: none; } }
 /* Plan › Cash §4.6: the cash row wraps rather than overflowing at 390 px. */
 .home-attn__wrapnum { white-space: normal; overflow-wrap: anywhere; }
+.home-attn__x { flex: none; min-width: 44px; min-height: 44px; margin: -8px -6px -8px 0; }
