@@ -6173,6 +6173,13 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description More than 30 barcode lookups a minute for this user */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Service Unavailable */
             503: {
                 headers: {

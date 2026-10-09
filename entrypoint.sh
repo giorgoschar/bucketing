@@ -38,7 +38,7 @@ echo "Starting application..."
 # Behind Coolify's Traefik, trust X-Forwarded-* so request.url and client IPs
 # reflect the real client. Only when explicitly enabled.
 if [ "${TRUST_PROXY_HEADERS:-false}" = "true" ]; then
-    exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2 \
+    exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers "${WEB_CONCURRENCY:-2}" \
         --proxy-headers --forwarded-allow-ips='*'
 fi
-exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers "${WEB_CONCURRENCY:-2}"

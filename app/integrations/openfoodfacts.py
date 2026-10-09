@@ -8,18 +8,14 @@ unexpected shape, or OPENFOODFACTS_ENABLED being off — surfaces as
 :class:`OpenFoodFactsUnavailable`; callers degrade to "add it by hand".
 "Not in their database" is not a failure: ``by_barcode`` returns None.
 
-Politeness: requests are at least 0.7 s apart process-wide (well under their
-100 product reads a minute), a 5 s timeout, an honest User-Agent, only ASCII
-digits ever sent, and a 24 h in-process LRU cache (hits and "not found", at
-most 2000 entries).
-
-Availability: the lock only guards bookkeeping (the next free request slot,
-the caches, the breaker) and is never held across a sleep or HTTP call. A
-caller whose slot is more than 2 s away, or who finds 2 lookups already in
-flight, fails fast instead of queueing. An outage error is remembered per
-barcode for 60 s, and 3 in a row open a breaker that short-circuits every
-lookup for 60 s. Callers are sync endpoints (threadpool), so none of this
-blocks the event loop.
+Politeness and availability: see docs/OPENFOODFACTS.md. In short: spacing of
+0.7 s x workers and one request in flight per process when there are several
+workers (about 86 reads a minute combined, a per-process approximation), a
+5 s wall-clock deadline for the whole exchange, no redirects, an honest
+User-Agent, only ASCII digits sent, a 24 h LRU cache, a 60 s per-barcode
+failure cache and a circuit breaker with a half-open probe. The lock only
+guards bookkeeping and is never held across a sleep or HTTP call; callers
+are sync endpoints (threadpool), so nothing blocks the event loop.
 
 Third-party data is bounded here: body at most 64 kB, text must be strings,
 sizes are Decimals in (0, 100000] rounded to 3 places, else None.
@@ -29,6 +25,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import threading
 import time
@@ -52,7 +49,7 @@ BREAKER_THRESHOLD = 3
 BREAKER_OPEN_SECONDS = 60.0
 MAX_SIZE = Decimal("100000")  # app.services.stock.MAX_QUANTITY
 _NUMBER_MAX_CHARS = 20
-MIN_INTERVAL_SECONDS = 0.7
+MIN_INTERVAL_SECONDS = 0.7  # per worker; multiplied by the worker count
 CACHE_TTL_SECONDS = 24 * 3600.0
 CACHE_MAX_ENTRIES = 2000
 FIELDS = (
@@ -187,6 +184,45 @@ def _map(barcode: str, payload) -> OffProduct | None:
 # Client
 # ---------------------------------------------------------------------------
 
+MAX_NESTING = 32
+
+
+class _Outage(OpenFoodFactsUnavailable):
+    """Upstream trouble proper (transport error, timeout, 5xx, 429, deadline):
+    the only kind that counts toward the circuit breaker."""
+
+
+def configured_workers() -> int:
+    """The worker count entrypoint.sh starts uvicorn with (WEB_CONCURRENCY, default 2)."""
+    try:
+        n = int(os.environ.get("WEB_CONCURRENCY", ""))
+    except ValueError:
+        return 2
+    return n if 1 <= n <= 64 else 2
+
+
+def _too_deep(body: bytes) -> bool:
+    """Cheap linear check: do [ and { nest deeper than MAX_NESTING (outside strings)?"""
+    depth = 0
+    in_string = escaped = False
+    for c in body:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif c == 0x5C:  # backslash
+                escaped = True
+            elif c == 0x22:
+                in_string = False
+        elif c == 0x22:
+            in_string = True
+        elif c in (0x5B, 0x7B):
+            depth += 1
+            if depth > MAX_NESTING:
+                return True
+        elif c in (0x5D, 0x7D):
+            depth -= 1
+    return False
+
 
 class OpenFoodFactsClient:
     def __init__(
@@ -196,7 +232,9 @@ class OpenFoodFactsClient:
         enabled: bool | None = None,
         transport: httpx.BaseTransport | None = None,
         timeout: float = TIMEOUT_SECONDS,
-        min_interval: float = MIN_INTERVAL_SECONDS,
+        min_interval: float | None = None,
+        workers: int | None = None,
+        max_in_flight: int | None = None,
         cache_ttl: float = CACHE_TTL_SECONDS,
         max_entries: int = CACHE_MAX_ENTRIES,
         clock: Callable[[], float] = time.monotonic,
@@ -208,27 +246,36 @@ class OpenFoodFactsClient:
         self.base_url = (base_url or settings.openfoodfacts_base_url or DEFAULT_BASE_URL).rstrip(
             "/"
         )
-        self.min_interval = min_interval
+        # The caches, slot clock and breaker are per process; the budget of
+        # roughly 86 reads a minute is shared by dividing it over the workers.
+        self.workers = configured_workers() if workers is None else max(1, workers)
+        self.min_interval = (
+            MIN_INTERVAL_SECONDS * self.workers if min_interval is None else min_interval
+        )
+        self.max_in_flight = (
+            (1 if self.workers > 1 else MAX_IN_FLIGHT) if max_in_flight is None else max_in_flight
+        )
         self.timeout = timeout
         self.cache_ttl = cache_ttl
         self.max_entries = max_entries
         self._clock = clock
         self._sleep = sleep
+        self._transport = transport
         self._lock = threading.Lock()  # bookkeeping only: never held across I/O or sleep
-        self._slots = threading.BoundedSemaphore(MAX_IN_FLIGHT)
+        self._slots = threading.BoundedSemaphore(self.max_in_flight)
         self._next_slot = 0.0
         self._cache: OrderedDict[str, tuple[float, OffProduct | None]] = OrderedDict()
         self._failed: dict[str, float] = {}  # barcode -> unavailable until
         self._failures = 0  # consecutive outage errors
+        self._breaker_open = False
         self._breaker_until = 0.0
+        self._probing = False  # half-open: one probe in flight
         ua = f"Tameio/1.0 (+{settings.app_base_url or 'self-hosted'})"
-        self._http = httpx.Client(
-            base_url=self.base_url,
-            timeout=httpx.Timeout(timeout, connect=min(2.0, timeout)),
-            follow_redirects=False,
-            transport=transport,
-            headers={"User-Agent": ua, "Accept": "application/json"},
-        )
+        self._headers = {
+            "User-Agent": ua,
+            "Accept": "application/json",
+            "Accept-Encoding": "identity",
+        }
 
     # -- bookkeeping (all under self._lock, no I/O) -----------------------
 
@@ -245,23 +292,32 @@ class OpenFoodFactsClient:
         while len(self._cache) > self.max_entries:
             self._cache.popitem(last=False)
 
-    def _record_failure(self, barcode: str):
+    def _remember_failure(self, barcode: str, now: float):
+        self._failed[barcode] = now + FAILURE_TTL_SECONDS
+        if len(self._failed) > self.max_entries:
+            for k in [k for k, until in self._failed.items() if until <= now]:
+                self._failed.pop(k, None)
+            while len(self._failed) > self.max_entries:
+                self._failed.pop(next(iter(self._failed)))
+
+    def _record_failure(self, barcode: str, *, outage: bool, probe: bool):
         with self._lock:
             now = self._clock()
-            self._failed[barcode] = now + FAILURE_TTL_SECONDS
-            if len(self._failed) > self.max_entries:
-                for k in [k for k, until in self._failed.items() if until <= now]:
-                    self._failed.pop(k, None)
-                while len(self._failed) > self.max_entries:
-                    self._failed.pop(next(iter(self._failed)))
-            self._failures += 1
-            if self._failures >= BREAKER_THRESHOLD:
-                self._breaker_until = now + BREAKER_OPEN_SECONDS
+            self._remember_failure(barcode, now)
+            if outage:
+                self._failures += 1
+                if probe or self._failures >= BREAKER_THRESHOLD:
+                    self._breaker_open = True
+                    self._breaker_until = now + BREAKER_OPEN_SECONDS
+                    self._failures = 0
+            elif probe:  # upstream answered: it is reachable again
+                self._breaker_open = False
                 self._failures = 0
 
     def _record_success(self):
         with self._lock:
             self._failures = 0
+            self._breaker_open = False
 
     def _reserve(self) -> float:
         """Claim the next request slot; returns how long to wait for it. Fails
@@ -276,16 +332,21 @@ class OpenFoodFactsClient:
 
     # -- HTTP (no lock held) ----------------------------------------------
 
-    def _fetch(self, barcode: str):
-        path = f"/api/v2/product/{barcode}.json"
+    def _exchange(self, http: httpx.Client, path: str) -> bytes | None:
+        """The request and capped body read; runs in a worker thread."""
         try:
-            deadline = self._clock() + self.timeout  # total, not per read
-            with self._http.stream("GET", path, params={"fields": FIELDS}) as resp:
-                if resp.status_code == 404:
-                    return {"status": 0}
-                if resp.status_code != 200:
-                    logger.warning("Open Food Facts GET %s -> HTTP %s", path, resp.status_code)
-                    raise OpenFoodFactsUnavailable(f"HTTP {resp.status_code}")
+            with http.stream("GET", path, params={"fields": FIELDS}) as resp:
+                code = resp.status_code
+                if code == 404:
+                    return None
+                if code != 200:
+                    logger.warning("Open Food Facts GET %s -> HTTP %s", path, code)
+                    if code >= 500 or code == 429:
+                        raise _Outage(f"HTTP {code}")
+                    raise OpenFoodFactsUnavailable(f"HTTP {code}")
+                encoding = resp.headers.get("content-encoding", "").strip().lower()
+                if encoding not in ("", "identity"):
+                    raise OpenFoodFactsUnavailable("encoded response")
                 declared = resp.headers.get("content-length", "")
                 if (
                     declared.isascii()
@@ -294,21 +355,71 @@ class OpenFoodFactsClient:
                 ):
                     raise OpenFoodFactsUnavailable("response too large")
                 body = bytearray()
-                for chunk in resp.iter_bytes():
-                    body += chunk
-                    if len(body) > MAX_BODY_BYTES:
-                        raise OpenFoodFactsUnavailable("response too large")
-                    if self._clock() > deadline:
-                        raise OpenFoodFactsUnavailable("response too slow")
-                if self._clock() > deadline:
-                    raise OpenFoodFactsUnavailable("response too slow")
+                try:
+                    for chunk in resp.iter_raw():
+                        body += chunk
+                        if len(body) > MAX_BODY_BYTES:
+                            raise OpenFoodFactsUnavailable("response too large")
+                except httpx.StreamConsumed:  # a mock transport pre-read it; real ones stream
+                    if len(resp.content) > MAX_BODY_BYTES:
+                        raise OpenFoodFactsUnavailable("response too large") from None
+                    body = bytearray(resp.content)
+                return bytes(body)
         except httpx.HTTPError as exc:
             logger.warning("Open Food Facts GET %s failed: %s", path, exc)
-            raise OpenFoodFactsUnavailable(str(exc)) from exc
+            raise _Outage(str(exc)) from exc
+
+    def _fetch(self, barcode: str) -> bytes | None:
+        """One exchange under a wall-clock deadline covering connect, headers
+        and body. At the deadline the connection is torn down."""
+        path = f"/api/v2/product/{barcode}.json"
+        http = httpx.Client(
+            base_url=self.base_url,
+            timeout=httpx.Timeout(self.timeout, connect=min(2.0, self.timeout)),
+            follow_redirects=False,
+            transport=self._transport,
+            headers=self._headers,
+        )
+        box: dict = {}
+
+        def work():
+            try:
+                box["body"] = self._exchange(http, path)
+            except BaseException as exc:  # handed back to the caller's thread
+                box["error"] = exc
+
+        worker = threading.Thread(target=work, daemon=True, name="off-fetch")
+        worker.start()
+        worker.join(self.timeout)
         try:
-            return json.loads(bytes(body))
-        except ValueError as exc:
-            raise OpenFoodFactsUnavailable("non-JSON response") from exc
+            if worker.is_alive():
+                logger.warning("Open Food Facts GET %s hit the %.1fs deadline", path, self.timeout)
+                raise _Outage("deadline exceeded")
+        finally:
+            try:
+                http.close()
+            except Exception:  # best effort: tears the socket down
+                pass
+        if "error" in box:
+            exc = box["error"]
+            if isinstance(exc, OpenFoodFactsUnavailable):
+                raise exc
+            logger.warning("Open Food Facts GET %s: unexpected error while fetching", path)
+            raise OpenFoodFactsUnavailable("unexpected error") from None
+        return box["body"]
+
+    def _parse(self, barcode: str, body: bytes | None) -> OffProduct | None:
+        if body is None:
+            return None
+        try:
+            if _too_deep(body):
+                raise OpenFoodFactsUnavailable("response nested too deeply")
+            return _map(barcode, json.loads(body))
+        except OpenFoodFactsUnavailable:
+            raise
+        except Exception:  # incl. RecursionError, MemoryError: never escape as a 500
+            logger.warning("Open Food Facts: unusable response")
+            raise OpenFoodFactsUnavailable("unusable response") from None
 
     def by_barcode(self, barcode: str) -> OffProduct | None:
         if not self.enabled:
@@ -316,38 +427,44 @@ class OpenFoodFactsClient:
         barcode = (barcode or "").strip() if isinstance(barcode, str) else ""
         if not _BARCODE_RE.fullmatch(barcode):
             return None
+        probe = False
         with self._lock:
             found, value = self._cached(barcode)
             if found:
                 return value
             now = self._clock()
-            if now < self._breaker_until:
-                raise OpenFoodFactsUnavailable("circuit open")
             if self._failed.get(barcode, 0.0) > now:
                 raise OpenFoodFactsUnavailable("recently failed")
-        if not self._slots.acquire(blocking=False):
-            raise OpenFoodFactsUnavailable("too many lookups in flight")
+            if self._breaker_open:
+                if now < self._breaker_until or self._probing:
+                    raise OpenFoodFactsUnavailable("circuit open")
+                self._probing = probe = True  # half-open: this call is the probe
+        resolved = False
         try:
-            wait = self._reserve()  # local congestion is not an upstream outage
-            if wait > 0:
-                self._sleep(wait)
+            if not self._slots.acquire(blocking=False):
+                raise OpenFoodFactsUnavailable("too many lookups in flight")
             try:
-                payload = self._fetch(barcode)
+                wait = self._reserve()  # local congestion is not an upstream outage
+                if wait > 0:
+                    self._sleep(wait)
                 try:
-                    mapped = _map(barcode, payload)
-                except OpenFoodFactsUnavailable:
+                    mapped = self._parse(barcode, self._fetch(barcode))
+                except OpenFoodFactsUnavailable as exc:
+                    resolved = True
+                    self._record_failure(barcode, outage=isinstance(exc, _Outage), probe=probe)
                     raise
-                except Exception as exc:  # any shape surprise is "unavailable"
-                    raise OpenFoodFactsUnavailable(f"unexpected response: {exc}") from exc
-            except OpenFoodFactsUnavailable:
-                self._record_failure(barcode)
-                raise
-            self._record_success()
-            with self._lock:
-                self._store(barcode, mapped)
-            return mapped
+                resolved = True
+                self._record_success()
+                with self._lock:
+                    self._store(barcode, mapped)
+                return mapped
+            finally:
+                self._slots.release()
         finally:
-            self._slots.release()
+            if probe:
+                with self._lock:
+                    self._probing = False
+            del resolved
 
 
 # ---------------------------------------------------------------------------

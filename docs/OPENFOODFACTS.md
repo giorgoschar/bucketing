@@ -19,10 +19,16 @@ Lookup order: own pantry, PosoKanei, Open Food Facts, add by hand.
 
 ## Politeness
 
-- Honest `User-Agent: Tameio/1.0 (+<APP_BASE_URL>)`, never a browser string.
-- One request at a time, at least 700 ms apart (their limit is 100 product reads a minute), 10 s timeout.
+- Honest `User-Agent: Tameio/1.0 (+<APP_BASE_URL>)`, never a browser string. `Accept-Encoding: identity`.
 - Only 6 to 14 ASCII digits are ever sent.
-- In-process cache per barcode for 24 h, hits and "not found" alike, at most 2,000 entries (LRU). Failures are not cached.
+- Spacing: 700 ms times the worker count between requests per process, and 1 request in flight per process when there is more than one worker (2 for a single worker). `WEB_CONCURRENCY` (default 2, the value `entrypoint.sh` starts uvicorn with) gives the worker count. The combined rate is therefore at most about 86 product reads a minute, under their limit of 100. **This is a per-process approximation**: each worker keeps its own slot clock, caches and breaker, with no shared store.
+- A caller whose slot is more than 2 s away, or who finds the in-flight cap full, fails fast (treated as unavailable) instead of queueing. That is local congestion, not an outage.
+- Per user, `GET /api/v1/products/barcode/{code}` allows 30 lookups a minute (429 with "Too many barcode lookups. Try again in a minute."), before any upstream call.
+- 5 s deadline for the whole exchange (connect, headers and body, wall clock); at the deadline the connection is closed. No redirects.
+- Response body read raw and capped at 64 kB; any `Content-Encoding` other than identity is refused (so nothing is inflated); JSON nested deeper than 32 is refused before parsing; any parsing surprise is "unavailable".
+- Cache per barcode for 24 h, hits and "not found" alike, at most 2,000 entries (LRU).
+- Failures are cached too: after an unavailable answer the barcode is not asked again for 60 s.
+- Circuit breaker: 3 consecutive real outages (transport error, timeout, deadline, 5xx, 429) stop all lookups for 60 s. Then one probe is allowed: success closes the breaker, failure reopens it for another 60 s. Redirects, other 4xx and malformed records only enter the per-barcode failure cache.
 
 ## Licence and credit
 
@@ -50,7 +56,3 @@ body carries `in_pantry`, and the user can still add the product by hand.
 An Open Food Facts result is a 200 with `source: "openfoodfacts"`, `id`
 `off:<barcode>` (not a PosoKanei id), empty `retailer_prices`, all-null
 `price_stats`, empty `history` and no image.
-
-## Hardening
-
-Lock-free I/O (the lock guards bookkeeping only); a caller whose request slot is more than 2 s away, or who finds 2 lookups in flight, fails fast; an outage is remembered per barcode for 60 s; 3 consecutive outage errors open a 60 s breaker; 5 s total deadline including the body, no redirects, body streamed and capped at 64 kB; sizes strictly parsed, in (0, 100000], rounded to 3 places, else none. An `off:`-prefixed `posokanei_id` is ignored by the add paths.

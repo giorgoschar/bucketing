@@ -10057,6 +10057,9 @@
             },
             "description": "Validation Error"
           },
+          "429": {
+            "description": "More than 30 barcode lookups a minute for this user"
+          },
           "503": {
             "content": {
               "application/json": {

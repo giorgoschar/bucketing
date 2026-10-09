@@ -15,6 +15,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
 from fastapi.responses import JSONResponse
+from limits import parse
 from pydantic import BaseModel, PlainSerializer, WithJsonSchema, field_validator
 from sqlalchemy.orm import Session
 
@@ -22,6 +23,7 @@ from app.api_auth import require_api_auth
 from app.core import database
 from app.core.clock import local_today
 from app.core.database import get_db
+from app.core.ratelimit import limiter
 from app.integrations import openfoodfacts, posokanei
 from app.integrations.openfoodfacts import OpenFoodFactsUnavailable
 from app.integrations.posokanei import PosokaneiUnavailable, PriceStats, ProductSummary
@@ -312,6 +314,9 @@ class StockDetailOut(StockItemOut):
 class InPantryOut(BaseModel):
     stock_item_id: str
     quantity: Num
+
+
+BARCODE_RATE = "30/minute"
 
 
 class ProductLookupOut(ProductOut):
@@ -885,10 +890,19 @@ def _in_pantry(item) -> dict | None:
 @products_router.get(
     "/barcode/{code}",
     response_model=ProductLookupOut,
-    responses={404: {"model": ProductLookupErrorOut}, 503: {"model": ProductLookupErrorOut}},
+    responses={
+        404: {"model": ProductLookupErrorOut},
+        429: {"description": "More than 30 barcode lookups a minute for this user"},
+        503: {"model": ProductLookupErrorOut},
+    },
 )
 def product_by_barcode(code: str, auth=Depends(require_api_auth), db: Session = Depends(get_db)):
-    _user, hh_id = auth
+    user, hh_id = auth
+    # Per user, so one account cannot spend the outbound Open Food Facts budget.
+    if not limiter.limiter.hit(parse(BARCODE_RATE), "barcode-lookup", user.id):
+        raise HTTPException(
+            status_code=429, detail="Too many barcode lookups. Try again in a minute."
+        )
     try:
         barcode = stock_svc.clean_barcode(code)
     except StockError as exc:

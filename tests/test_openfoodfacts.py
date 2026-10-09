@@ -476,7 +476,7 @@ def test_concurrency_is_capped_at_two_and_does_not_serialise():
         gate.wait(5)
         return hit()
 
-    client, rec = make_client(handler)
+    client, rec = make_client(handler, max_in_flight=2)
     results: dict[str, str] = {}
 
     def run(code):
@@ -565,19 +565,6 @@ def test_declared_content_length_over_cap_is_rejected_before_reading():
     assert stream.sent == 0
 
 
-def test_slow_drip_body_is_aborted_at_the_total_deadline():
-    now = [0.0]
-
-    def tick():
-        now[0] += 1.0
-
-    stream = _Stream(iter([b" "] * 100), on_chunk=tick)
-    client, _ = make_client(lambda r: httpx.Response(200, stream=stream), clock=lambda: now[0])
-    with pytest.raises(OpenFoodFactsUnavailable):
-        client.by_barcode(CODE)
-    assert stream.sent <= 7
-
-
 def test_redirect_is_not_followed():
     def handler(r):
         if r.url.host == "evil.example":
@@ -602,3 +589,252 @@ def test_hostile_numbers_give_no_size_quickly(value):
     client, _ = make_client(lambda r: hit(quantity=str(value), product_quantity=None))
     p = client.by_barcode(CODE)
     assert p.unit is None and p.unit_quantity is None
+
+
+# ---------------------------------------------------------------- fix round 1
+import time  # noqa: E402
+
+
+def test_header_drip_hits_the_total_deadline():
+    def handler(r):
+        time.sleep(3)  # the upstream trickles; nothing arrives
+        return hit()
+
+    client, _ = make_client(handler, timeout=0.3)
+    start = time.perf_counter()
+    with pytest.raises(OpenFoodFactsUnavailable):
+        client.by_barcode(CODE)
+    assert time.perf_counter() - start < 1.5
+
+
+def test_body_drip_hits_the_total_deadline():
+    class Drip(httpx.SyncByteStream):
+        def __iter__(self):
+            for _ in range(50):
+                time.sleep(0.2)
+                yield b" "
+
+    client, _ = make_client(lambda r: httpx.Response(200, stream=Drip()), timeout=0.5)
+    start = time.perf_counter()
+    with pytest.raises(OpenFoodFactsUnavailable):
+        client.by_barcode(CODE)
+    assert time.perf_counter() - start < 1.5
+
+
+def test_deadline_counts_as_an_outage():
+    client, _ = make_client(lambda r: time.sleep(2) or hit(), timeout=0.2)
+    for code in ("111111", "222222", "333333"):
+        with pytest.raises(OpenFoodFactsUnavailable):
+            client.by_barcode(code)
+    assert client._breaker_open
+
+
+def test_requests_ask_for_identity_encoding():
+    client, rec = make_client(lambda r: hit())
+    client.by_barcode(CODE)
+    assert rec.requests[0].headers["accept-encoding"] == "identity"
+
+
+@pytest.mark.parametrize("encoding", ["gzip", "deflate", "br", "gzip, identity"])
+def test_encoded_responses_are_rejected_without_reading(encoding):
+    stream = _Stream(iter([b"\x1f\x8b" + b"\x00" * 100]))
+    client, _ = make_client(
+        lambda r: httpx.Response(200, headers={"content-encoding": encoding}, stream=stream)
+    )
+    with pytest.raises(OpenFoodFactsUnavailable):
+        client.by_barcode(CODE)
+    assert stream.sent <= off.MAX_BODY_BYTES
+    assert stream.sent == 0
+
+
+def test_gzip_bomb_is_not_inflated():
+    import gzip
+
+    bomb = gzip.compress(b" " * 20_000_000)
+    assert len(bomb) < off.MAX_BODY_BYTES
+    stream = _Stream(iter([bomb]))
+    client, _ = make_client(
+        lambda r: httpx.Response(200, headers={"content-encoding": "gzip"}, stream=stream)
+    )
+    with pytest.raises(OpenFoodFactsUnavailable):
+        client.by_barcode(CODE)
+    assert stream.sent <= off.MAX_BODY_BYTES
+
+
+def test_identity_content_encoding_is_fine():
+    client, _ = make_client(
+        lambda r: httpx.Response(
+            200,
+            headers={"content-encoding": "identity"},
+            json={"status": 1, "product": {"product_name": "A"}},
+        )
+    )
+    assert client.by_barcode(CODE).name == "A"
+
+
+def test_deeply_nested_body_is_rejected_before_parsing(monkeypatch):
+    import json
+
+    def boom(*a, **k):
+        raise AssertionError("parsed a too-deep body")
+
+    monkeypatch.setattr(json, "loads", boom)
+    body = b"[" * 20_000 + b"]" * 20_000
+    client, _ = make_client(lambda r: httpx.Response(200, content=body))
+    with pytest.raises(OpenFoodFactsUnavailable):
+        client.by_barcode(CODE)
+
+
+def test_nesting_just_inside_the_limit_is_parsed():
+    body = b'{"status": 0, "x": ' + b"[" * 10 + b"]" * 10 + b"}"
+    client, _ = make_client(lambda r: httpx.Response(200, content=body))
+    assert client.by_barcode(CODE) is None
+
+
+def test_brackets_inside_strings_do_not_count_as_nesting():
+    body = ('{"status": 1, "product": {"product_name": "' + "[" * 100 + '"}}').encode()
+    client, _ = make_client(lambda r: httpx.Response(200, content=body))
+    assert client.by_barcode(CODE).name == "[" * 100
+
+
+@pytest.mark.parametrize("exc", [RecursionError, MemoryError, RuntimeError, KeyError])
+def test_unexpected_parse_errors_become_unavailable(monkeypatch, exc):
+    import json
+
+    def boom(*a, **k):
+        raise exc()
+
+    monkeypatch.setattr(json, "loads", boom)
+    client, _ = make_client(lambda r: hit())
+    with pytest.raises(OpenFoodFactsUnavailable):
+        client.by_barcode(CODE)
+
+
+def test_unexpected_mapping_errors_become_unavailable(monkeypatch):
+    def boom(*a, **k):
+        raise RecursionError()
+
+    monkeypatch.setattr(off, "_map", boom)
+    client, _ = make_client(lambda r: hit())
+    with pytest.raises(OpenFoodFactsUnavailable):
+        client.by_barcode(CODE)
+
+
+# -- spacing across workers
+
+
+@pytest.mark.parametrize(
+    ("workers", "interval", "in_flight"), [(1, 0.7, 2), (2, 1.4, 1), (4, 2.8, 1)]
+)
+def test_spacing_and_cap_follow_the_worker_count(workers, interval, in_flight):
+    client = OpenFoodFactsClient(enabled=True, workers=workers)
+    assert client.min_interval == pytest.approx(interval)
+    assert client.max_in_flight == in_flight
+    assert (60 / client.min_interval) * workers <= 86
+
+
+def test_worker_count_comes_from_web_concurrency(monkeypatch):
+    monkeypatch.setenv("WEB_CONCURRENCY", "3")
+    assert off.configured_workers() == 3
+    monkeypatch.setenv("WEB_CONCURRENCY", "junk")
+    assert off.configured_workers() == 2
+    monkeypatch.delenv("WEB_CONCURRENCY")
+    assert off.configured_workers() == 2
+    monkeypatch.setenv("WEB_CONCURRENCY", "0")
+    assert off.configured_workers() == 2
+
+
+# -- the breaker counts real outages only
+
+
+@pytest.mark.parametrize(
+    "handler",
+    [
+        _timeout,
+        _transport_error,
+        lambda r: httpx.Response(500),
+        lambda r: httpx.Response(503),
+        lambda r: httpx.Response(429),
+    ],
+)
+def test_outages_open_the_breaker(handler):
+    client, _ = make_client(handler)
+    for code in ("111111", "222222", "333333"):
+        with pytest.raises(OpenFoodFactsUnavailable):
+            client.by_barcode(code)
+    assert client._breaker_open
+
+
+@pytest.mark.parametrize(
+    "handler",
+    [
+        lambda r: httpx.Response(302, headers={"location": "https://x.example/"}),
+        lambda r: httpx.Response(400),
+        lambda r: httpx.Response(403),
+        lambda r: httpx.Response(200, content=b"junk"),
+        lambda r: httpx.Response(200, json={"status": 1, "product": "str"}),
+        lambda r: httpx.Response(200, json={"status": 7}),
+        lambda r: httpx.Response(200, content=b"x" * 100_000),
+    ],
+)
+def test_per_barcode_oddities_do_not_open_the_breaker(handler):
+    client, rec = make_client(handler)
+    for code in ("111111", "222222", "333333", "444444"):
+        with pytest.raises(OpenFoodFactsUnavailable):
+            client.by_barcode(code)
+    assert not client._breaker_open
+    assert len(rec.requests) == 4  # each barcode did go out
+    with pytest.raises(OpenFoodFactsUnavailable):  # but is failure-cached
+        client.by_barcode("111111")
+    assert len(rec.requests) == 4
+
+
+def _open_breaker(down):
+    now = [0.0]
+    seen = []
+
+    def handler(r):
+        seen.append(r)
+        return httpx.Response(500) if down["v"] else hit()
+
+    client, rec = make_client(handler, clock=lambda: now[0])
+    for code in ("111111", "222222", "333333"):
+        with pytest.raises(OpenFoodFactsUnavailable):
+            client.by_barcode(code)
+    return client, rec, now
+
+
+def test_half_open_probe_success_closes_the_breaker():
+    down = {"v": True}
+    client, rec, now = _open_breaker(down)
+    down["v"] = False
+    now[0] += 61
+    assert client.by_barcode("444444") is not None
+    assert not client._breaker_open
+    assert client.by_barcode("555555") is not None
+    assert len(rec.requests) == 5
+
+
+def test_half_open_allows_one_probe_and_failure_reopens():
+    down = {"v": True}
+    client, rec, now = _open_breaker(down)
+    now[0] += 61
+    with pytest.raises(OpenFoodFactsUnavailable):  # the one probe, fails
+        client.by_barcode("444444")
+    assert len(rec.requests) == 4
+    with pytest.raises(OpenFoodFactsUnavailable):  # reopened: no network
+        client.by_barcode("555555")
+    assert len(rec.requests) == 4
+    now[0] += 61
+    down["v"] = False
+    assert client.by_barcode("666666") is not None  # next probe succeeds
+
+
+def test_second_caller_during_the_probe_is_short_circuited():
+    down = {"v": True}
+    client, rec, now = _open_breaker(down)
+    now[0] += 61
+    client._probing = True  # a probe is already in flight
+    with pytest.raises(OpenFoodFactsUnavailable):
+        client.by_barcode("444444")
+    assert len(rec.requests) == 3

@@ -61,7 +61,7 @@ def test_posokanei_result_keeps_every_key_and_adds_only_source(client, api, fake
     body = r.json()
     assert set(body) == PRODUCT_KEYS | {"in_pantry", "source"}
     assert body["source"] == "posokanei"
-    assert body["id"] == "p-1" or isinstance(body["id"], str)
+    assert body["id"] == "p-1"
     assert isinstance(body["retailer_prices"], list) and body["retailer_prices"]
     assert set(body["price_stats"]) == {"min", "max", "avg"}
     assert body["in_pantry"] is None
@@ -186,7 +186,7 @@ def test_in_pantry_on_503(client, db, api, down, off):  # noqa: F811
     assert r.json()["in_pantry"] == {"stock_item_id": milk.id, "quantity": 1}
 
 
-def test_off_hit_never_matches_by_its_synthetic_id(client, db, api, down, off):  # noqa: F811
+def test_off_hit_ignores_a_pantry_item_matched_only_by_posokanei_id(client, db, api, down, off):  # noqa: F811
     """An item whose posokanei_id happens to look like the synthetic id is not
     reported: only the barcode matches for an Open Food Facts result."""
     headers, hh = api
@@ -257,3 +257,35 @@ def test_service_and_jinja_add_ignore_off_prefixed_id(client, db, api):  # noqa:
         db, hh.household_id, hh.user_id, name="Oil", posokanei_id=f"off:{BARCODE}"
     )
     assert item.product.posokanei_id is None
+
+
+def test_barcode_route_is_limited_to_30_a_minute_per_user(client, api, fake, off):  # noqa: F811
+    headers, _ = api
+    fake.product = None
+    off.product = None
+    for _ in range(30):
+        assert client.get(URL, headers=headers).status_code == 404
+    calls_before = len(off.calls)
+    fake_calls = len(fake.calls)
+    r = client.get(URL, headers=headers)
+    assert r.status_code == 429
+    assert "lookups" in r.json()["detail"].lower()
+    assert len(off.calls) == calls_before and len(fake.calls) == fake_calls
+
+
+def test_barcode_limit_is_per_user(client, api, other, fake, off, make_household):  # noqa: F811
+    headers, _ = api
+    fake.product = None
+    off.product = None
+    for _ in range(31):
+        client.get(URL, headers=headers)
+    from tests.test_api import PASSWORD  # noqa: F401
+    import pyotp
+
+    r = client.post("/api/v1/auth/login", json={"username": other.username, "password": PASSWORD})
+    r = client.post(
+        "/api/v1/auth/totp/verify",
+        json={"pending_token": r.json()["pending_token"], "code": pyotp.TOTP(other.secret).now()},
+    )
+    h2 = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    assert client.get(URL, headers=h2).status_code == 404
