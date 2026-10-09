@@ -1349,6 +1349,7 @@ class InsightFilters:
     category_ids: str = ""
     paid_by: str = ""
     today: date | None = None
+    months: int = 6  # length of monthly_in_out
 
 
 def build_insights(db: Session, household_id: str, filters: InsightFilters) -> dict:
@@ -1414,7 +1415,7 @@ def build_insights(db: Session, household_id: str, filters: InsightFilters) -> d
     fuel = get_insights_fuel(db, household_id, start, end, **shares)
 
     months_in_out = monthly_in_out(
-        db, household_id, 6, filters.paid_by or None, today=filters.today
+        db, household_id, filters.months, filters.paid_by or None, today=filters.today
     )
 
     return {

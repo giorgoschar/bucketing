@@ -22,6 +22,8 @@ from app.validators import household_member_ids
 
 router = APIRouter(prefix="/insights", tags=["insights"])
 
+MONTH_SERIES = ("6", "12", "24")
+
 
 def _bucket_row(row: dict, extra: dict) -> dict:
     """Flatten a {"bucket": <Bucket ORM>, ...} row into an explicit payload.
@@ -51,6 +53,7 @@ def insights(
     bucket_ids: str = Query(default=""),  # comma-separated
     category_ids: str = Query(default=""),  # comma-separated
     paid_by: str = Query(default=""),
+    months: str = Query(default="6"),  # 6 | 12 | 24: the length of monthly_in_out
     auth=Depends(require_api_auth),
     db: Session = Depends(get_db),
 ):
@@ -59,6 +62,8 @@ def insights(
     Use the `preset` parameter for common date ranges, or `start_date`/`end_date` for custom.
     """
     user, hh_id = auth
+    if months not in MONTH_SERIES:
+        raise HTTPException(status_code=400, detail="months must be 6, 12 or 24.")
 
     # Shared with the HTML route so both endpoints compute identical figures.
     data = build_insights(
@@ -72,6 +77,7 @@ def insights(
             bucket_ids=bucket_ids,
             category_ids=category_ids,
             paid_by=paid_by,
+            months=int(months),
         ),
     )
     period, start, end = data["period"], data["start"], data["end"]
@@ -92,7 +98,7 @@ def insights(
         "net": data["net"],
         # In / Out (logged + not-yet-logged cash) / Net for the period.
         "in_out": data["in_out"],
-        # Six calendar months to this one, oldest first; ignores the period (2d §7.3).
+        # `months` (6, 12 or 24) calendar months to this one, oldest first; ignores the period (2d §7.3).
         "monthly_in_out": data["monthly_in_out"],
         "paid_by": summary.get("paid_by", {}),
         "kpis": data["kpis"],
