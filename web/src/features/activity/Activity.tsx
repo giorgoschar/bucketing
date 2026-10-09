@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { useCallback, useMemo, useReducer, useState } from 'react'
+import { lazy, Suspense, useCallback, useMemo, useReducer, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
+import { useIsDesktop } from '../../ui/useIsDesktop'
 import { useOnline } from '../../data/online'
 import { TopBar } from '../../shell/TopBar'
 import { BulkBar } from '../../ui/BulkBar'
@@ -14,7 +15,7 @@ import { SearchField } from '../../ui/SearchField'
 import { Duplicates } from './Duplicates'
 import { Feed, type LoadedInfo } from './Feed'
 import {
-  type FeedState, type TransactionFilter, activeFilterCount, fromSearch, isEmpty, isFiltered, monthLabel, monthRange,
+  DEFAULT_SORT, type FeedState, type Sort, type TransactionFilter, activeFilterCount, fromSearch, isEmpty, isFiltered, monthLabel, monthRange,
   toSearch, toggle,
 } from './filters'
 import { useRecurringItems } from '../../data/reads'
@@ -28,6 +29,9 @@ import { useDeleteWithUndo } from './useDeleteWithUndo'
 import { useUndoBulk } from './useUndoBulk'
 import { formatMoney } from '../../ui/format'
 import './activity.css'
+
+// Desktop only (spec §4.4): the phone never loads the table's code.
+const ActivityTable = lazy(() => import('./ActivityTable').then((m) => ({ default: m.ActivityTable })))
 
 /** "23 entries · Out €412.30 · In €0.00": every match of the filter, not only the loaded rows. Hidden when
  *  nothing is filtered; offline it shows the saved copy, or nothing (never a spinner or an error). */
@@ -74,12 +78,14 @@ function monthOptions(today = new Date()) {
 export function Activity() {
   const [params, setParams] = useSearchParams()
   const state = useMemo(() => fromSearch(params), [params])
+  const desktop = useIsDesktop()
+  const sort: Sort = desktop ? state.sort ?? DEFAULT_SORT : DEFAULT_SORT
   const [sel, dispatch] = useReducer(reduce, OFF)
   // A new filter is a new list: a selection made on the old one no longer means anything.
   const set = useCallback((next: FeedState) => {
     dispatch({ type: 'cancel' })
-    setParams(toSearch(next), { replace: true })
-  }, [setParams])
+    setParams(toSearch(next, params), { replace: true })
+  }, [setParams, params])
   const f = state.filter
   const setFilter = (filter: TransactionFilter) => set({ ...state, filter })
   const onSearch = useCallback(
@@ -90,7 +96,7 @@ export function Activity() {
   const refData = useRefData()
   const items = useRecurringItems().data
   const [sheet, setSheet] = useState<null | 'month' | 'filters'>(null)
-  const clear = () => set({ filter: monthRange(new Date()), dups: false })
+  const clear = () => set({ ...state, filter: monthRange(new Date()), dups: false })
   const filters = activeFilterCount(f)
   const held = useHeldDeletes()
   const deleteWithUndo = useDeleteWithUndo()
@@ -159,7 +165,7 @@ export function Activity() {
           }
         />
       )}
-      <section className={selecting ? 'screen activity activity--selecting' : 'screen activity'}>
+      <section className={`${selecting ? 'screen activity activity--selecting' : 'screen activity'} shell__main--wide`}>
         <SearchField value={f.q ?? ''} onChange={onSearch} />
         <div className="chips" role="group" aria-label="Quick filters">
           <Chip label="Filters" count={filters || undefined} pressed={filters > 0} disabled={state.dups} onClick={() => setSheet('filters')} />
@@ -199,6 +205,12 @@ export function Activity() {
             onClear={clear}
             hidden={held}
             onLoaded={onLoaded}
+            sort={desktop ? sort : undefined}
+            renderTable={desktop ? (t) => (
+              <Suspense fallback={<p className="screen__note" aria-busy="true">Loading…</p>}>
+                <ActivityTable {...t} sort={sort} onSort={(next) => set({ ...state, sort: next })} />
+              </Suspense>
+            ) : undefined}
             selecting={selecting}
             rowProps={selecting
               ? (t) => ({ selected: isSelected(sel, t.id), onOpen: (id) => dispatch({ type: 'toggle', id, loadedIds: loaded.ids }) })

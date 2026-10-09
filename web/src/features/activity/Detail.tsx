@@ -114,7 +114,8 @@ function listedRow(qc: QueryClient, id: string): Txn | undefined {
   return undefined
 }
 
-export function Detail() {
+/** `onBack` replaces "go back" where the detail is a pane beside the table (desktop) rather than a screen. */
+export function Detail({ onBack }: { onBack?: () => void } = {}) {
   const { id = '' } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
@@ -136,7 +137,7 @@ export function Detail() {
   const file = useRef<HTMLInputElement>(null)
 
   // Back to where the user came from (keeps the feed's filters); a cold deep link goes to the feed.
-  const back = () => (location.key !== 'default' ? navigate(-1) : navigate('/activity'))
+  const back = () => (onBack ? onBack() : location.key !== 'default' ? navigate(-1) : navigate('/activity'))
   const bar = (end?: ReactNode) => (
     <header className="detail-bar">
       <button type="button" className="ui-iconbtn ui-iconbtn--bare detail-bar__back" aria-label="Back" onClick={back}>

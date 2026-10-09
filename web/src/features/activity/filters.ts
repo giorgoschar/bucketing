@@ -19,13 +19,18 @@ export type TransactionFilter = {
   min_amount?: string
   max_amount?: string
 }
-export type FeedState = { filter: TransactionFilter; dups: boolean }
+/** The order of GET /transactions (Phase A spec §3.8). Desktop only: the phone list is always date_desc. */
+export type Sort = 'date_desc' | 'date_asc' | 'amount_desc' | 'amount_asc'
+export const DEFAULT_SORT: Sort = 'date_desc'
+const SORTS: readonly string[] = ['date_desc', 'date_asc', 'amount_desc', 'amount_asc']
+export type FeedState = { filter: TransactionFilter; dups: boolean; sort?: Sort }
 
 const TEXT_KEYS = [
   'q', 'type', 'category_id', 'bucket_id', 'paid_by', 'payment_method',
   'recurring_bill_id', 'from_date', 'to_date', 'min_amount', 'max_amount',
 ] as const
 const FLAG_KEYS = ['missing_payer', 'no_bucket', 'fixed'] as const
+const OWNED = new Set<string>([...TEXT_KEYS, ...FLAG_KEYS, 'dups', 'all', 'sort'])
 const TYPES: readonly string[] = ['expense', 'income', 'transfer']
 const METHODS: readonly string[] = ['card', 'cash', 'apple_pay', 'transfer', 'other']
 
@@ -74,11 +79,16 @@ export function fromSearch(params: URLSearchParams, today = new Date()): FeedSta
   for (const k of FLAG_KEYS) if (params.get(k) === '1') filter[k] = true
   const dups = params.get('dups') === '1'
   if (!dups && params.get('all') !== '1' && isEmpty(filter)) Object.assign(filter, monthRange(today))
-  return { filter, dups }
+  const sort = params.get('sort')
+  // Only a non-default sort is part of the state, so the phone's state is exactly what it was.
+  return sort && sort !== DEFAULT_SORT && SORTS.includes(sort) ? { filter, dups, sort: sort as Sort } : { filter, dups }
 }
 
-export function toSearch({ filter, dups }: FeedState): URLSearchParams {
+export function toSearch({ filter, dups, sort }: FeedState, keep?: URLSearchParams): URLSearchParams {
   const p = new URLSearchParams()
+  // Parameters this module does not own (the Add panel's ?add=1 …) ride along.
+  keep?.forEach((v, k) => { if (!OWNED.has(k)) p.append(k, v) })
+  if (sort && sort !== DEFAULT_SORT) p.set('sort', sort)
   for (const k of TEXT_KEYS) {
     const v = filter[k]
     if (v) p.set(k, String(v))

@@ -7,7 +7,7 @@ import { ApiError, unwrap } from '../../data/http'
 import { affects, keys } from '../../data/keys'
 import { useCategories, useHousehold } from '../../data/reads'
 import type { Category, Member, RecurringItemOut } from '../../data/types'
-import { toQuery, type TransactionFilter } from './filters'
+import { DEFAULT_SORT, type Sort, toQuery, type TransactionFilter } from './filters'
 
 type S = components['schemas']
 export type Txn = S['TransactionOut']
@@ -42,9 +42,16 @@ export async function online<T>(call: () => Promise<T>): Promise<T> {
   }
 }
 
-export function useFeedPage(filter: TransactionFilter, page: number) {
-  return useCachedQuery(keys.transactions.list(filter, page), (signal) =>
-    unwrap(api.GET('/api/v1/transactions', { params: { query: { ...toQuery(filter), page, page_size: PAGE_SIZE } }, signal })),
+/** One page of the feed. `sort` is sent (and keyed) only when it is not the default, so the phone's requests
+ *  and cache keys are unchanged. */
+export function useFeedPage(filter: TransactionFilter, page: number, sort: Sort = DEFAULT_SORT) {
+  const sorted = sort !== DEFAULT_SORT
+  return useCachedQuery(keys.transactions.list(sorted ? { ...filter, sort } : filter, page), (signal) =>
+    unwrap(api.GET('/api/v1/transactions', {
+      // `sort` is spec §3.8's, not in the generated types until stream S lands: cast at this one call site.
+      params: { query: { ...toQuery(filter), ...(sorted ? { sort } : {}), page, page_size: PAGE_SIZE } as never },
+      signal,
+    })),
   )
 }
 /** Count, money out and money in over every match of the filter (server-side, household currency). Only
