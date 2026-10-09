@@ -6,7 +6,7 @@ import { Home } from './screens/Home'
 import { Activity } from './screens/Activity'
 import { Insights } from './screens/Insights'
 import {
-  ActivityDetail, Appearance, Automations, Categories, CategoryScreen, Compose, FuelScreen, Household, Items, Notifications,
+  ActivityDetail, Appearance, Automations, BillsList, Categories, CategoryScreen, Compose, FuelScreen, Household, Items, Notifications,
   PantryDetail, Plan, Profile, Settings, ShoppingList,
 } from './screens/lazy'
 
@@ -31,6 +31,7 @@ export const router = createBrowserRouter(
         { path: 'insights', element: <Insights /> },
         { path: 'insights/category/:id', element: <CategoryScreen /> },
         { path: 'insights/fuel', element: <FuelScreen /> },
+        { path: 'insights/bills', element: <BillsList /> },
         { path: 'settings', element: <Settings /> },
         { path: 'settings/profile', element: <Profile /> },
         { path: 'settings/household', element: <Household /> },

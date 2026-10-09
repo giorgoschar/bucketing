@@ -55,6 +55,13 @@ export const keys = {
   duplicates: () => ['duplicates'] as const,
   /** RecentBatch[]: GET /transactions/bulk?limit=10 */
   bulkRecent: () => ['bulk-recent'] as const,
+  /** BillRow[]: GET /insights/bills (Insights › Bills, Home's bill-change row). Under the 'insights' prefix, so
+   *  every write that refreshes Insights (affects.entry, sync, cash) refreshes it too. */
+  insightsBills: () => ['insights', 'bills', 'list'] as const,
+  /** ItemHistoryOut: GET /recurring/{id}/history. Also under 'insights'. */
+  itemHistory: (id: string) => ['insights', 'bills', 'history', id] as const,
+  /** The prefix of both bill reads above (affects.item, which does not touch 'insights', adds it). */
+  billsAll: () => ['insights', 'bills'] as const,
   household: () => ['household'] as const,
   buckets: () => ['buckets'] as const,
   categories: () => ['categories'] as const,
@@ -89,7 +96,7 @@ export const affects = {
     keys.plan.all, keys.home.all, keys.recurring.all, keys.matches(), keys.transactions.all, keys.insights.all,
     keys.cashAll(), keys.cashStash(),
   ],
-  item: [keys.plan.all, keys.home.all, keys.recurring.all],
+  item: [keys.plan.all, keys.home.all, keys.recurring.all, keys.billsAll()],
   sync: [
     keys.plan.all, keys.home.all, keys.recurring.all, keys.matches(), keys.transactions.all, keys.insights.all,
     keys.buckets(), keys.cashAll(), keys.cashStash(),

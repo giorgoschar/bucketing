@@ -14,7 +14,7 @@ import { type WidgetId, visibleWidgets } from './overview'
 import { type Period, type Preset, PRESETS, usePeriod } from './period'
 import { type InsightsData, NO_FILTERS } from './types'
 import {
-  Biggest, BudgetsCard, FuelCard, HowYouPaid, InOut, InOutMonths, OnTrack, SavingsRate, SpendTrend, VsUsual, WhereItWent,
+  Biggest, BillsCard, BudgetsCard, FuelCard, HowYouPaid, InOut, InOutMonths, OnTrack, SavingsRate, SpendTrend, VsUsual, WhereItWent,
 } from './widgets/cards'
 import { EmptyPeriod, Headline, Identity, ShareCard } from './widgets/summary'
 import './insights.css'
@@ -41,6 +41,7 @@ const RENDER: Record<Exclude<WidgetId, 'identity' | 'share'>, (ctx: WidgetCtx) =
   budgets: (c) => <BudgetsCard {...c} />,
   savings: (c) => <SavingsRate {...c} />,
   vsUsual: (c) => <VsUsual {...c} />,
+  bills: () => <BillsCard />,
   fuel: (c) => <FuelCard {...c} />,
 }
 
@@ -89,7 +90,7 @@ export function Insights() {
         >
           {(data) => {
             const ctx: WidgetCtx = { data, period, lens, members: members ?? [], meId, setPeriod }
-            return visibleWidgets(data, { lens, period }).map((id) => (
+            return visibleWidgets(data, { lens, period, bills: true }).map((id) => (
               <div key={id} data-widget={id} className="insights__widget">
                 {id === 'identity' ? (
                   <Identity member={member} />

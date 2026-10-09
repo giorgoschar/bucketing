@@ -13,6 +13,8 @@ export const PantryDetail = lazy(() => import('../features/plan/pantry/Detail').
 export const ActivityDetail = lazy(() => import('../features/activity/Detail').then((m) => ({ default: m.Detail })))
 export const CategoryScreen = lazy(() => import('../features/insights/CategoryScreen').then((m) => ({ default: m.CategoryScreen })))
 export const FuelScreen = lazy(() => import('../features/insights/FuelScreen').then((m) => ({ default: m.FuelScreen })))
+// Phase A: Insights › Bills (the list, and each bill's history).
+export const BillsList = lazy(() => import('../features/insights/bills/BillsList').then((m) => ({ default: m.BillsList })))
 export const Settings = lazy(() => import('../features/settings/Settings').then((m) => ({ default: m.Settings })))
 export const Profile = lazy(() => import('../features/settings/Profile').then((m) => ({ default: m.Profile })))
 export const Household = lazy(() => import('../features/settings/Household').then((m) => ({ default: m.Household })))

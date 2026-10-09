@@ -5,7 +5,7 @@ import type { InsightsData } from './types'
 
 export type WidgetId =
   | 'identity' | 'headline' | 'share' | 'empty' | 'onTrack' | 'inOut' | 'where' | 'inOutMonths'
-  | 'trend' | 'biggest' | 'method' | 'budgets' | 'savings' | 'vsUsual' | 'fuel'
+  | 'trend' | 'biggest' | 'method' | 'budgets' | 'savings' | 'vsUsual' | 'bills' | 'fuel'
 
 export const isEmptyPeriod = (d: InsightsData) => d.kpis.count === 0 && d.total_spent === 0 && d.in_out.in === 0
 
@@ -15,7 +15,10 @@ export function singleMonth(p: Period, d: InsightsData): string | null {
 }
 
 /** The spec's fixed order (§4), minus what this lens, period or data hides. */
-export function visibleWidgets(d: InsightsData, { lens, period }: { lens: Lens; period: Period }): WidgetId[] {
+export function visibleWidgets(
+  d: InsightsData,
+  { lens, period, bills = false }: { lens: Lens; period: Period; bills?: boolean },
+): WidgetId[] {
   const member = lens !== HOUSEHOLD
   const ids: WidgetId[] = member ? ['identity', 'headline', 'share'] : ['headline']
   if (isEmptyPeriod(d)) return [...ids, 'empty']
@@ -28,6 +31,7 @@ export function visibleWidgets(d: InsightsData, { lens, period }: { lens: Lens; 
   if (d.budget_status.length) ids.push('budgets')
   if (d.kpis.savings_rate != null) ids.push('savings')
   if (!member && singleMonth(period, d)) ids.push('vsUsual')
+  if (bills) ids.push('bills')
   if (d.fuel) ids.push('fuel')
   return ids
 }
