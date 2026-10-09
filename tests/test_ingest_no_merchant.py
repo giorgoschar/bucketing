@@ -80,3 +80,13 @@ def test_a_real_merchant_is_unchanged(client, db, ingest):
     assert txn.merchant == "Lidl"
     assert NOTE not in (txn.notes or "")
     assert db.query(IngestAttempt).one().detail == "created"
+
+
+def test_a_nul_character_in_a_text_field_does_not_lose_the_purchase(client, db, ingest):
+    r = client.post(
+        URL,
+        json={"merchant": "a\u0000b", "amount": "1", "notes": "n\u0000"},
+        headers=ingest.headers,
+    )
+    assert r.status_code == 201, r.text
+    assert db.get(Transaction, r.json()["id"]).merchant == "ab"

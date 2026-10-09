@@ -426,3 +426,16 @@ def test_post_stock_does_not_wait_on_posokanei(client, db, api, fake, monkeypatc
     assert [(s.retailer, s.price) for s in db.query(PriceSnapshot).all()] == [("ab", D("1.59"))]
     row = client.get(STOCK, headers=headers).json()[0]
     assert row["cheapest"]["retailer"] == "ab"
+
+
+def test_an_absurd_unit_price_is_not_stored():
+    from decimal import Decimal
+    from types import SimpleNamespace
+
+    from app.services.stock import unit_price_for
+
+    tiny = SimpleNamespace(unit="g", unit_quantity=1)
+    assert unit_price_for(tiny, Decimal("2000")) is None  # 2,000,000 per kg
+    assert unit_price_for(SimpleNamespace(unit="kg", unit_quantity=1), Decimal("2")) == Decimal(
+        "2.0000"
+    )

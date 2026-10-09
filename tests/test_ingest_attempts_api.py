@@ -89,3 +89,11 @@ def test_newest_fifty_only(client, db, api):  # noqa: F811
     assert len(items) == 50
     assert items[0]["detail"] == "n54"
     assert items[-1]["detail"] == "n5"
+
+
+def test_created_at_carries_a_utc_offset(client, db, api):  # noqa: F811
+    headers, hh = api
+    ingest = _token(db, hh)
+    client.post(URL, json={"merchant": "Shop", "amount": "3"}, headers=ingest)
+    item = client.get(ATTEMPTS, headers=headers).json()["items"][0]
+    assert item["created_at"].endswith(("Z", "+00:00"))

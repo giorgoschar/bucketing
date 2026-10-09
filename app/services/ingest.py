@@ -258,7 +258,7 @@ def _text_value(value, _depth: int = 0) -> str | None:
     if value is None or isinstance(value, bool) or _depth > 6:
         return None
     if isinstance(value, str):
-        return value
+        return value.replace("\x00", "")  # Postgres refuses NUL: it would lose the purchase
     if isinstance(value, (int, float, Decimal)):
         return str(value)
     if isinstance(value, dict):

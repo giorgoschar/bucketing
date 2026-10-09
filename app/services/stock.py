@@ -517,7 +517,9 @@ def unit_price_for(product: Product, price: Decimal) -> Decimal | None:
     size = to_decimal(product.unit_quantity) if product.unit_quantity is not None else None
     if factor is None or not size or size <= 0:
         return None
-    return (to_decimal(price) / (size * factor)).quantize(Decimal("0.0001"))
+    unit_price = (to_decimal(price) / (size * factor)).quantize(Decimal("0.0001"))
+    # The column is Numeric(10, 4): an absurd per-kg figure is no unit price.
+    return unit_price if unit_price < 1_000_000 else None
 
 
 def record_manual_price(

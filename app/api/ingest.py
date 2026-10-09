@@ -19,7 +19,7 @@ count of the others), never the body itself.
 """
 
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -230,7 +230,7 @@ def list_attempts(auth=Depends(require_api_auth), db: Session = Depends(get_db))
         "items": [
             {
                 "id": a.id,
-                "created_at": a.created_at,
+                "created_at": a.created_at.replace(tzinfo=UTC),  # stored naive UTC
                 "status": a.status,
                 "outcome": attempt_outcome(a.status, a.detail),
                 "detail": a.safe_detail,

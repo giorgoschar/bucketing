@@ -581,6 +581,7 @@ def snapshot_in_background(product_id: str) -> None:
     db = database.SessionLocal()
     try:
         product = db.get(stock_svc.Product, product_id)
+        db.rollback()  # end the read: the price fetch below must not hold a connection idle
         if product is not None and stock_svc.snapshot_now(db, product):
             db.commit()
     except Exception:  # never let a background price fetch surface anywhere
