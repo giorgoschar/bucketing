@@ -1,7 +1,7 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { fakeApi, reply } from '../../../test/fakeApi'
-import { barcodeProduct, pantryRoutes, stockItem } from '../../../test/fixtures'
+import { barcodeProduct, offProduct, pantryRoutes, stockItem } from '../../../test/fixtures'
 import { renderWithProviders, resetTestEnv, setOnline } from '../../../test/render'
 import { BarcodeSheet } from './BarcodeSheet'
 
@@ -100,4 +100,54 @@ it.each([404, 503])('%i with in_pantry null: no "In pantry", Add manually as bef
   expect(await within(sheet).findByRole('button', { name: 'Add manually' })).toBeInTheDocument()
   expect(sheet).not.toHaveTextContent('In pantry')
   expect(within(sheet).queryByRole('button', { name: 'Open' })).not.toBeInTheDocument()
+})
+
+it('Open Food Facts: name, brand and size, the credit, no prices, and the PosoKanei lines are absent', async () => {
+  fakeApi({ ...pantryRoutes(), [BARCODE]: () => offProduct() })
+  renderWithProviders(<BarcodeSheet code="5201054017906" {...handlers()} />)
+  const sheet = await screen.findByRole('dialog', { name: 'Fresh milk' })
+  expect(sheet).toHaveTextContent('Delta · 1 L')
+  expect(sheet).toHaveTextContent('Barcode 5201054017906')
+  expect(sheet).toHaveTextContent('No prices for this product yet')
+  expect(sheet).not.toHaveTextContent('Best price')
+  expect(sheet).not.toHaveTextContent('No store has a price')
+  const credit = within(sheet).getByRole('link', { name: 'Open Food Facts' })
+  expect(sheet).toHaveTextContent('Product data: Open Food Facts')
+  expect(credit).toHaveAttribute('href', 'https://world.openfoodfacts.org')
+  expect(credit).toHaveAttribute('target', '_blank')
+  expect(credit).toHaveAttribute('rel', 'noopener noreferrer')
+  expect(sheet.querySelector('img')).toBeNull()
+})
+
+it('a PosoKanei result has no Open Food Facts credit', async () => {
+  fakeApi({ ...pantryRoutes(), [BARCODE]: () => barcodeProduct() })
+  renderWithProviders(<BarcodeSheet code="5201004021108" {...handlers()} />)
+  const sheet = await screen.findByRole('dialog', { name: 'Dodoni Feta PDO' })
+  expect(sheet).not.toHaveTextContent('Open Food Facts')
+  expect(sheet).not.toHaveTextContent('No prices for this product yet')
+})
+
+it('Open Food Facts: Add to pantry sends name, brand, barcode, unit, size, 0 and min 1, and no PosoKanei id', async () => {
+  const fake = fakeApi({ ...pantryRoutes(), [BARCODE]: () => offProduct(), [ADD]: () => Response.json(stockItem(), { status: 201 }) })
+  const h = handlers()
+  renderWithProviders(<BarcodeSheet code="5201054017906" {...h} />)
+  const sheet = await screen.findByRole('dialog', { name: 'Fresh milk' })
+  fireEvent.click(within(sheet).getByRole('button', { name: 'Add to pantry' }))
+  await waitFor(() => expect(fake.callsTo(ADD)).toHaveLength(1))
+  const body = fake.callsTo(ADD)[0].body as Record<string, unknown>
+  expect(body).toMatchObject({
+    name: 'Fresh milk', brand: 'Delta', barcode: '5201054017906', unit: 'L', unit_quantity: 1, quantity: 0, min_quantity: 1,
+  })
+  expect(body.posokanei_id ?? null).toBeNull()
+  await waitFor(() => expect(h.onAdded).toHaveBeenCalledWith('Fresh milk'))
+})
+
+it('Open Food Facts but already in the pantry: Open still wins over Add', async () => {
+  fakeApi({ ...pantryRoutes(), [BARCODE]: () => offProduct({ in_pantry: { stock_item_id: 's1', quantity: 2 } }) })
+  const { router } = renderWithProviders(<BarcodeSheet code="5201054017906" {...handlers()} />)
+  const sheet = await screen.findByRole('dialog', { name: 'Fresh milk' })
+  expect(sheet).toHaveTextContent('In pantry: 2')
+  expect(within(sheet).queryByRole('button', { name: 'Add to pantry' })).not.toBeInTheDocument()
+  fireEvent.click(within(sheet).getByRole('button', { name: 'Open' }))
+  expect(router.state.location.pathname).toBe('/plan/pantry/s1')
 })

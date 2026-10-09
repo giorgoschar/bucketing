@@ -90,9 +90,11 @@ export function useAddProduct() {
  * tracks a product (it is then low, so on the shopping list); it never claims one is at home, which is also
  * the server's default and what the old UI sent. The manual form keeps an editable "In stock".
  */
-export function addBodyFor(p: ProductSummary): StockAddBody {
+export function addBodyFor(p: ProductSummary & { source?: string }): StockAddBody {
+  // An Open Food Facts result's id (`off:<barcode>`) is not a PosoKanei id.
+  const posokanei_id = p.source === 'openfoodfacts' ? null : p.id
   return {
-    name: p.name, brand: p.brand, barcode: p.barcode, posokanei_id: p.id, unit: p.unit, unit_quantity: p.unit_quantity,
+    name: p.name, brand: p.brand, barcode: p.barcode, posokanei_id, unit: p.unit, unit_quantity: p.unit_quantity,
     image_url: p.image_url, quantity: 0, min_quantity: 1,
   }
 }

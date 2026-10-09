@@ -3708,6 +3708,12 @@ export interface components {
             price_stats: components["schemas"]["PriceStatsOut"];
             /** Retailer Prices */
             retailer_prices: components["schemas"]["RetailerPriceOut"][];
+            /**
+             * Source
+             * @default posokanei
+             * @enum {string}
+             */
+            source: "posokanei" | "openfoodfacts";
             /** Unit */
             unit: string | null;
             /** Unit Quantity */

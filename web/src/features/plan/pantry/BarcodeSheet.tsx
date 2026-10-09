@@ -114,6 +114,7 @@ function Found({ product, code }: { product: BarcodeProduct; code: string }) {
   const priced = product.retailer_prices.filter((r) => r.price != null).sort((a, b) => (a.price as number) - (b.price as number))
   const [best, ...others] = priced
   const size = sizeLabel(product)
+  const fromOff = product.source === 'openfoodfacts'
   return (
     <>
       <div className="pantry-lookup__who">
@@ -126,7 +127,9 @@ function Found({ product, code }: { product: BarcodeProduct; code: string }) {
           </p>
         </div>
       </div>
-      {best ? (
+      {fromOff ? (
+        <p className="pantry-lookup__note">No prices for this product yet</p>
+      ) : best ? (
         <div className="pantry-best">
           <div>
             <p className="pantry-best__label">Best price</p>
@@ -144,6 +147,11 @@ function Found({ product, code }: { product: BarcodeProduct; code: string }) {
           {others.map((r, i) => (
             <span key={r.retailer}>{i > 0 && ' · '}{r.display_name} <span className="ui-num">{formatMoney(r.price as number)}</span></span>
           ))}
+        </p>
+      )}
+      {fromOff && (
+        <p className="pantry-lookup__note pantry-lookup__credit">
+          Product data: <a href="https://world.openfoodfacts.org" target="_blank" rel="noopener noreferrer">Open Food Facts</a>
         </p>
       )}
     </>

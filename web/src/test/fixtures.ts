@@ -265,7 +265,15 @@ export function productSummary(over: Partial<ProductSummary> = {}): ProductSumma
 }
 
 export function barcodeProduct(over: Partial<BarcodeProduct> = {}): BarcodeProduct {
-  return { ...productSummary(), in_pantry: null, ...over }
+  return { ...productSummary(), in_pantry: null, source: 'posokanei', ...over }
+}
+
+/** An Open Food Facts hit: name, brand and size only (no prices, no image), id `off:<barcode>`. */
+export function offProduct(over: Partial<BarcodeProduct> = {}): BarcodeProduct {
+  return barcodeProduct({
+    id: 'off:5201054017906', name: 'Fresh milk', brand: 'Delta', barcode: '5201054017906', unit: 'L', unit_quantity: 1,
+    retailer_prices: [], price_stats: { min: null, max: null, avg: null }, source: 'openfoodfacts', ...over,
+  })
 }
 
 /** Handlers for the Pantry list: the household, GET /stock and the shopping list count. */

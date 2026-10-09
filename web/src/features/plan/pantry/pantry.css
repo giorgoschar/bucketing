@@ -123,6 +123,7 @@
 .pantry-lookup__id { min-width: 0; }
 .pantry-lookup__brand { margin: 0 0 2px; font-weight: 600; color: var(--ink-2); overflow-wrap: anywhere; }
 .pantry-lookup__note { margin: 0; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.pantry-lookup__credit { margin-top: 8px; }
 .pantry-lookup__note .ui-num { white-space: normal; overflow-wrap: anywhere; }
 .pantry-lookup__have { color: var(--ink); }
 .pantry-lookup__msg { padding: 12px 14px; border-radius: var(--r-md); background: var(--surface-2); }

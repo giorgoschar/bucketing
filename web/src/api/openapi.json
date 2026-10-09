@@ -4366,6 +4366,15 @@
             "title": "Retailer Prices",
             "type": "array"
           },
+          "source": {
+            "default": "posokanei",
+            "enum": [
+              "posokanei",
+              "openfoodfacts"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
           "unit": {
             "anyOf": [
               {
