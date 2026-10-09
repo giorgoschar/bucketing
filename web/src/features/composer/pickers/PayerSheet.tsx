@@ -1,6 +1,7 @@
 import { type Member, Sheet } from '../bridge'
 import { memberName } from './labels'
-import { Option, pickThenClose } from './Option'
+import { FilterField, Option, pickThenClose, useFilterBox } from './Option'
+import { fold } from '../defaults'
 
 export interface PayerSheetProps {
   open: boolean
@@ -17,16 +18,20 @@ export interface PayerSheetProps {
 }
 
 export function PayerSheet({ open, onClose, title, members, selectedId, ownShare, allowOwnShare, onPick, onOwnShare }: PayerSheetProps) {
-  const pick = pickThenClose(onPick, onClose)
+  const box = useFilterBox()
+  const close = () => { box.setText(''); onClose() }
+  const pick = pickThenClose(onPick, close)
+  const shown = members.filter((m) => fold(memberName(m)).includes(box.q))
   return (
-    <Sheet open={open} onClose={onClose} title={title}>
+    <Sheet open={open} onClose={close} title={title} initialFocus={box.active ? box.ref : undefined}>
+      <FilterField label="Filter people" box={box} onEnter={() => shown[0] && pick(shown[0].user_id)} />
       <div className="ck-options">
-        {members.map((m) => (
+        {shown.map((m) => (
           <Option key={m.user_id} name={memberName(m)}
             lead={<span className="ck-glyph ck-glyph--person">{memberName(m).slice(0, 1).toUpperCase()}</span>}
             selected={!ownShare && m.user_id === selectedId} onPress={() => pick(m.user_id)} />
         ))}
-        {allowOwnShare && (
+        {allowOwnShare && box.q === '' && (
           <Option name="Each paid own share" selected={ownShare} onPress={onOwnShare} />
         )}
       </div>

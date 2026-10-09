@@ -6,6 +6,8 @@ import type { Session } from '../session/SessionProvider'
 import { AppShell } from './AppShell'
 import { stubDesktop } from './desktopStub'
 
+// The panel itself is tested in AddPanel.test.tsx; here only that Add asks for it.
+vi.mock('./AddSidePanel', () => ({ default: () => <p>add panel</p> }))
 vi.mock('../offline/queue', () => ({ startReplayTriggers: () => () => {} }))
 const session: Session = {
   status: 'signedIn', signOut: async () => {}, logoutFailed: false, retryLogout: async () => {},
@@ -84,17 +86,18 @@ it('desktop: the sidebar avatar opens the account sheet with Sign out', async ()
   expect(await screen.findByRole('button', { name: 'Sign out' })).toBeInTheDocument()
 })
 
-it('N opens Add on desktop', async () => {
+it('N opens the Add panel over the current screen on desktop', async () => {
   at('/activity', true)
   await screen.findByRole('navigation', { name: 'Main' })
   await userEvent.keyboard('n')
-  expect(where()).toBe('/new')
+  expect(where()).toBe('/activity?add=1')
+  expect(await screen.findByText('add panel')).toBeInTheDocument()
 })
 
 it('the Add button opens Add', async () => {
   at('/activity', true)
   await userEvent.click(await screen.findByRole('button', { name: 'Add' }))
-  expect(where()).toBe('/new')
+  expect(where()).toBe('/activity?add=1')
 })
 
 it.each([
@@ -114,7 +117,7 @@ it('N does nothing while a dialog is open', async () => {
   at('/activity', true)
   await screen.findByRole('navigation', { name: 'Main' })
   await userEvent.keyboard('n')
-  expect(where()).toBe('/new') // control: nothing open, N works
+  expect(where()).toBe('/activity?add=1') // control: nothing open, N works
   cleanup()
   at('/activity?dialog=1', true)
   await screen.findByRole('navigation', { name: 'Main' })

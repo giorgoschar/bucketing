@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { Outlet, useLocation, useNavigate } from 'react-router'
+import { Navigate, Outlet, useLocation, useNavigate } from 'react-router'
 import { clearPending } from '../data/pending'
 import { installQueueBridge } from '../data/queueBridge'
 import { startReplayTriggers } from '../offline/queue'
@@ -11,12 +11,14 @@ import { Toaster } from '../ui/Toast'
 import { useIsDesktop } from '../ui/useIsDesktop'
 import { TickedPrompt } from '../features/plan/pantry/TickedPrompt'
 import { resetTickedPrompt } from '../features/plan/pantry/tickedOffer'
+import { fullScreenAddress, panelOf, rememberScreen } from './addPanel'
 import { CloseIcon } from './icons'
 import { TabBar } from './TabBar'
 import './shell.css'
 
 // Desktop only: the phone never loads the sidebar's code.
 const Sidebar = lazy(() => import('./Sidebar').then((m) => ({ default: m.Sidebar })))
+const AddPanel = lazy(() => import('./AddSidePanel'))
 
 export function AppShell() {
   const { status } = useSession()
@@ -36,6 +38,9 @@ export function AppShell() {
     const rest = params.toString()
     navigate({ search: rest ? `?${rest}` : '' }, { replace: true })
   }, [hasParams, location.search, navigate])
+
+  // Where a later /new link should open its panel on a desktop (addPanel.ts).
+  useEffect(() => { rememberScreen(location.pathname, location.search) }, [location.pathname, location.search])
 
   // Replay queued offline writes on open, `online` and returning to the tab (iOS has no Background Sync).
   // The bridge first, so the first drain already refreshes the screens and clears the pending markers.
@@ -57,6 +62,10 @@ export function AppShell() {
 
   if (status === 'loading') return <div className="boot" aria-busy="true" />
   if (status === 'signedOut') return <SignIn result={result} />
+
+  // ?add=1 / ?edit=<id> is the desktop panel. The phone has no panel: the same address is the full-screen composer.
+  const panel = panelOf(new URLSearchParams(location.search))
+  if (panel && !desktop) return <Navigate replace to={fullScreenAddress(new URLSearchParams(location.search))!} />
 
   const dismiss = () => setResult({ error: null, linked: false })
   const banner = result.error
@@ -83,6 +92,7 @@ export function AppShell() {
         </Suspense>
       </main>
       {!desktop && <TabBar />}
+      {desktop && panel && <Suspense fallback={null}><AddPanel /></Suspense>}
       <Toaster />
       {/* Pantry spec §4.6: the composer's post-save offer shows here, where the composer returns. */}
       <TickedPrompt />

@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { type Category, Sheet } from '../bridge'
 import { fold } from '../defaults'
 import { Option, pickThenClose } from './Option'
+import { usePanel } from '../panel'
 
 export interface CategorySheetProps {
   open: boolean
@@ -26,6 +27,8 @@ function Glyph({ c }: { c: Category }) {
 
 export function CategorySheet({ open, onClose, categories, recentIds, suggestion, selectedId, onPick }: CategorySheetProps) {
   const [query, setQuery] = useState('')
+  const panel = usePanel() !== null
+  const search = useRef<HTMLInputElement>(null)
   const close = () => {
     setQuery('')
     onClose()
@@ -43,9 +46,17 @@ export function CategorySheet({ open, onClose, categories, recentIds, suggestion
   )
   const all = categories.filter(match)
   return (
-    <Sheet open={open} onClose={close} title="Category">
-      <input type="search" className="ck-search" aria-label="Search categories" placeholder="Search categories"
-        value={query} onChange={(e) => setQuery(e.target.value)} enterKeyHint="search" autoComplete="off" />
+    <Sheet open={open} onClose={close} title="Category" initialFocus={panel ? search : undefined}>
+      <input ref={search} type="search" className="ck-search" aria-label="Search categories" placeholder="Search categories"
+        value={query} onChange={(e) => setQuery(e.target.value)} enterKeyHint="search" autoComplete="off"
+        onKeyDown={panel ? (e) => {
+          // The panel's lists filter as you type and Enter picks the first match (spec §4.5).
+          if (e.key !== 'Enter' || e.nativeEvent.isComposing) return
+          e.preventDefault()
+          e.stopPropagation()
+          const first = suggested && match(suggested) ? suggested : all[0]
+          if (first) pick(first.id)
+        } : undefined} />
       {suggested && match(suggested) && (
         <section className="ck-section">
           <h3 className="ck-section__title">Suggested</h3>
