@@ -26,7 +26,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.api_auth import require_api_auth, require_ingest_token
+from app.api_auth import bearer_credential, require_api_auth, require_ingest_token
 from app.core.database import get_db
 from app.core.ratelimit import ingest_token_key, limiter
 from app.models import Bucket, Category, PersonalApiToken, Transaction
@@ -105,11 +105,12 @@ def raw_body(request: Request) -> str | None:
 
 
 def bearer_token(request: Request) -> str | None:
-    header = request.headers.get("authorization", "")
-    scheme, _, value = header.partition(" ")
-    if value and scheme.lower() == "bearer":
-        return value.strip()
-    return header.strip() or None
+    """The canonical credential (see ``api_auth.bearer_credential``) for the
+    recorders, which must never raise: several headers read as none."""
+    try:
+        return bearer_credential(request)
+    except HTTPException:
+        return None
 
 
 def _result(db: Session, txn: Transaction, token: PersonalApiToken) -> dict:
@@ -340,9 +341,7 @@ def gate_rejected_request(request: Request, *, status_code: int, detail: str, pa
     }
     token_id = live_token_id(raw)
     if token_id is not None:
-        if limiter.limiter.hit(
-            parse(TOKEN_RATE), ingest_token_key(request), _rate_scope(request.url.path)
-        ):
+        if limiter.limiter.hit(parse(TOKEN_RATE), f"pat:{token_id}", _rate_scope(request.url.path)):
             record_ingest_attempt(status=status_code, detail=detail, **common)
             return False
         if limiter.limiter.hit(parse("1/hour"), "ingest-429-row", token_id):

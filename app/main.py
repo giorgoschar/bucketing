@@ -92,6 +92,10 @@ def _validation_detail(exc: RequestValidationError) -> str:
 @app.exception_handler(RequestValidationError)
 async def validation_error_handler(request: Request, exc: RequestValidationError):
     if is_ingest_path(request.url.path):
+        if len(request.headers.getlist("authorization")) > 1:
+            return JSONResponse(
+                status_code=400, content={"detail": "Send one Authorization header."}
+            )
         # Counted and recorded in a thread: the database work must not run on
         # the event loop. Past the token's (or the source's) allowance the
         # answer is 429 and the log stays quiet.
