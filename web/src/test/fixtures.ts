@@ -312,6 +312,13 @@ export function shoppingRoutes(initial: ShoppingOut = shoppingOut()): Routes {
       recount()
       return null
     },
+    // C4: the item's active tick, whoever made it; 204 when there is none.
+    'DELETE /api/v1/stock/shopping/ticks': (r) => {
+      const item = r.query.get('stock_item_id')
+      data = { ...data, items: data.items.map((i) => (i.id === item ? { ...i, ticked: false, tick_id: null } : i)) }
+      recount()
+      return null
+    },
     'POST /api/v1/stock/shopping/lines': (r) => {
       const b = r.body as { id?: string; name: string; quantity?: number }
       const again = b.id ? data.lines.find((l) => l.id === b.id) : undefined

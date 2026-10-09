@@ -14,9 +14,11 @@ import { useToast } from '../../../ui/Toast'
 import { ToggleRow } from '../../../ui/ToggleRow'
 import { OFFLINE_WRITE } from './BarcodeSheet'
 import { useAdjustStock, usePantryReplaySync, useStockDetail, useStockWrites } from './hooks'
-import { ArchiveIcon, RefreshIcon } from './icons'
+import { EditSheet } from './EditSheet'
+import { ArchiveIcon, RefreshIcon, TagIcon } from './icons'
 import { Initial } from './PantryRow'
 import { PriceChart } from './PriceChart'
+import { PriceSheet } from './PriceSheet'
 import { dayMonth } from './priceScale'
 import { Stepper } from './Stepper'
 import { formatQty, type PriceToday, sizeLabel, type StockDetail } from './types'
@@ -42,7 +44,9 @@ export function Detail({ id: given }: { id?: string } = {}) {
           <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M15 18l-6-6 6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
         </Link>
         <span className="backheader__title" />
-        <div className="backheader__action" />
+        <div className="backheader__action">
+          {detail.data && !gone && <EditButton d={detail.data} online={online} />}
+        </div>
       </header>
       <section className="screen pantry-detail">
         {detail.stale && (
@@ -84,6 +88,18 @@ function Body({ d, online }: { d: StockDetail; online: boolean }) {
         <PriceChart history={d.history} title="Lowest price, 6 months" />
       </section>
       <TrackAndArchive d={d} online={online} />
+    </>
+  )
+}
+
+/** Detail › Edit (polish P1): online only, like every other product setting. */
+function EditButton({ d, online }: { d: StockDetail; online: boolean }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button type="button" className="pantry-link pantry-edit" disabled={!online} onClick={() => setOpen(true)}
+        aria-label={`Edit ${d.name}`}>Edit</button>
+      {open && <EditSheet d={d} onClose={() => setOpen(false)} />}
     </>
   )
 }
@@ -138,6 +154,7 @@ function PricesCard({ d, online }: { d: StockDetail; online: boolean }) {
   const writes = useStockWrites(d.id)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
+  const [logging, setLogging] = useState(false)
   const rows = d.prices_today.filter((p) => p.price != null).slice().sort(byUnitPrice)
   const max = scaleMax(rows.map((r) => r.price as number))
   const refresh = async () => {
@@ -170,12 +187,18 @@ function PricesCard({ d, online }: { d: StockDetail; online: boolean }) {
           ))}
         </ul>
       ) : (
-        <p className="pantry-chart__empty">No prices for today yet.</p>
+        <p className="pantry-chart__empty">Prices you log appear here</p>
       )}
       {problem && <p className="pantry-card__problem" role="alert">{problem}</p>}
-      <button type="button" className="btn btn--block pantry-card__btn" disabled={!online || busy} onClick={() => void refresh()}>
-        <RefreshIcon />{busy ? 'Refreshing…' : 'Refresh prices'}
-      </button>
+      <div className="pantry-card__acts">
+        <button type="button" className="btn pantry-card__btn" disabled={!online || busy} onClick={() => void refresh()}>
+          <RefreshIcon />{busy ? 'Refreshing…' : 'Refresh prices'}
+        </button>
+        <button type="button" className="btn pantry-card__btn" disabled={!online} onClick={() => setLogging(true)}>
+          <TagIcon />Log a price
+        </button>
+      </div>
+      {logging && <PriceSheet id={d.id} name={d.name} onClose={() => setLogging(false)} />}
     </section>
   )
 }

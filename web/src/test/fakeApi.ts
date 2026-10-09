@@ -2,6 +2,7 @@ import { vi } from 'vitest'
 import type { paths } from '../api/schema'
 import type { ActivityReplies } from '../features/activity/totalsTypes'
 import type { IngestReplies } from '../features/settings/attemptTypes'
+import type { PantryContractReplies } from '../features/plan/pantry/contractTypes'
 
 type Lower = 'get' | 'post' | 'put' | 'patch' | 'delete'
 type Op<P extends keyof paths, M extends Lower> = paths[P][M]
@@ -14,9 +15,7 @@ type Success<O> = O extends { responses: infer R }
       : null
   : never
 
-/** Routes the generated schema doesn't have yet, with their hand-written replies. The polish integration runs
- *  gen:api and drops this. */
-type Extra = ActivityReplies & IngestReplies
+type Extra = ActivityReplies & IngestReplies & PantryContractReplies
 
 /** Every "METHOD /path" the schema declares, e.g. "POST /api/v1/recurring/entries/{entry_id}/done". */
 type SchemaRoute = {

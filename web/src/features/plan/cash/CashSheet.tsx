@@ -10,7 +10,7 @@ import { centsToString } from '../../composer/amount'
 import { AmountField } from './AmountField'
 import type { CashSheetMode } from './Cash'
 import { CENT_EPS, euros, initial, tint, typedCents, walletSum } from './format'
-import { useCashWrite } from './hooks'
+import { useCashWrite, useWriteId } from './hooks'
 import type { CashWalletMemberOut, MovementBody } from './types'
 
 /** The server's OWN_STASH_SHORT (app/services/cash.py); the client pre-checks it with the known stash. */
@@ -53,6 +53,8 @@ export function CashSheet({ mode: initialMode, onClose, stash, members, currency
   const [categoryId, setCategoryId] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  /** One id per write (C5): kept across retries of the same body, new when the body changes or after a success. */
+  const writeId = useWriteId()
   const amountRef = useRef<HTMLInputElement>(null)
   const { run } = useCashWrite()
   const online = useOnline()
@@ -96,10 +98,12 @@ export function CashSheet({ mode: initialMode, onClose, stash, members, currency
     }
     setBusy(true)
     setError(null)
-    const out = await run(body)
+    const out = await run(writeId.stamp(body))
     setBusy(false)
-    if (out.ok) onClose()
-    else if (out.kind === 'rejected') setError(out.message)
+    if (out.ok) {
+      writeId.done()
+      onClose()
+    } else if (out.kind === 'rejected') setError(out.message)
   }
 
   return (

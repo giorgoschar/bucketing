@@ -1,12 +1,18 @@
 import { type QueryKey, useQueryClient } from '@tanstack/react-query'
-import { useCallback } from 'react'
+import { useLiveQuery } from 'dexie-react-hooks'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../../api/client'
 import { useCachedQuery } from '../../../data/cachedQuery'
 import { unwrap } from '../../../data/http'
 import { affects, keys } from '../../../data/keys'
 import { type OnlineOutcome, runOnline } from '../../../data/onlineAction'
+import { db } from '../../../offline/db'
+import { listQueuedBodies, type QueuedBody } from '../../../offline/queuedBodies'
 import { useToast } from '../../../ui/Toast'
-import type { CashMovementOut, MovementBody } from './types'
+import { newClientId } from './format'
+import type { MovementBody } from './types'
+import type { MovementWrite } from './contractTypes'
+import type { CashMovementOut } from './types'
 
 /** Everything a cash write (or a composer save of a cash expense) makes stale (spec §4.7). */
 export const CASH_INVALIDATES: readonly QueryKey[] = affects.cash
@@ -47,9 +53,72 @@ export function useCashWrite() {
     [qc, toast],
   )
   return {
-    /** POST /cash/movements. */
-    run: (body: MovementBody) => act(() => api.POST('/api/v1/cash/movements', { body })),
+    /** POST /cash/movements. The sheet's `client_id` makes a retry after a lost reply apply once (C5). */
+    run: (body: MovementWrite) => act(() => api.POST('/api/v1/cash/movements', { body })),
     remove: (id: string) =>
       act(() => api.DELETE('/api/v1/cash/movements/{movement_id}', { params: { path: { movement_id: id } } })),
   }
+}
+
+/**
+ * A cash write's client_id (C5) for a sheet: the same id while the body is the one last sent (a retry after a
+ * failure applies once), a new one as soon as anything in it changes (review I-1: the server answers a known
+ * id with the earlier movement whatever the body, so a changed write must not reuse it), and after a success.
+ */
+export function useWriteId() {
+  const last = useRef<{ id: string; body: string } | null>(null)
+  return useMemo(() => ({
+    /** The body to send, with its client_id. */
+    stamp: (body: MovementBody): MovementWrite => {
+      const key = JSON.stringify(body)
+      if (last.current?.body !== key) last.current = { id: newClientId(), body: key }
+      return { ...body, client_id: last.current.id }
+    },
+    /** After a success: the next write is a new one. */
+    done: () => { last.current = null },
+  }), [])
+}
+
+/** The fields of a queued POST /transactions that say whether it logs the viewer's wallet cash. */
+interface QueuedTxn {
+  type?: string
+  amount?: string | number
+  exchange_rate?: string | number | null
+  paid_by?: string | null
+  payment_method?: string
+  took_cash?: boolean
+  transaction_date?: string | null
+}
+
+/**
+ * Cash the viewer logged that is still in the offline queue (Cash final review m5): queued new expenses paid
+ * in cash by `memberId`, dated in `month`, that take nothing (a take-and-log adds as much to the wallet as it
+ * logs). In the household currency. A write the server refuses on replay leaves the pending queue, so it no
+ * longer counts.
+ */
+export function queuedCashLogged(queued: readonly QueuedBody[], month: string, memberId: string): number {
+  let cents = 0
+  for (const q of queued) {
+    if (q.method !== 'POST' || q.path !== '/api/v1/transactions') continue
+    const t = (q.body ?? {}) as QueuedTxn
+    if (t.type !== 'expense' || t.payment_method !== 'cash' || t.took_cash || t.paid_by !== memberId) continue
+    if (!t.transaction_date?.startsWith(month)) continue
+    const amount = Number(t.amount) * Number(t.exchange_rate ?? 1)
+    if (Number.isFinite(amount) && amount > 0) cents += Math.round(amount * 100)
+  }
+  return cents / 100
+}
+
+/** queuedCashLogged over the live offline queue; 0 until it is read. */
+export function useQueuedCashLogged(month: string, memberId: string | undefined): number {
+  // Dexie live query on the raw row ids only; decryption runs outside it (WebCrypto is not a Dexie promise).
+  const ids = useLiveQuery(() => db.queue.where('status').equals('pending').primaryKeys(), [], [] as number[])
+  const sig = ids.join(',')
+  const [queued, setQueued] = useState<QueuedBody[]>([])
+  useEffect(() => {
+    let live = true
+    void listQueuedBodies('/api/v1/transactions').then((b) => { if (live) setQueued(b) })
+    return () => { live = false }
+  }, [sig])
+  return memberId ? queuedCashLogged(queued, month, memberId) : 0
 }

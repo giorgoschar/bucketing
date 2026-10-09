@@ -63,6 +63,11 @@
 .cash-eq__cell--ok .cash-eq__k, .cash-eq__cell--ok .cash-eq__v { color: var(--pos); }
 .cash-eq--four .cash-eq__cell { flex-basis: 56px; padding-inline: 7px; }
 .cash-eq--four .cash-eq__v { font-size: 14.5px; }
+/* The sum's other terms (polish C6), under the cells, only when they are not zero. */
+.cash-terms { list-style: none; margin: -4px 0 0; padding: 0 2px; display: flex; flex-direction: column; gap: 2px; }
+.cash-terms__row { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0 10px; font-size: 13px; color: var(--muted); }
+.cash-terms__k { min-width: 0; overflow-wrap: anywhere; }
+.cash-terms__v { white-space: normal; overflow-wrap: anywhere; color: var(--ink-2); }
 
 /* Movements */
 .cash-moves { list-style: none; margin: 0; padding: 0; }

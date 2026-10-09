@@ -4,7 +4,7 @@ import { Sheet } from '../../../ui/Sheet'
 import { centsToString } from '../../composer/amount'
 import { AmountField } from './AmountField'
 import { euros, typedCents } from './format'
-import { useCashWrite } from './hooks'
+import { useCashWrite, useWriteId } from './hooks'
 
 /**
  * Recount the stash (spec §4.4): what is physically there, 0 or more. The server stores the signed
@@ -14,6 +14,8 @@ export function CountSheet({ stash, currency, onClose }: { stash: number; curren
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  /** One id per count (C5): kept while the same count is retried, new when it changes or after a success. */
+  const writeId = useWriteId()
   const ref = useRef<HTMLInputElement>(null)
   const { run } = useCashWrite()
   const online = useOnline()
@@ -26,9 +28,12 @@ export function CountSheet({ stash, currency, onClose }: { stash: number; curren
     if (cents === null || busy || !online) return
     setBusy(true)
     setError(null)
-    const out = await run({ kind: 'stash_count', amount: centsToString(cents) })
+    const out = await run(writeId.stamp({ kind: 'stash_count', amount: centsToString(cents) }))
     setBusy(false)
-    if (out.ok) onClose()
+    if (out.ok) {
+      writeId.done()
+      onClose()
+    }
     else if (out.kind === 'rejected') setError(out.message)
   }
 

@@ -9,7 +9,7 @@ import { BarcodeSheet, OFFLINE_WRITE } from './BarcodeSheet'
 import { addBodyFor, useAddProduct } from './hooks'
 import { ScanIcon, SearchIcon } from './icons'
 import { Initial } from './PantryRow'
-import { bestPrice, type ProductSummary, sizeLabel } from './types'
+import { bestPrice, num, type ProductSummary, sizeLabel } from './types'
 
 /** The camera and its decoder: a separate chunk, fetched only when Scan is tapped (spec §4.3). */
 const Scanner = lazy(() => import('./scan/Scanner').then((m) => ({ default: m.Scanner })))
@@ -211,13 +211,6 @@ function ResultRow({ p, online, added, onAdd }: {
       </button>
     </li>
   )
-}
-
-/** "1,5" or "1.5" → 1.5; blank → the fallback; anything else → NaN. */
-function num(text: string, blank: number | null): number | null {
-  const s = text.trim().replace(',', '.')
-  if (s === '') return blank
-  return /^\d+(\.\d+)?$/.test(s) ? Number(s) : NaN
 }
 
 function ManualFooter({ formId, online }: { formId: string; online: boolean }) {

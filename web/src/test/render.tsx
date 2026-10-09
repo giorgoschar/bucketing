@@ -3,6 +3,7 @@ import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react
 import type { ReactElement, ReactNode } from 'react'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { vi } from 'vitest'
+import { resetLanes } from '../data/lanes'
 import { clearPending } from '../data/pending'
 import { wipe } from '../offline/db'
 import { cancelKick } from '../offline/queue'
@@ -58,6 +59,7 @@ export async function resetTestEnv(): Promise<void> {
   onlineManager.setOnline(true)
   dismissToast()
   clearPending()
+  resetLanes()
   setIdentity(null)
   await wipe()
 }

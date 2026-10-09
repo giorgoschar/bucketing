@@ -11,6 +11,9 @@ beforeEach(() => {
 })
 afterEach(resetTestEnv)
 
+// Polish C5: every cash write carries the sheet's client_id (a uuid4).
+const anId = expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+
 const posts = (api: FakeApi) => api.calls.filter((c) => c.method === 'POST' && c.path === '/api/v1/cash/movements')
 
 async function open(button: string, routes = cashRoutes()) {
@@ -34,7 +37,7 @@ it('Take from my stash: "now → after", then the exact body', async () => {
   fireEvent.click(within(sheet).getByRole('button', { name: 'Take €40.00' }))
   await waitFor(() => expect(posts(api)).toHaveLength(1))
   expect(posts(api)[0].body).toEqual({
-    kind: 'take', amount: '40.00', movement_date: '2026-10-07', note: 'Laiki', stash_owner_id: 'u1',
+    client_id: anId, kind: 'take', amount: '40.00', movement_date: '2026-10-07', note: 'Laiki', stash_owner_id: 'u1',
   })
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
 })
@@ -50,7 +53,7 @@ it("Take from another member's stash: balance hidden, no spend toggle, stash_own
   type(sheet, 'Amount', '500')
   fireEvent.click(within(sheet).getByRole('button', { name: 'Take €500.00' }))
   await waitFor(() => expect(posts(api)).toHaveLength(1))
-  expect(posts(api)[0].body).toEqual({ kind: 'take', amount: '500.00', movement_date: '2026-10-07', note: null, stash_owner_id: 'u2' })
+  expect(posts(api)[0].body).toEqual({ client_id: anId, kind: 'take', amount: '500.00', movement_date: '2026-10-07', note: null, stash_owner_id: 'u2' })
 })
 
 it('Take from the bank: stash_owner_id null', async () => {
@@ -71,7 +74,7 @@ it('the spend toggle sends the bucket and category, and the button says "and log
   fireEvent.click(within(sheet).getByRole('button', { name: 'Take €40.00 and log it' }))
   await waitFor(() => expect(posts(api)).toHaveLength(1))
   expect(posts(api)[0].body).toEqual({
-    kind: 'take', amount: '40.00', movement_date: '2026-10-07', note: null, stash_owner_id: 'u1',
+    client_id: anId, kind: 'take', amount: '40.00', movement_date: '2026-10-07', note: null, stash_owner_id: 'u1',
     spend_bucket_id: 'b1', category_id: 'c1',
   })
 })
@@ -107,7 +110,7 @@ it('Put back', async () => {
   type(sheet, 'Amount', '12,5')
   fireEvent.click(within(sheet).getByRole('button', { name: 'Put back €12.50' }))
   await waitFor(() => expect(posts(api)).toHaveLength(1))
-  expect(posts(api)[0].body).toEqual({ kind: 'put_back', amount: '12.50', movement_date: '2026-10-07', note: null })
+  expect(posts(api)[0].body).toEqual({ client_id: anId, kind: 'put_back', amount: '12.50', movement_date: '2026-10-07', note: null })
 })
 
 it('Still have 0 is saved, with the not-yet-logged before → after', async () => {
@@ -123,7 +126,7 @@ it('Still have 0 is saved, with the not-yet-logged before → after', async () =
   expect(within(sheet).getByTestId('still-preview')).toHaveTextContent('Not yet logged €45.00 → €45.00')
   fireEvent.click(within(sheet).getByRole('button', { name: 'Save €0.00 in hand' }))
   await waitFor(() => expect(posts(api)).toHaveLength(1))
-  expect(posts(api)[0].body).toEqual({ kind: 'still_have', amount: '0.00', movement_date: '2026-10-07', note: null })
+  expect(posts(api)[0].body).toEqual({ client_id: anId, kind: 'still_have', amount: '0.00', movement_date: '2026-10-07', note: null })
 })
 
 it('Still have counts from the still-have already entered, floored at 0', async () => {
@@ -155,7 +158,7 @@ it('Add to stash: no segment row, title "Add to stash"', async () => {
   type(sheet, 'Date', '2026-10-05')
   fireEvent.click(within(sheet).getByRole('button', { name: 'Add €120.00' }))
   await waitFor(() => expect(posts(api)).toHaveLength(1))
-  expect(posts(api)[0].body).toEqual({ kind: 'stash_in', amount: '120.00', movement_date: '2026-10-05', note: null })
+  expect(posts(api)[0].body).toEqual({ client_id: anId, kind: 'stash_in', amount: '120.00', movement_date: '2026-10-05', note: null })
 })
 
 it('a comma decimal ("12,5") parses to 12.50', async () => {

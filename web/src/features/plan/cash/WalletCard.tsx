@@ -16,11 +16,17 @@ export interface WalletCardProps {
 
 /** One member's month: household-visible. The viewer's own card also has Log it and Still have. */
 export function WalletCard({ member, index, currency, canWrite, current, onLogIt, onStillHave }: WalletCardProps) {
-  const { took, inHand, logged, notLogged } = walletSum(member)
+  const { took, inHand, logged, crossMonth, overLogged, notLogged } = walletSum(member)
   const open = notLogged > CENT_EPS
   const e = (v: number) => euros(v, currency)
+  // The terms the cells leave out, only when they count (polish C6): with them the shown sum is the server's.
+  const terms = [
+    ...(crossMonth > CENT_EPS ? [{ op: '−', k: 'Logged in another month', v: crossMonth }] : []),
+    ...(overLogged > CENT_EPS ? [{ op: '+', k: 'Logged more than taken', v: overLogged }] : []),
+  ]
   const sentence =
     `Took ${e(took)}${inHand !== null ? ` − In hand ${e(inHand)}` : ''} − Logged ${e(logged)}` +
+    terms.map((t) => ` ${t.op} ${t.k} ${e(t.v)}`).join('') +
     (open ? ` = ${e(notLogged)} not yet logged` : '')
   const own = member.is_me
   const acts = own && current
@@ -44,6 +50,16 @@ export function WalletCard({ member, index, currency, canWrite, current, onLogIt
         <Op>=</Op>
         <Cell k={open ? 'Not yet logged' : 'Left to log'} v={e(open ? notLogged : 0)} tone={open ? 'res' : 'ok'} />
       </div>
+      {terms.length > 0 && (
+        <ul className="cash-terms" aria-hidden="true">
+          {terms.map((t) => (
+            <li key={t.k} className="cash-terms__row">
+              <span className="cash-terms__k">{t.op} {t.k}</span>
+              <span className="cash-terms__v ui-num">{e(t.v)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
       {acts && (
         <div className="cash-wallet__foot">
           <button type="button" className="btn btn--sm" disabled={!canWrite} onClick={onStillHave}>Still have</button>
