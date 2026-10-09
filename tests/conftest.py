@@ -45,6 +45,16 @@ def reset_rate_limiter():
     limiter.reset()
 
 
+@pytest.fixture(autouse=True)
+def no_open_food_facts(monkeypatch):
+    """Tests never reach Open Food Facts: the shared client is switched off
+    (every lookup raises OpenFoodFactsUnavailable) unless a test installs its
+    own fake or a MockTransport client."""
+    from app.integrations import openfoodfacts
+
+    monkeypatch.setattr(openfoodfacts, "_client", openfoodfacts.OpenFoodFactsClient(enabled=False))
+
+
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
 
 

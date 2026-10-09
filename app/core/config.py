@@ -126,6 +126,11 @@ class Settings(BaseSettings):
     posokanei_enabled: bool = True
     posokanei_base_url: str = "https://api.posokanei.gov.gr"
 
+    # Open Food Facts (barcode -> name, brand, size; see docs/OPENFOODFACTS.md).
+    # OPENFOODFACTS_ENABLED=false stops all outbound lookups.
+    openfoodfacts_enabled: bool = True
+    openfoodfacts_base_url: str = "https://world.openfoodfacts.org"
+
     # Web Push (VAPID) — set via environment variables in production
     # Generate with: vapid --gen  (after installing pywebpush)
     vapid_private_key: str = ""

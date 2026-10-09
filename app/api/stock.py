@@ -22,8 +22,9 @@ from app.api_auth import require_api_auth
 from app.core import database
 from app.core.clock import local_today
 from app.core.database import get_db
-from app.integrations import posokanei
-from app.integrations.posokanei import PosokaneiUnavailable
+from app.integrations import openfoodfacts, posokanei
+from app.integrations.openfoodfacts import OpenFoodFactsUnavailable
+from app.integrations.posokanei import PosokaneiUnavailable, PriceStats, ProductSummary
 from app.services import stock as stock_svc
 from app.services.stock import BARCODE_TAKEN, BarcodeTaken, ShoppingIdConflict, StockError
 
@@ -316,6 +317,10 @@ class InPantryOut(BaseModel):
 class ProductLookupOut(ProductOut):
     # This household's item with the barcode or this PosoKanei id.
     in_pantry: InPantryOut | None
+    # Where the data came from. An "openfoodfacts" result has an ``id`` of
+    # ``off:<barcode>`` (not a PosoKanei id: never send it as posokanei_id),
+    # no prices and no image.
+    source: Literal["posokanei", "openfoodfacts"] = "posokanei"
 
 
 class ProductLookupErrorOut(BaseModel):
@@ -898,9 +903,31 @@ def product_by_barcode(code: str, auth=Depends(require_api_auth), db: Session = 
     try:
         product = posokanei.by_barcode(barcode)
     except PosokaneiUnavailable:
-        return error(503, "Prices unavailable")
-    if product is None:
+        product, posokanei_down = None, True
+    else:
+        posokanei_down = False
+    if product is not None:
+        if mine is None:
+            mine = stock_svc.pantry_match(db, hh_id, None, product.id)
+        return {**_product(product), "in_pantry": _in_pantry(mine), "source": "posokanei"}
+    # PosoKanei has nothing for this barcode (missing or unreachable): Open Food Facts.
+    try:
+        off = openfoodfacts.by_barcode(barcode)
+    except OpenFoodFactsUnavailable:
+        return (
+            error(503, "Prices unavailable") if posokanei_down else error(404, "Product not found")
+        )
+    if off is None:
         return error(404, "Product not found")
-    if mine is None:
-        mine = stock_svc.pantry_match(db, hh_id, None, product.id)
-    return {**_product(product), "in_pantry": _in_pantry(mine)}
+    summary = ProductSummary(
+        id=f"off:{barcode}",
+        name=off.name,
+        brand=off.brand,
+        barcode=barcode,
+        unit=off.unit,
+        unit_quantity=off.unit_quantity,
+        image_url=None,
+        retailer_prices=[],
+        price_stats=PriceStats(min=None, max=None, avg=None),
+    )
+    return {**_product(summary), "in_pantry": _in_pantry(mine), "source": "openfoodfacts"}
