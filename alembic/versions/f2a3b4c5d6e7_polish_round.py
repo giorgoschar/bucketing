@@ -16,12 +16,6 @@ price_snapshots.source
 * ``transactions.ingest_token_id``: the ingest token that created the expense (NULL
   for everything else); it authorises the Shortcut's classify call.
 
-* data step ``_wipe_legacy_raw_attempts`` (kept isolated; it can be dropped on its
-  own): rows with no summary_version were written when the diagnostics stored the
-  raw request body. Their ``payload`` and ``content_type`` are NULLed, and
-  ``detail`` where the status could carry input (everything but 200/201/401/409/429,
-  whose detail is fixed text). Idempotent; the downgrade cannot restore it.
-
 Otherwise additive: the downgrade drops the two columns and the two indexes.
 
 Revision ID: f2a3b4c5d6e7
@@ -51,6 +45,7 @@ def upgrade() -> None:
             sa.Column("source", sa.String(length=16), nullable=True, server_default="posokanei")
         )
 
+
     with op.batch_alter_table("ingest_attempts") as batch:
         batch.add_column(sa.Column("summary_version", sa.SmallInteger(), nullable=True))
     with op.batch_alter_table("transactions") as batch:
@@ -66,17 +61,6 @@ def upgrade() -> None:
                 nullable=True,
             )
         )
-    _wipe_legacy_raw_attempts()
-
-
-def _wipe_legacy_raw_attempts() -> None:
-    """Remove the raw bodies main's first diagnostics stored (see the docstring).
-    Only rows without a summary_version are touched, so it can run again."""
-    op.execute(
-        "UPDATE ingest_attempts SET payload = NULL, content_type = NULL, "
-        "detail = CASE WHEN status IN (200, 201, 401, 409, 429) THEN detail ELSE NULL END "
-        "WHERE summary_version IS NULL"
-    )
 
 
 def downgrade() -> None:
