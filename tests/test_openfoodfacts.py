@@ -207,13 +207,13 @@ def _transport_error(request):
         lambda r: httpx.Response(200, json={"status": 1}),
     ],
 )
-def test_failures_are_unavailable_and_not_cached(handler):
+def test_failures_are_unavailable_and_cached_briefly(handler):
     client, rec = make_client(handler)
     with pytest.raises(OpenFoodFactsUnavailable):
         client.by_barcode(CODE)
     with pytest.raises(OpenFoodFactsUnavailable):
         client.by_barcode(CODE)
-    assert len(rec.requests) == 2
+    assert len(rec.requests) == 1
 
 
 def test_disabled_makes_no_request():
@@ -303,7 +303,7 @@ def test_requests_are_spaced_700ms():
     client.by_barcode("222222")
     assert len(slept) == 1 and slept[0] == pytest.approx(0.7)
     assert off.MIN_INTERVAL_SECONDS == 0.7
-    assert off.TIMEOUT_SECONDS == 10.0
+    assert off.TIMEOUT_SECONDS == 5.0
 
 
 def test_settings_defaults():
@@ -312,3 +312,293 @@ def test_settings_defaults():
     f = Settings.model_fields
     assert f["openfoodfacts_enabled"].default is True
     assert f["openfoodfacts_base_url"].default == "https://world.openfoodfacts.org"
+
+
+# ---------------------------------------------------------------- bounds
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "1e309",
+        "NaN",
+        "Infinity",
+        "-5",
+        "0",
+        "100000.01",
+        "9" * 30,
+        "1" * 21,
+        "",
+        "abc",
+        -1,
+        True,
+        [1],
+        {"a": 1},
+    ],
+)
+def test_out_of_bounds_product_quantity_means_no_size(value):
+    client, _ = make_client(lambda r: hit(product_quantity=value, product_quantity_unit="g"))
+    p = client.by_barcode(CODE)
+    assert p is not None and p.unit is None and p.unit_quantity is None
+
+
+def test_quantity_text_out_of_bounds_means_no_size():
+    for text in ("1e309 g", "99999999 g", "NaN g", "-5 g", "100001 g"):
+        client, _ = make_client(lambda r, t=text: hit(quantity=t))
+        p = client.by_barcode(CODE)
+        assert p.unit is None and p.unit_quantity is None, text
+
+
+def test_size_is_rounded_to_three_decimals_and_upper_bound_allowed():
+    client, _ = make_client(lambda r: hit(product_quantity=0.33349, product_quantity_unit="kg"))
+    assert client.by_barcode(CODE).unit_quantity == Decimal("0.333")
+    client, _ = make_client(lambda r: hit(product_quantity="100000", product_quantity_unit="g"))
+    assert client.by_barcode(CODE).unit_quantity == Decimal("100000")
+    client, _ = make_client(lambda r: hit(product_quantity="0.0001", product_quantity_unit="g"))
+    assert client.by_barcode(CODE).unit_quantity is None  # rounds to zero
+
+
+def test_oversized_body_is_unavailable():
+    big = b'{"status": 1, "product": {"product_name": "' + b"x" * 1_000_000 + b'"}}'
+    client, _ = make_client(lambda r: httpx.Response(200, content=big))
+    with pytest.raises(OpenFoodFactsUnavailable):
+        client.by_barcode(CODE)
+
+
+@pytest.mark.parametrize(
+    "product",
+    [
+        {"product_name": ["Milk"]},
+        {"product_name": {"a": 1}},
+        {"product_name": 5},
+        {"product_name": "Milk", "brands": ["Delta"]},
+    ],
+)
+def test_non_string_text_is_ignored(product):
+    client, _ = make_client(lambda r: hit(**product))
+    try:
+        p = client.by_barcode(CODE)
+    except OpenFoodFactsUnavailable:
+        return
+    assert p is None or (p.name == "Milk" and p.brand is None)
+
+
+# ---------------------------------------------------------------- resilience
+
+
+def test_failure_cache_expires_after_60s():
+    now = [0.0]
+    calls = []
+
+    def handler(r):
+        calls.append(1)
+        return httpx.Response(500)
+
+    client, _ = make_client(handler, clock=lambda: now[0])
+    for _ in range(2):
+        with pytest.raises(OpenFoodFactsUnavailable):
+            client.by_barcode(CODE)
+    assert len(calls) == 1
+    now[0] += 61
+    with pytest.raises(OpenFoodFactsUnavailable):
+        client.by_barcode(CODE)
+    assert len(calls) == 2
+
+
+def test_circuit_breaker_opens_after_three_and_closes_after_60s():
+    now = [0.0]
+    state = {"down": True, "n": 0}
+
+    def handler(r):
+        state["n"] += 1
+        return httpx.Response(500) if state["down"] else hit()
+
+    client, _ = make_client(handler, clock=lambda: now[0])
+    for code in ("111111", "222222", "333333"):
+        with pytest.raises(OpenFoodFactsUnavailable):
+            client.by_barcode(code)
+    assert state["n"] == 3
+    state["down"] = False
+    with pytest.raises(OpenFoodFactsUnavailable):  # open: no network at all
+        client.by_barcode("444444")
+    assert state["n"] == 3
+    now[0] += 61
+    assert client.by_barcode("444444") is not None
+    assert state["n"] == 4
+
+
+def test_a_success_resets_the_consecutive_failure_count():
+    results = iter([500, 500, 200, 500, 500])
+
+    def handler(r):
+        return httpx.Response(500) if next(results) == 500 else hit()
+
+    client, rec = make_client(handler)
+    codes = iter(["111111", "222222", "333333", "444444", "555555"])
+    outcomes = []
+    for _ in range(5):
+        try:
+            client.by_barcode(next(codes))
+            outcomes.append("ok")
+        except OpenFoodFactsUnavailable:
+            outcomes.append("down")
+    assert outcomes == ["down", "down", "ok", "down", "down"]
+    assert len(rec.requests) == 5  # never short-circuited
+
+
+def test_not_found_does_not_count_as_an_outage():
+    client, rec = make_client(lambda r: httpx.Response(404))
+    for code in ("111111", "222222", "333333", "444444"):
+        assert client.by_barcode(code) is None
+    assert len(rec.requests) == 4
+
+
+def test_far_off_slot_fails_fast_without_sleeping_or_requesting():
+    now = [0.0]
+    slept = []
+    client, rec = make_client(
+        lambda r: hit(), min_interval=0.7, clock=lambda: now[0], sleep=slept.append
+    )
+    client._next_slot = 5.0  # callers already queued several seconds ahead
+    with pytest.raises(OpenFoodFactsUnavailable):
+        client.by_barcode(CODE)
+    assert slept == [] and rec.requests == []
+
+
+def test_concurrency_is_capped_at_two_and_does_not_serialise():
+    import threading
+
+    gate = threading.Event()
+    entered = threading.Semaphore(0)
+
+    def handler(r):
+        entered.release()
+        gate.wait(5)
+        return hit()
+
+    client, rec = make_client(handler)
+    results: dict[str, str] = {}
+
+    def run(code):
+        try:
+            client.by_barcode(code)
+            results[code] = "ok"
+        except OpenFoodFactsUnavailable:
+            results[code] = "down"
+
+    first = [threading.Thread(target=run, args=(c,)) for c in ("111111", "222222")]
+    for t in first:
+        t.start()
+    assert entered.acquire(timeout=5) and entered.acquire(timeout=5)  # both in flight together
+    # A third (and its fellows) fail fast instead of queueing behind the slow two.
+    run("333333")
+    assert results["333333"] == "down"
+    gate.set()
+    for t in first:
+        t.join(5)
+    assert results["111111"] == results["222222"] == "ok"
+    assert len(rec.requests) == 2
+
+
+def test_lock_is_not_held_during_network_io():
+    import threading
+
+    started = threading.Event()
+    release = threading.Event()
+
+    def handler(r):
+        started.set()
+        release.wait(5)
+        return hit()
+
+    client, _ = make_client(handler)
+    t = threading.Thread(target=lambda: client.by_barcode("111111"))
+    t.start()
+    assert started.wait(5)
+    # Cache reads (which take the lock) are not blocked by the in-flight call.
+    assert client._lock.acquire(timeout=1)
+    client._lock.release()
+    release.set()
+    t.join(5)
+
+
+def test_local_congestion_does_not_count_as_an_outage():
+    client, rec = make_client(lambda r: hit(), clock=lambda: 0.0)
+    client._next_slot = 50.0
+    for code in ("111111", "222222", "333333", "444444"):
+        with pytest.raises(OpenFoodFactsUnavailable):
+            client.by_barcode(code)
+    client._next_slot = 0.0
+    assert client.by_barcode("111111") is not None  # no breaker, no failure cache
+
+
+# ---------------------------------------------------------------- where the bounds sit
+
+
+class _Stream(httpx.SyncByteStream):
+    def __init__(self, chunks, on_chunk=None):
+        self.chunks, self.on_chunk, self.sent = chunks, on_chunk, 0
+
+    def __iter__(self):
+        for c in self.chunks:
+            self.sent += len(c)
+            if self.on_chunk:
+                self.on_chunk()
+            yield c
+
+
+def test_chunked_megabyte_body_is_aborted_near_the_cap():
+    stream = _Stream(iter([b"x" * 8192] * 128))  # 1 MB, no Content-Length
+    client, _ = make_client(lambda r: httpx.Response(200, stream=stream))
+    with pytest.raises(OpenFoodFactsUnavailable):
+        client.by_barcode(CODE)
+    assert stream.sent <= off.MAX_BODY_BYTES + 8192
+
+
+def test_declared_content_length_over_cap_is_rejected_before_reading():
+    stream = _Stream(iter([b"{}"]))
+    client, _ = make_client(
+        lambda r: httpx.Response(200, headers={"content-length": "999999"}, stream=stream)
+    )
+    with pytest.raises(OpenFoodFactsUnavailable):
+        client.by_barcode(CODE)
+    assert stream.sent == 0
+
+
+def test_slow_drip_body_is_aborted_at_the_total_deadline():
+    now = [0.0]
+
+    def tick():
+        now[0] += 1.0
+
+    stream = _Stream(iter([b" "] * 100), on_chunk=tick)
+    client, _ = make_client(lambda r: httpx.Response(200, stream=stream), clock=lambda: now[0])
+    with pytest.raises(OpenFoodFactsUnavailable):
+        client.by_barcode(CODE)
+    assert stream.sent <= 7
+
+
+def test_redirect_is_not_followed():
+    def handler(r):
+        if r.url.host == "evil.example":
+            raise AssertionError("followed a redirect")
+        return httpx.Response(302, headers={"location": "https://evil.example/x"})
+
+    client, rec = make_client(handler)
+    with pytest.raises(OpenFoodFactsUnavailable):
+        client.by_barcode(CODE)
+    assert len(rec.requests) == 1
+
+
+@pytest.mark.parametrize(
+    "value", ["1e400", "9" * 500, True, "+5", "-5", " 1e3 ", float("nan"), float("inf")]
+)
+def test_hostile_numbers_give_no_size_quickly(value):
+    import time
+
+    start = time.perf_counter()
+    assert off._number(value) is None
+    assert time.perf_counter() - start < 0.05
+    client, _ = make_client(lambda r: hit(quantity=str(value), product_quantity=None))
+    p = client.by_barcode(CODE)
+    assert p.unit is None and p.unit_quantity is None

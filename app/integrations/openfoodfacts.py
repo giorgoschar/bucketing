@@ -8,14 +8,26 @@ unexpected shape, or OPENFOODFACTS_ENABLED being off — surfaces as
 :class:`OpenFoodFactsUnavailable`; callers degrade to "add it by hand".
 "Not in their database" is not a failure: ``by_barcode`` returns None.
 
-Politeness: one request at a time per process, at least 0.7 s apart (well
-under their 100 product reads a minute), a 10 s timeout, an honest
-User-Agent, only ASCII digits ever sent, and a 24 h in-process LRU cache
-(hits and "not found", at most 2000 entries).
+Politeness: requests are at least 0.7 s apart process-wide (well under their
+100 product reads a minute), a 5 s timeout, an honest User-Agent, only ASCII
+digits ever sent, and a 24 h in-process LRU cache (hits and "not found", at
+most 2000 entries).
+
+Availability: the lock only guards bookkeeping (the next free request slot,
+the caches, the breaker) and is never held across a sleep or HTTP call. A
+caller whose slot is more than 2 s away, or who finds 2 lookups already in
+flight, fails fast instead of queueing. An outage error is remembered per
+barcode for 60 s, and 3 in a row open a breaker that short-circuits every
+lookup for 60 s. Callers are sync endpoints (threadpool), so none of this
+blocks the event loop.
+
+Third-party data is bounded here: body at most 64 kB, text must be strings,
+sizes are Decimals in (0, 100000] rounded to 3 places, else None.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import threading
@@ -31,7 +43,15 @@ import httpx
 logger = logging.getLogger(__name__)
 
 DEFAULT_BASE_URL = "https://world.openfoodfacts.org"
-TIMEOUT_SECONDS = 10.0
+TIMEOUT_SECONDS = 5.0  # connect + read
+MAX_BODY_BYTES = 64 * 1024
+MAX_WAIT_SECONDS = 2.0
+MAX_IN_FLIGHT = 2
+FAILURE_TTL_SECONDS = 60.0
+BREAKER_THRESHOLD = 3
+BREAKER_OPEN_SECONDS = 60.0
+MAX_SIZE = Decimal("100000")  # app.services.stock.MAX_QUANTITY
+_NUMBER_MAX_CHARS = 20
 MIN_INTERVAL_SECONDS = 0.7
 CACHE_TTL_SECONDS = 24 * 3600.0
 CACHE_MAX_ENTRIES = 2000
@@ -46,7 +66,7 @@ _BARCODE_RE = re.compile(r"[0-9]{6,14}", re.ASCII)
 # "500 g", "1,5 l", "330ml", "6 x 330 ml". Every part is length-bounded, so
 # matching is linear; longer input is rejected before it reaches the regex.
 _QUANTITY_RE = re.compile(
-    r"(?:[0-9]{1,3} ?[x×] ?)?([0-9]{1,7}(?:[.,][0-9]{1,3})?) ?([A-Za-z]{1,3})", re.ASCII
+    r"(?:[0-9]{1,3} ?[x×] ?)?([0-9]{1,6}(?:[.,][0-9]{1,3})?) ?([A-Za-z]{1,3})", re.ASCII
 )
 _QUANTITY_MAX_LEN = 40
 _UNITS = {"g": "g", "kg": "kg", "ml": "ml", "l": "L"}
@@ -77,9 +97,38 @@ def _text(value, limit: int) -> str | None:
     return cleaned[:limit].strip() or None
 
 
-def _size(unit_raw, number: Decimal) -> tuple[str, Decimal] | None:
+_NUMBER_RE = re.compile(r"[0-9]{1,7}(?:[.,][0-9]{1,3})?", re.ASCII)
+
+
+def _number(raw) -> Decimal | None:
+    """A Decimal in (0, MAX_SIZE] rounded to 3 places, or None. The cheap
+    checks (type, length, strict pattern, float range) all run before any
+    Decimal is built, so no hostile input reaches an expensive conversion."""
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, int | float):
+        if not (0 < raw <= MAX_SIZE):  # False for NaN too
+            return None
+        text = str(raw)
+    elif isinstance(raw, str):
+        if len(raw) > _NUMBER_MAX_CHARS:
+            return None
+        text = raw.strip().replace(",", ".")
+        if not _NUMBER_RE.fullmatch(raw.strip()):
+            return None
+    else:
+        return None
+    try:
+        value = Decimal(text).quantize(Decimal("0.001"))
+    except InvalidOperation:
+        return None
+    return value if 0 < value <= MAX_SIZE else None
+
+
+def _size(unit_raw, raw_number) -> tuple[str, Decimal] | None:
     unit = _UNITS.get(unit_raw.lower()) if isinstance(unit_raw, str) else None
-    if unit is None or not number.is_finite() or number <= 0:
+    number = _number(raw_number)
+    if unit is None or number is None:
         return None
     return unit, number
 
@@ -93,22 +142,14 @@ def parse_quantity(text) -> tuple[str, Decimal] | None:
     m = _QUANTITY_RE.fullmatch(text.strip())
     if not m:
         return None
-    try:
-        number = Decimal(m.group(1).replace(",", "."))
-    except InvalidOperation:
-        return None
-    return _size(m.group(2), number)
+    return _size(m.group(2), m.group(1))
 
 
 def _product_size(raw: dict) -> tuple[str, Decimal] | None:
     pq, pu = raw.get("product_quantity"), raw.get("product_quantity_unit")
-    if pq is not None and pu is not None and not isinstance(pq, bool):
-        try:
-            size = _size(pu, Decimal(str(pq).strip()))
-        except InvalidOperation:
-            size = None
-        if size:
-            return size
+    size = _size(pu, pq) if pq is not None and pu is not None else None
+    if size:
+        return size
     return parse_quantity(raw.get("quantity"))
 
 
@@ -168,20 +209,28 @@ class OpenFoodFactsClient:
             "/"
         )
         self.min_interval = min_interval
+        self.timeout = timeout
         self.cache_ttl = cache_ttl
         self.max_entries = max_entries
         self._clock = clock
         self._sleep = sleep
-        self._lock = threading.Lock()
-        self._last_request: float | None = None
+        self._lock = threading.Lock()  # bookkeeping only: never held across I/O or sleep
+        self._slots = threading.BoundedSemaphore(MAX_IN_FLIGHT)
+        self._next_slot = 0.0
         self._cache: OrderedDict[str, tuple[float, OffProduct | None]] = OrderedDict()
+        self._failed: dict[str, float] = {}  # barcode -> unavailable until
+        self._failures = 0  # consecutive outage errors
+        self._breaker_until = 0.0
         ua = f"Tameio/1.0 (+{settings.app_base_url or 'self-hosted'})"
         self._http = httpx.Client(
             base_url=self.base_url,
-            timeout=timeout,
+            timeout=httpx.Timeout(timeout, connect=min(2.0, timeout)),
+            follow_redirects=False,
             transport=transport,
             headers={"User-Agent": ua, "Accept": "application/json"},
         )
+
+    # -- bookkeeping (all under self._lock, no I/O) -----------------------
 
     def _cached(self, key: str):
         hit = self._cache.get(key)
@@ -196,27 +245,68 @@ class OpenFoodFactsClient:
         while len(self._cache) > self.max_entries:
             self._cache.popitem(last=False)
 
+    def _record_failure(self, barcode: str):
+        with self._lock:
+            now = self._clock()
+            self._failed[barcode] = now + FAILURE_TTL_SECONDS
+            if len(self._failed) > self.max_entries:
+                for k in [k for k, until in self._failed.items() if until <= now]:
+                    self._failed.pop(k, None)
+                while len(self._failed) > self.max_entries:
+                    self._failed.pop(next(iter(self._failed)))
+            self._failures += 1
+            if self._failures >= BREAKER_THRESHOLD:
+                self._breaker_until = now + BREAKER_OPEN_SECONDS
+                self._failures = 0
+
+    def _record_success(self):
+        with self._lock:
+            self._failures = 0
+
+    def _reserve(self) -> float:
+        """Claim the next request slot; returns how long to wait for it. Fails
+        fast when it is too far away (too many callers already waiting)."""
+        with self._lock:
+            now = self._clock()
+            slot = max(now, self._next_slot)
+            if slot - now > MAX_WAIT_SECONDS:
+                raise OpenFoodFactsUnavailable("too many lookups waiting")
+            self._next_slot = slot + self.min_interval
+            return slot - now
+
+    # -- HTTP (no lock held) ----------------------------------------------
+
     def _fetch(self, barcode: str):
-        """One spaced request; caller holds self._lock."""
-        if self._last_request is not None and self.min_interval > 0:
-            wait = self._last_request + self.min_interval - self._clock()
-            if wait > 0:
-                self._sleep(wait)
         path = f"/api/v2/product/{barcode}.json"
         try:
-            resp = self._http.get(path, params={"fields": FIELDS})
+            deadline = self._clock() + self.timeout  # total, not per read
+            with self._http.stream("GET", path, params={"fields": FIELDS}) as resp:
+                if resp.status_code == 404:
+                    return {"status": 0}
+                if resp.status_code != 200:
+                    logger.warning("Open Food Facts GET %s -> HTTP %s", path, resp.status_code)
+                    raise OpenFoodFactsUnavailable(f"HTTP {resp.status_code}")
+                declared = resp.headers.get("content-length", "")
+                if (
+                    declared.isascii()
+                    and declared.isdigit()
+                    and int(declared[:12]) > MAX_BODY_BYTES
+                ):
+                    raise OpenFoodFactsUnavailable("response too large")
+                body = bytearray()
+                for chunk in resp.iter_bytes():
+                    body += chunk
+                    if len(body) > MAX_BODY_BYTES:
+                        raise OpenFoodFactsUnavailable("response too large")
+                    if self._clock() > deadline:
+                        raise OpenFoodFactsUnavailable("response too slow")
+                if self._clock() > deadline:
+                    raise OpenFoodFactsUnavailable("response too slow")
         except httpx.HTTPError as exc:
             logger.warning("Open Food Facts GET %s failed: %s", path, exc)
             raise OpenFoodFactsUnavailable(str(exc)) from exc
-        finally:
-            self._last_request = self._clock()
-        if resp.status_code == 404:
-            return {"status": 0}
-        if resp.status_code != 200:
-            logger.warning("Open Food Facts GET %s -> HTTP %s", path, resp.status_code)
-            raise OpenFoodFactsUnavailable(f"HTTP {resp.status_code}")
         try:
-            return resp.json()
+            return json.loads(bytes(body))
         except ValueError as exc:
             raise OpenFoodFactsUnavailable("non-JSON response") from exc
 
@@ -230,15 +320,34 @@ class OpenFoodFactsClient:
             found, value = self._cached(barcode)
             if found:
                 return value
-            payload = self._fetch(barcode)
+            now = self._clock()
+            if now < self._breaker_until:
+                raise OpenFoodFactsUnavailable("circuit open")
+            if self._failed.get(barcode, 0.0) > now:
+                raise OpenFoodFactsUnavailable("recently failed")
+        if not self._slots.acquire(blocking=False):
+            raise OpenFoodFactsUnavailable("too many lookups in flight")
+        try:
+            wait = self._reserve()  # local congestion is not an upstream outage
+            if wait > 0:
+                self._sleep(wait)
             try:
-                mapped = _map(barcode, payload)
+                payload = self._fetch(barcode)
+                try:
+                    mapped = _map(barcode, payload)
+                except OpenFoodFactsUnavailable:
+                    raise
+                except Exception as exc:  # any shape surprise is "unavailable"
+                    raise OpenFoodFactsUnavailable(f"unexpected response: {exc}") from exc
             except OpenFoodFactsUnavailable:
+                self._record_failure(barcode)
                 raise
-            except Exception as exc:  # any shape surprise is "unavailable"
-                raise OpenFoodFactsUnavailable(f"unexpected response: {exc}") from exc
-            self._store(barcode, mapped)
+            self._record_success()
+            with self._lock:
+                self._store(barcode, mapped)
             return mapped
+        finally:
+            self._slots.release()
 
 
 # ---------------------------------------------------------------------------

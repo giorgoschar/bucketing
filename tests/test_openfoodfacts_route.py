@@ -232,3 +232,28 @@ def test_add_flow_accepts_an_off_result(client, api, fake, off):  # noqa: F811
     )  # fmt: skip
     assert r.status_code == 201, r.text
     assert r.json()["posokanei_id"] is None and r.json()["barcode"] == BARCODE
+
+
+def test_api_add_treats_off_prefixed_posokanei_id_as_null(client, api):  # noqa: F811
+    headers, _ = api
+    r = client.post(
+        "/api/v1/stock",
+        json={"name": "Milk", "barcode": BARCODE, "posokanei_id": f"off:{BARCODE}"},
+        headers=headers,
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["posokanei_id"] is None
+
+
+def test_service_and_jinja_add_ignore_off_prefixed_id(client, db, api):  # noqa: F811
+    from app.services import stock as stock_svc
+
+    _, hh = api
+    item = stock_svc.add_product(
+        db, hh.household_id, hh.user_id, name="Milk", posokanei_id="OFF:123456"
+    )
+    assert item.product.posokanei_id is None
+    item = stock_svc.add_product(
+        db, hh.household_id, hh.user_id, name="Oil", posokanei_id=f"off:{BARCODE}"
+    )
+    assert item.product.posokanei_id is None

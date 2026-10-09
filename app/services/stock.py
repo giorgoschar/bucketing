@@ -208,6 +208,8 @@ def add_product(
         raise StockError("Name is required.")
     barcode = clean_barcode(barcode)
     posokanei_id = (posokanei_id or "").strip() or None
+    if posokanei_id is not None and posokanei_id.lower().startswith("off:"):
+        posokanei_id = None  # the synthetic id of an Open Food Facts result
     if posokanei_id is not None and not valid_product_id(posokanei_id):
         raise StockError("Invalid PosoKanei product id.")
     quantity = parse_quantity(quantity)

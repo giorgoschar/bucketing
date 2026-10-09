@@ -50,3 +50,7 @@ body carries `in_pantry`, and the user can still add the product by hand.
 An Open Food Facts result is a 200 with `source: "openfoodfacts"`, `id`
 `off:<barcode>` (not a PosoKanei id), empty `retailer_prices`, all-null
 `price_stats`, empty `history` and no image.
+
+## Hardening
+
+Lock-free I/O (the lock guards bookkeeping only); a caller whose request slot is more than 2 s away, or who finds 2 lookups in flight, fails fast; an outage is remembered per barcode for 60 s; 3 consecutive outage errors open a 60 s breaker; 5 s total deadline including the body, no redirects, body streamed and capped at 64 kB; sizes strictly parsed, in (0, 100000], rounded to 3 places, else none. An `off:`-prefixed `posokanei_id` is ignored by the add paths.
