@@ -9,11 +9,9 @@ price_snapshots.source
 * ``price_snapshots.source``: ``posokanei`` (the server default, so every
   existing row is one) or ``manual`` (a price the user logged).
 
-* ``ingest_attempts`` data step: before the diagnostics keep only a summary of a
-  request, they stored the raw body. Those rows are cleaned here: ``payload``
-  and ``content_type`` are NULLed, and ``detail`` where the status could carry
-  input (everything but 200/201/401/409/429, whose detail is fixed text).
-  Idempotent; the downgrade cannot restore it.
+* ``ingest_attempts.summary_version``: 1 on every row the summary code writes, NULL
+  (no default) on rows that existed before, whose payload is the raw body. Readers
+  show a payload only for version 1.
 
 Otherwise additive: the downgrade drops the two columns and the two indexes.
 
@@ -45,14 +43,13 @@ def upgrade() -> None:
         )
 
 
-    # Raw bodies stored by the first version of the diagnostics (see above).
-    op.execute(
-        "UPDATE ingest_attempts SET payload = NULL, content_type = NULL, "
-        "detail = CASE WHEN status IN (200, 201, 401, 409, 429) THEN detail ELSE NULL END"
-    )
+    with op.batch_alter_table("ingest_attempts") as batch:
+        batch.add_column(sa.Column("summary_version", sa.SmallInteger(), nullable=True))
 
 
 def downgrade() -> None:
+    with op.batch_alter_table("ingest_attempts") as batch:
+        batch.drop_column("summary_version")
     with op.batch_alter_table("price_snapshots") as batch:
         batch.drop_column("source")
     with op.batch_alter_table("cash_movements") as batch:

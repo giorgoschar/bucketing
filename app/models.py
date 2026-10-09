@@ -12,6 +12,7 @@ from sqlalchemy import (
     Index,
     Integer,
     Numeric,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
@@ -995,17 +996,19 @@ class IngestAttempt(Base):
         String, ForeignKey("transactions.id", ondelete="SET NULL"), nullable=True
     )
     created_at = Column(DateTime, default=utcnow_naive, nullable=False)
+    # 1 on every row written by the summary code. NULL (no default) on rows
+    # that existed before, whose payload is the raw body: readers never show
+    # those. Set by the writer only; nothing in a request can influence it.
+    summary_version = Column(SmallInteger, nullable=True)
 
     @property
     def is_legacy(self) -> bool:
         """Written before the summary existed: the payload is the raw body."""
-        from app.services.ingest import is_legacy_payload
-
-        return is_legacy_payload(self.payload)
+        return self.summary_version != 1
 
     @property
     def safe_payload(self) -> str | None:
-        """The payload if it is a summary, else None (never a raw body)."""
+        """The payload of a summary_version 1 row, else None (never a raw body)."""
         return None if self.is_legacy else self.payload
 
     @property
@@ -1024,8 +1027,10 @@ class IngestAttempt(Base):
     @property
     def payload_lines(self) -> list[str]:
         """The stored summary as ``key: preview`` lines (for the page)."""
-        from app.services.ingest import summary_lines
+        from app.services.ingest import LEGACY_PAYLOAD_LINE, summary_lines
 
+        if self.is_legacy:
+            return [LEGACY_PAYLOAD_LINE] if self.payload is not None else []
         return summary_lines(self.payload)
 
 

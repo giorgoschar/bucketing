@@ -182,76 +182,31 @@ def summarise_payload(
     return json.dumps(out, ensure_ascii=False, separators=(",", ":"))
 
 
+SUMMARY_VERSION = 1
 LEGACY_PAYLOAD_LINE = "[older entry: details not kept]"
 LEGACY_DETAIL = "[older entry]"
 # Statuses whose detail main's diagnostics wrote as fixed text only.
 FIXED_DETAIL_STATUSES = (200, 201, 401, 409, 429)
-_FIELD_TYPES = {"text", "number", "list", "record", "null", "missing"}
-_NOT_OBJECT = re.compile(
-    r"not a JSON object \((?:\d{1,9} bytes|unknown size), [A-Za-z0-9/+.;=_ -]{0,60}\)"
-)
-
-
-def _parse_summary(payload: str | None) -> dict | None:
-    if not payload or len(payload) > 4000 or not payload.startswith("{"):
-        return None
-    try:
-        data = json.loads(payload)
-    except ValueError:
-        return None
-    if not isinstance(data, dict):
-        return None
-    allowed = set(KNOWN_KEYS) | set(CLASSIFY_KEYS)
-    for key, field in data.items():
-        if key == "unknown_keys":
-            if not isinstance(field, int) or isinstance(field, bool):
-                return None
-        elif key in allowed:
-            if (
-                not isinstance(field, dict)
-                or field.get("type") not in _FIELD_TYPES
-                or not set(field) <= {"type", "value"}
-                or not isinstance(field.get("value", ""), str)
-                or len(field.get("value", "")) > 120
-            ):
-                return None
-        else:
-            return None
-    return data
-
-
-def is_summary(payload: str | None) -> bool:
-    """True for exactly what :func:`summarise_payload` writes. Anything else
-    is a row main's diagnostics stored with the raw body."""
-    if not payload:
-        return False
-    if payload.startswith("not a JSON object"):
-        return bool(_NOT_OBJECT.fullmatch(payload))
-    return _parse_summary(payload) is not None
-
-
-def is_legacy_payload(payload: str | None) -> bool:
-    return payload is not None and not is_summary(payload)
 
 
 def summary_lines(payload: str | None) -> list[str]:
-    """A stored summary as ``key: preview`` lines for the page; a row that is
-    not summary-shaped (written before the summary existed) is never shown."""
+    """A stored summary (written by :func:`summarise_payload`) as ``key:
+    preview`` lines for the page. Only called for summary_version 1 rows."""
     if not payload:
         return []
-    if is_legacy_payload(payload):
-        return [LEGACY_PAYLOAD_LINE]
-    data = _parse_summary(payload)
-    if data is None:  # "not a JSON object (...)"
+    try:
+        data = json.loads(payload)
+    except ValueError:
+        return [payload]
+    if not isinstance(data, dict):
         return [payload]
     lines = []
     for key, field in data.items():
         if key == "unknown_keys":
             if field:
                 lines.append(f"other keys: {field}")
-        else:
-            value = field.get("value")
-            kind = field["type"]
+        elif isinstance(field, dict):
+            value, kind = field.get("value"), field.get("type", "?")
             lines.append(f"{key}: {value} ({kind})" if value is not None else f"{key}: {kind}")
     return lines
 
@@ -608,6 +563,7 @@ def _store_attempt(
             payload=payload,
             content_type=content_type,
             transaction_id=transaction_id,
+            summary_version=SUMMARY_VERSION,
         )
         session.add(row)
         session.flush()
