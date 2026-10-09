@@ -23,7 +23,7 @@ export function useTokenActions() {
   return {
     // The response carries the plaintext token: returned to the screen, never cached. Invalidating the
     // list refetches it, and the list endpoint never includes the plaintext.
-    create: (body: { name: string; default_bucket_id: string | null }) =>
+    create: (body: { name: string; default_bucket_id: string | null; allow_classify?: boolean }) =>
       act(() => api.POST('/api/v1/settings/tokens', { body }) as Promise<RawResult<TokenItem & { token: string }>>, { invalidates: [settingsKeys.tokens(hh)] }),
     revoke: (id: string) =>
       act(() => api.DELETE('/api/v1/settings/tokens/{token_id}', { params: { path: { token_id: id } } }), { invalidates: [settingsKeys.tokens(hh)], success: 'Token revoked' }),

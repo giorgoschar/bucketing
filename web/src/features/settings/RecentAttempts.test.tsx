@@ -15,14 +15,19 @@ afterEach(resetTestEnv)
 const ATTEMPTS = 'GET /api/v1/ingest/attempts' as const
 const minsAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString()
 const LONG = 'Could not read the amount "twelve euro fifty": send a number such as 12.50 or 12,50, with or without a currency sign, in the Amount field of the Shortcut'
+const summary = (o: Record<string, string | null>, unknown = 0) =>
+  JSON.stringify({
+    ...Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v === null ? { type: 'missing' } : { type: 'text', value: v }])),
+    unknown_keys: unknown,
+  })
 const attempt = (over: Partial<IngestAttempt>): IngestAttempt => ({
-  id: 'a1', created_at: minsAgo(5), status_code: 201, outcome: 'created', reason: null, merchant: 'Lidl',
-  amount_raw: '€12,50', transaction_id: 't1', token_name: 'iPhone', ...over,
+  id: 'a1', created_at: minsAgo(5), status: 201, outcome: 'created', detail: null,
+  payload: summary({ merchant: 'Lidl', amount: '€12,50' }), token_prefix: 'tam_ab12', transaction_id: 't1', ...over,
 })
 const THREE = [
   attempt({}),
-  attempt({ id: 'a2', created_at: minsAgo(180), status_code: 200, outcome: 'duplicate', reason: 'Same purchase 1 min earlier', merchant: 'AB', amount_raw: '7.20', transaction_id: 't0' }),
-  attempt({ id: 'a3', created_at: minsAgo(60 * 24 * 4), status_code: 422, outcome: 'rejected', reason: LONG, merchant: null, amount_raw: 'twelve euro fifty', transaction_id: null, token_name: null }),
+  attempt({ id: 'a2', created_at: minsAgo(180), status: 200, outcome: 'duplicate', detail: 'Same purchase 1 min earlier', payload: summary({ merchant: 'AB', amount: '7.20' }), transaction_id: 't0' }),
+  attempt({ id: 'a3', created_at: minsAgo(60 * 24 * 4), status: 422, outcome: 'rejected', detail: LONG, payload: summary({ merchant: null, amount: 'twelve euro fifty' }, 2), transaction_id: null, token_prefix: null }),
 ]
 
 describe('Apple Pay › Recent attempts', () => {
@@ -32,14 +37,18 @@ describe('Apple Pay › Recent attempts', () => {
     const rows = within(await screen.findByRole('list', { name: 'Recent attempts' })).getAllByRole('listitem')
     expect(rows).toHaveLength(3)
     expect(within(rows[0]).getByText('Added')).toHaveClass('ui-badge--pos')
-    expect(rows[0]).toHaveTextContent("Lidl · '€12,50'")
+    expect(rows[0]).toHaveTextContent('merchant: Lidl')
+    expect(rows[0]).toHaveTextContent('amount: €12,50')
     expect(rows[0]).toHaveTextContent('5m ago')
-    expect(rows[0]).toHaveTextContent('iPhone')
+    expect(rows[0]).toHaveTextContent('tam_ab12')
     expect(within(rows[1]).getByText('Duplicate')).toHaveClass('ui-badge--warn')
-    expect(rows[1]).toHaveTextContent("AB · '7.20'")
+    expect(rows[1]).toHaveTextContent('merchant: AB')
+    expect(rows[1]).toHaveTextContent('amount: 7.20')
     expect(rows[1]).toHaveTextContent('3h ago')
     expect(within(rows[2]).getByText('Rejected')).toHaveClass('ui-badge--neg')
-    expect(rows[2]).toHaveTextContent("No merchant · 'twelve euro fifty'")
+    expect(rows[2]).toHaveTextContent('merchant: not sent')
+    expect(rows[2]).toHaveTextContent('amount: twelve euro fifty')
+    expect(rows[2]).toHaveTextContent('other keys: 2')
     expect(rows[2]).toHaveTextContent('4d ago')
     expect(rows[2]).toHaveTextContent('HTTP 422')
   })
@@ -61,6 +70,57 @@ describe('Apple Pay › Recent attempts', () => {
     renderWithProviders(<RecentAttempts />)
     const reason = await screen.findByText(LONG)
     expect(reason).toHaveClass('attempt__reason')
+    expect(reason).toHaveTextContent(LONG)
+  })
+
+  it('an older entry (payload null) says its details were not kept', async () => {
+    fakeApi({ [ATTEMPTS]: () => ({ items: [attempt({ id: 'old', payload: null, detail: '[older entry]', status: 422, outcome: 'rejected', transaction_id: null })] }) })
+    renderWithProviders(<RecentAttempts />)
+    expect(await screen.findByText('Older entry: details not kept')).toBeInTheDocument()
+  })
+
+  it('a summary that is not JSON is shown as plain text', async () => {
+    const text = 'not a JSON object (12 bytes, text/plain)'
+    fakeApi({ [ATTEMPTS]: () => ({ items: [attempt({ payload: text })] }) })
+    renderWithProviders(<RecentAttempts />)
+    expect(await screen.findByText(text)).toBeInTheDocument()
+  })
+
+  it('a JSON value that is not a summary is shown as plain text, never as markup', async () => {
+    const text = '[1,2,{"a":"<img src=x onerror=alert(1)>"}]'
+    fakeApi({ [ATTEMPTS]: () => ({ items: [attempt({ payload: text })] }) })
+    const view = renderWithProviders(<RecentAttempts />)
+    expect(await screen.findByText(text)).toBeInTheDocument()
+    expect(view.container.querySelector('img')).toBeNull()
+  })
+
+  it('summary values are rendered as text, never HTML', async () => {
+    const evil = '<img src=x onerror=alert(1)>'
+    fakeApi({ [ATTEMPTS]: () => ({ items: [attempt({ payload: summary({ merchant: evil, amount: '1' }) })] }) })
+    const view = renderWithProviders(<RecentAttempts />)
+    expect(await screen.findByText(`merchant: ${evil}`)).toBeInTheDocument()
+    expect(view.container.querySelector('img')).toBeNull()
+  })
+
+  it('null, missing and structured fields read as one line each', async () => {
+    const payload = JSON.stringify({
+      merchant: { type: 'null' }, amount: { type: 'number', value: '12.5' }, card: { type: 'record', value: 'keys: Name' },
+      notes: { type: 'list', value: '2 items' }, unknown_keys: 0,
+    })
+    fakeApi({ [ATTEMPTS]: () => ({ items: [attempt({ payload })] }) })
+    renderWithProviders(<RecentAttempts />)
+    const row = (await screen.findByRole('list', { name: 'Recent attempts' })).querySelector('li')!
+    expect(row).toHaveTextContent('merchant: empty')
+    expect(row).toHaveTextContent('amount: 12.5')
+    expect(row).toHaveTextContent('card: keys: Name')
+    expect(row).toHaveTextContent('notes: 2 items')
+    expect(row).not.toHaveTextContent('other keys')
+  })
+
+  it('shows the four outcomes by name', async () => {
+    fakeApi({ [ATTEMPTS]: () => ({ items: [attempt({ id: 'c', outcome: 'classified' })] }) })
+    renderWithProviders(<RecentAttempts />)
+    expect(await screen.findByText('Category set')).toHaveClass('ui-badge--pos')
   })
 
   it('links to the transaction when there is one', async () => {

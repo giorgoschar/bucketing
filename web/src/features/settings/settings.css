@@ -113,6 +113,8 @@ a.settings__row:active { background: var(--surface-2); }
 .attempt__time:focus-visible, .attempt__link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .attempt__what { margin: 0; font-weight: 600; font-size: 15px; overflow-wrap: anywhere; }
 /* The reason is the point of the screen: always in full. */
+.attempt__fields { display: flex; flex-direction: column; gap: 2px; font-size: 14px; overflow-wrap: anywhere; }
+.attempt__fields p { margin: 0; }
 .attempt__reason { margin: 0; font-size: 13.5px; line-height: 1.45; color: var(--ink-2); white-space: normal; overflow-wrap: anywhere; }
 .attempt__meta { font-size: 13px; color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
 .attempt__link {

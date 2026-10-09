@@ -17,7 +17,7 @@ export type CategoryItem = Category
 
 /* Untyped dict endpoints (no response_model): local types mirroring app/api/settings.py. */
 export interface Profile { id: string; username: string; display_name: string; email: string | null; avatar_color: string | null; totp_enabled: boolean; household_id: string }
-export interface TokenItem { id: string; name: string; prefix: string; scopes: string[]; default_bucket_id: string | null; last_used_at: string | null; created_at: string | null }
+export interface TokenItem { id: string; name: string; prefix: string; scopes: string[]; can_classify?: boolean; default_bucket_id: string | null; last_used_at: string | null; created_at: string | null }
 export type NotificationPrefs = components['schemas']['NotificationPrefsOut']
 export type Security = components['schemas']['SecurityOut']
 export type Rule = components['schemas']['CategoryRuleOut']

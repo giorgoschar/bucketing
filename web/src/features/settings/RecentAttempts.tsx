@@ -9,6 +9,38 @@ const RESULT: Record<AttemptOutcome, { label: string; tone: BadgeTone }> = {
   created: { label: 'Added', tone: 'pos' },
   duplicate: { label: 'Duplicate', tone: 'warn' },
   rejected: { label: 'Rejected', tone: 'neg' },
+  classified: { label: 'Category set', tone: 'pos' },
+}
+
+/**
+ * The server's payload summary ({key: {type, value}, unknown_keys: n}, compact JSON) as one "key: preview"
+ * line per field. Defensive: anything that is not that shape (a plain sentence such as "not a JSON object
+ * (12 bytes, text/plain)", or JSON of another shape) comes back as null and the caller shows it as text.
+ */
+export function summaryLines(payload: string): string[] | null {
+  let data: unknown
+  try { data = JSON.parse(payload) } catch { return null }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null
+  const lines: string[] = []
+  for (const [key, field] of Object.entries(data)) {
+    if (key === 'unknown_keys') {
+      if (typeof field === 'number' && field > 0) lines.push(`other keys: ${field}`)
+    } else if (field && typeof field === 'object' && !Array.isArray(field)) {
+      const { type, value } = field as { type?: unknown; value?: unknown }
+      const shown = typeof value === 'string' || typeof value === 'number' ? String(value)
+        : type === 'missing' ? 'not sent' : type === 'null' ? 'empty' : '?'
+      lines.push(`${key}: ${shown}`)
+    } else return null
+  }
+  return lines
+}
+
+function Payload({ payload }: { payload: string | null | undefined }) {
+  if (payload == null) return <p className="attempt__reason">Older entry: details not kept</p>
+  const lines = summaryLines(payload)
+  // Rendered as text nodes only: nothing here is ever HTML.
+  if (!lines || lines.length === 0) return <p className="attempt__what">{payload}</p>
+  return <div className="attempt__fields">{lines.map((l, i) => <p key={i}>{l}</p>)}</div>
 }
 
 function Row({ a }: { a: IngestAttempt }) {
@@ -17,7 +49,7 @@ function Row({ a }: { a: IngestAttempt }) {
   const at = exactTime(a.created_at)
   const rel = ago(a.created_at)
   const result = RESULT[a.outcome] ?? RESULT.rejected
-  const meta = [a.token_name, a.outcome === 'rejected' ? `HTTP ${a.status_code}` : null].filter(Boolean).join(' · ')
+  const meta = [a.token_prefix, a.outcome === 'rejected' ? `HTTP ${a.status}` : null].filter(Boolean).join(' · ')
   return (
     <li className="attempt">
       <div className="attempt__head">
@@ -27,9 +59,8 @@ function Row({ a }: { a: IngestAttempt }) {
           {exact ? at : rel}
         </button>
       </div>
-      {/* As received: the amount is the Shortcut's own text, quoted, so a wrong format is visible. */}
-      <p className="attempt__what">{`${a.merchant || 'No merchant'} · ${a.amount_raw ? `'${a.amount_raw}'` : 'no amount'}`}</p>
-      {a.reason && <p className="attempt__reason">{a.reason}</p>}
+      <Payload payload={a.payload} />
+      {a.detail && <p className="attempt__reason">{a.detail}</p>}
       {(meta || a.transaction_id) && (
         <div className="attempt__foot">
           <span className="attempt__meta">{meta}</span>

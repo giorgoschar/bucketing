@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Badge } from '../../ui/Badge'
 import { BackHeader } from '../../ui/BackHeader'
 import { QueryView } from '../../ui/QueryView'
 import { Sheet } from '../../ui/Sheet'
@@ -13,12 +14,19 @@ const STEPS = [
   { title: 'Turn on the Wallet automation', body: 'Shortcuts › Automation › Wallet › “When I tap any card” › Run Tameio.' },
 ]
 
+const ASK_STEPS = [
+  'If needs_category (from the Tameio reply) is true…',
+  'Choose from List over category_names.',
+  'Get Contents of URL: a second POST to …/ingest/apple-pay/<id>/classify, with the same token, and the JSON {"category": <Chosen Item>}.',
+]
+
 export function Automations() {
   const tokens = useTokens()
   const buckets = useBuckets().data ?? []
   const actions = useTokenActions()
   const [name, setName] = useState('')
   const [bucket, setBucket] = useState('')
+  const [classify, setClassify] = useState(false)
   const [nameError, setNameError] = useState<string | null>(null)
   // The plaintext token: this component's state only, gone when the screen is left.
   const [fresh, setFresh] = useState<string | null>(null)
@@ -31,9 +39,9 @@ export function Automations() {
     if (trimmed.length < 1 || trimmed.length > 60) return setNameError('Use 1 to 60 characters.')
     setNameError(null)
     setBusy(true)
-    const out = await actions.create({ name: trimmed, default_bucket_id: bucket || null })
+    const out = await actions.create({ name: trimmed, default_bucket_id: bucket || null, ...(classify ? { allow_classify: true } : {}) })
     setBusy(false)
-    if (out.ok) { setFresh(out.data.token); setName(''); setBucket('') }
+    if (out.ok) { setFresh(out.data.token); setName(''); setBucket(''); setClassify(false) }
   }
   const revoke = async () => {
     if (!revoking) return
@@ -77,6 +85,7 @@ export function Automations() {
                   <li key={t.id} className="ui-row">
                     <span className="ui-row__main">
                       <span className="ui-row__title">{t.name}</span>
+                      {t.can_classify && <span><Badge tone="acc">Can ask for a category</Badge></span>}
                       <span className="ui-row__sub">{`${t.prefix} · ${bucketName(t.default_bucket_id)} · ${lastUsed(t.last_used_at)}`}</span>
                     </span>
                     <button type="button" className="btn btn--sm btn--danger" aria-label={`Revoke ${t.name}`} onClick={() => setRevoking(t)}>Revoke</button>
@@ -105,8 +114,26 @@ export function Automations() {
                 {buckets.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select>
             </label>
+            <label className="ui-check">
+              <span>Let the Shortcut ask for a category (shares your category and budget names with the Shortcut)</span>
+              <input type="checkbox" checked={classify} onChange={(e) => setClassify(e.target.checked)} />
+            </label>
             <button type="button" className="btn btn--primary" disabled={busy} onClick={() => void create()}>Create token</button>
           </div>
+        </section>
+
+        <section className="ui-card settings__card" aria-labelledby="ask-h" role="region">
+          <h2 id="ask-h" className="settings__h">Ask for a category</h2>
+          <p className="settings__help">For a token that is allowed to ask. After the purchase is saved, the Shortcut can offer your categories:</p>
+          <ol className="settings__steps">
+            {ASK_STEPS.map((t, i) => (
+              <li key={i}>
+                <span className="settings__stepn" aria-hidden="true">{i + 1}</span>
+                <span className="settings__help">{t}</span>
+              </li>
+            ))}
+          </ol>
+          <p className="settings__help">To stop being asked about a merchant, add a rule in Settings › Categories &amp; rules.</p>
         </section>
 
         <p className="settings__help">Purchases arrive tagged Apple Pay with no payer. You pick who paid from Home.</p>
