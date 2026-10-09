@@ -116,7 +116,10 @@ export const affects = {
 // (2a scopes the device cache by household) so both phases hit one cache entry.
 export const insightsKeys = {
   all: (_hh: string) => keys.insights.all,
-  overview: (hh: string, period: string, lens: string, filters: string) => ['insights', 'overview', hh, period, lens, filters] as const,
+  overview: (hh: string, period: string, lens: string, filters: string, months?: number) =>
+    (months === undefined
+      ? ['insights', 'overview', hh, period, lens, filters]
+      : ['insights', 'overview', hh, period, lens, filters, `months:${months}`]) as readonly string[],
   person: (hh: string, period: string, userId: string) => ['insights', 'person', hh, period, userId] as const,
   category: (hh: string, id: string, period: string, lens: string) => ['insights', 'category', hh, id, period, lens] as const,
   vsUsual: (_hh: string, month: string) => keys.insights.categoriesVsUsual(month),

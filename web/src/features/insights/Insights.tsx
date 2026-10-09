@@ -1,5 +1,6 @@
 import { type ReactNode, useState } from 'react'
 import { useSession } from '../../session/SessionProvider'
+import { useIsDesktop } from '../../ui/useIsDesktop'
 import { TopBar } from '../../shell/TopBar'
 import { Chips } from '../../ui/Chips'
 import { QueryView } from '../../ui/QueryView'
@@ -12,10 +13,13 @@ import { useInsights, useMembers, usePersonShare } from './hooks'
 import { HOUSEHOLD, type Lens, lensOptions, useLens } from './lens'
 import { type WidgetId, visibleWidgets } from './overview'
 import { type Period, type Preset, PRESETS, usePeriod } from './period'
-import { type InsightsData, NO_FILTERS } from './types'
+import { type InsightFilters, type InsightsData, NO_FILTERS } from './types'
 import {
   Biggest, BillsCard, BudgetsCard, FuelCard, HowYouPaid, InOut, InOutMonths, OnTrack, SavingsRate, SpendTrend, VsUsual, WhereItWent,
 } from './widgets/cards'
+import { BillsPanel } from './desktop/BillsPanel'
+import { CategoriesTable } from './desktop/CategoriesTable'
+import { MonthsTable } from './desktop/MonthsTable'
 import { EmptyPeriod, Headline, Identity, ShareCard } from './widgets/summary'
 import './insights.css'
 
@@ -25,6 +29,7 @@ export interface WidgetCtx {
   lens: Lens
   members: HouseholdMember[]
   meId: string
+  filters?: InsightFilters
   setPeriod(p: Period): void
 }
 
@@ -42,6 +47,9 @@ const RENDER: Record<Exclude<WidgetId, 'identity' | 'share'>, (ctx: WidgetCtx) =
   savings: (c) => <SavingsRate {...c} />,
   vsUsual: (c) => <VsUsual {...c} />,
   bills: () => <BillsCard />,
+  billsPanel: () => <BillsPanel />,
+  monthsTable: (c) => <MonthsTable period={c.period} lens={c.lens} filters={c.filters ?? NO_FILTERS} />,
+  categoriesTable: (c) => <CategoriesTable data={c.data} period={c.period} lens={c.lens} />,
   fuel: (c) => <FuelCard {...c} />,
 }
 
@@ -57,6 +65,7 @@ export function Insights() {
   const share = usePersonShare(period, lens === HOUSEHOLD ? null : lens)
   const meId = me?.id ?? ''
   const member = members?.find((m) => m.user_id === lens)
+  const desktop = useIsDesktop()
   const firstView = period.preset === 'this_month' && lens === HOUSEHOLD
 
   const pickPreset = (p: Preset) => {
@@ -64,6 +73,9 @@ export function Insights() {
     else setPeriod({ preset: p })
   }
   const active = filters.bucketIds.length + filters.categoryIds.length
+  const lensControl = members && meId && (
+    <LensControl label="Whose spending" options={lensOptions(members, meId)} value={lens} onChange={setLens} />
+  )
 
   return (
     <>
@@ -79,18 +91,18 @@ export function Insights() {
       />
       <div className="insights__bar">
         <Chips label="Period" options={PRESETS} value={period.preset} onChange={pickPreset} />
+        {/* Desktop: the lens joins the period controls in one row (spec §5.4). */}
+        {desktop && lensControl}
       </div>
-      <section className="screen insights">
-        {members && meId && (
-          <LensControl label="Whose spending" options={lensOptions(members, meId)} value={lens} onChange={setLens} />
-        )}
+      <section className="screen insights shell__main--wide">
+        {!desktop && lensControl}
         <QueryView
           result={insights}
           noDataText={firstView ? 'No saved data yet. Connect once to load Insights.' : 'No saved data for this view. Connect once to load it.'}
         >
           {(data) => {
-            const ctx: WidgetCtx = { data, period, lens, members: members ?? [], meId, setPeriod }
-            return visibleWidgets(data, { lens, period, bills: true }).map((id) => (
+            const ctx: WidgetCtx = { data, period, lens, members: members ?? [], meId, filters, setPeriod }
+            return visibleWidgets(data, { lens, period, bills: true, desktop }).map((id) => (
               <div key={id} data-widget={id} className="insights__widget">
                 {id === 'identity' ? (
                   <Identity member={member} />

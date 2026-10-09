@@ -1,0 +1,41 @@
+// @vitest-environment node
+/// <reference types="node" />
+import { readFileSync } from 'node:fs'
+import { expect, it } from 'vitest'
+
+const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), 'utf8')
+
+/** The CSS with every @media block removed: what the phone gets. */
+function outsideMedia(css: string): string {
+  let out = ''
+  let depth = 0
+  for (let i = 0; i < css.length; i++) {
+    if (depth === 0 && css.startsWith('@media', i)) {
+      depth = -1 // find the opening brace
+    }
+    const ch = css[i]
+    if (depth === -1) { if (ch === '{') depth = 1; continue }
+    if (depth > 0) {
+      if (ch === '{') depth++
+      if (ch === '}') depth--
+      continue
+    }
+    out += ch
+  }
+  return out
+}
+
+it('the 12-column grid and the wide column only exist inside the desktop media query', () => {
+  const css = read('./insights.css')
+  expect(css).toMatch(/@media \(min-width: 1024px\)/)
+  const phone = outsideMedia(css)
+  expect(phone).not.toMatch(/repeat\(12/)
+  expect(phone).not.toMatch(/shell__main--wide/)
+  expect(phone).not.toMatch(/1280px/)
+})
+
+it('the bill history two-column layout only exists inside the desktop media query', () => {
+  const phone = outsideMedia(read('./bills/bills.css'))
+  expect(phone).not.toMatch(/repeat\(2, minmax\(0, 1fr\)\); align-items: start/)
+  expect(phone).not.toMatch(/:hover/)
+})
