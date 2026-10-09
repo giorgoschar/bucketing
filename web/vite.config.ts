@@ -8,7 +8,19 @@ import { pwaOptions } from './pwa.config.ts'
 export default defineConfig({
   base: '/app/',
   // Never inline assets as data: URIs; the CSP's font-src is 'self' only.
-  build: { assetsInlineLimit: 0 },
+  build: {
+    assetsInlineLimit: 0,
+    rollupOptions: {
+      output: {
+        // react-router (~95 kB) is shared by the entry and most lazy screens. Left to the chunker it lands in
+        // whichever chunk the current import graph picks (it flipped into the entry chunk, 323 -> 423 kB).
+        // Pinning it keeps the entry chunk small and the split deterministic. check-sw.mjs guards the size.
+        manualChunks(id: string) {
+          if (/[\\/]node_modules[\\/](react-router|@remix-run[\\/]router)[\\/]/.test(id)) return 'router'
+        },
+      },
+    },
+  },
   plugins: [
     react(),
     VitePWA(pwaOptions),

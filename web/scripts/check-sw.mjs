@@ -1,6 +1,6 @@
 // Runs after `vite build` (npm "postbuild"): fails the build if the emitted /app/ worker lost a
 // Phase 1 behaviour or the 2d push handlers. src/sw.test.ts pins the logic; this pins the output.
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
 
 const sw = readFileSync(new URL('../dist/sw.js', import.meta.url), 'utf8')
 const manifest = JSON.parse(readFileSync(new URL('../dist/manifest.webmanifest', import.meta.url), 'utf8'))
@@ -13,6 +13,13 @@ function themeBootFirst(html) {
   const before = (needle) => html.indexOf(needle) === -1 || at < html.indexOf(needle)
   return at < html.indexOf('</head>') && before('type="module"') && before('rel="stylesheet"')
 }
+
+// The entry chunk is the one the page loads first; a lazy boundary that turns static (or a shared dependency the
+// chunker pulls in) shows up here first. 323 kB at the Pantry release; 340 kB is the ceiling.
+const MAIN_CHUNK_MAX = 340_000
+const assets = new URL('../dist/assets/', import.meta.url)
+const mainChunk = readdirSync(assets).find((f) => /^index-.*\.js$/.test(f))
+const mainBytes = mainChunk ? statSync(new URL(mainChunk, assets)).size : Infinity
 
 const urls = [...sw.matchAll(/"url":"([^"]+)"/g)].map((m) => m[1])
 const count = (s) => sw.split(s).length - 1
@@ -30,6 +37,8 @@ const checks = [
   ['a tap on an open app window asks the page to navigate (no reload)', /type:[`"]navigate[`"]/.test(sw)],
   ['the manifest keeps the /app/ scope', manifest.scope === '/app/' && manifest.start_url === '/app/' && manifest.id === '/app/'],
   ['the page links the manifest under /app/', entry.includes('/app/manifest.webmanifest')],
+  [`the main chunk stays under ${MAIN_CHUNK_MAX / 1000} kB (${mainChunk} is ${(mainBytes / 1000).toFixed(1)} kB)`, mainBytes <= MAIN_CHUNK_MAX],
+  ['react-router is its own precached chunk, not part of the main chunk', urls.some((u) => /^assets\/router-.*\.js$/.test(u))],
   // Settings › Appearance: the before-first-paint boot must work offline and stay render-blocking.
   ['the theme boot script is precached', urls.includes('theme-boot.js')],
   ['the page loads the theme boot as a classic script in head, before the module script and the stylesheet', themeBootFirst(entry)],
