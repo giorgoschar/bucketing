@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from 'react'
+import { lazy, type ReactNode, Suspense, useState } from 'react'
 import { useSession } from '../../session/SessionProvider'
 import { useIsDesktop } from '../../ui/useIsDesktop'
 import { TopBar } from '../../shell/TopBar'
@@ -17,11 +17,13 @@ import { type InsightFilters, type InsightsData, NO_FILTERS } from './types'
 import {
   Biggest, BillsCard, BudgetsCard, FuelCard, HowYouPaid, InOut, InOutMonths, OnTrack, SavingsRate, SpendTrend, VsUsual, WhereItWent,
 } from './widgets/cards'
-import { BillsPanel } from './desktop/BillsPanel'
-import { CategoriesTable } from './desktop/CategoriesTable'
-import { MonthsTable } from './desktop/MonthsTable'
 import { EmptyPeriod, Headline, Identity, ShareCard } from './widgets/summary'
 import './insights.css'
+
+// Desktop only (spec §5.4): kept out of the phone's main chunk.
+const BillsPanel = lazy(() => import('./desktop/DesktopPanels').then((m) => ({ default: m.BillsPanel })))
+const MonthsTable = lazy(() => import('./desktop/DesktopPanels').then((m) => ({ default: m.MonthsTable })))
+const CategoriesTable = lazy(() => import('./desktop/DesktopPanels').then((m) => ({ default: m.CategoriesTable })))
 
 export interface WidgetCtx {
   data: InsightsData
@@ -47,9 +49,9 @@ const RENDER: Record<Exclude<WidgetId, 'identity' | 'share'>, (ctx: WidgetCtx) =
   savings: (c) => <SavingsRate {...c} />,
   vsUsual: (c) => <VsUsual {...c} />,
   bills: () => <BillsCard />,
-  billsPanel: () => <BillsPanel />,
-  monthsTable: (c) => <MonthsTable period={c.period} lens={c.lens} filters={c.filters ?? NO_FILTERS} />,
-  categoriesTable: (c) => <CategoriesTable data={c.data} period={c.period} lens={c.lens} />,
+  billsPanel: () => <Suspense fallback={null}><BillsPanel /></Suspense>,
+  monthsTable: (c) => <Suspense fallback={null}><MonthsTable period={c.period} lens={c.lens} filters={c.filters ?? NO_FILTERS} /></Suspense>,
+  categoriesTable: (c) => <Suspense fallback={null}><CategoriesTable data={c.data} period={c.period} lens={c.lens} /></Suspense>,
   fuel: (c) => <FuelCard {...c} />,
 }
 
