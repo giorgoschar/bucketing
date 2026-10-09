@@ -593,6 +593,9 @@ class RecurringBill(Base):
         server_default=PaymentMethod.card.value,
         nullable=False,
     )
+    # Phase A: the unit this item's entries record a usage in (kWh, m3 ...);
+    # NULL: the item does not track usage.
+    usage_unit = Column(String(12), nullable=True)
     created_at = Column(DateTime, default=utcnow_naive)
 
     @property
@@ -641,6 +644,8 @@ class BillOccurrence(Base):
     # settled before, so an undone or deleted auto-payment stays undone.
     # Undo and delete leave it set.
     auto_paid_at = Column(DateTime, nullable=True)
+    # What this entry used, in the item's usage_unit. Kept by undo and skip.
+    usage = Column(Numeric(12, 3), nullable=True)
 
     bill = relationship("RecurringBill", back_populates="occurrences")
     transaction = relationship("Transaction", back_populates="bill_occurrence")

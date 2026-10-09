@@ -544,3 +544,27 @@ def test_polish_migration_round_trip(tmp_path):
     }
     up = _alembic(["upgrade", "head"], db_url)
     assert up.returncode == 0, up.stderr
+
+
+def test_bill_usage_migration_adds_and_drops_both_columns(tmp_path):
+    """c5d6e7f8a9b0 is additive and nullable; its downgrade drops both columns."""
+    db_url = _db_url(tmp_path, "usage.db")
+    assert _alembic(["upgrade", "f2a3b4c5d6e7"], db_url).returncode == 0
+    insp = inspect(create_engine(db_url))
+    assert "usage_unit" not in {c["name"] for c in insp.get_columns("recurring_bills")}
+    assert "usage" not in {c["name"] for c in insp.get_columns("bill_occurrences")}
+
+    up = _alembic(["upgrade", "c5d6e7f8a9b0"], db_url)
+    assert up.returncode == 0, up.stderr
+    insp = inspect(create_engine(db_url))
+    unit = {c["name"]: c for c in insp.get_columns("recurring_bills")}["usage_unit"]
+    usage = {c["name"]: c for c in insp.get_columns("bill_occurrences")}["usage"]
+    assert unit["nullable"] and usage["nullable"]
+    assert getattr(unit["type"], "length", None) == 12
+    assert (usage["type"].precision, usage["type"].scale) == (12, 3)
+
+    down = _alembic(["downgrade", "f2a3b4c5d6e7"], db_url)
+    assert down.returncode == 0, down.stderr
+    insp = inspect(create_engine(db_url))
+    assert "usage_unit" not in {c["name"] for c in insp.get_columns("recurring_bills")}
+    assert "usage" not in {c["name"] for c in insp.get_columns("bill_occurrences")}

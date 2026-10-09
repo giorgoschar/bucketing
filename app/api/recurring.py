@@ -4,7 +4,7 @@ expected entries (spec §3, §6.3). The new app's only way to change them.
 """
 
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from itertools import islice
 
 from dateutil.relativedelta import relativedelta
@@ -63,6 +63,35 @@ from app.validators import (
 router = APIRouter(prefix="/recurring", tags=["recurring"])
 
 MAX_RANGE_DAYS = 400
+USAGE_UNIT_MAX = 12
+USAGE_MAX = Decimal("1000000000")  # 9 digits before the point
+_MILLI = Decimal("0.001")
+
+
+def _clean_usage_unit(value):
+    """Trimmed; empty becomes None; at most 12 characters, no control characters."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("usage_unit must be text")
+    value = value.strip()
+    if any(ord(c) < 32 or ord(c) == 127 for c in value):
+        raise ValueError("usage_unit has a control character")
+    if len(value) > USAGE_UNIT_MAX:
+        raise ValueError(f"usage_unit is at most {USAGE_UNIT_MAX} characters")
+    return value or None
+
+
+def _clean_usage(value):
+    """A usage reading: finite, at least 0, under 10**9, stored to 3 places."""
+    if value is None:
+        return None
+    if not value.is_finite() or value < 0:
+        raise ValueError("usage must be 0 or more")
+    value = value.quantize(_MILLI, rounding=ROUND_HALF_UP)
+    if value >= USAGE_MAX:
+        raise ValueError("usage has at most 9 digits before the point")
+    return value
 
 
 class SplitIn(BaseModel):
@@ -94,8 +123,14 @@ class RecurringItemIn(BaseModel):
     is_auto_pay: bool = False
     is_active: bool = True
     notes: str | None = None
+    usage_unit: str | None = None  # None: the item does not track usage
     splits: list[SplitIn] = []
     payment_method: str | None = None  # None: create → by direction; update → unchanged
+
+    @field_validator("usage_unit", mode="before")
+    @classmethod
+    def _usage_unit(cls, v):
+        return _clean_usage_unit(v)
 
     @field_validator("payer_mode", mode="before")
     @classmethod
@@ -107,6 +142,12 @@ class EntryDoneIn(BaseModel):
     amount: Decimal | None = None
     person: str | None = None  # payer (out) or recipient (in); None: the item's default
     payment_method: str | None = None  # None: the item's
+    usage: Decimal | None = None  # None: leave the stored value alone
+
+    @field_validator("usage")
+    @classmethod
+    def _usage(cls, v):
+        return _clean_usage(v)
 
 
 class EntryUndoIn(BaseModel):
@@ -115,6 +156,21 @@ class EntryUndoIn(BaseModel):
 
 class EntryAmountIn(BaseModel):
     amount: Decimal
+    usage: Decimal | None = None  # None: leave the stored value alone
+
+    @field_validator("usage")
+    @classmethod
+    def _usage(cls, v):
+        return _clean_usage(v)
+
+
+class EntryUsageIn(BaseModel):
+    usage: Decimal | None  # None clears it
+
+    @field_validator("usage")
+    @classmethod
+    def _usage(cls, v):
+        return _clean_usage(v)
 
 
 class RulePreviewIn(BaseModel):
@@ -229,6 +285,7 @@ def _apply(db: Session, item: RecurringBill, body: RecurringItemIn, hh_id: str) 
     item.is_auto_pay = body.is_auto_pay
     item.is_active = body.is_active
     item.notes = (body.notes or "").strip() or None
+    item.usage_unit = body.usage_unit
 
 
 def _replace_splits(db: Session, item: RecurringBill, body: RecurringItemIn) -> None:
@@ -267,6 +324,7 @@ def _item_out(db: Session, item: RecurringBill, next_entry) -> RecurringItemOut:
         is_auto_pay=item.is_auto_pay,
         is_active=item.is_active is not False,
         notes=item.notes,
+        usage_unit=item.usage_unit,
         splits=[{"user_id": s.user_id, "amount": s.amount} for s in item.splits],
         next_entry=next_entry,
         has_history=bill_has_payment_history(db, item.id),
@@ -295,6 +353,12 @@ def _entry_or_404(db: Session, entry_id: str, hh_id: str) -> BillOccurrence:
     if not occ or occ.bill.household_id != hh_id:
         raise HTTPException(status_code=404, detail="Entry not found")
     return occ
+
+
+def _require_usage_unit(occ: BillOccurrence, usage) -> None:
+    """422 when ``usage`` is sent for an item that does not track usage."""
+    if usage is not None and not occ.bill.usage_unit:
+        raise HTTPException(status_code=422, detail="This item does not track usage.")
 
 
 # --------------------------------------------------------------- entries
@@ -328,6 +392,7 @@ def entry_done(
     received (in: an income). Either creates and links the transaction."""
     user, hh_id = auth
     occ = _entry_or_404(db, entry_id, hh_id)
+    _require_usage_unit(occ, body.usage)
     amount = parse_amount(body.amount, allow_blank=True)
     try:
         complete_entry(
@@ -338,6 +403,8 @@ def entry_done(
             person=require_member(db, body.person, hh_id),
             payment_method=payment_method_or_400(body.payment_method),
         )
+        if body.usage is not None:
+            occ.usage = body.usage
     except EntryStateError as exc:
         db.rollback()
         raise HTTPException(status_code=409, detail=str(exc)) from None
@@ -389,10 +456,31 @@ def entry_amount(
 ):
     user, hh_id = auth
     occ = _entry_or_404(db, entry_id, hh_id)
+    _require_usage_unit(occ, body.usage)
     try:
         set_entry_amount(occ, parse_amount(body.amount))
     except EntryStateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
+    if body.usage is not None:
+        occ.usage = body.usage
+    db.commit()
+    return entry_for(db, occ)
+
+
+@router.put("/entries/{entry_id}/usage", response_model=EntryOut)
+def entry_usage(
+    entry_id: str,
+    body: EntryUsageIn,
+    auth=Depends(require_api_auth),
+    db: Session = Depends(get_db),
+):
+    """Set (or, with null, clear) the usage of an expected, done or skipped entry
+    of an item that tracks usage."""
+    user, hh_id = auth
+    occ = _entry_or_404(db, entry_id, hh_id)
+    if not occ.bill.usage_unit:
+        raise HTTPException(status_code=422, detail="This item does not track usage.")
+    occ.usage = body.usage
     db.commit()
     return entry_for(db, occ)
 

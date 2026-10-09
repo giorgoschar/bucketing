@@ -33,6 +33,8 @@ class EntryOut(BaseModel):
     overdue: bool
     infrequent: bool
     payment_method: str
+    usage: Money | None = None  # in the item's usage_unit
+    usage_unit: str | None = None
 
 
 class SplitOut(BaseModel):
@@ -66,6 +68,7 @@ class RecurringItemOut(BaseModel):
     is_auto_pay: bool
     is_active: bool
     notes: str | None
+    usage_unit: str | None = None
     splits: list[SplitOut]
     next_entry: EntryOut | None
     # Paid or skipped-with-amount occurrences, or linked transactions: locks direction and currency.
