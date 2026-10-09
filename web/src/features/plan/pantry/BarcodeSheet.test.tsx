@@ -113,7 +113,7 @@ it('Open Food Facts: name, brand and size, the credit, no prices, and the PosoKa
   expect(sheet).not.toHaveTextContent('No store has a price')
   const credit = within(sheet).getByRole('link', { name: 'Open Food Facts' })
   expect(sheet).toHaveTextContent('Product data: Open Food Facts')
-  expect(credit).toHaveAttribute('href', 'https://world.openfoodfacts.org')
+  expect(credit).toHaveAttribute('href', 'https://world.openfoodfacts.org/product/5201054017906')
   expect(credit).toHaveAttribute('target', '_blank')
   expect(credit).toHaveAttribute('rel', 'noopener noreferrer')
   expect(sheet.querySelector('img')).toBeNull()

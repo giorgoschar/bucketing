@@ -110,6 +110,12 @@ export function BarcodeSheet({ code, onClose, onScanAnother, onAddManually, onAd
   )
 }
 
+// The product's own page; the site's front page when the code is not plain digits.
+function offUrl(code: string): string {
+  const base = 'https://world.openfoodfacts.org'
+  return /^\d{6,14}$/.test(code) ? `${base}/product/${code}` : base
+}
+
 function Found({ product, code }: { product: BarcodeProduct; code: string }) {
   const priced = product.retailer_prices.filter((r) => r.price != null).sort((a, b) => (a.price as number) - (b.price as number))
   const [best, ...others] = priced
@@ -151,7 +157,7 @@ function Found({ product, code }: { product: BarcodeProduct; code: string }) {
       )}
       {fromOff && (
         <p className="pantry-lookup__note pantry-lookup__credit">
-          Product data: <a href="https://world.openfoodfacts.org" target="_blank" rel="noopener noreferrer">Open Food Facts</a>
+          Product data: <a href={offUrl(code)} target="_blank" rel="noopener noreferrer">Open Food Facts</a>
         </p>
       )}
     </>
