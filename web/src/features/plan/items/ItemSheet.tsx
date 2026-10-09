@@ -216,6 +216,9 @@ function ItemBody({ item, onClose, onOpenEntry }: Omit<ItemSheetProps, 'open'>) 
       <button type="submit" className="btn btn--primary btn--block btn--lg" disabled={actions.busy}>
         {item ? 'Save' : 'Add item'}
       </button>
+      {item && out && !item.id.startsWith('pending-') && (
+        <Link className="btn btn--ghost btn--block" to={`/insights/bills/${encodeURIComponent(item.id)}`}>History</Link>
+      )}
       {item && (
         // All time, by bill: "All" there selects by bill (2c spec §4.5).
         <Link className="btn btn--ghost btn--block" to={`/activity?recurring_bill_id=${encodeURIComponent(item.id)}`}>

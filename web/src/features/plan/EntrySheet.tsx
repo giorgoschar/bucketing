@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router'
 import type { ActionResult } from '../../data/action'
 import { usePendingIds } from '../../data/pending'
 import { memberName, useHousehold, useRecurringItems } from '../../data/reads'
@@ -61,6 +62,9 @@ function EntryBody({ entry, intent, onClose }: { entry: EntryOut; intent: EntryI
       </div>
 
       {problem && <p className="entry__problem" role="alert">{problem}</p>}
+      {mode === 'menu' && !isIn && (
+        <Link className="btn btn--ghost btn--block" to={`/insights/bills/${encodeURIComponent(entry.item_id)}`}>History</Link>
+      )}
 
       {expected && mode === 'menu' && (
         <div className="entry__actions">

@@ -1,6 +1,8 @@
 import { useCachedQuery } from '../../../data/cachedQuery'
 import { unwrap } from '../../../data/http'
 import { keys } from '../../../data/keys'
+import { useOnlineAction } from '../../../data/onlineAction'
+import { fetchJson } from '../../../data/rawJson'
 import { api } from '../../../api/client'
 import type { BillRow, ItemHistoryOut } from './types'
 
@@ -19,4 +21,14 @@ export function useBills() {
 export function useItemHistory(id: string) {
   return useCachedQuery(keys.itemHistory(id), async (signal) =>
     (await unwrap(get(`/api/v1/recurring/${encodeURIComponent(id)}/history`, signal))) as ItemHistoryOut)
+}
+
+/** PUT /api/v1/recurring/entries/{id}/usage (spec §3.3). Online only: never queued, so a failure changes nothing. */
+export function useSetUsage(itemId: string) {
+  const act = useOnlineAction()
+  return (entryId: string, usage: number | null) =>
+    act(() => fetchJson('PUT', `/api/v1/recurring/entries/${encodeURIComponent(entryId)}/usage`, { usage }), {
+      invalidates: [keys.itemHistory(itemId), keys.insightsBills(), keys.recurring.all],
+      success: 'Usage saved',
+    })
 }
