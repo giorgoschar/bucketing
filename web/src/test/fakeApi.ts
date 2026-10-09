@@ -1,8 +1,5 @@
 import { vi } from 'vitest'
 import type { paths } from '../api/schema'
-import type { ActivityReplies } from '../features/activity/totalsTypes'
-import type { IngestReplies } from '../features/settings/attemptTypes'
-import type { PantryContractReplies } from '../features/plan/pantry/contractTypes'
 
 type Lower = 'get' | 'post' | 'put' | 'patch' | 'delete'
 type Op<P extends keyof paths, M extends Lower> = paths[P][M]
@@ -15,22 +12,18 @@ type Success<O> = O extends { responses: infer R }
       : null
   : never
 
-type Extra = ActivityReplies & IngestReplies & PantryContractReplies
-
 /** Every "METHOD /path" the schema declares, e.g. "POST /api/v1/recurring/entries/{entry_id}/done". */
 type SchemaRoute = {
   [P in keyof paths & string]: {
     [M in Lower]: [Op<P, M>] extends [undefined] ? never : `${Uppercase<M>} ${P}`
   }[Lower]
 }[keyof paths & string]
-export type Route = SchemaRoute | (keyof Extra & string)
+export type Route = SchemaRoute
 
 type PathOf<R> = R extends `${string} ${infer P}` ? P : never
 type MethodOf<R> = R extends `${infer M} ${string}` ? Lowercase<M> : never
 /** The success body the schema declares for a route (null for a 204). */
-export type Reply<R extends Route> = R extends keyof Extra
-  ? Extra[R]
-  : Success<Op<PathOf<R> & keyof paths, MethodOf<R> & Lower>>
+export type Reply<R extends Route> = Success<Op<PathOf<R> & keyof paths, MethodOf<R> & Lower>>
 
 export interface FakeRequest {
   method: string

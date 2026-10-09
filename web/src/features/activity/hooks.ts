@@ -1,5 +1,4 @@
 import type { QueryClient } from '@tanstack/react-query'
-import type { Client } from 'openapi-fetch'
 import { api, readCsrf } from '../../api/client'
 import type { components } from '../../api/schema'
 import { useAction } from '../../data/action'
@@ -9,7 +8,6 @@ import { affects, keys } from '../../data/keys'
 import { useCategories, useHousehold } from '../../data/reads'
 import type { Category, Member, RecurringItemOut } from '../../data/types'
 import { toQuery, type TransactionFilter } from './filters'
-import type { TotalsPaths } from './totalsTypes'
 
 type S = components['schemas']
 export type Txn = S['TransactionOut']
@@ -49,16 +47,13 @@ export function useFeedPage(filter: TransactionFilter, page: number) {
     unwrap(api.GET('/api/v1/transactions', { params: { query: { ...toQuery(filter), page, page_size: PAGE_SIZE } }, signal })),
   )
 }
-/** The same client, typed for the route gen:api doesn't know yet (the integration drops the cast). */
-const totalsApi = api as unknown as Client<TotalsPaths>
-
 /** Count, money out and money in over every match of the filter (server-side, household currency). Only
  *  fetched while `enabled`; offline it shows the saved copy, or nothing. */
 export function useTotals(filter: TransactionFilter, enabled: boolean) {
   const query = toQuery(filter)
   return useCachedQuery(
     keys.activityTotals(JSON.stringify(query)),
-    (signal) => unwrap(totalsApi.GET('/api/v1/transactions/totals', { params: { query }, signal })),
+    (signal) => unwrap(api.GET('/api/v1/transactions/totals', { params: { query }, signal })),
     { enabled },
   )
 }

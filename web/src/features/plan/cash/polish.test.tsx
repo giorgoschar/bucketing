@@ -4,7 +4,6 @@ import { type FakeApi, fakeApi, reply } from '../../../test/fakeApi'
 import { cashRoutes, cashWallets, readRoutes, wallet, walletMember } from '../../../test/fixtures'
 import { renderWithProviders, resetTestEnv } from '../../../test/render'
 import { Cash } from './Cash'
-import type { WalletWithTerms } from './contractTypes'
 import { CENT_EPS, walletSum } from './format'
 import type { WalletOut } from './types'
 
@@ -19,7 +18,7 @@ afterEach(resetTestEnv)
 const MOVEMENTS = 'POST /api/v1/cash/movements' as const
 const posts = (api: FakeApi) => api.callsTo(MOVEMENTS)
 const idOf = (api: FakeApi, n: number) => (posts(api)[n].body as { client_id: string }).client_id
-const terms = (over: Partial<WalletWithTerms>): WalletOut => wallet(over as Partial<WalletOut>)
+const terms = (over: Partial<WalletOut>): WalletOut => wallet(over as Partial<WalletOut>)
 
 async function renderCash(over: Parameters<typeof cashRoutes>[0] = {}) {
   const api = fakeApi({ ...readRoutes(), ...cashRoutes(over) })
@@ -180,7 +179,7 @@ it('put back beyond the takes, then logged: "+ Logged more than taken" as the se
   expect(c).toHaveTextContent('All logged')
 })
 
-it.each<[string, Partial<WalletWithTerms>]>([
+it.each<[string, Partial<WalletOut>]>([
   ['plain', { carried: 10, taken: 130, put_back: 20, still_have: 15, logged: 70, outs: 5, not_yet_logged: 30 }],
   ['cross-month', { taken: 100, logged: 60, logged_cross_month: 40, not_yet_logged: 0 }],
   ['excess', { taken: 100, still_have: 0, logged: 70, over_logged: 20, not_yet_logged: 50 }],

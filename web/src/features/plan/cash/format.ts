@@ -1,6 +1,5 @@
 import { formatMoney } from '../../../ui/format'
 import { parseCents } from '../../composer/amount'
-import type { WalletWithTerms } from './contractTypes'
 import { type CashWalletMemberOut, num } from './types'
 
 /** A cash write's idempotency key (C5): a uuid4. */
@@ -23,7 +22,7 @@ export const tint = (i: number) => `var(--c${(i % 6) + 1})`
  * that floored Took (stream S `_over_logged`), so it is added as it comes and the shown sum still adds up.
  */
 export function walletSum(m: CashWalletMemberOut) {
-  const w = m.wallet as WalletWithTerms
+  const w = m.wallet
   return {
     took: Math.max(0, num(w.carried) + num(w.taken) - num(w.put_back)),
     inHand: w.still_have === null || w.still_have === undefined ? null : num(w.still_have),

@@ -7,7 +7,6 @@ import { runOnline, useOnlineAction } from '../../../data/onlineAction'
 import { unwrap } from '../../../data/http'
 import { onQueueDrained } from '../../../offline/queueDrain'
 import { keys } from '../../../data/keys'
-import type { RawResult } from '../../../data/rawJson'
 import type { PriceIn, Retailer, StockEditBody } from './contractTypes'
 import { PANTRY_INVALIDATES, useShopping } from './shoppingHooks'
 import type { ProductSummary, StockAddBody, StockAdjustBody, StockDetail, StockItem, StockSettingsBody } from './types'
@@ -98,22 +97,13 @@ export function addBodyFor(p: ProductSummary): StockAddBody {
   }
 }
 
-/**
- * A polish-round route that is not in the generated schema yet (contracts C3): sent through the typed client
- * untyped, as useAction does, so the CSRF header and the 401 handling still apply.
- */
-function untyped<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<RawResult<T>> {
-  const init = (body === undefined ? {} : { body }) as never
-  return (method === 'GET' ? api.GET(path as never, init) : api.POST(path as never, init)) as unknown as Promise<RawResult<T>>
-}
-
 /** The stores for Log a price (GET /stock/retailers, C3), "Other" last. Loaded while `open`; null until then. */
 export function useRetailers(open: boolean): Retailer[] | null {
   const [list, setList] = useState<Retailer[] | null>(null)
   useEffect(() => {
     if (!open || list) return
     let live = true
-    void untyped<Retailer[]>('GET', '/api/v1/stock/retailers').then(
+    void api.GET('/api/v1/stock/retailers').then(
       // A failed load still offers "Other", so a price can always be logged.
       (r) => { if (live) setList(r.response.ok && Array.isArray(r.data) ? r.data : []) },
       () => { if (live) setList([]) },
@@ -157,7 +147,7 @@ export function useStockWrites(id: string) {
     },
     /** POST /stock/{id}/prices (C3): the detail comes back with the logged price in it. */
     logPrice: async (body: PriceIn) => {
-      const out = await runOnline(() => untyped<StockDetail>('POST', `/api/v1/stock/${encodeURIComponent(id)}/prices`, body))
+      const out = await runOnline(() => api.POST('/api/v1/stock/{item_id}/prices', { params: { path: { item_id: id } }, body }))
       if (out.ok) {
         qc.setQueryData(keys.stockItem(id), out.data)
         await invalidate()
