@@ -43,7 +43,7 @@ Each month is kept as a statement that can be reopened later, like a bank statem
 ## Phase D: Receipts → pantry and prices
 
 - Read receipt line items into pantry stock and the price history.
-- Optional on-device route: an iOS Shortcut ("Extract Text from Image", or the Apple Intelligence "Use Model" action) that sends the text through a token. Test it on Greek receipts first.
+- No Shortcut-based receipt scanning: the user tested on-device text extraction on Greek receipts and it was not usable (2026-10-09).
 
 ## Prices
 
