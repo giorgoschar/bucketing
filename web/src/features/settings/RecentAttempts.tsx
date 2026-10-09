@@ -60,7 +60,7 @@ function Row({ a }: { a: IngestAttempt }) {
         </button>
       </div>
       <Payload payload={a.payload} />
-      {a.detail && <p className="attempt__reason">{a.detail}</p>}
+      {a.detail && a.detail !== 'created' && a.detail !== '[older entry]' && <p className="attempt__reason">{a.detail}</p>}
       {(meta || a.transaction_id) && (
         <div className="attempt__foot">
           <span className="attempt__meta">{meta}</span>

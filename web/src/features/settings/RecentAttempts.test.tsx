@@ -123,6 +123,18 @@ describe('Apple Pay › Recent attempts', () => {
     expect(await screen.findByText('Category set')).toHaveClass('ui-badge--pos')
   })
 
+  it('does not repeat what the badge or the older-entry line already says', async () => {
+    fakeApi({ [ATTEMPTS]: () => ({ items: [
+      attempt({ id: 'ok', detail: 'created' }),
+      attempt({ id: 'old', payload: null, detail: '[older entry]', status: 422, outcome: 'rejected', transaction_id: null }),
+    ] }) })
+    renderWithProviders(<RecentAttempts />)
+    const rows = within(await screen.findByRole('list', { name: 'Recent attempts' })).getAllByRole('listitem')
+    expect(rows[0]).not.toHaveTextContent('created')
+    expect(rows[1]).not.toHaveTextContent('[older entry]')
+    expect(rows[1]).toHaveTextContent('Older entry: details not kept')
+  })
+
   it('links to the transaction when there is one', async () => {
     fakeApi({ [ATTEMPTS]: () => ({ items: THREE }) })
     renderWithProviders(<RecentAttempts />)
