@@ -13,6 +13,9 @@ price_snapshots.source
   (no default) on rows that existed before, whose payload is the raw body. Readers
   show a payload only for version 1.
 
+* ``transactions.ingest_token_id``: the ingest token that created the expense (NULL
+  for everything else); it authorises the Shortcut's classify call.
+
 Otherwise additive: the downgrade drops the two columns and the two indexes.
 
 Revision ID: f2a3b4c5d6e7
@@ -45,9 +48,25 @@ def upgrade() -> None:
 
     with op.batch_alter_table("ingest_attempts") as batch:
         batch.add_column(sa.Column("summary_version", sa.SmallInteger(), nullable=True))
+    with op.batch_alter_table("transactions") as batch:
+        batch.add_column(
+            sa.Column(
+                "ingest_token_id",
+                sa.String(),
+                sa.ForeignKey(
+                    "personal_api_tokens.id",
+                    name="fk_transactions_ingest_token_id",
+                    ondelete="SET NULL",
+                ),
+                nullable=True,
+            )
+        )
 
 
 def downgrade() -> None:
+    with op.batch_alter_table("transactions") as batch:
+        batch.drop_constraint("fk_transactions_ingest_token_id", type_="foreignkey")
+        batch.drop_column("ingest_token_id")
     with op.batch_alter_table("ingest_attempts") as batch:
         batch.drop_column("summary_version")
     with op.batch_alter_table("price_snapshots") as batch:

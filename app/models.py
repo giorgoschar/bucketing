@@ -420,6 +420,11 @@ class Transaction(Base):
     # retried after the response was lost, so the server must recognise the
     # repeat instead of creating a second transaction.
     client_id = Column(String(64), nullable=True)
+    # The personal ingest token whose Shortcut created this expense (NULL for
+    # everything added in the app). Authorises classify; never serialised.
+    ingest_token_id = Column(
+        String, ForeignKey("personal_api_tokens.id", ondelete="SET NULL"), nullable=True
+    )
     # The recurring item this expense pays or this income receives (spec
     # §3.3): set by Pay, Mark received and Link. A bucket-less expense needs it.
     recurring_bill_id = Column(

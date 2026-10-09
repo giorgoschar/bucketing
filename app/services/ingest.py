@@ -758,6 +758,8 @@ def ingest_apple_pay(
         )
     except DuplicateTransaction as dup:
         return dup.existing, False
+    txn.ingest_token_id = token.id
+    db.commit()
     return txn, True
 
 
@@ -845,8 +847,8 @@ def _bucket_rows(db: Session, household_id: str):
 
 def classifiable(db: Session, token: PersonalApiToken, transaction_id: str) -> Transaction | None:
     """The purchase, if this token may classify it: a live transaction of the
-    token's household that THIS token's ingest created (an attempts row with
-    status 200/201 says so; transactions carry no token) less than 15 minutes
+    token's household that THIS token's ingest created (the marker on the
+    transaction itself; the attempts log plays no part) less than 15 minutes
     ago. None for anything else, with no hint as to which check failed."""
     if not transaction_id or len(transaction_id) > 64:
         return None
@@ -859,17 +861,7 @@ def classifiable(db: Session, token: PersonalApiToken, transaction_id: str) -> T
         or txn.created_at < utcnow_naive() - CLASSIFY_WINDOW
     ):
         return None
-    mine = (
-        db.query(IngestAttempt.id)
-        .filter(
-            IngestAttempt.household_id == token.household_id,
-            IngestAttempt.token_id == token.id,
-            IngestAttempt.transaction_id == txn.id,
-            IngestAttempt.status.in_((200, 201)),
-        )
-        .first()
-    )
-    return txn if mine is not None else None
+    return txn if txn.ingest_token_id == token.id else None
 
 
 def _unknown(kind: str, choice: str) -> HTTPException:

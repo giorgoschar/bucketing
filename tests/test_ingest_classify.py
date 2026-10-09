@@ -241,12 +241,39 @@ def test_deleted_is_404(client, db, ctx):
     _bare_404(client.post(classify_url(tid), json={"category": "Coffee"}, headers=ctx.smart_h))
 
 
-def test_a_manually_added_transaction_is_404(client, db, ctx):
-    # Same household, recent, but no ingest attempt of this token made it.
+def test_the_marker_on_the_transaction_is_what_authorises(client, db, ctx):
     tid = _add(client, ctx.smart_h)["id"]
-    db.query(IngestAttempt).filter_by(transaction_id=tid).delete()
+    assert db.get(Transaction, tid).ingest_token_id == ctx.smart.id
+    # The attempts log is not part of authorisation: classify works with none.
+    db.query(IngestAttempt).delete()
+    db.commit()
+    r = client.post(classify_url(tid), json={"category": "Coffee"}, headers=ctx.smart_h)
+    assert r.status_code == 200, r.text
+
+
+def test_a_transaction_made_in_the_app_is_404(client, db, ctx):
+    tid = _add(client, ctx.smart_h)["id"]
+    db.get(Transaction, tid).ingest_token_id = None  # as if added by hand
     db.commit()
     _bare_404(client.post(classify_url(tid), json={"category": "Coffee"}, headers=ctx.smart_h))
+
+
+def test_the_marker_is_not_exposed_by_the_api(client, db, ctx):
+    import pyotp
+
+    from tests.conftest import PASSWORD
+
+    tid = _add(client, ctx.smart_h)["id"]
+    r = client.post("/api/v1/auth/login", json={"username": ctx.hh.username, "password": PASSWORD})
+    r = client.post(
+        "/api/v1/auth/totp/verify",
+        json={"pending_token": r.json()["pending_token"], "code": pyotp.TOTP(ctx.hh.secret).now()},
+    )
+    headers = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    one = client.get(f"/api/v1/transactions/{tid}", headers=headers)
+    assert one.status_code == 200, one.text
+    assert "ingest_token_id" not in one.text
+    assert "ingest_token_id" not in client.get("/api/v1/transactions", headers=headers).text
 
 
 def test_a_user_jwt_cannot_classify(client, api, ctx):  # noqa: F811

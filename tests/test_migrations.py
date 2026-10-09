@@ -500,6 +500,17 @@ def test_polish_migration_round_trip(tmp_path):
     insp = inspect(engine)
     col = next(c for c in insp.get_columns("ingest_attempts") if c["name"] == "summary_version")
     assert col["nullable"] and col["default"] is None
+    tcol = next(c for c in insp.get_columns("transactions") if c["name"] == "ingest_token_id")
+    assert tcol["nullable"]
+    fk = next(
+        f
+        for f in insp.get_foreign_keys("transactions")
+        if f["constrained_columns"] == ["ingest_token_id"]
+    )
+    assert (
+        fk["referred_table"] == "personal_api_tokens"
+        and fk["options"].get("ondelete") == "SET NULL"
+    )
     assert "client_id" in {c["name"] for c in insp.get_columns("cash_movements")}
     idx = {i["name"]: i for i in insp.get_indexes("cash_movements")}
     assert idx["ix_cash_movements_hh_client_id"]["column_names"] == ["household_id", "client_id"]
@@ -527,6 +538,7 @@ def test_polish_migration_round_trip(tmp_path):
     assert "source" not in {c["name"] for c in insp.get_columns("price_snapshots")}
     assert "ingest_attempts" in insp.get_table_names()
     assert "summary_version" not in {c["name"] for c in insp.get_columns("ingest_attempts")}
+    assert "ingest_token_id" not in {c["name"] for c in insp.get_columns("transactions")}
     assert "ix_shopping_lines_stock_item_id" not in {
         i["name"] for i in insp.get_indexes("shopping_lines")
     }
