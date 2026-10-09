@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
-from app.api.planning_models import EntryOut, RecurringItemOut
+from app.api.planning_models import EntryOut, ItemHistoryOut, RecurringItemOut
 from app.api_auth import require_api_auth
 from app.core.clock import local_today
 from app.core.database import get_db
@@ -34,6 +34,7 @@ from app.models import (
     default_payment_method,
 )
 from app.schemas import parse_payer_mode
+from app.services.bill_history import item_history
 from app.services.bills import (
     BILL_HAS_HISTORY_MSG,
     PAST_NONE,
@@ -552,6 +553,14 @@ def get_item(item_id: str, auth=Depends(require_api_auth), db: Session = Depends
     user, hh_id = auth
     item = _item_or_404(db, item_id, hh_id)
     return _item_out(db, item, _next_entries(db, hh_id).get(item.id))
+
+
+@router.get("/{item_id}/history", response_model=ItemHistoryOut)
+def get_history(item_id: str, auth=Depends(require_api_auth), db: Session = Depends(get_db)):
+    """The item's done entries (the most recent 240, oldest first), each with its
+    usage and price per unit, and the change of the latest one against its usual."""
+    user, hh_id = auth
+    return item_history(db, _item_or_404(db, item_id, hh_id))
 
 
 @router.put("/{item_id}", response_model=RecurringItemOut)

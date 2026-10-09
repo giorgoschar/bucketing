@@ -163,3 +163,61 @@ class CategoryUsualOut(BaseModel):
     this_month: Money
     usual: Money | None
     flagged: bool
+
+
+class BillChangeOut(BaseModel):
+    """The latest done entry of an item against its usual (app.services.bill_change)."""
+
+    entry_id: str
+    amount: Money
+    usual: Money
+    basis: str  # last_year | recent
+    delta: Money
+    pct: int
+    direction: str  # up | down
+    reason: str | None  # usage | price
+    reason_pct: int | None
+
+
+class HistoryItemOut(BaseModel):
+    id: str
+    name: str
+    direction: str
+    currency: str
+    usage_unit: str | None
+    category_id: str | None
+    is_active: bool
+
+
+class HistoryPointOut(BaseModel):
+    entry_id: str
+    due_date: date
+    amount: Money  # the entry amount, in the household currency
+    usage: Money | None
+    unit_price: Money | None  # amount / usage, 4 places; null without usage or with usage 0
+    transaction_id: str | None
+
+
+class ItemHistoryOut(BaseModel):
+    item: HistoryItemOut
+    points: list[HistoryPointOut]  # done entries, oldest first, the most recent 240
+    change: BillChangeOut | None
+
+
+class BillLastOut(BaseModel):
+    entry_id: str
+    due_date: date
+    amount: Money
+
+
+class BillRowOut(BaseModel):
+    item_id: str
+    name: str
+    category_id: str | None
+    usage_unit: str | None
+    is_active: bool
+    last: BillLastOut | None
+    recent: list[Money]  # the last 12 done amounts, oldest first
+    total_12m: Money | None
+    average_12m: Money | None
+    change: BillChangeOut | None  # only when the latest done entry is within 35 days

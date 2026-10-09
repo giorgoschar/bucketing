@@ -9,10 +9,12 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api.plan import parse_month
-from app.api.planning_models import CategoryUsualOut, Money
+from app.api.planning_models import BillRowOut, CategoryUsualOut, Money
 from app.api_auth import require_api_auth
+from app.core.clock import local_today
 from app.core.database import get_db
 from app.services import InsightFilters, build_insights
+from app.services.bill_history import bills_overview
 from app.services.insights import get_category_detail, resolve_insight_period
 from app.services.person import get_person_summary
 from app.services.usual import categories_vs_usual
@@ -132,6 +134,15 @@ def categories_usual(
     user, hh_id = auth
     year, mon = parse_month(month)
     return categories_vs_usual(db, hh_id, year, mon)
+
+
+@router.get("/bills", response_model=list[BillRowOut])
+def bills(auth=Depends(require_api_auth), db: Session = Depends(get_db)):
+    """Every recurring out item that is active or has been paid, with its last
+    amount, a sparkline, its 12-month total and, when the latest payment is
+    recent and unusual, its change. Ignores the Insights lens and period."""
+    user, hh_id = auth
+    return bills_overview(db, hh_id, local_today())
 
 
 class PersonLargestOut(BaseModel):

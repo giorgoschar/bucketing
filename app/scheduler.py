@@ -39,14 +39,6 @@ OVERDUE_REMINDER_DAYS = (1, 3, 7, 14, 30)
 # Contract-expiry warnings, in days before contract_end_date.
 CONTRACT_WARNING_DAYS = (30, 10)
 
-# Bill drift: how far a charge must move from its own recent average before it
-# is worth mentioning. Both gates must be passed, so a 30% jump on a EUR 3 bill
-# stays quiet.
-DRIFT_PCT_THRESHOLD = 25.0  # percent
-DRIFT_MIN_ABSOLUTE = 5.0  # household currency
-DRIFT_MIN_HISTORY = 3  # prior charges needed to form a baseline
-DRIFT_LOOKBACK_DAYS = 35  # only comment on a recently-landed charge
-
 # Auto-pay pays entries due today or in the last 3 days, never older ones
 # (spec §3.4.5): a bill created or resumed late is not backfilled.
 AUTO_PAY_WINDOW_DAYS = 3
@@ -361,21 +353,23 @@ def _notify_contracts_expiring(db, today: date) -> None:
 
 
 def _notify_bill_drift(db, today: date) -> None:
-    """Flag a bill whose latest charge departs from its own recent history.
+    """Flag a bill whose latest payment departs from its usual (Phase A spec §3.4, §3.7).
 
-    Only variable bills can drift: a fixed bill has no per-occurrence amount, so
-    every occurrence costs bill.amount by definition. The baseline is the mean
-    of the preceding occurrences, which is why at least MIN_HISTORY of them are
-    required before anything is reported.
+    The comparison is app.services.bill_change: the same month a year earlier
+    when there is one, else the median of the last 3 payments, with both gates.
+    Only a payment due in the last ALERT_WINDOW_DAYS is commented on, so a
+    dormant bill is not re-analysed forever. The dedupe key is per entry.
     """
-    from app.models import (
-        BillOccurrence,
-        NotificationType,
-        OccurrenceStatus,
-        RecurringBill,
+    from app.models import NotificationType, RecurringBill
+    from app.services.bill_change import (
+        ALERT_WINDOW_DAYS,
+        assess_item,
+        change_body,
+        change_title,
+        entry_points_by_item,
     )
 
-    lookback_start = today - timedelta(days=DRIFT_LOOKBACK_DAYS)
+    window_start = today - timedelta(days=ALERT_WINDOW_DAYS)
 
     bills = (
         db.query(RecurringBill)
@@ -384,53 +378,27 @@ def _notify_bill_drift(db, today: date) -> None:
     )
     members_by_hh = _members_by_household(db, {b.household_id for b in bills})
 
-    for bill in bills:
-        occs = (
-            db.query(BillOccurrence)
-            .filter(
-                BillOccurrence.bill_id == bill.id,
-                BillOccurrence.status == OccurrenceStatus.paid,
-                BillOccurrence.amount.isnot(None),
+    chunk = 200
+    for start in range(0, len(bills), chunk):
+        batch = bills[start : start + chunk]
+        points_by_item = entry_points_by_item(db, batch)
+        for bill in batch:
+            points = points_by_item[bill.id]
+            if not points or points[-1].due_date < window_start:
+                continue
+            change = assess_item(bill, points)
+            if change is None:
+                continue
+            _notify_members(
+                db,
+                members_by_hh.get(bill.household_id, []),
+                household_id=bill.household_id,
+                type=NotificationType.bill_drift,
+                title=change_title(bill.name, change, bill.currency),
+                body=change_body(change, bill.currency, bill.usage_unit),
+                link=f"/app/insights/bills/{bill.id}",
+                dedupe_key=f"bill_drift:{change.entry_id}",
             )
-            .order_by(BillOccurrence.due_date)
-            .all()
-        )
-        if len(occs) < DRIFT_MIN_HISTORY + 1:
-            continue
-
-        latest = occs[-1]
-        # Only comment on a charge that actually landed recently, otherwise a
-        # dormant bill would be re-analysed on every run forever.
-        if latest.due_date < lookback_start:
-            continue
-
-        history = [float(o.amount) for o in occs[-(DRIFT_MIN_HISTORY + 1) : -1]]
-        baseline = sum(history) / len(history)
-        if baseline <= 0:
-            continue
-
-        current = float(latest.amount)
-        delta = current - baseline
-        pct = delta / baseline * 100
-
-        if abs(pct) < DRIFT_PCT_THRESHOLD or abs(delta) < DRIFT_MIN_ABSOLUTE:
-            continue
-
-        direction = "up" if delta > 0 else "down"
-        _notify_members(
-            db,
-            members_by_hh.get(bill.household_id, []),
-            household_id=bill.household_id,
-            type=NotificationType.bill_drift,
-            title=f"{bill.name} is {abs(pct):.0f}% {direction}",
-            body=(
-                f"{_money(current, bill.currency)} vs "
-                f"{_money(baseline, bill.currency)} average "
-                f"over the last {len(history)} charges."
-            ),
-            link="/bills",
-            dedupe_key=f"bill_drift:{latest.id}",
-        )
     db.commit()
 
 

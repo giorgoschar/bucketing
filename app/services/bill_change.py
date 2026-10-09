@@ -209,6 +209,43 @@ def assess_item(item: RecurringBill, points: list[Point]) -> Change | None:
     return assess(points, monthly=is_monthly(item))
 
 
+# ------------------------------------------------------------- the words
+
+
+def _money_text(amount: Decimal, currency: str | None) -> str:
+    """``€84`` for a whole amount, ``€84.50`` otherwise (the alert's wording)."""
+    from app.templates import format_currency
+
+    text = format_currency(amount, currency or "EUR")
+    return text[:-3] if text.endswith(".00") else text
+
+
+def change_title(name: str, change: Change, currency: str | None) -> str:
+    """``Electricity was €84, usually €61``."""
+    return (
+        f"{name} was {_money_text(change.amount, currency)}, "
+        f"usually {_money_text(change.usual, currency)}"
+    )
+
+
+def change_body(change: Change, currency: str | None, usage_unit: str | None) -> str:
+    """Where the usual comes from, then the reason when there is one."""
+    usual = _money_text(change.usual, currency)
+    if change.basis == "last_year":
+        text = f"Same month last year: {usual}."
+    else:
+        text = f"Usual from the last {RECENT_N} payments: {usual}."
+    if change.reason and change.reason_pct is not None and usage_unit:
+        size = abs(change.reason_pct)
+        if change.reason == "usage":
+            more = "more" if change.reason_pct > 0 else "less"
+            text += f" You used {size}% {more} {usage_unit}."
+        else:
+            went = "went up" if change.reason_pct > 0 else "went down"
+            text += f" The price per {usage_unit} {went} {size}%."
+    return text
+
+
 __all__ = [
     "ABS_GATE",
     "ALERT_WINDOW_DAYS",
@@ -218,6 +255,8 @@ __all__ = [
     "Point",
     "assess",
     "assess_item",
+    "change_body",
+    "change_title",
     "entry_points",
     "entry_points_by_item",
     "is_monthly",

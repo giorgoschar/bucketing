@@ -34,7 +34,7 @@ I read the code to map the user processes, not the tech stack. References are to
   - Reminders 3 days before the due date.
   - Overdue reminders at 1, 3, 7, 14 and 30 days.
   - Contract expiry reminders at 30 and 10 days.
-  - Drift alerts at >25% and >€5 against the average of the last 3. In practice these only fire for variable bills.
+  - Drift alerts at >25% and >€5 against the average of the last 3. In practice these only fire for variable bills. (Phase A replaced this: at least 20% and €10 against the same month a year earlier, else the median of the last 3; see `app/services/bill_change.py`.)
 - **Payment method:** there is no per-bill default; auto-pay always records card.
 - **Matching:** there's no link between a manual or Apple Pay expense and an unpaid occurrence, so the same bill can be counted twice.
 
