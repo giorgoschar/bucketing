@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router'
 import { clearPending } from '../data/pending'
 import { installQueueBridge } from '../data/queueBridge'
@@ -8,14 +8,19 @@ import { authErrorMessage, LINKED_MESSAGE, readAuthResult } from '../session/aut
 import { useSession } from '../session/SessionProvider'
 import { SignIn } from '../session/SignIn'
 import { Toaster } from '../ui/Toast'
+import { useIsDesktop } from '../ui/useIsDesktop'
 import { TickedPrompt } from '../features/plan/pantry/TickedPrompt'
 import { resetTickedPrompt } from '../features/plan/pantry/tickedOffer'
 import { CloseIcon } from './icons'
 import { TabBar } from './TabBar'
 import './shell.css'
 
+// Desktop only: the phone never loads the sidebar's code.
+const Sidebar = lazy(() => import('./Sidebar').then((m) => ({ default: m.Sidebar })))
+
 export function AppShell() {
   const { status } = useSession()
+  const desktop = useIsDesktop()
   const location = useLocation()
   const navigate = useNavigate()
   // The auth callbacks land here with ?auth_error=… or ?linked=1 whether or not a session exists.
@@ -62,6 +67,7 @@ export function AppShell() {
 
   return (
     <div className="shell">
+      {desktop && <Suspense fallback={null}><Sidebar /></Suspense>}
       <main className="shell__main">
         {banner && (
           <div role={banner.role} className={`notice notice--${banner.tone} shell__banner`}>
@@ -76,7 +82,7 @@ export function AppShell() {
           <Outlet />
         </Suspense>
       </main>
-      <TabBar />
+      {!desktop && <TabBar />}
       <Toaster />
       {/* Pantry spec §4.6: the composer's post-save offer shows here, where the composer returns. */}
       <TickedPrompt />
