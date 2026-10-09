@@ -63,3 +63,12 @@ Gaps found in the current app that the new app (web/) must cover.
   - "Remember for this merchant" was removed from the Shortcut token for security (rule poisoning). Instead, after a signed-in user sets the category on an Apple Pay expense, offer "Always use X for <merchant>?" in the app.
   - In-app and online Apple Pay payments don't trigger the iOS "tap" automation. Idea: a manual "Log Apple Pay purchase" shortcut (share sheet or Back Tap) using the same API.
   - Ask PosoKanei / the Ministry for API access (email draft offered to the user); Open Food Facts for barcode → name and size (offered, not yet approved).
+- **Polish round follow-ups (final review 2026-10-09, verdict Ship, 0C/0I/10M; full list in `.superpowers/sdd/polish/final-review.md`):**
+  - M-1: set a `lock_timeout` in migrations that touch `transactions`.
+  - M-2: a manually logged price today makes the daily PosoKanei refresh skip that product (`app/scheduler.py:564`). Count only `source='posokanei'` rows.
+  - M-5: the bundle guard should sum the entry chunk plus its modulepreloads, and eager JS should be measured against the previous release.
+  - Confirm Coolify's Traefik overwrites `X-Forwarded-For` (per-IP ingest limits trust it).
+  - Legacy raw `ingest_attempts` rows are hidden but still stored. A wipe step exists (commit df3bd31, reverted) and needs the user's explicit OK.
+  - The ingest limiter uses in-memory storage per worker unless `RATE_LIMIT_STORAGE_URI` is set.
+  - The Apple Pay token row's sub line truncates at 390 px when the badge shows.
+  - Two no-merchant purchases with the same amount in the same minute merge into one.
