@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
 import { memberName, useBuckets, useCategories, useHousehold } from '../../../data/reads'
-import type { EntryOut, RecurringItemOut } from '../../../data/types'
+import type { EntryOut } from '../../../data/types'
+import type { ItemWithUsage } from '../../insights/bills/types'
+import { USAGE_UNITS, USAGE_UNIT_MAX } from '../../insights/bills/usage'
 import { useSession } from '../../../session/SessionProvider'
 import { formatShortDate, todayISO } from '../../../ui/format'
 import { PauseIcon } from '../../../ui/icons'
@@ -18,7 +20,7 @@ import './items.css'
 export interface ItemSheetProps {
   open: boolean
   /** null: a new item. */
-  item: RecurringItemOut | null
+  item: ItemWithUsage | null
   onClose: () => void
   onOpenEntry?: (entry: EntryOut) => void
 }
@@ -169,6 +171,27 @@ function ItemBody({ item, onClose, onOpenEntry }: Omit<ItemSheetProps, 'open'>) 
           <span>Pay automatically on the due date</span>
           <input type="checkbox" checked={form.is_auto_pay} onChange={(e) => set('is_auto_pay', e.target.checked)} />
         </label>
+      )}
+
+      {out && (
+        <>
+          <label className="ui-field">
+            <span className="ui-field__label">Track usage</span>
+            <select className="ui-input" value={form.usageChoice}
+              onChange={(e) => set('usageChoice', e.target.value as ItemForm['usageChoice'])}>
+              <option value="off">Off</option>
+              {USAGE_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+              <option value="other">Other</option>
+            </select>
+          </label>
+          {form.usageChoice === 'other' && (
+            <label className="ui-field">
+              <span className="ui-field__label">Usage unit</span>
+              <input className="ui-input" value={form.usageOther} maxLength={USAGE_UNIT_MAX} autoComplete="off"
+                onChange={(e) => set('usageOther', e.target.value)} />
+            </label>
+          )}
+        </>
       )}
 
       <label className="ui-field">

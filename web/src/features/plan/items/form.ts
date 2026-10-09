@@ -1,7 +1,12 @@
-import type { PaymentMethod, RecurringItemIn, RecurringItemOut } from '../../../data/types'
+import type { PaymentMethod, RecurringItemIn } from '../../../data/types'
 import { asPaymentMethod } from '../paymentMethods'
 import { parseAmount } from '../../../ui/format'
+import type { ItemInWithUsage, ItemWithUsage } from '../../insights/bills/types'
+import { USAGE_UNITS, USAGE_UNIT_MAX } from '../../insights/bills/usage'
 import { defaultChoice, fromRuleFields, toRuleFields, type RuleChoice } from './rule'
+
+/** The "Track usage" choices: Off, a preset unit, or Other (free text). */
+export type UsageChoice = 'off' | (typeof USAGE_UNITS)[number] | 'other'
 
 export interface ItemForm {
   id: string | null
@@ -22,6 +27,10 @@ export interface ItemForm {
   payment_method: PaymentMethod
   is_active: boolean
   notes: string
+  /** Track usage (spec §5.1): Off sends usage_unit null. */
+  usageChoice: UsageChoice
+  /** The free text of Other. */
+  usageOther: string
   /** Not edited in this sheet; carried through so a PUT (which replaces the row) never drops them. */
   keep: Required<Pick<RecurringItemIn, 'payer_mode' | 'splits'>> & Pick<RecurringItemIn, 'total_occurrences' | 'contract_end_date'>
 }
@@ -30,11 +39,24 @@ export function emptyItemForm(today: string, me: string | null): ItemForm {
   return {
     id: null, name: '', direction: 'out', amount: '', currency: 'EUR', rule: defaultChoice('monthly_day', today),
     start_date: today, end_date: '', bucket_id: '', category_id: '', paid_by_default: me ?? '', is_auto_pay: false, payment_method: 'card',
-    is_active: true, notes: '', keep: { payer_mode: 'single', splits: [], total_occurrences: null, contract_end_date: null },
+    is_active: true, notes: '', usageChoice: 'off', usageOther: '', keep: { payer_mode: 'single', splits: [], total_occurrences: null, contract_end_date: null },
   }
 }
 
-export function itemToForm(item: RecurringItemOut): ItemForm {
+function unitToForm(unit: string | null | undefined): Pick<ItemForm, 'usageChoice' | 'usageOther'> {
+  if (!unit) return { usageChoice: 'off', usageOther: '' }
+  const preset = USAGE_UNITS.find((u) => u === unit)
+  return preset ? { usageChoice: preset, usageOther: '' } : { usageChoice: 'other', usageOther: unit }
+}
+
+/** The unit the form stands for, or null for Off (and for an Other left blank). */
+function formUnit(f: ItemForm): string | null {
+  if (f.usageChoice === 'off') return null
+  if (f.usageChoice === 'other') return f.usageOther.trim() || null
+  return f.usageChoice
+}
+
+export function itemToForm(item: ItemWithUsage): ItemForm {
   return {
     id: item.id,
     name: item.name,
@@ -51,6 +73,7 @@ export function itemToForm(item: RecurringItemOut): ItemForm {
     payment_method: asPaymentMethod(item.payment_method),
     is_active: item.is_active,
     notes: item.notes ?? '',
+    ...unitToForm(item.usage_unit),
     keep: {
       payer_mode: item.payer_mode,
       splits: item.splits.map((s) => ({ user_id: s.user_id, amount: s.amount })),
@@ -68,6 +91,10 @@ export function validateItemForm(f: ItemForm): string | null {
   if (!/^[A-Za-z]{3}$/.test(f.currency.trim())) return 'Use a 3-letter currency code, like EUR.'
   if (!f.start_date) return 'Pick a start date.'
   if (f.end_date && f.end_date < f.start_date) return 'The end date is before the start date.'
+  if (f.usageChoice === 'other') {
+    if (!f.usageOther.trim()) return 'Name the usage unit, or turn Track usage off.'
+    if (f.usageOther.trim().length > USAGE_UNIT_MAX) return `Keep the usage unit to ${USAGE_UNIT_MAX} characters.`
+  }
   return null
 }
 
@@ -98,7 +125,7 @@ export function sharesNeedScaling(f: ItemForm): boolean {
 }
 
 /** The full RecurringItemIn (POST and PUT). Call validateItemForm first. */
-export function formToBody(f: ItemForm): RecurringItemIn {
+export function formToBody(f: ItemForm): ItemInWithUsage {
   const out = f.direction === 'out'
   return {
     name: f.name.trim(),
@@ -115,6 +142,7 @@ export function formToBody(f: ItemForm): RecurringItemIn {
     ...(out ? { payment_method: f.payment_method } : {}),
     is_active: f.is_active,
     notes: f.notes.trim() || null,
+    usage_unit: out ? formUnit(f) : null,
     payer_mode: out ? f.keep.payer_mode : 'single',
     splits: out ? scaleFormSplits(f) : [],
     total_occurrences: f.keep.total_occurrences ?? null,
@@ -128,7 +156,7 @@ function scaleFormSplits(f: ItemForm) {
 }
 
 /** The row Items shows while a create or edit waits in the queue. */
-export function pendingItem(body: RecurringItemIn, id: string): RecurringItemOut {
+export function pendingItem(body: ItemInWithUsage, id: string): ItemWithUsage {
   return {
     id,
     name: body.name,
@@ -158,5 +186,6 @@ export function pendingItem(body: RecurringItemIn, id: string): RecurringItemOut
     next_entry: null,
     has_history: false,
     payment_method: body.payment_method ?? (body.direction === 'in' ? 'transfer' : 'card'),
+    usage_unit: body.usage_unit ?? null,
   }
 }

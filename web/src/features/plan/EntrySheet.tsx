@@ -2,7 +2,9 @@ import { useState } from 'react'
 import type { ActionResult } from '../../data/action'
 import { usePendingIds } from '../../data/pending'
 import { memberName, useHousehold, useRecurringItems } from '../../data/reads'
-import type { EntryDoneIn, EntryOut, PaymentMethod } from '../../data/types'
+import type { EntryOut, PaymentMethod } from '../../data/types'
+import { parseUsage } from '../insights/bills/usage'
+import type { EntryDoneWithUsage, EntryWithUsage, ItemWithUsage } from '../insights/bills/types'
 import { useSession } from '../../session/SessionProvider'
 import { Badge } from '../../ui/Badge'
 import { AlertIcon, CheckIcon, ClockIcon } from '../../ui/icons'
@@ -112,7 +114,7 @@ function PayForm({ entry, actions, onResult }: FormProps) {
   const isIn = entry.direction === 'in'
   const { me } = useSession()
   const members = useHousehold().data?.members ?? []
-  const item = useRecurringItems().data?.find((i) => i.id === entry.item_id)
+  const item = useRecurringItems().data?.find((i) => i.id === entry.item_id) as ItemWithUsage | undefined
   const fallbackWho = item?.paid_by_default ?? me?.id ?? members[0]?.user_id ?? null
   const [picked, setPicked] = useState<string | null>(null)
   const who = picked ?? fallbackWho
@@ -122,10 +124,15 @@ function PayForm({ entry, actions, onResult }: FormProps) {
   const amount = parsed ?? (entry.amount === null ? null : entry.amount.toFixed(2))
   const valid = parsed !== undefined && amount !== null
   const whoLabel = isIn ? 'Received by' : 'Paid by'
+  const unit = usageUnitOf(entry, item)
+  const [usageText, setUsageText] = useState(startUsage(entry))
+  const usage = parseUsage(usageText)
 
   const submit = async () => {
-    if (!valid) return
-    const body: EntryDoneIn = { amount: parsed ?? null, person: who, payment_method: method }
+    if (!valid || usage === undefined) return
+    const body: EntryDoneWithUsage = {
+      amount: parsed ?? null, person: who, payment_method: method, ...(unit && usage !== null ? { usage } : {}),
+    }
     onResult(await actions.markDone(body))
   }
 
@@ -137,6 +144,7 @@ function PayForm({ entry, actions, onResult }: FormProps) {
           aria-invalid={parsed === undefined} onChange={(e) => setText(e.target.value)} />
       </label>
       {parsed === undefined && <p className="ui-field__error">Enter an amount like 38.90</p>}
+      {unit && <UsageField unit={unit} text={usageText} onChange={setUsageText} />}
       {members.length > 1 && (
         <div className="ui-field">
           <span className="ui-field__label" aria-hidden="true">{whoLabel}</span>
@@ -148,27 +156,59 @@ function PayForm({ entry, actions, onResult }: FormProps) {
         <span className="ui-field__label" aria-hidden="true">Method</span>
         <Segmented label="Method" options={METHODS} value={method} onChange={setMethod} />
       </div>
-      <button type="submit" className="btn btn--primary btn--block btn--lg" disabled={!valid || actions.busy}>
+      <button type="submit" className="btn btn--primary btn--block btn--lg" disabled={!valid || usage === undefined || actions.busy}>
         {`${isIn ? 'Mark received' : 'Mark paid'}${amount !== null ? ` ${formatMoney(Number(amount), { currency: entry.currency })}` : ''}`}
       </button>
     </form>
   )
 }
 
+const startUsage = (entry: EntryOut) => {
+  const u = (entry as EntryWithUsage).usage
+  return u === null || u === undefined ? '' : String(u)
+}
+
+/** The item's usage unit: on the entry (spec §3.2), else on its item. */
+function usageUnitOf(entry: EntryOut, item: ItemWithUsage | undefined): string | null {
+  return (entry as EntryWithUsage).usage_unit ?? item?.usage_unit ?? null
+}
+
+function UsageField({ unit, text, onChange }: { unit: string; text: string; onChange: (v: string) => void }) {
+  const bad = parseUsage(text) === undefined
+  return (
+    <>
+      <label className="ui-field">
+        <span className="ui-field__label">{`Usage (${unit})`}</span>
+        <input className="ui-input ui-num" inputMode="decimal" autoComplete="off" value={text}
+          aria-invalid={bad} onChange={(e) => onChange(e.target.value)} />
+      </label>
+      {bad && <p className="ui-field__error">Enter a number like 412.5</p>}
+    </>
+  )
+}
+
 function AmountForm({ entry, actions, onResult }: FormProps) {
+  const item = useRecurringItems().data?.find((i) => i.id === entry.item_id) as ItemWithUsage | undefined
+  const unit = usageUnitOf(entry, item)
+  const [usageText, setUsageText] = useState(startUsage(entry))
+  const usage = parseUsage(usageText)
   const [text, setText] = useState(entry.amount !== null && !entry.estimated ? entry.amount.toFixed(2) : '')
   const parsed = parseAmount(text)
   const hint = entry.amount !== null && entry.estimated ? `Usually ≈ ${formatMoney(entry.amount, { currency: entry.currency })}` : undefined
   return (
     <form className="entry__form"
-      onSubmit={async (e) => { e.preventDefault(); if (parsed) onResult(await actions.setAmount(parsed)) }}>
+      onSubmit={async (e) => {
+        e.preventDefault()
+        if (parsed && usage !== undefined) onResult(await actions.setAmount(parsed, unit && usage !== null ? usage : undefined))
+      }}>
       <label className="ui-field">
         <span className="ui-field__label">Amount</span>
         <input className="ui-input ui-num" inputMode="decimal" autoComplete="off" value={text} placeholder={hint}
           aria-invalid={parsed === undefined} onChange={(e) => setText(e.target.value)} />
       </label>
       {parsed === undefined && <p className="ui-field__error">Enter an amount like 86.40</p>}
-      <button type="submit" className="btn btn--primary btn--block btn--lg" disabled={!parsed || actions.busy}>Save amount</button>
+      {unit && <UsageField unit={unit} text={usageText} onChange={setUsageText} />}
+      <button type="submit" className="btn btn--primary btn--block btn--lg" disabled={!parsed || usage === undefined || actions.busy}>Save amount</button>
     </form>
   )
 }
