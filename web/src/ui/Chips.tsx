@@ -22,12 +22,12 @@ export function Chips<T extends string>(props: Single<T> | Multi<T>) {
     }
   }
   return (
-    <div className="chips" role="group" aria-label={props.label}>
+    <div className="chipset" role="group" aria-label={props.label}>
       {props.options.map((o) => (
         <button
           key={o.value}
           type="button"
-          className="chip"
+          className="chipset__chip"
           aria-pressed={pressed(o.value)}
           onClick={() => tap(o.value)}
         >

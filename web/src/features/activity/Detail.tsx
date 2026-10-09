@@ -1,5 +1,8 @@
+import { type QueryClient, useQueryClient } from '@tanstack/react-query'
 import { type ReactNode, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router'
+import { ApiError } from '../../data/http'
+import { keys } from '../../data/keys'
 import { useOnline } from '../../data/online'
 import { Badge } from '../../ui/Badge'
 import { ChevronLeftIcon, ChevronRightIcon } from '../../ui/icons'
@@ -10,7 +13,7 @@ import { RECEIPT_ACCEPT, receiptProblem } from '../composer/receipt'
 import { EntrySheet } from '../plan/EntrySheet'
 import { dayLabel, METHOD_LABELS, rowTitle } from './format'
 import {
-  type HistoryEvent, type RefData, type Txn, type TxnPatch, receiptUrl, uploadReceipt,
+  type HistoryEvent, type RefData, type Txn, type TxnPage, type TxnPatch, receiptUrl, uploadReceipt,
   useEditTransaction, useHistory, useLinkedEntry, useRefData, useTransaction,
 } from './hooks'
 import { useHeldDeletes } from './heldDeletes'
@@ -102,6 +105,15 @@ function Shares({ t, refData }: { t: Txn; refData?: RefData }) {
   )
 }
 
+/** The row as a cached feed page holds it (P3 M4): offline, a row seen in Activity but never opened. */
+function listedRow(qc: QueryClient, id: string): Txn | undefined {
+  for (const [, data] of qc.getQueriesData<TxnPage>({ queryKey: keys.transactions.all })) {
+    const hit = data && typeof data === 'object' && 'items' in data ? data.items.find((t) => t.id === id) : undefined
+    if (hit) return hit
+  }
+  return undefined
+}
+
 export function Detail() {
   const { id = '' } = useParams()
   const navigate = useNavigate()
@@ -112,6 +124,7 @@ export function Detail() {
   const pending = usePendingActivity()
   const held = useHeldDeletes()
   const query = useTransaction(id)
+  const qc = useQueryClient()
   const edit = useEditTransaction()
   const deleteWithUndo = useDeleteWithUndo()
   const undo = useUndoBulk()
@@ -136,14 +149,29 @@ export function Detail() {
   const created = pending.creates.find((p) => p.id === id)
   const queuedEdit = pending.edits.get(id)
   const gone = held.has(id) || pending.hidden.has(id)
-  const t: Txn | undefined = created ?? (query.data && queuedEdit ? toPendingTxn(queuedEdit, query.data) : query.data)
+  // The server's 404 is definite: no cached feed copy reopens a row that is gone (review I-3).
+  const error = qc.getQueryState(keys.transactions.one(id))?.error
+  const notFound = gone || (error instanceof ApiError && error.status === 404)
+  const base = query.data ?? (notFound ? undefined : listedRow(qc, id))
+  const t: Txn | undefined = created ?? (base && queuedEdit ? toPendingTxn(queuedEdit, base) : base)
   if (!t || gone) {
+    // Gone only when the server says so (404) or it is deleted here; offline is "not saved", any other
+    // failure can be retried.
+    const failed = !notFound && query.isError && !query.offline
+    const unsaved = !notFound && !failed && query.noData
     return (
       <>
         {bar()}
-        <p className="screen__note detail__note" aria-busy={!gone && !query.isError && !query.noData}>
-          {gone || query.isError ? 'This transaction is gone.' : query.noData ? 'This transaction isn’t saved on this phone.' : 'Loading…'}
-        </p>
+        {failed ? (
+          <p className="screen__note detail__note detail__retry">
+            <span>Couldn’t load this transaction.</span>
+            <button type="button" className="btn btn--sm" onClick={query.refetch}>Retry</button>
+          </p>
+        ) : (
+          <p className="screen__note detail__note" aria-busy={!notFound && !unsaved}>
+            {notFound ? 'This transaction is gone.' : unsaved ? 'This transaction isn’t saved on this phone.' : 'Loading…'}
+          </p>
+        )}
       </>
     )
   }

@@ -1,3 +1,4 @@
+import { avatarLook } from '../../../shell/avatar'
 import { HBarList } from '../../../ui/charts'
 import { Badge } from '../../../ui/Badge'
 import { Money } from '../../../ui/Money'
@@ -10,10 +11,10 @@ import { Card } from './Card'
 
 export function Identity({ member }: { member: HouseholdMember | undefined }) {
   const name = member?.display_name || member?.username || 'Member'
+  const avatar = avatarLook(member?.avatar_color, 'avatar--lg')
   return (
     <div className="insights__identity">
-      <span className={member?.avatar_color ? 'avatar avatar--lg' : 'avatar avatar--lg avatar--fallback'}
-        style={member?.avatar_color ? { background: member.avatar_color } : undefined} aria-hidden="true">
+      <span className={avatar.className} style={avatar.style} aria-hidden="true">
         {name.slice(0, 1).toUpperCase()}
       </span>
       <span className="insights__identity-text">Viewing <strong>{name}</strong>’s share</span>
@@ -34,7 +35,8 @@ export function Headline({ data }: { data: InsightsData }) {
 }
 
 export function ShareCard({ query, who, period }: {
-  query: { data?: PersonShare | null; isError: boolean; refetch(): unknown }
+  /** A CachedQuery: `noData` is offline (or failing) with no saved copy. */
+  query: { data?: PersonShare | null; isError: boolean; noData?: boolean; refetch(): unknown }
   who: { me: boolean; name: string }
   period: Period
 }) {
@@ -46,6 +48,8 @@ export function ShareCard({ query, who, period }: {
             <span>Couldn't load this</span>
             <button type="button" className="btn btn--sm" onClick={() => void query.refetch()}>Retry</button>
           </p>
+        ) : query.noData ? (
+          <p className="insights__note">No saved data for this view. Connect once to load it.</p>
         ) : (
           <div className="ui-skeleton" role="status" aria-busy="true" aria-label="Loading" />
         )}

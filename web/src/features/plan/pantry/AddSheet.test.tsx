@@ -119,7 +119,7 @@ it('404 → Add manually opens the manual form with the barcode filled in', asyn
   fireEvent.change(sheet().getByRole('textbox', { name: 'Type barcode' }), { target: { value: '12345678' } })
   fireEvent.click(sheet().getByRole('button', { name: 'Look up' }))
   const lookup = await screen.findByRole('dialog', { name: 'Barcode 12345678' })
-  expect(lookup).toHaveTextContent('Not on PosoKanei')
+  expect(await within(lookup).findByText('Not on PosoKanei')).toBeInTheDocument() // the dialog opens while the lookup is in flight
   fireEvent.click(within(lookup).getByRole('button', { name: 'Add manually' }))
   await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Barcode 12345678' })).not.toBeInTheDocument())
   expect(sheet().getByText('Barcode 12345678')).toBeInTheDocument()

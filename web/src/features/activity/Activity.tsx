@@ -12,20 +12,37 @@ import { type BulkField, BulkSheet } from './BulkSheet'
 import { SwipeRow } from '../../ui/SwipeRow'
 import { SearchField } from '../../ui/SearchField'
 import { Duplicates } from './Duplicates'
-import { Feed } from './Feed'
+import { Feed, type LoadedInfo } from './Feed'
 import {
-  type FeedState, type TransactionFilter, activeFilterCount, fromSearch, isEmpty, monthLabel, monthRange, toSearch, toggle,
+  type FeedState, type TransactionFilter, activeFilterCount, fromSearch, isEmpty, isFiltered, monthLabel, monthRange,
+  toSearch, toggle,
 } from './filters'
 import { useRecurringItems } from '../../data/reads'
 import { FiltersSheet } from './FiltersSheet'
-import { ACTIVITY_WRITES, type Txn, useCounts, useRefData } from './hooks'
+import { ACTIVITY_WRITES, type Txn, useCounts, useRefData, useTotals } from './hooks'
 import { useHeldDeletes } from './heldDeletes'
 import { OptionSheet } from './OptionSheet'
 import { RecentBulk } from './RecentBulk'
-import { OFF, type Selection, isSelected, reduce, selectedCount } from './selection'
+import { BULK_MAX_ROWS, OFF, type Selection, allMode, isSelected, reduce, selectedCount } from './selection'
 import { useDeleteWithUndo } from './useDeleteWithUndo'
 import { useUndoBulk } from './useUndoBulk'
+import { formatMoney } from '../../ui/format'
 import './activity.css'
+
+/** "23 entries · Out €412.30 · In €0.00": every match of the filter, not only the loaded rows. Hidden when
+ *  nothing is filtered; offline it shows the saved copy, or nothing (never a spinner or an error). */
+function FilterTotal({ filter }: { filter: TransactionFilter }) {
+  const on = isFiltered(filter)
+  const totals = useTotals(filter, on).data
+  if (!on || !totals) return null
+  const noun = totals.count === 1 ? 'entry' : 'entries'
+  return (
+    <p className="activity__total" role="status">
+      <span className="ui-num">{totals.count}</span> {noun} · Out <span className="ui-num">{formatMoney(totals.out)}</span>
+      {' · In '}<span className="ui-num">{formatMoney(totals.in)}</span>
+    </p>
+  )
+}
 
 export function withoutDates(f: TransactionFilter): TransactionFilter {
   const { from_date: _f, to_date: _t, ...rest } = f
@@ -79,8 +96,13 @@ export function Activity() {
   const deleteWithUndo = useDeleteWithUndo()
   const navigate = useNavigate()
   const online = useOnline()
-  const [loaded, setLoaded] = useState<{ ids: string[]; rows: Txn[]; total: number }>({ ids: [], rows: [], total: 0 })
-  const onLoaded = useCallback((rows: Txn[], total: number) => setLoaded({ ids: rows.map((r) => r.id), rows, total }), [])
+  const [loaded, setLoaded] = useState<{ ids: string[]; rows: Txn[]; total: number } & LoadedInfo>(
+    { ids: [], rows: [], total: 0, complete: true, excluded: 0, pending: false },
+  )
+  const onLoaded = useCallback(
+    (rows: Txn[], total: number, info: LoadedInfo) => setLoaded({ ids: rows.map((r) => r.id), rows, total, ...info }),
+    [],
+  )
   const [menu, setMenu] = useState(false)
   const [recentOpen, setRecentOpen] = useState(false)
   const undo = useUndoBulk()
@@ -96,12 +118,26 @@ export function Activity() {
     ? loaded.rows.filter((r) => sel.ids.includes(r.id) && r.type === 'expense')
       .reduce((sum, r) => sum + r.amount * (r.exchange_rate || 1), 0)
     : previewed?.sel === sel ? previewed.out : null
-  // Select by filter needs a filter: the server refuses an empty one (400).
-  const canSelectAll = loaded.total > 0 && !isEmpty(f)
+  // What "All" does (selection.ts allMode): the server filter, the selectable rows by id, or off with a reason.
+  const mode = allMode({
+    total: loaded.total, selectable: loaded.ids.length, excluded: loaded.excluded, complete: loaded.complete,
+    pending: loaded.pending, emptyFilter: isEmpty(f),
+  })
+  const canSelectAll = mode.kind !== 'off'
+  const allCount = mode.kind === 'off' ? 0 : mode.count
+  const all = () => {
+    if (mode.kind === 'ids') dispatch({ type: 'pick', ids: loaded.ids })
+    else if (mode.kind === 'filter') dispatch({ type: 'all', filter: f, total: loaded.total })
+  }
   const selectAll = () => {
     dispatch({ type: 'enter' })
-    dispatch({ type: 'all', filter: f, total: loaded.total })
+    all()
   }
+  const allPicked = sel.kind === 'picked' && mode.kind === 'ids' && sel.ids.length === allCount
+  const allNote = mode.kind !== 'off' ? null
+    : mode.reason === 'pending' ? 'All is off until the changes waiting to sync are sent.'
+      : mode.reason === 'too-many' ? `All works for up to ${BULK_MAX_ROWS.toLocaleString('en-GB')} payments. Narrow the filter.`
+        : null
 
   return (
     <>
@@ -109,7 +145,7 @@ export function Activity() {
         <header className="selbar" role="toolbar" aria-label="Selection">
           <button type="button" onClick={() => dispatch({ type: 'cancel' })}>Cancel</button>
           <h1 className="selbar__title num" aria-live="polite">{count} selected</h1>
-          <button type="button" disabled={!canSelectAll} onClick={() => dispatch({ type: 'all', filter: f, total: loaded.total })}>
+          <button type="button" disabled={!canSelectAll} onClick={all}>
             All
           </button>
         </header>
@@ -148,11 +184,15 @@ export function Activity() {
           <Chip label="Income" pressed={f.type === 'income'} disabled={state.dups} onClick={() => setFilter(toggle(f, { type: 'income' }))} />
           <Chip label="Cash" pressed={f.payment_method === 'cash'} disabled={state.dups} onClick={() => setFilter(toggle(f, { payment_method: 'cash' }))} />
         </div>
-        {!state.dups && f.missing_payer && canSelectAll && sel.kind !== 'filter' && sel.kind !== 'bill' && (
+        {!state.dups && f.missing_payer && canSelectAll && sel.kind !== 'filter' && sel.kind !== 'bill' && !allPicked && (
           <button type="button" className="btn btn--ghost btn--sm select-all" onClick={selectAll}>
-            Select all {loaded.total}
+            Select all {allCount}
           </button>
         )}
+        {selecting && allNote && !state.dups && (
+          <p className="select-note" role="status">{allNote}</p>
+        )}
+        {!state.dups && <FilterTotal filter={f} />}
         {state.dups ? <Duplicates /> : (
           <Feed
             filter={f}

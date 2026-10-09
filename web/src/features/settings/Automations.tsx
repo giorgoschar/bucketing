@@ -3,6 +3,7 @@ import { BackHeader } from '../../ui/BackHeader'
 import { QueryView } from '../../ui/QueryView'
 import { Sheet } from '../../ui/Sheet'
 import { type TokenItem, useBuckets, useTokens } from './hooks'
+import { RecentAttempts } from './RecentAttempts'
 import { lastUsed, useTokenActions } from './tokenHooks'
 import './settings.css'
 
@@ -85,6 +86,8 @@ export function Automations() {
             </section>
           )}
         </QueryView>
+
+        <RecentAttempts />
 
         <section className="ui-card settings__card" aria-labelledby="new-token">
           <h2 id="new-token" className="settings__h">New token</h2>

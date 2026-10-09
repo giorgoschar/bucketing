@@ -50,6 +50,16 @@ export function isEmpty(f: TransactionFilter): boolean {
   return Object.values(f).every((v) => v === undefined || v === false || v === '')
 }
 
+/** Anything narrower than the default list (this month) or plain All time: a search, any chip or filter,
+ *  another month or custom dates. Activity shows its filter total line only then. */
+export function isFiltered(f: TransactionFilter, today = new Date()): boolean {
+  const q = toQuery(f)
+  const keys = Object.keys(q)
+  if (keys.length === 0) return false
+  const m = monthRange(today)
+  return !(keys.length === 2 && q.from_date === m.from_date && q.to_date === m.to_date)
+}
+
 export function fromSearch(params: URLSearchParams, today = new Date()): FeedState {
   const filter: TransactionFilter = {}
   for (const k of TEXT_KEYS) {

@@ -12,6 +12,11 @@ vi.mock('./hooks', () => ({
   useTokens: () => query([{ id: 't1', name: 'iPhone', prefix: 'pat_ab12', scopes: ['ingest'], default_bucket_id: 'b1', last_used_at: new Date(Date.now() - 2 * 3600_000).toISOString(), created_at: null }]),
   useBuckets: () => query([{ id: 'b1', name: 'Daily' }]),
 }))
+// The Recent attempts section (polish A5) fetches on mount; these cases count this screen's own fetch calls.
+vi.mock('./attemptHooks', () => ({
+  useAttempts: () => query({ items: [] }),
+  ago: () => '', exactTime: () => '',
+}))
 
 import { Automations } from './Automations'
 import { lastUsed } from './tokenHooks'
@@ -70,5 +75,13 @@ describe('Automations', () => {
     expect(lastUsed('2026-10-07T10:00:00Z', now)).toBe('Last used 2h ago')
     expect(lastUsed('2026-10-07T10:00:00', now)).toBe('Last used 2h ago') // naive UTC from the server
     expect(lastUsed('2026-10-04T12:00:00Z', now)).toBe('Last used 3d ago')
+  })
+
+  it('has the Recent attempts section below Tokens', () => {
+    renderIt()
+    const tokens = screen.getByRole('heading', { name: 'Tokens' })
+    const attempts = screen.getByRole('heading', { name: 'Recent attempts' })
+    expect(tokens.compareDocumentPosition(attempts) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(attempts.compareDocumentPosition(screen.getByRole('heading', { name: 'New token' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })

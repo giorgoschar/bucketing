@@ -5,10 +5,14 @@
 /* The pinned period row: stays under the top bar while the widgets scroll (mock "Overview, scrolled"). */
 .insights__bar {
   position: sticky; top: calc(env(safe-area-inset-top) + 60px); z-index: 3;
-  padding: 0 16px 10px; background: var(--bg); border-bottom: 1px solid var(--line);
+  padding: 0 16px 6px; background: var(--bg); border-bottom: 1px solid var(--line);
   display: flex; align-items: center; gap: 8px;
 }
-.insights__bar .chips { flex: 1; min-width: 0; }
+.insights__bar .chipset {
+  flex: 1; min-width: 0;
+  /* Edge to edge while scrolling, 16px in at rest (and when a chip scrolls into view on focus). */
+  margin-inline: -16px; padding-inline: 16px; scroll-padding-inline: 16px;
+}
 .insights__lens { margin-top: 2px; }
 .insights__lens .ui-seg__opt { flex: 1; min-height: 44px; }
 .ui-seg__opt[aria-checked='true'] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px rgba(0, 0, 0, .12); }
@@ -72,7 +76,7 @@
 .insights__range .ui-input { font-size: 16px; min-width: 0; }
 .insights__filtergroup { display: flex; flex-direction: column; gap: 6px; margin-top: 16px; }
 .insights__filtergroup .ui-field__label { margin: 0; }
-.insights__chipwrap .chips { flex-wrap: wrap; overflow: visible; }
+.insights__chipwrap .chipset { flex-wrap: wrap; overflow: visible; }
 .insights__sheetbtns { display: grid; grid-template-columns: 1fr 2fr; gap: 8px; }
 
 .insights__headline--split { flex-direction: row; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; }

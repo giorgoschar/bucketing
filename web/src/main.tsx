@@ -12,6 +12,11 @@ import { queryClient } from './queryClient'
 import { registerSW } from 'virtual:pwa-register'
 import { setupPwaUpdates } from './pwa/update'
 import { listenForSwNavigation } from './pwa/swMessages'
+import { bootTheme } from './shell/theme'
+
+// Settings › Appearance: public/theme-boot.js (a classic script in <head>) already set data-theme before the
+// first paint; this gives the store its value and keeps the same logic for runtime changes.
+bootTheme()
 
 setupPwaUpdates({ register: (opts) => registerSW(opts) })
 // A notification tap on an open app window: the worker asks the page to navigate (src/sw.ts).

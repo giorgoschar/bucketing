@@ -48,6 +48,9 @@ export const keys = {
     /** Counts: GET /transactions/counts (the chip badges) */
     counts: () => ['transactions', 'counts'] as const,
   },
+  /** TransactionTotals: GET /transactions/totals for a filter (Activity's filter total line). Under the
+   *  'transactions' prefix, so every write that refreshes the feed (ACTIVITY_WRITES, sync) refreshes it too. */
+  activityTotals: (filterHash: string) => ['transactions', 'totals', filterHash] as const,
   /** DuplicateGroup[]: GET /transactions/duplicates */
   duplicates: () => ['duplicates'] as const,
   /** RecentBatch[]: GET /transactions/bulk?limit=10 */

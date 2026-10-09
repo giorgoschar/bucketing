@@ -468,8 +468,10 @@ it('I-1: an untick still in the queue blocks Add to pantry; once the queue drain
   setOnline(true)
   const foot = screen.getByRole('region', { name: 'Ticked items' })
   const add = within(foot).getByRole('button', { name: 'Add to pantry' })
-  await waitFor(() => expect(add).toBeDisabled())
-  expect(foot).toHaveTextContent('Waiting to sync 1 change')
+  await waitFor(() => {
+    expect(add).toBeDisabled()
+    expect(foot).toHaveTextContent('Waiting to sync 1 change') // the queued marker renders after the in-flight one
+  })
   fireEvent.click(add)
   expect(api.callsTo(APPLY)).toHaveLength(0)
   await replay()

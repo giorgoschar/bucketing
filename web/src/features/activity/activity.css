@@ -1,5 +1,9 @@
 .activity { display: flex; flex-direction: column; gap: 12px; padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
 .activity .chips { overscroll-behavior-x: contain; }
+/* The filter total: one quiet line above the list. .ui-num is nowrap; this is a sentence, so it wraps. */
+.activity__total { margin: 0 2px; font-size: 13px; line-height: 1.4; color: var(--muted); }
+.activity__total .ui-num { white-space: normal; }
+.select-note { margin: 0 2px; font-size: 13px; line-height: 1.4; color: var(--muted); }
 .feed section + section { margin-top: 8px; }
 .feed__list { margin: 0; padding: 0; list-style: none; }
 .feed__list > li { position: relative; }
@@ -27,6 +31,7 @@
 .detail-bar__back svg { width: 24px; height: 24px; }
 .detail { display: flex; flex-direction: column; gap: 14px; padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
 .detail__note { padding: 24px 16px; color: var(--muted); }
+.detail__retry { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .detail__head { display: grid; justify-items: start; gap: 4px; padding: 4px 2px 6px; }
 .detail__ico {
   width: 48px; height: 48px; border-radius: var(--r-md); display: grid; place-items: center; font-size: 24px;
