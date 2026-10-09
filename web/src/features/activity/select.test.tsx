@@ -96,4 +96,23 @@ describe('selection mode', () => {
     expect(bar).toHaveTextContent('€10.00')
     expect(bar).not.toHaveTextContent('€60.00')
   })
+
+  it('says why All is off when a filter matches more than 1,000 entries, and All stays off', async () => {
+    fakeApi({
+      ...refRoutes({ no_payer: 3, duplicate_groups: 0 }),
+      'GET /api/v1/transactions': () => pageOf(rows, { total: 1400 }),
+    })
+    renderActivity(<Activity />, { route: '/activity?missing_payer=1' })
+    fireEvent.click(await screen.findByRole('button', { name: 'More' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Select/ }))
+    expect(await screen.findByText('All works for up to 1,000 entries. Narrow the filter.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'All' })).toBeDisabled()
+  })
+
+  it('shows no cap note while the matches fit', async () => {
+    setup('/activity?missing_payer=1')
+    fireEvent.click(await screen.findByRole('button', { name: 'Select all 120' }))
+    await screen.findByText('120 selected')
+    expect(screen.queryByText(/All works for up to/)).toBeNull()
+  })
 })

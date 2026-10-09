@@ -136,7 +136,7 @@ export function Activity() {
   const allPicked = sel.kind === 'picked' && mode.kind === 'ids' && sel.ids.length === allCount
   const allNote = mode.kind !== 'off' ? null
     : mode.reason === 'pending' ? 'All is off until the changes waiting to sync are sent.'
-      : mode.reason === 'too-many' ? `All works for up to ${BULK_MAX_ROWS.toLocaleString('en-GB')} payments. Narrow the filter.`
+      : mode.reason === 'too-many' ? `All works for up to ${BULK_MAX_ROWS.toLocaleString('en-GB')} entries. Narrow the filter.`
         : null
 
   return (

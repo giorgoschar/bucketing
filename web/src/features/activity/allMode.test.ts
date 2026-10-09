@@ -23,6 +23,12 @@ describe('allMode', () => {
     expect(allMode({ ...many, selectable: 1000 })).toEqual({ kind: 'ids', count: 1000 })
     expect(allMode({ ...many, total: 1003, selectable: 1001 })).toEqual({ kind: 'off', reason: 'too-many' })
   })
+  it('by filter is capped too: more than 1,000 matches is off (the server answers 400)', () => {
+    expect(allMode({ ...base, total: 1000 })).toEqual({ kind: 'filter', count: 1000 })
+    expect(allMode({ ...base, total: 1001 })).toEqual({ kind: 'off', reason: 'too-many' })
+    // No filter at all: off for its own reason, not a "narrow the filter" one.
+    expect(allMode({ ...base, total: 5000, emptyFilter: true })).toEqual({ kind: 'off', reason: null })
+  })
   it('nothing to select: off', () => {
     expect(allMode({ ...base, total: 0, selectable: 0, complete: true })).toEqual({ kind: 'off', reason: null })
     expect(allMode({ ...base, total: 1, selectable: 0, excluded: 1, complete: true, pending: true })).toEqual({ kind: 'off', reason: null })

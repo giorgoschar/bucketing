@@ -83,6 +83,8 @@ export function allMode(i: {
     if (i.selectable > BULK_MAX_ROWS) return { kind: 'off', reason: 'too-many' }
     return i.selectable > 0 ? { kind: 'ids', count: i.selectable } : { kind: 'off', reason: null }
   }
-  // Select by filter needs a filter: the server refuses an empty one (400).
+  // Select by filter needs a filter: the server refuses an empty one (400), and so it does more matches than
+  // the cap (400 "N transactions match. Narrow the filter").
+  if (i.total > BULK_MAX_ROWS && !i.emptyFilter) return { kind: 'off', reason: 'too-many' }
   return i.total > 0 && !i.emptyFilter ? { kind: 'filter', count: i.total } : { kind: 'off', reason: null }
 }
