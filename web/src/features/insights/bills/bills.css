@@ -32,7 +32,7 @@
 .billhist__yearlabel { min-width: 56px; text-align: center; font-weight: 650; }
 .billhist__charts { display: flex; flex-direction: column; gap: 14px; }
 .billhist__thin { padding: 8px 2px; }
-.billhist__scroll { overflow-x: auto; border-radius: 12px; }
+.billhist__scroll { position: relative; overflow-x: auto; border-radius: 12px; }
 .billhist__table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .billhist__table th, .billhist__table td { padding: 10px 8px; text-align: left; border-top: 1px solid var(--line); white-space: nowrap; }
 .billhist__table thead th { font-size: 12.5px; font-weight: 600; color: var(--muted); border-top: 0; }

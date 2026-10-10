@@ -64,3 +64,9 @@ it('the shell lifts its column clamp on <main> for the wide dashboard and the bi
   expect(bills).toMatch(/\.shell__main:has\(\.billhist\)\s*\{\s*max-width: 1100px/)
   expect(outsideMedia(bills)).not.toMatch(/:has\(/)
 })
+
+// Integration: a visually hidden span (position: absolute) inside the scrolling table is placed against the page when no
+// ancestor is positioned, so its offset in the scrolled table widened the phone's page (scrollWidth 467 at 390).
+it('the bill history table scroller is a containing block for the visually hidden labels in it', () => {
+  expect(read('./bills/bills.css')).toMatch(/\.billhist__scroll \{[^}]*position: relative/)
+})
