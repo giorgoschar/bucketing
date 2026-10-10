@@ -113,17 +113,19 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
   // The panel closes by changing only the query, which the blocker above doesn't see: ask here instead.
   const requestClose = () => (dirty && !leaving.current ? setConfirmClose(true) : close())
 
-  // Crossing 1024 px unmounts this form and mounts the other layout's: park what was typed for it.
+  // Crossing 1024 px unmounts this form and mounts the other layout's: park what was typed for it. Done in the
+  // unmount, not on the media event: the shell reacts to that event first and may unmount this form before its
+  // own listener runs. The query is read now and again at the unmount; a difference means the window crossed.
   const latest = useRef({ s, dirty })
   useEffect(() => { latest.current = { s, dirty } })
   useEffect(() => {
     if (typeof window.matchMedia !== 'function') return
-    const mql = window.matchMedia(DESKTOP_QUERY)
-    const onCross = () => {
-      if (latest.current.dirty && !leaving.current) parkDraft(draftKey, latest.current.s)
+    const desktopAtMount = window.matchMedia(DESKTOP_QUERY).matches
+    return () => {
+      if (window.matchMedia(DESKTOP_QUERY).matches !== desktopAtMount && latest.current.dirty && !leaving.current) {
+        parkDraft(draftKey, latest.current.s)
+      }
     }
-    mql.addEventListener('change', onCross)
-    return () => mql.removeEventListener('change', onCross)
   }, [draftKey])
 
   // Esc closes the panel (a sheet, a field's own list or the scan screen takes its own Esc first).
