@@ -346,7 +346,7 @@ it('Done goes through the API client: a 401 is announced like everywhere else', 
 })
 
 it('a category with no usual figure or amount never shows NaN', async () => {
-  open(statement({ categories_over: [{ category_id: 'c1', name: 'Eating out', icon: '🍽', amount: 370, usual: null }, { category_id: 'c2', name: 'Odd', icon: '?', amount: undefined as unknown as number, usual: 10 }] }))
+  open(statement({ categories_over: [{ category_id: 'c1', name: 'Eating out', icon: '🍽', amount: 370, usual: null as unknown as number }, { category_id: 'c2', name: 'Odd', icon: '?', amount: undefined as unknown as number, usual: 10 }] }))
   const s = await section('Categories above usual')
   expect(s.getByRole('link', { name: /Eating out/ })).not.toHaveTextContent('usually')
   expect(document.body.textContent).not.toMatch(/NaN/)
