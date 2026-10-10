@@ -120,5 +120,5 @@ Gaps found in the current app that the new app (web/) must cover.
   - "Log it" from a past month's cash row saves the expense dated today, so the amount moves from that month's Out to this month's.
   - The statement page is not window-aware offline: a copy saved on the 5th still says "Review by 5 October" with Done disabled on the 7th (Home is fixed).
   - "Couldn't open this entry." does not name the row that was tapped.
-  - `ui-num` trailing comma: the amount in a running sentence ("usually €61,") carries the comma inside the number span or beside it; tidy the span boundary.
+  - `ui-num` trailing comma: `Nums` takes the comma into the span ("€84," in "Electricity was €84, usually €61"); end the number on a digit (`€\d[\d,]*\d|€\d`).
   - `src/shell/AddPanel.test.tsx` "resize with a typed amount...": flaky, noted only if it recurred during integration (see the integration report).
