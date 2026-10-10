@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router'
 import type { EntryOut, MatchOut } from '../../data/types'
 import { dismissFailed } from '../../offline/useQueue'
 import { Badge } from '../../ui/Badge'
-import { formatMoney, formatShortDate } from '../../ui/format'
-import { AlertIcon, CheckIcon, LinkIcon, WalletIcon, XIcon } from '../../ui/icons'
+import { formatMoney, formatMonthName, formatShortDate } from '../../ui/format'
+import { AlertIcon, CheckIcon, ClockIcon, LinkIcon, WalletIcon, XIcon } from '../../ui/icons'
 import { ListRow } from '../../ui/ListRow'
 import { Money } from '../../ui/Money'
 import { EntrySheet, type EntryIntent } from '../plan/EntrySheet'
@@ -44,6 +44,18 @@ export function NeedsAttention() {
 function AttentionRow({ item, onOpen }: { item: AttentionItem; onOpen: (e: EntryOut, intent: EntryIntent) => void }) {
   const navigate = useNavigate()
   switch (item.kind) {
+    case 'monthReview': {
+      const { review } = item
+      return (
+        <div className="home-attn__item">
+          <span className="ui-ico ui-ico--acc" aria-hidden="true"><ClockIcon /></span>
+          <div className="home-attn__text">
+            <div className="ui-row__title home-attn__wrapnum">Review {formatMonthName(Number(review.month.slice(5, 7)))}</div>
+          </div>
+          <button type="button" className="btn btn--sm btn--primary" onClick={() => navigate(`/insights/statements/${encodeURIComponent(review.month)}`)}>Review</button>
+        </div>
+      )
+    }
     case 'match':
       return <MatchRow match={item.match} />
     case 'overdue': {

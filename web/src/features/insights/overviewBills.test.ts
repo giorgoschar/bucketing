@@ -20,3 +20,14 @@ it('the Bills card and panel stay in an empty period (a bill is the household\'s
   expect(visibleWidgets(empty, { lens: 'household', period: THIS, bills: true, desktop: true })).toEqual(['headline', 'empty', 'billsPanel'])
   expect(visibleWidgets(empty, { lens: 'household', period: THIS })).toEqual(['headline', 'empty'])
 })
+
+// ---- Phase B: the Statements card follows the Bills card (spec §4.4)
+
+it('the Statements card follows the Bills card when asked for, and in an empty period too', () => {
+  const opts = { lens: 'household', period: THIS, bills: true, statements: true } as const
+  expect(visibleWidgets(makeInsights(), opts).slice(-3)).toEqual(['bills', 'statements', 'fuel'])
+  const empty = makeInsights({ total_spent: 0, in_out: { in: 0, out: 0, logged: 0, cash_not_logged: 0, net: 0 }, kpis: { ...makeInsights().kpis, count: 0 } })
+  expect(visibleWidgets(empty, opts)).toEqual(['headline', 'empty', 'bills', 'statements'])
+  expect(visibleWidgets(empty, { ...opts, desktop: true })).toEqual(['headline', 'empty', 'billsPanel', 'statements'])
+  expect(visibleWidgets(makeInsights(), { lens: 'household', period: THIS, bills: true })).not.toContain('statements')
+})

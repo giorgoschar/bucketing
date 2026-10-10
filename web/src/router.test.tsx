@@ -31,6 +31,14 @@ describe('router', () => {
     ]))
   })
 
+  it('Phase B: both statement screens are lazy chunks, the list before the :month route', () => {
+    const routes = router.routes[0].children ?? []
+    for (const path of ['insights/statements', 'insights/statements/:month']) {
+      const r = routes.find((x) => x.path === path)
+      expect(((r?.element as ReactElement | undefined)?.type as { $$typeof?: symbol } | undefined)?.$$typeof).toBe(Symbol.for('react.lazy'))
+    }
+  })
+
   it('has the lazy Pantry product detail under the shell, before the catch-all', () => {
     const routes = router.routes[0].children ?? []
     const detail = routes.find((r) => r.path === 'plan/pantry/:id')

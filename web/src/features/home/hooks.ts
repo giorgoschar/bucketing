@@ -13,6 +13,7 @@ import { useStockSummary } from '../plan/pantry/shoppingHooks'
 import { patchEntryEverywhere } from '../plan/entryPatch'
 import { useBudgets, useCategoriesVsUsual, usePlanUpcoming } from '../plan/hooks'
 import { useBills } from '../insights/bills/hooks'
+import { useStatements } from '../insights/statements/hooks'
 import { useDismissedBills } from './billDismiss'
 import { attentionReady, buildAttention, overdueWindow, type AttentionInput, type AttentionItem } from './attention'
 
@@ -76,8 +77,9 @@ export function useAttention(): { items: AttentionItem[]; ready: boolean } {
   const failed = useFailedQueueRows()
   const bills = useBills().data
   const dismissedBills = useDismissedBills()
+  const review = useStatements().data?.review
   const input: AttentionInput = {
-    today, matches, overdue, upcoming, budgets, categories, cashNotLogged, pantryLow, failed, bills, dismissedBills,
+    today, matches, overdue, upcoming, budgets, categories, cashNotLogged, pantryLow, failed, bills, dismissedBills, review,
   }
   return { items: buildAttention(input), ready: attentionReady(input) }
 }
