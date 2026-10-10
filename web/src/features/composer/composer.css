@@ -149,5 +149,7 @@
   }
   .composer--panel :is(button, input, a):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .composer--panel .composer__merchant:focus-visible { outline-offset: 0; }
+  .composer--panel .panelamount__input:focus-visible { outline: none; }
+  .composer--panel .composer__close svg { width: 20px; height: 20px; }
 }
 @media (min-width: 1024px) and (prefers-reduced-motion: reduce) { .addpanel { animation: none; } }
