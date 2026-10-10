@@ -6598,6 +6598,40 @@
               }
             ],
             "title": "Reviewed At"
+          },
+          "reviewed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed By"
+          },
+          "reviewed_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed By Name"
+          },
+          "reviewed_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed On"
           }
         },
         "required": [
@@ -6607,6 +6641,9 @@
           "out",
           "net",
           "reviewed_at",
+          "reviewed_on",
+          "reviewed_by",
+          "reviewed_by_name",
           "closed"
         ],
         "title": "StatementMonthOut",
@@ -6698,6 +6735,29 @@
             ],
             "title": "Reviewed By"
           },
+          "reviewed_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed By Name"
+          },
+          "reviewed_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed On"
+          },
           "totals": {
             "$ref": "#/components/schemas/StatementTotalsOut"
           }
@@ -6706,7 +6766,9 @@
           "month",
           "label",
           "reviewed_at",
+          "reviewed_on",
           "reviewed_by",
+          "reviewed_by_name",
           "closed",
           "days_left",
           "totals",

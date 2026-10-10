@@ -4502,6 +4502,12 @@ export interface components {
             out: number;
             /** Reviewed At */
             reviewed_at: string | null;
+            /** Reviewed By */
+            reviewed_by: string | null;
+            /** Reviewed By Name */
+            reviewed_by_name: string | null;
+            /** Reviewed On */
+            reviewed_on: string | null;
         };
         /** StatementOut */
         StatementOut: {
@@ -4528,6 +4534,10 @@ export interface components {
             reviewed_at: string | null;
             /** Reviewed By */
             reviewed_by: string | null;
+            /** Reviewed By Name */
+            reviewed_by_name: string | null;
+            /** Reviewed On */
+            reviewed_on: string | null;
             totals: components["schemas"]["StatementTotalsOut"];
         };
         /** StatementPlannedOut */
