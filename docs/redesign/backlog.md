@@ -106,3 +106,19 @@ Gaps found in the current app that the new app (web/) must cover.
   - F10: Home's "See why" is a button that navigates; make it a `Link`.
   - F11: missing tests where streams meet: `afterTxnWrite` covers `keys.insightsBills()` and `keys.itemHistory('x')`; the Add panel over `/insights/bills/:id` and over Plan; `router.tsx` registering `insights/bills/:id`.
 - **Add panel, a different `copy` id over a dirty panel:** an add → add navigation whose `copy` differs remounts the form without asking. Nothing in the app produces it today. Block when the next `copy` is set and differs (final re-review R1).
+
+## Phase B follow-ups (integration 2026-10-10; reviews in `.superpowers/sdd/phase-b/`)
+
+- **Server (S review):**
+  - S5: `in_out_by_month` is a second composition of the monthly series next to `monthly_in_out`; now guarded by the agreement test, merge them when next touched.
+  - S6 leftover: a done entry with no amount still counts its estimate under `planned` (and 0 under `actual`), so the row can read "planned about 30, actual 0".
+  - S7 leftover: POST review still accepts any long-closed month after the first data month, and a household with no data at all; GET before the first data month returns 200 with zeros while POST returns 404.
+  - S10: the thread test for two concurrent reviews does not prove the race path (the simulated lost-race test does); hold the first transaction open or drop it.
+  - S12: `monthly_overruns` shares only the two-predicate filter with `bucket_spent`; document that it uses the bucket's current budget and that a budget of 0 is never "over".
+  - S13: `biggest` can list a negative expense in a thin month; check whether a negative expense can be stored, and if so filter on a positive base amount.
+- **Web (W review):**
+  - "Log it" from a past month's cash row saves the expense dated today, so the amount moves from that month's Out to this month's.
+  - The statement page is not window-aware offline: a copy saved on the 5th still says "Review by 5 October" with Done disabled on the 7th (Home is fixed).
+  - "Couldn't open this entry." does not name the row that was tapped.
+  - `ui-num` trailing comma: the amount in a running sentence ("usually €61,") carries the comma inside the number span or beside it; tidy the span boundary.
+  - `src/shell/AddPanel.test.tsx` "resize with a typed amount...": flaky, noted only if it recurred during integration (see the integration report).

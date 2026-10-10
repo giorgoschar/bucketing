@@ -41,7 +41,8 @@ It is built from the existing services, each asked for that month, so its number
 
 ```json
 {"month": "2026-09", "label": "September 2026",
- "reviewed_at": null, "reviewed_by": null, "closed": false, "days_left": 3,
+ "reviewed_at": null, "reviewed_on": null, "reviewed_by": null, "reviewed_by_name": null,
+ "closed": false, "days_left": 3,
  "totals": {"in": 3000.00, "out": 2240.00, "net": 760.00,
             "previous": {"month": "2026-08", "in": 3000.00, "out": 2000.00, "net": 1000.00}},
  "planned": {"in":  {"planned": 3000.00, "actual": 3000.00},
@@ -57,10 +58,13 @@ It is built from the existing services, each asked for that month, so its number
  "biggest": [{"transaction_id": "…", "date": "2026-09-03", "label": "IKEA", "category": "Home", "amount": 420.00}]}
 ```
 
+- **Reviewer fields (statement and list rows):** `reviewed_at` is naive UTC and is not shown. `reviewed_on` is the household-local date (`YYYY-MM-DD`) the month was reviewed, `reviewed_by_name` the reviewer's display name, and `reviewed_by` (a user id) is on both the statement and the list rows. All are null while unreviewed. The page's "Reviewed on …" line reads `reviewed_on`; a month with `closed` true and no `reviewed_on` reads "Closed automatically".
+- **"Has data"** (the list's first month, the review banner, the notification, a statement worth showing) counts transactions and wallet cash movements only, never stash movements.
 - **`totals`:** In, Out and Net exactly as Insights' `in_out` for that whole month (Out includes cash not yet logged). `previous` is the month before, or null when the household has no data in it.
 - **`planned`:** from the recurring entries due in that month.
   - `planned` per direction: the sum of the entry amounts (Phase A spec §2) of every entry that is not skipped; an expected entry with no amount counts its estimate, or 0 with none.
   - `actual` per direction: the sum over done entries.
+  - `planned` includes the done entries of items paused afterwards.
   - `open`: entries still expected (not done, not skipped), oldest first, at most 50. `status` is `expected`.
 - **`budgets_over`:** monthly budgets (not event budgets) whose spending in that month is above the budget, largest overrun first. Uses the same spending rule as `budget_rows`. A bucket archived since then is still listed when it had a budget and spending that month.
 - **`bills_changed`:** for every out item, each done entry due in that month, assessed with `bill_change.assess` against the entries before it. Only results that pass the gates. Largest `|delta|` first.
@@ -77,7 +81,8 @@ It is built from the existing services, each asked for that month, so its number
 ```json
 {"review": {"month": "2026-09", "label": "September 2026", "days_left": 3},
  "months": [{"month": "2026-09", "label": "September 2026", "in": 3000.00, "out": 2240.00,
-             "net": 760.00, "reviewed_at": null, "closed": false}]}
+             "net": 760.00, "reviewed_at": null, "reviewed_on": null,
+             "reviewed_by": null, "reviewed_by_name": null, "closed": false}]}
 ```
 
 - `months`: every month from the household's first month with a transaction or a cash movement up to last month, newest first, at most 120. Months inside that range with no data are listed with zeros.
