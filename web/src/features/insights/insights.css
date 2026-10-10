@@ -90,7 +90,8 @@
 .insights__pair .insights__card { padding: 12px; min-width: 0; }
 .insights__pair svg { width: 100%; height: auto; }
 
-/* Desktop dashboard (spec §5.4): 12 columns up to 1280 px; two cards a row, wide cards across. */
+/* Desktop dashboard (spec §5.4), up to 1280 px: cards flow down two balanced columns, so a short card never
+   sits beside a tall one with a hole under it; wide cards span both. Reading order stays the source order. */
 @media (min-width: 1024px) {
   /* Tables of the desktop dashboard (spec §5.4); only rendered on desktop. */
   .insights__tablewrap { overflow-x: auto; }
@@ -109,8 +110,8 @@
   .insights__bar--wide .chipset { margin-inline: 0; padding-inline: 0; }
   .insights__bar--wide .insights__lens { flex: none; margin-top: 0; }
   .insights__bar--wide .insights__lens .ui-seg__opt { flex: none; min-height: 36px; padding-inline: 14px; }
-  .insights.shell__main--wide { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; align-items: start; padding-inline: 24px; }
-  .insights.shell__main--wide > * { grid-column: span 6; min-width: 0; }
+  .insights.shell__main--wide { display: block; columns: 2; column-gap: 16px; padding-inline: 24px; }
+  .insights.shell__main--wide > * { break-inside: avoid; margin: 0 0 16px; min-width: 0; }
   .insights.shell__main--wide > [data-widget='headline'],
   .insights.shell__main--wide > [data-widget='identity'],
   .insights.shell__main--wide > [data-widget='share'],
@@ -118,5 +119,5 @@
   .insights.shell__main--wide > [data-widget='billsPanel'],
   .insights.shell__main--wide > [data-widget='monthsTable'],
   .insights.shell__main--wide > [data-widget='categoriesTable'],
-  .insights.shell__main--wide > :not([data-widget]) { grid-column: 1 / -1; }
+  .insights.shell__main--wide > :not([data-widget]) { column-span: all; }
 }
