@@ -48,8 +48,7 @@ export function useFeedPage(filter: TransactionFilter, page: number, sort: Sort 
   const sorted = sort !== DEFAULT_SORT
   return useCachedQuery(keys.transactions.list(sorted ? { ...filter, sort } : filter, page), (signal) =>
     unwrap(api.GET('/api/v1/transactions', {
-      // `sort` is spec §3.8's, not in the generated types until stream S lands: cast at this one call site.
-      params: { query: { ...toQuery(filter), ...(sorted ? { sort } : {}), page, page_size: PAGE_SIZE } as never },
+      params: { query: { ...toQuery(filter), ...(sorted ? { sort } : {}), page, page_size: PAGE_SIZE } },
       signal,
     })),
   )

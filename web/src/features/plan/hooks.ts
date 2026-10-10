@@ -5,8 +5,7 @@ import { useCachedQuery } from '../../data/cachedQuery'
 import { unwrap } from '../../data/http'
 import { useOnlineAction } from '../../data/onlineAction'
 import { affects, keys } from '../../data/keys'
-import type { EntryOut } from '../../data/types'
-import type { EntryDoneWithUsage } from '../insights/bills/types'
+import type { EntryDoneIn, EntryOut } from '../../data/types'
 import { todayISO } from '../../ui/format'
 import { patchEntryEverywhere, type EntryChange } from './entryPatch'
 
@@ -42,7 +41,7 @@ export function usePace() {
 const usageOf = (b: { usage?: unknown }) => (typeof b.usage === 'number' ? { usage: b.usage } : {})
 
 export interface EntryActions {
-  markDone: (body: EntryDoneWithUsage) => Promise<ActionResult<EntryOut>>
+  markDone: (body: EntryDoneIn) => Promise<ActionResult<EntryOut>>
   skip: () => Promise<ActionResult<EntryOut>>
   /** `usage` rides in the same body when the item tracks it (spec §3.2); omitted leaves the stored value. */
   setAmount: (amount: string, usage?: number) => Promise<ActionResult<EntryOut>>
@@ -57,10 +56,10 @@ export function useEntryActions(entry: EntryOut): EntryActions {
   const shared = { method: 'POST' as const, invalidates: affects.entry, pendingId: entry.id, toastRejections: false }
   const patch = (change: EntryChange) => (qc: QueryClient) => patchEntryEverywhere(qc, entry, change)
 
-  const done = useAction<EntryDoneWithUsage, EntryOut>({
+  const done = useAction<EntryDoneIn, EntryOut>({
     ...shared,
     path: `${base}/done`,
-    body: (b: EntryDoneWithUsage) => b,
+    body: (b: EntryDoneIn) => b,
     optimistic: (qc, b) =>
       patchEntryEverywhere(qc, entry, {
         kind: 'done', amount: b.amount == null ? null : Number(b.amount), today: todayISO(), ...usageOf(b),

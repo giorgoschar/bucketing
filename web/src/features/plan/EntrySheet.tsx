@@ -3,9 +3,8 @@ import { Link } from 'react-router'
 import type { ActionResult } from '../../data/action'
 import { usePendingIds } from '../../data/pending'
 import { memberName, useHousehold, useRecurringItems } from '../../data/reads'
-import type { EntryOut, PaymentMethod } from '../../data/types'
+import type { EntryDoneIn, EntryOut, PaymentMethod, RecurringItemOut } from '../../data/types'
 import { parseUsage } from '../insights/bills/usage'
-import type { EntryDoneWithUsage, EntryWithUsage, ItemWithUsage } from '../insights/bills/types'
 import { useSession } from '../../session/SessionProvider'
 import { Badge } from '../../ui/Badge'
 import { AlertIcon, CheckIcon, ClockIcon } from '../../ui/icons'
@@ -118,7 +117,7 @@ function PayForm({ entry, actions, onResult }: FormProps) {
   const isIn = entry.direction === 'in'
   const { me } = useSession()
   const members = useHousehold().data?.members ?? []
-  const item = useRecurringItems().data?.find((i) => i.id === entry.item_id) as ItemWithUsage | undefined
+  const item = useRecurringItems().data?.find((i) => i.id === entry.item_id)
   const fallbackWho = item?.paid_by_default ?? me?.id ?? members[0]?.user_id ?? null
   const [picked, setPicked] = useState<string | null>(null)
   const who = picked ?? fallbackWho
@@ -134,7 +133,7 @@ function PayForm({ entry, actions, onResult }: FormProps) {
 
   const submit = async () => {
     if (!valid || usage === undefined) return
-    const body: EntryDoneWithUsage = {
+    const body: EntryDoneIn = {
       amount: parsed ?? null, person: who, payment_method: method, ...(unit && usage !== null ? { usage } : {}),
     }
     onResult(await actions.markDone(body))
@@ -168,13 +167,13 @@ function PayForm({ entry, actions, onResult }: FormProps) {
 }
 
 const startUsage = (entry: EntryOut) => {
-  const u = (entry as EntryWithUsage).usage
+  const u = entry.usage
   return u === null || u === undefined ? '' : String(u)
 }
 
 /** The item's usage unit: on the entry (spec §3.2), else on its item. */
-function usageUnitOf(entry: EntryOut, item: ItemWithUsage | undefined): string | null {
-  return (entry as EntryWithUsage).usage_unit ?? item?.usage_unit ?? null
+function usageUnitOf(entry: EntryOut, item: RecurringItemOut | undefined): string | null {
+  return entry.usage_unit ?? item?.usage_unit ?? null
 }
 
 function UsageField({ unit, text, onChange }: { unit: string; text: string; onChange: (v: string) => void }) {
@@ -192,7 +191,7 @@ function UsageField({ unit, text, onChange }: { unit: string; text: string; onCh
 }
 
 function AmountForm({ entry, actions, onResult }: FormProps) {
-  const item = useRecurringItems().data?.find((i) => i.id === entry.item_id) as ItemWithUsage | undefined
+  const item = useRecurringItems().data?.find((i) => i.id === entry.item_id)
   const unit = usageUnitOf(entry, item)
   const [usageText, setUsageText] = useState(startUsage(entry))
   const usage = parseUsage(usageText)

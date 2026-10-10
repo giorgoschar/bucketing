@@ -145,13 +145,13 @@ it('Edit usage opens a small sheet and saves with PUT; clearing sends null', asy
   fireEvent.change(input, { target: { value: '412,5' } })
   fireEvent.click(within(sheet).getByRole('button', { name: 'Save usage' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-  expect(fake.callsTo(USAGE as never)).toMatchObject([{ path: '/api/v1/recurring/entries/e-2026-09-14/usage', body: { usage: 412.5 } }])
+  expect(fake.callsTo(USAGE)).toMatchObject([{ path: '/api/v1/recurring/entries/e-2026-09-14/usage', body: { usage: 412.5 } }])
 
   fireEvent.click(screen.getByRole('button', { name: `Edit usage, ${d('2026-09-14')}` }))
   fireEvent.change(screen.getByLabelText('Usage (kWh)'), { target: { value: '' } })
   fireEvent.click(screen.getByRole('button', { name: 'Save usage' }))
-  await waitFor(() => expect(fake.callsTo(USAGE as never)).toHaveLength(2))
-  expect(fake.callsTo(USAGE as never)[1].body).toEqual({ usage: null })
+  await waitFor(() => expect(fake.callsTo(USAGE)).toHaveLength(2))
+  expect(fake.callsTo(USAGE)[1].body).toEqual({ usage: null })
 })
 
 it('a rejected usage keeps the sheet open', async () => {

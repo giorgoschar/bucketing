@@ -1,7 +1,6 @@
-import type { PaymentMethod, RecurringItemIn } from '../../../data/types'
+import type { PaymentMethod, RecurringItemIn, RecurringItemOut } from '../../../data/types'
 import { asPaymentMethod } from '../paymentMethods'
 import { parseAmount } from '../../../ui/format'
-import type { ItemInWithUsage, ItemWithUsage } from '../../insights/bills/types'
 import { USAGE_UNITS, USAGE_UNIT_MAX } from '../../insights/bills/usage'
 import { defaultChoice, fromRuleFields, toRuleFields, type RuleChoice } from './rule'
 
@@ -56,7 +55,7 @@ function formUnit(f: ItemForm): string | null {
   return f.usageChoice
 }
 
-export function itemToForm(item: ItemWithUsage): ItemForm {
+export function itemToForm(item: RecurringItemOut): ItemForm {
   return {
     id: item.id,
     name: item.name,
@@ -125,7 +124,7 @@ export function sharesNeedScaling(f: ItemForm): boolean {
 }
 
 /** The full RecurringItemIn (POST and PUT). Call validateItemForm first. */
-export function formToBody(f: ItemForm): ItemInWithUsage {
+export function formToBody(f: ItemForm): RecurringItemIn {
   const out = f.direction === 'out'
   return {
     name: f.name.trim(),
@@ -156,7 +155,7 @@ function scaleFormSplits(f: ItemForm) {
 }
 
 /** The row Items shows while a create or edit waits in the queue. */
-export function pendingItem(body: ItemInWithUsage, id: string): ItemWithUsage {
+export function pendingItem(body: RecurringItemIn, id: string): RecurringItemOut {
   return {
     id,
     name: body.name,

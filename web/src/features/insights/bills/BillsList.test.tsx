@@ -4,7 +4,6 @@ import { fakeApi, hang } from '../../../test/fakeApi'
 import { renderWithProviders, resetTestEnv, setOnline } from '../../../test/render'
 import { BillsList } from './BillsList'
 import { billRow, billsRoutes, change } from './fixtures'
-import type { Routes } from '../../../test/fakeApi'
 
 afterEach(resetTestEnv)
 
@@ -73,7 +72,7 @@ it('offline with nothing saved: an empty state, not a spinner', async () => {
 })
 
 it('loading shows the skeleton', () => {
-  fakeApi({ 'GET /api/v1/insights/bills': () => hang() } as unknown as Routes)
+  fakeApi({ 'GET /api/v1/insights/bills': () => hang() })
   renderWithProviders(<BillsList />)
   expect(screen.getByRole('status', { name: 'Loading' })).toBeInTheDocument()
 })

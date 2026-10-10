@@ -27,7 +27,7 @@ export function history(over: Partial<ItemHistoryOut> = {}): ItemHistoryOut {
   }
 }
 
-/** Routes for the new endpoints. The schema does not know them yet, hence the one cast here. */
-export function billsRoutes(rows: BillRow[] = [], extra: Record<string, unknown> = {}): Routes {
-  return { 'GET /api/v1/insights/bills': () => rows, ...extra } as unknown as Routes
+/** Routes for the Bills list; `extra` adds more. */
+export function billsRoutes(rows: BillRow[] = [], extra: Routes = {}): Routes {
+  return { 'GET /api/v1/insights/bills': () => rows, ...extra }
 }

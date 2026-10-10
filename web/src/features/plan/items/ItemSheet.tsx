@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
 import { memberName, useBuckets, useCategories, useHousehold } from '../../../data/reads'
-import type { EntryOut } from '../../../data/types'
-import type { ItemWithUsage } from '../../insights/bills/types'
+import type { EntryOut, RecurringItemOut } from '../../../data/types'
 import { USAGE_UNITS, USAGE_UNIT_MAX } from '../../insights/bills/usage'
 import { useSession } from '../../../session/SessionProvider'
 import { formatShortDate, todayISO } from '../../../ui/format'
@@ -20,7 +19,7 @@ import './items.css'
 export interface ItemSheetProps {
   open: boolean
   /** null: a new item. */
-  item: ItemWithUsage | null
+  item: RecurringItemOut | null
   onClose: () => void
   onOpenEntry?: (entry: EntryOut) => void
 }

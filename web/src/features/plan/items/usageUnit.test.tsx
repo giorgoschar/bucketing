@@ -1,9 +1,9 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
+import type { RecurringItemOut } from '../../../data/types'
 import { fakeApi, type Routes } from '../../../test/fakeApi'
 import { bucket, item, page, readRoutes } from '../../../test/fixtures'
 import { renderWithProviders, resetTestEnv } from '../../../test/render'
-import type { ItemWithUsage } from '../../insights/bills/types'
 import { emptyItemForm, formToBody, itemToForm } from './form'
 import { ItemSheet } from './ItemSheet'
 
@@ -17,7 +17,7 @@ const routes = (over: Routes = {}): Routes => ({
   'POST /api/v1/recurring/preview': () => ({ dates: ['2026-10-26'] }),
   ...over,
 })
-const withUnit = (usage_unit: string | null): ItemWithUsage => ({ ...item(), usage_unit })
+const withUnit = (usage_unit: string | null): RecurringItemOut => ({ ...item(), usage_unit })
 
 async function save(unit: string | null) {
   const fake = fakeApi(routes({ [PUT]: () => item() }))

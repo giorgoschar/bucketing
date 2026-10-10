@@ -21,7 +21,7 @@ export type StockItem = S['StockItemOut']
 export type PriceToday = S['PriceTodayOut']
 
 /** One day's lowest price across retailers. */
-export type HistoryPoint = S['HistoryPointOut']
+export type HistoryPoint = S['app__api__stock__HistoryPointOut']
 
 /** `price_advice`'s dict. */
 export type AdviceDetail = S['AdviceDetailOut']

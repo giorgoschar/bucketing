@@ -66,7 +66,7 @@ it('dismiss hides the row; a newer entry brings it back', async () => {
   renderWithProviders(<NeedsAttention />, { client })
   await waitFor(() => expect(kinds()).toEqual(['missingAmount']))
   // A newer entry changes again.
-  fake.on('GET /api/v1/insights/bills' as never, (() => [billRow({ change: change({ entry_id: 'e10', amount: 90 }) })]) as never)
+  fake.on('GET /api/v1/insights/bills', () => [billRow({ change: change({ entry_id: 'e10', amount: 90 }) })])
   await client.invalidateQueries()
   await waitFor(() => expect(kinds()).toContain('billChange'))
   expect(document.querySelector('[data-attn="billChange"]')).toHaveTextContent('Electricity was €90')
@@ -84,7 +84,7 @@ it('localStorage throwing does not break Home: the row shows and can be dismisse
 })
 
 it('no Bills data at all: no row and no error', async () => {
-  fakeApi(routes([], { 'GET /api/v1/insights/bills': () => new Response(null, { status: 500 }) } as unknown as Routes))
+  fakeApi(routes([], { 'GET /api/v1/insights/bills': () => new Response(null, { status: 500 }) }))
   renderWithProviders(<NeedsAttention />)
   await waitFor(() => expect(kinds()).toEqual(['missingAmount']))
   expect(screen.queryByRole('alert')).toBeNull()

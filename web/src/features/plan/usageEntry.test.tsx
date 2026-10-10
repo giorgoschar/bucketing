@@ -3,12 +3,12 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { db } from '../../offline/db'
 import { listQueuedBodies } from '../../offline/queuedBodies'
 import { fakeApi, type Routes } from '../../test/fakeApi'
+import type { EntryOut, RecurringItemOut } from '../../data/types'
 import { entry, item, readRoutes } from '../../test/fixtures'
 import { renderWithProviders, resetTestEnv, setOnline } from '../../test/render'
 import { EntrySheet } from './EntrySheet'
 import { applyChange } from './entryPatch'
 import { parseUsage } from '../insights/bills/usage'
-import type { EntryWithUsage, ItemWithUsage } from '../insights/bills/types'
 
 afterEach(resetTestEnv)
 
@@ -19,7 +19,7 @@ const routes = (over: Routes = {}): Routes => ({
   'GET /api/v1/recurring': () => [item({ paid_by_default: 'u2' })],
   ...over,
 })
-const metered = (over: Partial<EntryWithUsage> = {}): EntryWithUsage =>
+const metered = (over: Partial<EntryOut> = {}): EntryOut =>
   ({ ...entry({ name: 'Electricity' }), usage: null, usage_unit: 'kWh', ...over })
 
 it('parseUsage: comma or point, three decimals, blank is null, garbage is undefined', () => {
@@ -45,7 +45,7 @@ it('Pay shows "Usage (kWh)" only for an item with a unit', () => {
 })
 
 it('the unit can come from the item when the entry does not carry it', async () => {
-  fakeApi(routes({ 'GET /api/v1/recurring': () => [{ ...item(), usage_unit: 'm³' } as ItemWithUsage] }))
+  fakeApi(routes({ 'GET /api/v1/recurring': () => [{ ...item(), usage_unit: 'm³' } as RecurringItemOut] }))
   renderWithProviders(<EntrySheet entry={entry()} onClose={() => {}} />)
   fireEvent.click(screen.getByRole('button', { name: 'Paid' }))
   expect(await screen.findByLabelText('Usage (m³)')).toBeInTheDocument()

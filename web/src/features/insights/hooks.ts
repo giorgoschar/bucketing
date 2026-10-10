@@ -29,7 +29,7 @@ export function useInsights(period: Period, lens: Lens, filters: InsightFilters,
   return useCachedQuery(insightsKeys.overview(hh, periodKey(period), lens, filtersKey(filters), months), async (signal) =>
     (await unwrap(
       api.GET('/api/v1/insights', {
-        params: { query: { ...periodQuery(period), ...lensQuery(lens), ...filterQuery(filters), ...(months === undefined ? {} : { months }) } },
+        params: { query: { ...periodQuery(period), ...lensQuery(lens), ...filterQuery(filters), ...(months === undefined ? {} : { months: String(months) }) } },
         signal,
       }),
     )) as unknown as InsightsData,
