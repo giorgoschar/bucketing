@@ -12,6 +12,8 @@ import { useCashWallets, useQueuedCashLogged } from '../plan/cash/hooks'
 import { useStockSummary } from '../plan/pantry/shoppingHooks'
 import { patchEntryEverywhere } from '../plan/entryPatch'
 import { useBudgets, useCategoriesVsUsual, usePlanUpcoming } from '../plan/hooks'
+import { useBills } from '../insights/bills/hooks'
+import { useDismissedBills } from './billDismiss'
 import { attentionReady, buildAttention, overdueWindow, type AttentionInput, type AttentionItem } from './attention'
 
 export const RECENT_COUNT = 10
@@ -72,6 +74,10 @@ export function useAttention(): { items: AttentionItem[]; ready: boolean } {
   const cashNotLogged = me && Math.max(0, Math.round((me.wallet.not_yet_logged - queuedCash) * 100) / 100)
   const pantryLow = useStockSummary().data?.low_count
   const failed = useFailedQueueRows()
-  const input: AttentionInput = { today, matches, overdue, upcoming, budgets, categories, cashNotLogged, pantryLow, failed }
+  const bills = useBills().data
+  const dismissedBills = useDismissedBills()
+  const input: AttentionInput = {
+    today, matches, overdue, upcoming, budgets, categories, cashNotLogged, pantryLow, failed, bills, dismissedBills,
+  }
   return { items: buildAttention(input), ready: attentionReady(input) }
 }

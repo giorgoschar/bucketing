@@ -89,3 +89,35 @@
 .insights__pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .insights__pair .insights__card { padding: 12px; min-width: 0; }
 .insights__pair svg { width: 100%; height: auto; }
+
+/* Desktop dashboard (spec §5.4): 12 columns up to 1280 px; two cards a row, wide cards across. */
+@media (min-width: 1024px) {
+  /* Tables of the desktop dashboard (spec §5.4); only rendered on desktop. */
+  .insights__tablewrap { overflow-x: auto; }
+  .insights__table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  .insights__table th, .insights__table td { padding: 8px 12px; text-align: right; border-top: 1px solid var(--line); white-space: nowrap; }
+  .insights__table thead th { font-size: 12.5px; font-weight: 600; color: var(--muted); border-top: 0; }
+  .insights__table th:first-child, .insights__table td:first-child { text-align: left; }
+  .insights__table tbody th { font-weight: 500; }
+  .insights__table td:last-child { text-align: right; }
+  .insights__table a { color: inherit; text-decoration: none; }
+  .insights__table a:hover { text-decoration: underline; }
+  .insights__table a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+  .insights__year { color: var(--muted); font-size: 12px; }
+  .insights__cap { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  .insights.shell__main--wide { max-width: 1280px; margin-inline: auto; width: 100%; box-sizing: border-box; }
+  .insights__bar--wide { max-width: 1280px; margin-inline: auto; box-sizing: border-box; padding-inline: 24px; gap: 16px; }
+  .insights__bar--wide .chipset { margin-inline: 0; padding-inline: 0; }
+  .insights__bar--wide .insights__lens { flex: none; margin-top: 0; }
+  .insights__bar--wide .insights__lens .ui-seg__opt { flex: none; min-height: 36px; padding-inline: 14px; }
+  .insights.shell__main--wide { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; align-items: start; padding-inline: 24px; }
+  .insights.shell__main--wide > * { grid-column: span 6; min-width: 0; }
+  .insights.shell__main--wide > [data-widget='headline'],
+  .insights.shell__main--wide > [data-widget='identity'],
+  .insights.shell__main--wide > [data-widget='share'],
+  .insights.shell__main--wide > [data-widget='empty'],
+  .insights.shell__main--wide > [data-widget='billsPanel'],
+  .insights.shell__main--wide > [data-widget='monthsTable'],
+  .insights.shell__main--wide > [data-widget='categoriesTable'],
+  .insights.shell__main--wide > :not([data-widget]) { grid-column: 1 / -1; }
+}

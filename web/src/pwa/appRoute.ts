@@ -8,6 +8,8 @@ export function appRoute(link: string | null | undefined): string {
     return '/app/'
   }
   const under = (prefix: string) => path === prefix || path.startsWith(`${prefix}/`)
+  // Phase A: a bill-change notification links to the bill's history in the app (/app/insights/bills/{id}).
+  if (under('/app/insights/bills')) return path
   // Plan › Pantry (pantry spec §4.9): stock_low links to /stock/shopping, price_drop to /stock.
   if (under('/stock/shopping')) return '/app/plan/pantry/list'
   if (under('/stock')) return '/app/plan?view=pantry'

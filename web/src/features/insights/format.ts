@@ -5,6 +5,8 @@ const MINUS = '−'
 const signed = (s: string) => s.replace('-', MINUS)
 export const eur = (n: number) => signed(money.format(n))
 export const eurWhole = (n: number) => signed(whole.format(n))
+/** Net with its sign as text: "+€1,000.00" or "−€100.00", never colour alone. */
+export const signedEur = (n: number) => (n > 0 ? `+${eur(n)}` : eur(n))
 export const pctText = (n: number) => `${Math.abs(Math.round(n))}%`
 
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']

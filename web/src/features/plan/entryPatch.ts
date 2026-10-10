@@ -4,23 +4,26 @@ import type { EntryOut, RecurringItemOut, UpcomingDayOut } from '../../data/type
 
 export type EntryChange =
   /** Paid / Received: creates a transaction dated on the entry's due day (as the server does). */
-  | { kind: 'done'; amount: number | null; today: string }
+  | { kind: 'done'; amount: number | null; today: string; usage?: number }
   /** A confirmed match: done, and its transaction already counts. */
   | { kind: 'linked' }
   | { kind: 'skip' }
-  | { kind: 'amount'; amount: number }
+  | { kind: 'amount'; amount: number; usage?: number }
   | { kind: 'undo' }
 
 const signed = (e: EntryOut, amount: number | null) => (amount ?? 0) * (e.direction === 'in' ? 1 : -1)
 const cents = (n: number) => Math.round(n * 100) / 100
 const monthOf = (iso: string) => iso.slice(0, 7)
 
+/** A change that brings a usage sets it; one that does not leaves the entry's own (it is kept by the spread). */
+const withUsage = (usage: number | undefined) => (usage === undefined ? {} : { usage })
+
 export function applyChange(e: EntryOut, change: EntryChange): EntryOut {
   switch (change.kind) {
-    case 'done': return { ...e, status: 'done', amount: change.amount ?? e.amount, estimated: false, overdue: false }
+    case 'done': return { ...e, ...withUsage(change.usage), status: 'done', amount: change.amount ?? e.amount, estimated: false, overdue: false }
     case 'linked': return { ...e, status: 'done', overdue: false }
     case 'skip': return { ...e, status: 'skipped', overdue: false }
-    case 'amount': return { ...e, amount: change.amount, estimated: false }
+    case 'amount': return { ...e, ...withUsage(change.usage), amount: change.amount, estimated: false }
     case 'undo': return { ...e, status: 'expected' }
   }
 }

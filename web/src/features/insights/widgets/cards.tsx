@@ -9,6 +9,9 @@ import { useCategoriesVsUsual, usePlanMonth } from '../hooks'
 import { HOUSEHOLD, insightsSearch } from '../lens'
 import { singleMonth } from '../overview'
 import { CASH_NOT_LOGGED, UNCATEGORISED } from '../types'
+import { BillRowLink } from '../bills/BillRowLink'
+import { BILLS_SCOPE_NOTE } from '../bills/format'
+import { useBills } from '../bills/hooks'
 import { Card } from './Card'
 
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0)
@@ -202,6 +205,26 @@ export function FuelCard({ data, period, lens }: WidgetCtx) {
           </li>
         ))}
       </ul>
+    </Card>
+  )
+}
+
+/** The three bills with the highest 12-month total, and a way into all of them (Phase A §5.2).
+ *  Not tied to the lens or period (a bill's history is the household's), and quiet until it has data. */
+export function BillsCard() {
+  const bills = useBills().data
+  if (!bills) return null
+  const top = [...bills].sort((a, b) => (b.total_12m ?? 0) - (a.total_12m ?? 0)).slice(0, 3)
+  return (
+    <Card title="Bills" action={bills.length > 0 ? <Link to="/insights/bills">All bills</Link> : undefined}>
+      {top.length === 0 ? (
+        <p className="insights__note">No recurring bills yet. <Link to="/plan/items">Open items</Link></p>
+      ) : (
+        <>
+          <div className="billscard__list">{top.map((b) => <BillRowLink key={b.item_id} bill={b} compact />)}</div>
+          <p className="insights__note">{BILLS_SCOPE_NOTE}</p>
+        </>
+      )}
     </Card>
   )
 }

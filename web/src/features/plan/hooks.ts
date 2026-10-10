@@ -5,7 +5,8 @@ import { useCachedQuery } from '../../data/cachedQuery'
 import { unwrap } from '../../data/http'
 import { useOnlineAction } from '../../data/onlineAction'
 import { affects, keys } from '../../data/keys'
-import type { EntryDoneIn, EntryOut } from '../../data/types'
+import type { EntryOut } from '../../data/types'
+import type { EntryDoneWithUsage } from '../insights/bills/types'
 import { todayISO } from '../../ui/format'
 import { patchEntryEverywhere, type EntryChange } from './entryPatch'
 
@@ -38,10 +39,13 @@ export function usePace() {
   return useCachedQuery(keys.plan.pace(), (signal) => unwrap(api.GET('/api/v1/plan/pace', { signal })))
 }
 
+const usageOf = (b: { usage?: unknown }) => (typeof b.usage === 'number' ? { usage: b.usage } : {})
+
 export interface EntryActions {
-  markDone: (body: EntryDoneIn) => Promise<ActionResult<EntryOut>>
+  markDone: (body: EntryDoneWithUsage) => Promise<ActionResult<EntryOut>>
   skip: () => Promise<ActionResult<EntryOut>>
-  setAmount: (amount: string) => Promise<ActionResult<EntryOut>>
+  /** `usage` rides in the same body when the item tracks it (spec §3.2); omitted leaves the stored value. */
+  setAmount: (amount: string, usage?: number) => Promise<ActionResult<EntryOut>>
   undo: (deleteTransaction: boolean) => Promise<ActionResult<EntryOut>>
   busy: boolean
 }
@@ -53,19 +57,21 @@ export function useEntryActions(entry: EntryOut): EntryActions {
   const shared = { method: 'POST' as const, invalidates: affects.entry, pendingId: entry.id, toastRejections: false }
   const patch = (change: EntryChange) => (qc: QueryClient) => patchEntryEverywhere(qc, entry, change)
 
-  const done = useAction<EntryDoneIn, EntryOut>({
+  const done = useAction<EntryDoneWithUsage, EntryOut>({
     ...shared,
     path: `${base}/done`,
-    body: (b: EntryDoneIn) => b,
+    body: (b: EntryDoneWithUsage) => b,
     optimistic: (qc, b) =>
-      patchEntryEverywhere(qc, entry, { kind: 'done', amount: b.amount == null ? null : Number(b.amount), today: todayISO() }),
+      patchEntryEverywhere(qc, entry, {
+        kind: 'done', amount: b.amount == null ? null : Number(b.amount), today: todayISO(), ...usageOf(b),
+      }),
   })
   const skip = useAction<void, EntryOut>({ ...shared, path: `${base}/skip`, optimistic: patch({ kind: 'skip' }) })
-  const amount = useAction<string, EntryOut>({
+  const amount = useAction<{ amount: string; usage?: number }, EntryOut>({
     ...shared,
     path: `${base}/amount`,
-    body: (a: string) => ({ amount: a }),
-    optimistic: (qc, a) => patchEntryEverywhere(qc, entry, { kind: 'amount', amount: Number(a) }),
+    body: (v: { amount: string; usage?: number }) => ({ amount: v.amount, ...(v.usage === undefined ? {} : { usage: v.usage }) }),
+    optimistic: (qc, v) => patchEntryEverywhere(qc, entry, { kind: 'amount', amount: Number(v.amount), ...usageOf(v) }),
   })
   // The sheet shows a Fixed-cost 409 inline next to "Delete the expense".
   const undoKeep = useAction<void, EntryOut>({
@@ -78,7 +84,7 @@ export function useEntryActions(entry: EntryOut): EntryActions {
   return {
     markDone: done.run,
     skip: () => skip.run(),
-    setAmount: amount.run,
+    setAmount: (a, usage) => amount.run({ amount: a, usage }),
     undo: (deleteTransaction) => (deleteTransaction ? undoDelete : undoKeep).run(),
     busy: done.busy || skip.busy || amount.busy || undoKeep.busy || undoDelete.busy,
   }

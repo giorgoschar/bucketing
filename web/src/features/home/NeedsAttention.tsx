@@ -4,11 +4,13 @@ import type { EntryOut, MatchOut } from '../../data/types'
 import { dismissFailed } from '../../offline/useQueue'
 import { Badge } from '../../ui/Badge'
 import { formatMoney, formatShortDate } from '../../ui/format'
-import { AlertIcon, CheckIcon, LinkIcon, WalletIcon } from '../../ui/icons'
+import { AlertIcon, CheckIcon, LinkIcon, WalletIcon, XIcon } from '../../ui/icons'
 import { ListRow } from '../../ui/ListRow'
 import { Money } from '../../ui/Money'
 import { EntrySheet, type EntryIntent } from '../plan/EntrySheet'
+import { changeTitle } from '../insights/bills/format'
 import type { AttentionItem } from './attention'
+import { dismissBill } from './billDismiss'
 import { useAttention, useMatchActions } from './hooks'
 import './home.css'
 
@@ -81,6 +83,22 @@ function AttentionRow({ item, onOpen }: { item: AttentionItem; onOpen: (e: Entry
           title={`${c.name} above usual`}
           subtitle={<><Money amount={c.this_month} whole /> this month{c.usual !== null && <> · usually <Money amount={c.usual} whole /></>}</>}
           badges={<Badge tone="warn">above usual</Badge>} />
+      )
+    }
+    case 'billChange': {
+      const { bill } = item
+      const c = bill.change
+      if (!c) return null
+      return (
+        <div className="home-attn__item">
+          <span className="ui-ico ui-ico--warn" aria-hidden="true"><AlertIcon /></span>
+          <div className="home-attn__text">
+            <div className="ui-row__title home-attn__wrapnum">{changeTitle(bill.name, c)}</div>
+          </div>
+          <button type="button" className="btn btn--sm" onClick={() => navigate(`/insights/bills/${encodeURIComponent(bill.item_id)}`)}>See why</button>
+          <button type="button" className="ui-iconbtn ui-iconbtn--bare home-attn__x" aria-label={`Dismiss ${bill.name}`}
+            onClick={() => dismissBill(c.entry_id)}><XIcon /></button>
+        </div>
       )
     }
     case 'cash':

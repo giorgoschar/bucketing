@@ -22,12 +22,14 @@ function filterQuery(f: InsightFilters): { bucket_ids?: string; category_ids?: s
   }
 }
 
-export function useInsights(period: Period, lens: Lens, filters: InsightFilters) {
+/** `months` (6, 12 or 24) sets the length of monthly_in_out (Phase A §3.9); left out, the server's default of 6.
+ *  Only the desktop Months table asks for 12, so the phone never sends it. */
+export function useInsights(period: Period, lens: Lens, filters: InsightFilters, months?: 12 | 24) {
   const hh = useHouseholdId()
-  return useCachedQuery(insightsKeys.overview(hh, periodKey(period), lens, filtersKey(filters)), async (signal) =>
+  return useCachedQuery(insightsKeys.overview(hh, periodKey(period), lens, filtersKey(filters), months), async (signal) =>
     (await unwrap(
       api.GET('/api/v1/insights', {
-        params: { query: { ...periodQuery(period), ...lensQuery(lens), ...filterQuery(filters) } },
+        params: { query: { ...periodQuery(period), ...lensQuery(lens), ...filterQuery(filters), ...(months === undefined ? {} : { months }) } },
         signal,
       }),
     )) as unknown as InsightsData,

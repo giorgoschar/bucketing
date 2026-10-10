@@ -55,6 +55,13 @@ export const keys = {
   duplicates: () => ['duplicates'] as const,
   /** RecentBatch[]: GET /transactions/bulk?limit=10 */
   bulkRecent: () => ['bulk-recent'] as const,
+  /** BillRow[]: GET /insights/bills (Insights › Bills, Home's bill-change row). Under the 'insights' prefix, so
+   *  every write that refreshes Insights (affects.entry, sync, cash) refreshes it too. */
+  insightsBills: () => ['insights', 'bills', 'list'] as const,
+  /** ItemHistoryOut: GET /recurring/{id}/history. Also under 'insights'. */
+  itemHistory: (id: string) => ['insights', 'bills', 'history', id] as const,
+  /** The prefix of both bill reads above (affects.item, which does not touch 'insights', adds it). */
+  billsAll: () => ['insights', 'bills'] as const,
   household: () => ['household'] as const,
   buckets: () => ['buckets'] as const,
   categories: () => ['categories'] as const,
@@ -89,7 +96,7 @@ export const affects = {
     keys.plan.all, keys.home.all, keys.recurring.all, keys.matches(), keys.transactions.all, keys.insights.all,
     keys.cashAll(), keys.cashStash(),
   ],
-  item: [keys.plan.all, keys.home.all, keys.recurring.all],
+  item: [keys.plan.all, keys.home.all, keys.recurring.all, keys.billsAll()],
   sync: [
     keys.plan.all, keys.home.all, keys.recurring.all, keys.matches(), keys.transactions.all, keys.insights.all,
     keys.buckets(), keys.cashAll(), keys.cashStash(),
@@ -109,7 +116,10 @@ export const affects = {
 // (2a scopes the device cache by household) so both phases hit one cache entry.
 export const insightsKeys = {
   all: (_hh: string) => keys.insights.all,
-  overview: (hh: string, period: string, lens: string, filters: string) => ['insights', 'overview', hh, period, lens, filters] as const,
+  overview: (hh: string, period: string, lens: string, filters: string, months?: number) =>
+    (months === undefined
+      ? ['insights', 'overview', hh, period, lens, filters]
+      : ['insights', 'overview', hh, period, lens, filters, `months:${months}`]) as readonly string[],
   person: (hh: string, period: string, userId: string) => ['insights', 'person', hh, period, userId] as const,
   category: (hh: string, id: string, period: string, lens: string) => ['insights', 'category', hh, id, period, lens] as const,
   vsUsual: (_hh: string, month: string) => keys.insights.categoriesVsUsual(month),
