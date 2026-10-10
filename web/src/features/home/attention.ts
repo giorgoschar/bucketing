@@ -2,8 +2,10 @@ import type { BudgetRowOut, CategoryUsualOut, EntryOut, MatchOut, UpcomingDayOut
 import type { FailedQueueRow } from '../../offline/useQueue'
 import { addDays, shiftMonth } from '../../ui/format'
 import type { BillRow } from '../insights/bills/types'
+import type { StatementReview } from '../insights/statements/types'
 
 export type AttentionItem =
+  | { kind: 'monthReview'; key: string; review: StatementReview }
   | { kind: 'match'; key: string; match: MatchOut }
   | { kind: 'overdue'; key: string; entry: EntryOut }
   | { kind: 'missingAmount'; key: string; entry: EntryOut }
@@ -30,6 +32,8 @@ export interface AttentionInput {
   bills?: BillRow[]
   /** Entry ids of bill changes the user dismissed on this device. */
   dismissedBills?: ReadonlySet<string>
+  /** GET /insights/statements `review` (Phase B §4.5): undefined when the list is not cached, null when there is nothing to review. */
+  review?: StatementReview | null
   failed: FailedQueueRow[]
 }
 
@@ -55,6 +59,8 @@ export function buildAttention(i: AttentionInput): AttentionItem[] {
     .flatMap((d) => d.entries)
     .filter((e) => e.status === 'expected' && (e.estimated || e.amount === null) && e.due_date <= horizon)
   return [
+    // The one row about the past month; it expires by itself (the server stops sending `review` after day 5).
+    ...(i.review ? [{ kind: 'monthReview', key: `review:${i.review.month}`, review: i.review } satisfies AttentionItem] : []),
     ...(i.matches ?? []).map((match): AttentionItem => ({ kind: 'match', key: `match:${match.id}`, match })),
     ...overdue.map((entry): AttentionItem => ({ kind: 'overdue', key: `overdue:${entry.id}`, entry })),
     ...missing.map((entry): AttentionItem => ({ kind: 'missingAmount', key: `amount:${entry.id}`, entry })),

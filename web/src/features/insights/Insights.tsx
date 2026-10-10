@@ -15,7 +15,7 @@ import { type WidgetId, visibleWidgets } from './overview'
 import { type Period, type Preset, PRESETS, usePeriod } from './period'
 import { type InsightFilters, type InsightsData, NO_FILTERS } from './types'
 import {
-  Biggest, BillsCard, BudgetsCard, FuelCard, HowYouPaid, InOut, InOutMonths, OnTrack, SavingsRate, SpendTrend, VsUsual, WhereItWent,
+  Biggest, BillsCard, BudgetsCard, FuelCard, HowYouPaid, InOut, InOutMonths, OnTrack, SavingsRate, SpendTrend, StatementsCard, VsUsual, WhereItWent,
 } from './widgets/cards'
 import { EmptyPeriod, Headline, Identity, ShareCard } from './widgets/summary'
 import './insights.css'
@@ -49,6 +49,7 @@ const RENDER: Record<Exclude<WidgetId, 'identity' | 'share'>, (ctx: WidgetCtx) =
   savings: (c) => <SavingsRate {...c} />,
   vsUsual: (c) => <VsUsual {...c} />,
   bills: () => <BillsCard />,
+  statements: () => <StatementsCard />,
   billsPanel: () => <Suspense fallback={null}><BillsPanel /></Suspense>,
   monthsTable: (c) => <Suspense fallback={null}><MonthsTable period={c.period} lens={c.lens} filters={c.filters ?? NO_FILTERS} /></Suspense>,
   categoriesTable: (c) => <Suspense fallback={null}><CategoriesTable data={c.data} period={c.period} lens={c.lens} /></Suspense>,
@@ -104,7 +105,7 @@ export function Insights() {
         >
           {(data) => {
             const ctx: WidgetCtx = { data, period, lens, members: members ?? [], meId, filters, setPeriod }
-            return visibleWidgets(data, { lens, period, bills: true, desktop }).map((id) => (
+            return visibleWidgets(data, { lens, period, bills: true, statements: true, desktop }).map((id) => (
               <div key={id} data-widget={id} className="insights__widget">
                 {id === 'identity' ? (
                   <Identity member={member} />

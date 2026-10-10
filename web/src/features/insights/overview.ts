@@ -6,7 +6,7 @@ import type { InsightsData } from './types'
 export type WidgetId =
   | 'identity' | 'headline' | 'share' | 'empty' | 'onTrack' | 'inOut' | 'where' | 'inOutMonths'
   | 'trend' | 'biggest' | 'method' | 'budgets' | 'savings' | 'vsUsual' | 'bills' | 'fuel'
-  | 'billsPanel' | 'monthsTable' | 'categoriesTable'
+  | 'billsPanel' | 'statements' | 'monthsTable' | 'categoriesTable'
 
 export const isEmptyPeriod = (d: InsightsData) => d.kpis.count === 0 && d.total_spent === 0 && d.in_out.in === 0
 
@@ -18,13 +18,15 @@ export function singleMonth(p: Period, d: InsightsData): string | null {
 /** The spec's fixed order (§4), minus what this lens, period or data hides. */
 export function visibleWidgets(
   d: InsightsData,
-  { lens, period, bills = false, desktop = false }: { lens: Lens; period: Period; bills?: boolean; desktop?: boolean },
+  { lens, period, bills = false, statements = false, desktop = false }: { lens: Lens; period: Period; bills?: boolean; statements?: boolean; desktop?: boolean },
 ): WidgetId[] {
   const member = lens !== HOUSEHOLD
   const ids: WidgetId[] = member ? ['identity', 'headline', 'share'] : ['headline']
   // A bill's history is the household's, for all time: the Bills card stays when the period has no spending.
   const billsId = bills ? ([desktop ? 'billsPanel' : 'bills'] as const) : []
-  if (isEmptyPeriod(d)) return [...ids, 'empty', ...billsId]
+  // Like a bill, a past month's statement is the household's: its card stays when the period has no spending.
+  const statementsId = statements ? (['statements'] as const) : []
+  if (isEmptyPeriod(d)) return [...ids, 'empty', ...billsId, ...statementsId]
   if (!member && period.preset === 'this_month') ids.push('onTrack')
   ids.push('inOut')
   if (d.categories.length) ids.push('where')
@@ -34,7 +36,7 @@ export function visibleWidgets(
   if (d.budget_status.length) ids.push('budgets')
   if (d.kpis.savings_rate != null) ids.push('savings')
   if (!member && singleMonth(period, d)) ids.push('vsUsual')
-  ids.push(...billsId)
+  ids.push(...billsId, ...statementsId)
   if (d.fuel) ids.push('fuel')
   // Desktop only (spec §5.4): the last 12 months as a table, and every category.
   if (desktop) ids.push('monthsTable', ...(d.categories.length ? (['categoriesTable'] as const) : []))

@@ -12,6 +12,9 @@ import { CASH_NOT_LOGGED, UNCATEGORISED } from '../types'
 import { BillRowLink } from '../bills/BillRowLink'
 import { BILLS_SCOPE_NOTE } from '../bills/format'
 import { useBills } from '../bills/hooks'
+import { useStatements } from '../statements/hooks'
+import { signedEur } from '../format'
+import '../statements/statements.css'
 import { Card } from './Card'
 
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0)
@@ -224,6 +227,31 @@ export function BillsCard() {
           <div className="billscard__list">{top.map((b) => <BillRowLink key={b.item_id} bill={b} compact />)}</div>
           <p className="insights__note">{BILLS_SCOPE_NOTE}</p>
         </>
+      )}
+    </Card>
+  )
+}
+
+/** The last three past months with their net, and a way into all of them (Phase B §4.4). The household's, for
+ *  all time: not tied to the lens or period, so it stays in an empty period. Quiet until the list is saved. */
+export function StatementsCard() {
+  const list = useStatements().data
+  if (!list) return null
+  const recent = list.months.slice(0, 3)
+  return (
+    <Card title="Statements" action={recent.length > 0 ? <Link to="/insights/statements">All statements</Link> : undefined}>
+      {recent.length === 0 ? (
+        <p className="insights__note">No past months yet.</p>
+      ) : (
+        <div className="stmtcard__list">
+          {recent.map((m) => (
+            <Link key={m.month} className="stmtcard__row" to={`/insights/statements/${encodeURIComponent(m.month)}`}>
+              <span className="stmtcard__name">{m.label}</span>
+              {list.review?.month === m.month && <span className="stmtrow__cta">Review</span>}
+              <span className="ui-num stmtcard__net">{signedEur(m.net)}</span>
+            </Link>
+          ))}
+        </div>
       )}
     </Card>
   )

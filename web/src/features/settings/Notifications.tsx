@@ -7,7 +7,7 @@ import { useNotificationPrefs } from './hooks'
 import { disabledAfter, useNotificationActions } from './notificationHooks'
 import './settings.css'
 
-const GROUPS = ['Bills', 'Budgets', 'Pantry', 'Apple Pay']
+const GROUPS = ['Bills', 'Budgets', 'Pantry', 'Insights', 'Apple Pay']
 
 export function Notifications() {
   const { state, refresh } = usePushState()
