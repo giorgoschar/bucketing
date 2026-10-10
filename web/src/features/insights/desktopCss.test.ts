@@ -55,3 +55,12 @@ it('the desktop bar rule is scoped to the dashboard, not the category screen tha
   expect(inMedia).not.toMatch(/(^|\n)\s*\.insights__bar\s*[{,]/)
   expect(inMedia).toMatch(/\.insights__bar--wide/)
 })
+
+it('the shell lifts its column clamp on <main> for the wide dashboard and the bill history, on desktop only', () => {
+  const shell = read('../../shell/shell.css')
+  expect(shell).toMatch(/\.shell__main:has\(\.shell__main--wide\)[^}]*max-width: 1280px/)
+  expect(outsideMedia(shell)).not.toMatch(/shell__main--wide/)
+  const bills = read('./bills/bills.css')
+  expect(bills).toMatch(/\.shell__main:has\(\.billhist\)\s*\{\s*max-width: 1100px/)
+  expect(outsideMedia(bills)).not.toMatch(/:has\(/)
+})
