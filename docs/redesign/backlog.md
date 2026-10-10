@@ -79,3 +79,21 @@ Gaps found in the current app that the new app (web/) must cover.
   - N-2: the deadline closes the socket from another thread. Verify once in the production image (Linux, TLS), or `shutdown()` before the close.
   - N-5: a `Thread.start()` failure escapes as a 500.
   - The old site's `/stock` barcode lookup does not use Open Food Facts (only the new app does).
+
+## Phase A follow-ups (integration 2026-10-10; reviews in `.superpowers/sdd/phase-a/`)
+
+- **Activity / Add panel (D review):**
+  - D7: a `/new…` or `/edit/:id` link on desktop unmounts and remounts the screen behind; translate the link before navigating (a `useComposeLink()` for the five call sites).
+  - D9: the currency button is a Tab stop the spec does not list, and new copy ("New entry", "Undone", "Type to filter", "Filter budgets / methods / people") needs approval; the desktop panel's offline note says "Saved on this phone…".
+  - D12: each panel open and close leaves a dead history entry (push `?add=1`, close with `replace`); close with `navigate(-1)` when this session pushed it.
+  - D13: after "stay open" the new entry takes category and method from the pre-save defaults, keeps the entry type, and a Fixed-cost entry leaves no budget picked.
+  - Idle preload of the Activity chunk (it is lazy since Phase A) so the first tap on Activity is not a network wait; also assert it is precached in `check-sw.mjs`.
+- **Bills / Insights (H review):**
+  - H5: the history "Usual" tile falls back to the median of the last 3 including the latest, while the server's baseline excludes it; decide, and if it is the baseline use `points.slice(-4, -1)`.
+  - H13: the desktop Months table fetches `/insights` a second time with `months=12`; consider one desktop request feeding both.
+  - HN1: the test "F2: an empty period still shows the Bills card (phone) and panel (desktop)" renders only the phone; rename it or add a `stubDesktop(true)` case.
+- **Server (S review):**
+  - S9: a bare `NaN` in a JSON body is a 500 (building the 422 fails on non-finite floats); predates Phase A, affects every `Decimal` field.
+  - S11c: foreign-currency items mix the item's currency with base-converted transaction amounts; they agree today only because `pay_occurrence` sets no rate.
+  - SN1: the scheduler's bill-change job reloads each bill with its own query after the first 200-item chunk commit; collect the fields up front.
+  - SN3: the bill-change transaction lookup loads every linked entry for all time and could pass the parameter limit at huge sizes; select only the needed columns and batch the ids.

@@ -38,7 +38,7 @@ Out of scope:
 
 ### 3.1 Migration
 
-One revision, `a3b4c5d6e7f8`, `down_revision = "f2a3b4c5d6e7"`:
+One revision, `c5d6e7f8a9b0`, `down_revision = "f2a3b4c5d6e7"`:
 
 - `recurring_bills.usage_unit`: `String(12)`, nullable. Null means the item does not track usage.
 - `bill_occurrences.usage`: `Numeric(12, 3)`, nullable.
@@ -136,7 +136,7 @@ The old constants (`25 %`, `€5`, mean of 3) go away.
 
 ### 3.8 Activity sorting
 
-`GET /api/v1/transactions` gains `sort`: `date_desc` (default, today's order), `date_asc`, `amount_desc`, `amount_asc`. Anything else is 400. Amount sorts use the base-currency amount, with the current order as tie-break. Every existing filter and the pagination work with every sort. `day_totals` is returned only for the date sorts; for amount sorts it is an empty list.
+`GET /api/v1/transactions` gains `sort`: `date_desc` (default, today's order), `date_asc`, `amount_desc`, `amount_asc`. Anything else is 400. Amount sorts use the base-currency amount, with the current order as tie-break. Every existing filter and the pagination work with every sort. `day_totals` is returned only for the date sorts; for amount sorts it is an empty object (`{}`).
 
 ### 3.9 Longer month series
 
