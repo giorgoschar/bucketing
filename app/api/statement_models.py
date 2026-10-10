@@ -91,7 +91,9 @@ class StatementOut(BaseModel):
     month: str
     label: str
     reviewed_at: datetime | None
+    reviewed_on: date | None  # reviewed_at on the household's calendar
     reviewed_by: str | None  # a user id
+    reviewed_by_name: str | None  # display name, else username
     closed: bool
     days_left: int | None
     totals: StatementTotalsOut
@@ -116,6 +118,9 @@ class StatementMonthOut(BaseModel):
     out: Money
     net: Money
     reviewed_at: datetime | None
+    reviewed_on: date | None
+    reviewed_by: str | None
+    reviewed_by_name: str | None
     closed: bool
 
 

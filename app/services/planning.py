@@ -65,6 +65,7 @@ class Entry:
     payment_method: str  # the item's: what Pay / Mark received records by default
     usage: Decimal | None = None  # what the entry used, in the item's usage_unit
     usage_unit: str | None = None  # the item's
+    paused: bool = False  # the item is paused (only listed with include_paused)
 
 
 def _infrequent(bill: RecurringBill) -> bool:
@@ -106,30 +107,38 @@ def _entry(db: Session, occ: BillOccurrence, today: date, estimates: dict) -> En
         payment_method=bill.payment_method or default_payment_method(bill.direction),
         usage=occ.usage,
         usage_unit=bill.usage_unit,
+        paused=bill.is_active is False,
     )
 
 
 def list_entries(
-    db: Session, household_id: str, start: date, end: date, *, today: date | None = None
+    db: Session,
+    household_id: str,
+    start: date,
+    end: date,
+    *,
+    today: date | None = None,
+    include_paused: bool = False,
 ) -> list[Entry]:
     """Entries of active items due in [start, end], by date then name.
 
     A paused item's entries are hidden (spec §3.4.1); they stay stored.
+    ``include_paused`` lists them too, flagged ``paused`` (month statements).
     """
     today = today or local_today()
-    occs = (
+    query = (
         db.query(BillOccurrence)
         .join(RecurringBill, RecurringBill.id == BillOccurrence.bill_id)
         .options(joinedload(BillOccurrence.bill), joinedload(BillOccurrence.transaction))
         .filter(
             RecurringBill.household_id == household_id,
-            RecurringBill.active_filter(),
             BillOccurrence.due_date >= start,
             BillOccurrence.due_date <= end,
         )
-        .order_by(BillOccurrence.due_date, RecurringBill.name, BillOccurrence.id)
-        .all()
     )
+    if not include_paused:
+        query = query.filter(RecurringBill.active_filter())
+    occs = query.order_by(BillOccurrence.due_date, RecurringBill.name, BillOccurrence.id).all()
     # One query for every item that needs an estimate, not one per item.
     needy = {
         o.bill_id

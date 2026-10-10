@@ -427,7 +427,7 @@ def test_every_response_carries_only_the_documented_keys(client, db, api):  # no
     _seed_september(db, hh)
     body = _get(client, headers, "2026-09").json()
     assert set(body) == {
-        "month", "label", "reviewed_at", "reviewed_by", "closed", "days_left", "totals",
+        "month", "label", "reviewed_at", "reviewed_on", "reviewed_by", "reviewed_by_name", "closed", "days_left", "totals",
         "planned", "budgets_over", "bills_changed", "cash", "categories_over", "biggest",
     }  # fmt: skip
     assert set(body["totals"]) == {"in", "out", "net", "previous"}

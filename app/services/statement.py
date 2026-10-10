@@ -10,11 +10,11 @@ import re
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import exists, func
+from sqlalchemy import and_, exists, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.clock import utcnow_naive
+from app.core.clock import local_date, utcnow_naive
 from app.core.money import ZERO, quantize
 from app.models import (
     BillOccurrence,
@@ -31,7 +31,7 @@ from app.models import (
 )
 from app.services.bill_change import assess_item, entry_points_by_item
 from app.services.budgets import monthly_overruns
-from app.services.cash import wallet_summaries
+from app.services.cash import WALLET_KINDS, wallet_summaries
 from app.services.insights import _month_range, in_out_by_month
 from app.services.money import base_amount_expr
 from app.services.planning import list_entries
@@ -43,7 +43,7 @@ BIGGEST_LIMIT = 5
 LIST_LIMIT = 120
 UNLOGGED_MIN = Decimal("0.005")
 
-_MONTH = re.compile(r"^(\d{4})-(\d{2})$")
+_MONTH = re.compile(r"(\d{4})-(\d{2})", re.ASCII)
 
 
 def month_key(year: int, month: int) -> str:
@@ -56,7 +56,7 @@ def month_label(year: int, month: int) -> str:
 
 def parse_month_key(value: str) -> tuple[int, int] | None:
     """``YYYY-MM`` -> (year, month), or None for anything else."""
-    m = _MONTH.match((value or "").strip())
+    m = _MONTH.fullmatch(value or "")
     if not m or not 1 <= int(m.group(2)) <= 12 or not 1970 <= int(m.group(1)) <= 2200:
         return None
     return int(m.group(1)), int(m.group(2))
@@ -92,8 +92,16 @@ def review_state(year: int, month: int, reviewed: bool, today: date) -> tuple[bo
 # ------------------------------------------------------------------- data
 
 
+def cash_data_filter():
+    """Which cash movements count as the household's data: wallet movements
+    only. A stash movement is private to its owner and never shows a number,
+    so it must not make a month appear. One rule for the list, the review row
+    and the notification."""
+    return and_(CashMovement.active(), CashMovement.kind.in_(WALLET_KINDS))
+
+
 def month_has_data(db: Session, household_id: str, year: int, month: int) -> bool:
-    """Any transaction or cash movement dated in the month."""
+    """Any transaction or wallet cash movement dated in the month."""
     start, end = _month_range(year, month)
     in_txn = exists().where(
         Transaction.household_id == household_id,
@@ -103,7 +111,7 @@ def month_has_data(db: Session, household_id: str, year: int, month: int) -> boo
     )
     in_cash = exists().where(
         CashMovement.household_id == household_id,
-        CashMovement.active(),
+        cash_data_filter(),
         CashMovement.movement_date >= start,
         CashMovement.movement_date <= end,
     )
@@ -111,7 +119,7 @@ def month_has_data(db: Session, household_id: str, year: int, month: int) -> boo
 
 
 def first_data_month(db: Session, household_id: str) -> tuple[int, int] | None:
-    """The month of the household's earliest transaction or cash movement."""
+    """The month of the household's earliest transaction or wallet movement."""
     found = [
         d
         for d in (
@@ -119,7 +127,7 @@ def first_data_month(db: Session, household_id: str) -> tuple[int, int] | None:
             .filter(Transaction.household_id == household_id, Transaction.active())
             .scalar(),
             db.query(func.min(CashMovement.movement_date))
-            .filter(CashMovement.household_id == household_id, CashMovement.active())
+            .filter(CashMovement.household_id == household_id, cash_data_filter())
             .scalar(),
         )
         if d is not None
@@ -160,12 +168,48 @@ def mark_reviewed(db: Session, household_id: str, month: str, user_id: str) -> M
         return existing
 
 
+def reviewer_fields(db: Session, review: MonthReview | None, names: dict | None = None) -> dict:
+    """``reviewed_at``, ``reviewed_on`` (the household-local date), ``reviewed_by``
+    and ``reviewed_by_name`` (display name, else username; None when the user is
+    gone) of a review, all None without one."""
+    if review is None:
+        return {
+            "reviewed_at": None,
+            "reviewed_on": None,
+            "reviewed_by": None,
+            "reviewed_by_name": None,
+        }
+    if names is None:
+        names = _names(db, {review.reviewed_by})
+    return {
+        "reviewed_at": review.reviewed_at,
+        "reviewed_on": local_date(review.reviewed_at),
+        "reviewed_by": review.reviewed_by,
+        "reviewed_by_name": names.get(review.reviewed_by),
+    }
+
+
+def _names(db: Session, user_ids: set) -> dict[str, str]:
+    ids = {u for u in user_ids if u}
+    if not ids:
+        return {}
+    return {
+        u.id: u.display_name or u.username for u in db.query(User).filter(User.id.in_(ids)).all()
+    }
+
+
 # -------------------------------------------------------------- sections
 
 
 def _planned(db: Session, household_id: str, year: int, month: int, today: date) -> dict:
     start, end = _month_range(year, month)
-    entries = list_entries(db, household_id, start, end, today=today)
+    # Paused items keep their done entries (those happened, and the totals count
+    # their money); only their still-expected entries go, as in Plan.
+    entries = [
+        e
+        for e in list_entries(db, household_id, start, end, today=today, include_paused=True)
+        if not (e.paused and e.status == "expected")
+    ]
     sides = {}
     for name in (ItemDirection.in_.value, ItemDirection.out.value):
         mine = [e for e in entries if e.direction == name]
@@ -173,7 +217,11 @@ def _planned(db: Session, household_id: str, year: int, month: int, today: date)
             "planned": quantize(
                 sum((e.amount or ZERO for e in mine if e.status != "skipped"), ZERO)
             ),
-            "actual": quantize(sum((e.amount or ZERO for e in mine if e.status == "done"), ZERO)),
+            "actual": quantize(
+                sum(
+                    (e.amount or ZERO for e in mine if e.status == "done" and not e.estimated), ZERO
+                )
+            ),
         }
     open_entries = [
         {
@@ -331,10 +379,9 @@ def build_statement(
     review = get_review(db, household_id, key)
     closed, days_left = review_state(year, month, review is not None, today)
     return {
+        **reviewer_fields(db, review),
         "month": key,
         "label": month_label(year, month),
-        "reviewed_at": review.reviewed_at if review else None,
-        "reviewed_by": review.reviewed_by if review else None,
         "closed": closed,
         "days_left": days_left,
         "totals": {**both[(year, month)], "previous": previous},
@@ -381,20 +428,19 @@ def build_list(db: Session, household_id: str, *, today: date) -> dict:
         span.append((y, m))
         y, m = previous_month(y, m)
     totals = in_out_by_month(db, household_id, date(*span[-1], 1), date(*last, 1))
-    reviews = {
-        r.month: r.reviewed_at for r in db.query(MonthReview).filter_by(household_id=household_id)
-    }
+    reviews = {r.month: r for r in db.query(MonthReview).filter_by(household_id=household_id)}
+    names = _names(db, {r.reviewed_by for r in reviews.values()})
     months = []
     for y, m in span:
         key = month_key(y, m)
-        reviewed_at = reviews.get(key)
-        closed, _left = review_state(y, m, reviewed_at is not None, today)
+        review = reviews.get(key)
+        closed, _left = review_state(y, m, review is not None, today)
         months.append(
             {
                 "month": key,
                 "label": month_label(y, m),
                 **totals[(y, m)],
-                "reviewed_at": reviewed_at,
+                **reviewer_fields(db, review, names),
                 "closed": closed,
             }
         )

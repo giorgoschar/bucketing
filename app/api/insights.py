@@ -21,6 +21,7 @@ from app.services.person import get_person_summary
 from app.services.statement import (
     build_list,
     build_statement,
+    first_data_month,
     is_past,
     mark_reviewed,
     month_key,
@@ -287,13 +288,13 @@ def category_detail(
 # with /categories/{id} or /bills; /statements/{month} is one segment.
 
 
-def _past_month(value: str) -> tuple[int, int]:
+def _past_month(value: str, today: dt.date) -> tuple[int, int]:
     """'YYYY-MM' of a month before the current one: 400 for a bad format, 404
     for the current or a future month (no statement yet)."""
     parsed = parse_month_key(value)
     if parsed is None:
         raise HTTPException(status_code=400, detail="month must be YYYY-MM.")
-    if not is_past(*parsed, local_today()):
+    if not is_past(*parsed, today):
         raise HTTPException(status_code=404, detail="No statement for this month yet.")
     return parsed
 
@@ -310,8 +311,9 @@ def statements(auth=Depends(require_api_auth), db: Session = Depends(get_db)):
 def statement(month: str, auth=Depends(require_api_auth), db: Session = Depends(get_db)):
     """One past month, recalculated now from the services behind each screen."""
     user, hh_id = auth
-    year, mon = _past_month(month)
-    return build_statement(db, hh_id, year, mon, today=local_today(), viewer_id=user.id)
+    today = local_today()
+    year, mon = _past_month(month, today)
+    return build_statement(db, hh_id, year, mon, today=today, viewer_id=user.id)
 
 
 @router.post("/statements/{month}/review", response_model=StatementOut)
@@ -319,7 +321,12 @@ def review_statement(month: str, auth=Depends(require_api_auth), db: Session = D
     """Mark a past month as reviewed for the whole household. Idempotent: the
     first reviewer and time are kept. There is no un-review."""
     user, hh_id = auth
-    year, mon = _past_month(month)
+    today = local_today()
+    year, mon = _past_month(month, today)
+    first = first_data_month(db, hh_id)
+    if first is not None and (year, mon) < first:
+        # Nothing to review before the household's first data.
+        raise HTTPException(status_code=404, detail="No statement for this month.")
     mark_reviewed(db, hh_id, month_key(year, mon), user.id)
     db.commit()
-    return build_statement(db, hh_id, year, mon, today=local_today(), viewer_id=user.id)
+    return build_statement(db, hh_id, year, mon, today=today, viewer_id=user.id)

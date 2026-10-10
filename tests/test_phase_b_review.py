@@ -189,7 +189,10 @@ def test_list_runs_from_the_first_month_with_data_with_zeros_between(client, db,
     assert by["2026-09"]["label"] == "September 2026"
     assert by["2026-09"]["reviewed_at"] is None and by["2026-09"]["closed"] is False
     assert by["2026-06"]["closed"] is True  # past its window
-    assert set(by["2026-09"]) == {"month", "label", "in", "out", "net", "reviewed_at", "closed"}
+    assert set(by["2026-09"]) == {
+        "month", "label", "in", "out", "net", "reviewed_at", "reviewed_on",
+        "reviewed_by", "reviewed_by_name", "closed",
+    }  # fmt: skip
 
 
 def test_list_starts_at_a_cash_movement_too(client, db, api):  # noqa: F811

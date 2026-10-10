@@ -19,7 +19,7 @@ URL = "/api/v1/settings/notifications"
 
 def test_catalog_covers_every_type_but_general():
     assert {a.type for a in ALERT_TYPES} == {t.value for t in NotificationType} - {"general"}
-    assert len(ALERT_TYPES) == 9
+    assert len(ALERT_TYPES) == 10
 
 
 def test_get_lists_types_on_by_default_and_counts_devices(client, db, api):  # noqa: F811
@@ -38,7 +38,13 @@ def test_get_lists_types_on_by_default_and_counts_devices(client, db, api):  # n
     assert body["push_devices"] == 1
     assert [t["type"] for t in body["types"]][:3] == ["bill_due", "bill_overdue", "bill_auto_paid"]
     assert all(t["enabled"] for t in body["types"])
-    assert {t["group"] for t in body["types"]} == {"Bills", "Budgets", "Pantry", "Apple Pay"}
+    assert {t["group"] for t in body["types"]} == {
+        "Bills",
+        "Budgets",
+        "Pantry",
+        "Apple Pay",
+        "Insights",
+    }
 
 
 def test_put_replaces_the_set_and_mutes_creation(client, db, api):  # noqa: F811

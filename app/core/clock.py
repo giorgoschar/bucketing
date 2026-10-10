@@ -37,3 +37,8 @@ def utcnow_naive() -> datetime:
 def local_today() -> date:
     """Today's date on the household's calendar (APP_TIMEZONE)."""
     return utcnow().astimezone(tz()).date()
+
+
+def local_date(moment: datetime) -> date:
+    """The household-calendar date of a naive-UTC stored timestamp."""
+    return moment.replace(tzinfo=UTC).astimezone(tz()).date()

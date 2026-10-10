@@ -417,6 +417,7 @@ def _notify_month_review(db, today: date) -> None:
         CashMovement,
         Household,
         MonthReview,
+        Notification,
         NotificationType,
         Transaction,
     )
@@ -424,6 +425,7 @@ def _notify_month_review(db, today: date) -> None:
     from app.services.insights import _month_range, in_out_by_month
     from app.services.statement import (
         REVIEW_DAYS,
+        cash_data_filter,
         month_key,
         month_label,
         previous_month,
@@ -448,14 +450,24 @@ def _notify_month_review(db, today: date) -> None:
         hh
         for (hh,) in db.query(CashMovement.household_id)
         .filter(
-            CashMovement.active(),
+            cash_data_filter(),
             CashMovement.movement_date >= start,
             CashMovement.movement_date <= end,
         )
         .distinct()
     }
     reviewed = {hh for (hh,) in db.query(MonthReview.household_id).filter(MonthReview.month == key)}
-    wanted = sorted(with_data - reviewed)
+    # Households already told about this month are not worked out again.
+    notified = {
+        hh
+        for (hh,) in db.query(Notification.household_id)
+        .filter(
+            Notification.type == NotificationType.month_review,
+            Notification.dedupe_key.like(f"month_review:%:{key}"),
+        )
+        .distinct()
+    }
+    wanted = sorted(with_data - reviewed - notified)
     if not wanted:
         return
     households = {
