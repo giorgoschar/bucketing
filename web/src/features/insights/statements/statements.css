@@ -59,6 +59,8 @@
   color: inherit; text-decoration: none; text-align: left; font: inherit; background: none; border: 0;
 }
 .stmtitem--btn, .stmtitem--link { cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.stmtopen__err { color: var(--warn); font-weight: 600; }
+.stmtitem--btn:disabled { opacity: .6; cursor: progress; }
 .stmtitem--btn:focus-visible, .stmtitem--link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
 .stmtitem__main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .stmtitem__name { font-weight: 600; font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -132,8 +132,16 @@ function Totals({ s }: { s: StatementOut }) {
 
 function Planned({ s }: { s: StatementOut }) {
   const [picked, setPicked] = useState<{ id: string; date: string } | null>(null)
-  const day = useEntriesOn(picked?.date ?? null).data
-  const entry = picked ? day?.find((e) => e.id === picked.id) ?? null : null
+  const day = useEntriesOn(picked?.date ?? null)
+  const entry = picked ? day.data?.find((e) => e.id === picked.id) ?? null : null
+  // Nothing will arrive: the read failed or we are offline without a saved copy, or the day came back without the
+  // entry (an item since paused or archived is not listed). The row stays usable and says so.
+  const broken = picked !== null && entry === null && (day.noData || day.data !== undefined)
+  const tap = (id: string, date: string) => {
+    if (picked?.id === id) day.refetch()
+    else setPicked({ id, date })
+  }
+  const loading = (id: string) => picked?.id === id && entry === null && !broken
   const row = (label: string, p: PlannedSide) => (
     <tr>
       <th scope="row">{label}</th>
@@ -161,7 +169,8 @@ function Planned({ s }: { s: StatementOut }) {
           <ul className="stmtlist">
             {open.map((o) => (
               <li key={o.entry_id}>
-                <button type="button" className="stmtitem stmtitem--btn" onClick={() => setPicked({ id: o.entry_id, date: o.due_date })}>
+                <button type="button" className="stmtitem stmtitem--btn" disabled={loading(o.entry_id)} aria-busy={loading(o.entry_id) || undefined}
+                  onClick={() => tap(o.entry_id, o.due_date)}>
                   <span className="stmtitem__main">
                     <span className="stmtitem__name">{o.name}</span>
                     <span className="stmtitem__sub">{formatShortDate(o.due_date)}</span>
@@ -171,6 +180,7 @@ function Planned({ s }: { s: StatementOut }) {
               </li>
             ))}
           </ul>
+          {broken && <p className="insights__note stmtopen__err" role="alert">Couldn’t open this entry.</p>}
         </>
       )}
       <EntrySheet entry={entry} onClose={() => setPicked(null)} />
