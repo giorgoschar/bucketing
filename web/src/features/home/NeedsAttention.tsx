@@ -9,7 +9,6 @@ import { ListRow } from '../../ui/ListRow'
 import { Money } from '../../ui/Money'
 import { EntrySheet, type EntryIntent } from '../plan/EntrySheet'
 import { changeTitle } from '../insights/bills/format'
-import { daysLeftText } from '../insights/statements/sentences'
 import type { AttentionItem } from './attention'
 import { dismissBill } from './billDismiss'
 import { useAttention, useMatchActions } from './hooks'
@@ -52,7 +51,6 @@ function AttentionRow({ item, onOpen }: { item: AttentionItem; onOpen: (e: Entry
           <span className="ui-ico ui-ico--acc" aria-hidden="true"><ClockIcon /></span>
           <div className="home-attn__text">
             <div className="ui-row__title home-attn__wrapnum">Review {formatMonthName(Number(review.month.slice(5, 7)))}</div>
-            <div className="home-attn__sub">{daysLeftText(review.days_left)}</div>
           </div>
           <button type="button" className="btn btn--sm btn--primary" onClick={() => navigate(`/insights/statements/${encodeURIComponent(review.month)}`)}>Review</button>
         </div>

@@ -9,6 +9,7 @@ const MINUS = '−'
 
 /** "€1,310" for a whole amount, "€84.50" otherwise: the alert money format. */
 export function short(n: number): string {
+  if (!Number.isFinite(n)) return '—'
   const abs = Math.abs(n)
   const rounded = Math.round(abs * 100) / 100
   const body = Number.isInteger(rounded) ? group.format(rounded) : cents.format(rounded)
@@ -28,7 +29,7 @@ export function monthTitle(month: string): string {
   return MONTH_RE.test(month) ? `${monthName(month)} ${month.slice(0, 4)}` : 'Statement'
 }
 
-/** "2 October": a date's day and month name, from the first ten characters of an ISO date or datetime. */
+/** "2 October": a YYYY-MM-DD date's day and month name. */
 export function dayAndMonth(iso: string): string {
   return `${Number(iso.slice(8, 10))} ${monthName(iso.slice(0, 7))}`
 }
@@ -47,10 +48,10 @@ export const LIVE_NOTE = 'Numbers are live: they change if you edit an entry fro
 export type ReviewedBy = { kind: 'you' } | { kind: 'name'; name: string } | { kind: 'none' }
 
 /** The one line under the title (spec §4.2). */
-export function stateLine(s: Pick<StatementOut, 'month' | 'reviewed_at' | 'closed' | 'days_left'>, by: ReviewedBy = { kind: 'none' }): string {
-  if (s.reviewed_at) {
+export function stateLine(s: Pick<StatementOut, 'month' | 'reviewed_on' | 'closed' | 'days_left'>, by: ReviewedBy = { kind: 'none' }): string {
+  if (s.reviewed_on) {
     const who = by.kind === 'you' ? ' by you' : by.kind === 'name' ? ` by ${by.name}` : ''
-    return `Reviewed on ${dayAndMonth(s.reviewed_at)}${who}`
+    return `Reviewed on ${dayAndMonth(s.reviewed_on)}${who}`
   }
   if (s.closed) return 'Closed automatically'
   const left = s.days_left === null ? '' : ` · ${daysLeftText(s.days_left)}`
@@ -72,7 +73,7 @@ export const overText = (over: number): string => `${short(over)} over`
 export const ofBudget = (spent: number, budget: number): string => `${short(spent)} of ${short(budget)}`
 
 /** "usually €240". */
-export const usuallyText = (usual: number): string => `usually ${short(usual)}`
+export const usuallyText = (usual: number | null): string | null => (usual === null ? null : `usually ${short(usual)}`)
 
 /** "Marks September as reviewed for the whole household." */
 export const doneNote = (month: string): string => `Marks ${monthName(month)} as reviewed for the whole household.`

@@ -55,6 +55,20 @@ it('no row and no error when the list is not cached and cannot load', async () =
   expect(screen.queryByText(/Review|Couldn/)).toBeNull()
 })
 
+it('the saved review is not shown once the device date is past day 5 of the next month (offline)', () => {
+  const at = (today: string) => buildAttention({ today, failed: [], review }).map((i) => i.kind)
+  expect(at('2026-10-05')).toEqual(['monthReview'])
+  expect(at('2026-10-06')).toEqual([])
+  expect(at('2026-11-02')).toEqual([])
+})
+
+it('the row names the month and no longer carries a days-left line', async () => {
+  fakeApi(routes(statementList({ review, months: [listMonth()] })))
+  renderWithProviders(<NeedsAttention />)
+  await waitFor(() => expect(kinds()[0]).toBe('monthReview'))
+  expect(document.querySelector('[data-attn="monthReview"]')).not.toHaveTextContent('days left')
+})
+
 it('does not hold back "All clear" while the list loads', async () => {
   fakeApi(routes(null, {
     'GET /api/v1/plan/upcoming': () => [], ...billsRoutes([]),

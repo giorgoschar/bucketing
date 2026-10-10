@@ -5,7 +5,6 @@ import { QueryView } from '../../../ui/QueryView'
 import { eur, signedEur } from '../format'
 import { useStatements } from './hooks'
 import { OfflineNote } from './OfflineNote'
-import { daysLeftText } from './sentences'
 import type { StatementListMonth, StatementReview } from './types'
 import '../insights.css'
 import './statements.css'
@@ -46,10 +45,7 @@ function MonthRow({ m, review }: { m: StatementListMonth; review: StatementRevie
       <span className="stmtrow__head">
         <span className="stmtrow__name">{m.label}</span>
         {review && (
-          <span className="stmtrow__review">
-            <span className="stmtrow__cta">Review</span>
-            <span className="stmtrow__left">{daysLeftText(review.days_left)}</span>
-          </span>
+          <span className="stmtrow__review"><span className="stmtrow__cta">Review</span></span>
         )}
         {mark && <span className={`stmtrow__mark${m.reviewed_at ? ' stmtrow__mark--done' : ''}`}>{mark}</span>}
       </span>

@@ -60,7 +60,10 @@ export function buildAttention(i: AttentionInput): AttentionItem[] {
     .filter((e) => e.status === 'expected' && (e.estimated || e.amount === null) && e.due_date <= horizon)
   return [
     // The one row about the past month; it expires by itself (the server stops sending `review` after day 5).
-    ...(i.review ? [{ kind: 'monthReview', key: `review:${i.review.month}`, review: i.review } satisfies AttentionItem] : []),
+    // Saved while the window was open and read after it closed (offline): the server would send null by now.
+    ...(i.review && i.today <= `${shiftMonth(i.review.month, 1)}-05`
+      ? [{ kind: 'monthReview', key: `review:${i.review.month}`, review: i.review } satisfies AttentionItem]
+      : []),
     ...(i.matches ?? []).map((match): AttentionItem => ({ kind: 'match', key: `match:${match.id}`, match })),
     ...overdue.map((entry): AttentionItem => ({ kind: 'overdue', key: `overdue:${entry.id}`, entry })),
     ...missing.map((entry): AttentionItem => ({ kind: 'missingAmount', key: `amount:${entry.id}`, entry })),

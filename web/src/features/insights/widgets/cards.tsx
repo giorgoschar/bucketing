@@ -247,7 +247,6 @@ export function StatementsCard() {
           {recent.map((m) => (
             <Link key={m.month} className="stmtcard__row" to={`/insights/statements/${encodeURIComponent(m.month)}`}>
               <span className="stmtcard__name">{m.label}</span>
-              {list.review?.month === m.month && <span className="stmtrow__cta">Review</span>}
               <span className="ui-num stmtcard__net">{signedEur(m.net)}</span>
             </Link>
           ))}

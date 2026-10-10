@@ -3,7 +3,7 @@ import {
   comparison, dayAndMonth, daysLeftText, doneNote, monthBounds, monthTitle, ofBudget, overText, reviewDeadline, short, stateLine, usuallyText,
 } from './sentences'
 
-const base = { month: '2026-09', reviewed_at: null, closed: false, days_left: 3 }
+const base = { month: '2026-09', reviewed_on: null, closed: false, days_left: 3 }
 
 describe('stateLine', () => {
   it('in the review window and not reviewed: the deadline and the days left', () => {
@@ -14,7 +14,7 @@ describe('stateLine', () => {
     expect(stateLine({ ...base, month: '2026-12', days_left: 3 })).toBe('Review by 5 January · 3 days left')
   })
   it('reviewed: the date, and by you, by a name, or by nobody', () => {
-    const r = { ...base, reviewed_at: '2026-10-02T09:30:00', closed: true, days_left: null }
+    const r = { ...base, reviewed_on: '2026-10-02', closed: true, days_left: null }
     expect(stateLine(r, { kind: 'you' })).toBe('Reviewed on 2 October by you')
     expect(stateLine(r, { kind: 'name', name: 'Giorgos' })).toBe('Reviewed on 2 October by Giorgos')
     expect(stateLine(r, { kind: 'none' })).toBe('Reviewed on 2 October')
@@ -24,7 +24,7 @@ describe('stateLine', () => {
     expect(stateLine({ ...base, closed: true, days_left: null })).toBe('Closed automatically')
   })
   it('reviewed wins over closed', () => {
-    expect(stateLine({ ...base, reviewed_at: '2026-10-07T00:00:00', closed: true, days_left: null })).toBe('Reviewed on 7 October')
+    expect(stateLine({ ...base, reviewed_on: '2026-10-07', closed: true, days_left: null })).toBe('Reviewed on 7 October')
   })
 })
 
@@ -69,6 +69,6 @@ it('names the month', () => {
   expect(monthTitle('2026-09')).toBe('September 2026')
   expect(monthTitle('nope')).toBe('Statement')
   expect(reviewDeadline('2026-09')).toBe('5 October')
-  expect(dayAndMonth('2026-10-02T09:30:00')).toBe('2 October')
+  expect(dayAndMonth('2026-10-02')).toBe('2 October')
   expect(monthBounds('2026-02')).toEqual({ from: '2026-02-01', to: '2026-02-28' })
 })

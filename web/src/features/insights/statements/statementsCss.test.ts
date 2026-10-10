@@ -20,7 +20,7 @@ it('sections 3 to 7 flow down two columns with inline-block cells; the wide ones
   expect(cell).toMatch(/display:\s*inline-block/)
   expect(cell).toMatch(/break-inside:\s*avoid/)
   expect(cell).toMatch(/vertical-align:\s*top/)
-  expect(/\.stmtpage > \.stmtcell--wide\s*\{([^}]*)\}/.exec(desktop)?.[1]).toMatch(/column-span:\s*all/)
+  expect(/\.stmtpage > \.stmtcell--wide, \.stmtpage > :not\(\.stmtcell\)\s*\{([^}]*)\}/.exec(desktop)?.[1]).toMatch(/column-span:\s*all/)
   expect(desktop).not.toMatch(/grid-column/)
 })
 

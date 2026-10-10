@@ -13,7 +13,7 @@ afterEach(resetTestEnv)
 
 const months = [
   listMonth(),
-  listMonth({ month: '2026-08', label: 'August 2026', in: 3000, out: 3200, net: -200, reviewed_at: '2026-09-03T09:00:00', closed: true }),
+  listMonth({ month: '2026-08', label: 'August 2026', in: 3000, out: 3200, net: -200, reviewed_at: '2026-09-03T09:00:00', reviewed_on: '2026-09-03', closed: true }),
   listMonth({ month: '2026-07', label: 'July 2026', in: 0, out: 0, net: 0, closed: true }),
 ]
 
@@ -51,7 +51,7 @@ it('the month in review is the first row, with "Review" and the days left', asyn
   const rows = screen.getAllByRole('link', { name: /20\d\d/ })
   expect(rows[0]).toHaveTextContent('September 2026')
   expect(within(rows[0]).getByText('Review')).toBeInTheDocument()
-  expect(rows[0]).toHaveTextContent('3 days left')
+  expect(rows[0]).not.toHaveTextContent('days left')
   expect(within(rows[0]).queryByText('Open for review')).toBeNull()
 })
 
@@ -63,7 +63,6 @@ it('the review month is moved to the top if the list does not have it first', as
   expect(rows.map((r) => r.getAttribute('href'))).toEqual([
     '/insights/statements/2026-08', '/insights/statements/2026-09', '/insights/statements/2026-07',
   ])
-  expect(rows[0]).toHaveTextContent('1 day left')
 })
 
 it('empty: "No past months yet."', async () => {

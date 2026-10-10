@@ -11,7 +11,6 @@
 .stmtrow__name { font-weight: 650; font-size: 15px; }
 .stmtrow__review { display: inline-flex; align-items: baseline; gap: 8px; }
 .stmtrow__cta { font-size: 13px; font-weight: 700; color: var(--accent); }
-.stmtrow__left { font-size: 12.5px; color: var(--warn); font-weight: 600; }
 .stmtrow__mark { font-size: 12.5px; font-weight: 600; color: var(--muted); }
 .stmtrow__mark--done { color: var(--pos); }
 .stmtrow__trio { margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
@@ -81,7 +80,7 @@
      cells, because block + break-inside: avoid leaves holes before a spanning cell in Chrome. */
   .insights.stmtpage { display: block; columns: 2; column-gap: 16px; }
   .stmtpage > .stmtcell { display: inline-block; width: 100%; vertical-align: top; box-sizing: border-box; break-inside: avoid; margin: 0 0 16px; min-width: 0; }
-  .stmtpage > .stmtcell--wide { display: block; width: auto; column-span: all; }
+  .stmtpage > .stmtcell--wide, .stmtpage > :not(.stmtcell) { display: block; width: auto; column-span: all; }
   .stmtitem--btn:hover, .stmtitem--link:hover { background: var(--surface-2); }
   .stmt .stmtrow:hover { background: var(--surface-2); }
 }

@@ -1,6 +1,6 @@
 import { type ReactNode, useId, useState } from 'react'
 import { Link, useParams } from 'react-router'
-import { useHousehold } from '../../../data/reads'
+import { memberName, useHousehold } from '../../../data/reads'
 import { useOnline } from '../../../data/online'
 import { useSession } from '../../../session/SessionProvider'
 import { BackHeader } from '../../../ui/BackHeader'
@@ -11,13 +11,14 @@ import { formatShortDate } from '../../../ui/format'
 import { changeBody, changeLabel, changeTitle } from '../bills/format'
 import { EntrySheet } from '../../plan/EntrySheet'
 import { eur, signedEur } from '../format'
-import { isPastMonth, useEntriesOn, useMarkReviewed, useStatement } from './hooks'
+import { isMonth, useEntriesOn, useMarkReviewed, useStatement } from './hooks'
 import { OfflineNote } from './OfflineNote'
 import {
   comparison, doneNote, LIVE_NOTE, monthBounds, monthTitle, ofBudget, overText, short, stateLine, usuallyText, type ReviewedBy,
 } from './sentences'
 import type { PlannedSide, StatementOut } from './types'
 import '../insights.css'
+import '../bills/bills.css'
 import './statements.css'
 
 /** The route element: /insights/statements/:month. */
@@ -28,9 +29,9 @@ export function Statement() {
 
 /** One past month, live (spec §4.2). The month in review and every older one are the same page. */
 export function StatementView({ month }: { month: string }) {
-  const valid = isPastMonth(month)
   const result = useStatement(month)
-  if (!valid) {
+  // A malformed month is never asked for; a month the server refuses (400, 404) comes back as null.
+  if (!isMonth(month) || result.data === null) {
     return (
       <>
         <BackHeader title="Statement" back="/insights/statements" />
@@ -48,7 +49,7 @@ export function StatementView({ month }: { month: string }) {
           {(s) => (
             <>
               {result.stale && <Cell wide><OfflineNote /></Cell>}
-              <Body s={s} />
+              {s && <Body s={s} />}
             </>
           )}
         </QueryView>
@@ -74,16 +75,20 @@ function Sec({ title, wide = false, children }: { title: string; wide?: boolean;
   )
 }
 
+/** A sentence with its amounts in `ui-num`, so they keep their figures and the sentence still wraps (§5). */
+function Nums({ text }: { text: string }) {
+  return <>{text.split(/([−-]?€[\d,]+(?:\.\d{2})?)/).map((part, i) => (i % 2 ? <span key={i} className="ui-num stmtnum">{part}</span> : part))}</>
+}
+
 const Quiet = ({ children }: { children: string }) => <p className="insights__note">{children}</p>
 
 function Body({ s }: { s: StatementOut }) {
   const { me } = useSession()
   const members = useHousehold().data?.members
   const who = members?.find((m) => m.user_id === s.reviewed_by)
-  const by: ReviewedBy = !s.reviewed_by ? { kind: 'none' }
-    : s.reviewed_by === me?.id ? { kind: 'you' }
-    : who ? { kind: 'name', name: (who.display_name || who.username || '').split(' ')[0] }
-    : { kind: 'none' }
+  // "by you" from the id; otherwise the household's name for them, then the server's (a member who has left).
+  const name = who ? memberName(who) : s.reviewed_by_name
+  const by: ReviewedBy = s.reviewed_by && s.reviewed_by === me?.id ? { kind: 'you' } : name ? { kind: 'name', name } : { kind: 'none' }
   return (
     <>
       <Cell wide>
@@ -111,7 +116,7 @@ function Totals({ s }: { s: StatementOut }) {
     <div className="stmttile">
       <dt>{label}</dt>
       <dd className="ui-num stmttile__value">{value}</dd>
-      {prev && before !== undefined && <dd className="stmttile__cmp">{comparison(cur, before, prev.month)}</dd>}
+      {prev && before !== undefined && <dd className="stmttile__cmp"><Nums text={comparison(cur, before, prev.month)} /></dd>}
     </div>
   )
   return (
@@ -159,7 +164,7 @@ function Planned({ s }: { s: StatementOut }) {
                 <button type="button" className="stmtitem stmtitem--btn" onClick={() => setPicked({ id: o.entry_id, date: o.due_date })}>
                   <span className="stmtitem__main">
                     <span className="stmtitem__name">{o.name}</span>
-                    <span className="stmtitem__sub">{formatShortDate(o.due_date)}{o.direction === 'in' ? ' · Income' : ''}</span>
+                    <span className="stmtitem__sub">{formatShortDate(o.due_date)}</span>
                   </span>
                   <Money amount={o.amount} estimated={o.estimated} nullText="No amount" className="stmtitem__amount" />
                 </button>
@@ -182,9 +187,9 @@ function Budgets({ s }: { s: StatementOut }) {
             <li key={b.bucket_id} className="stmtitem">
               <span className="stmtitem__main">
                 <span className="stmtitem__name">{b.name}</span>
-                <span className="stmtitem__sub">{ofBudget(b.spent, b.budget)}</span>
+                <span className="stmtitem__sub"><Nums text={ofBudget(b.spent, b.budget)} /></span>
               </span>
-              <span className="stmtitem__flag">{overText(b.over)}</span>
+              <span className="stmtitem__flag"><Nums text={overText(b.over)} /></span>
             </li>
           ))}
         </ul>
@@ -204,8 +209,8 @@ function Bills({ s }: { s: StatementOut }) {
               <li key={b.entry_id}>
                 <Link className="stmtitem stmtitem--link" to={`/insights/bills/${encodeURIComponent(b.item_id)}`}>
                   <span className="stmtitem__main">
-                    <span className="stmtitem__name stmtitem__name--wrap">{changeTitle(b.name, c)}</span>
-                    <span className="stmtitem__sub">{formatShortDate(b.due_date)} · {changeBody(c, null)}</span>
+                    <span className="stmtitem__name stmtitem__name--wrap"><Nums text={changeTitle(b.name, c)} /></span>
+                    <span className="stmtitem__sub">{formatShortDate(b.due_date)} · <Nums text={changeBody(c, null)} /></span>
                     <span className={`billrow__change billrow__change--${b.direction}`}>{changeLabel(c)}</span>
                   </span>
                 </Link>
@@ -227,10 +232,9 @@ function Cash({ s, meId }: { s: StatementOut; meId: string | undefined }) {
             <li key={c.member_id} className="stmtitem">
               <span className="stmtitem__main">
                 <span className="stmtitem__name">{c.name}</span>
-                <span className="stmtitem__sub">not logged yet</span>
               </span>
               <span className="ui-num stmtitem__amount">{short(c.not_yet_logged)}</span>
-              {c.member_id === meId && (
+              {c.member_id === meId && Number.isFinite(c.not_yet_logged) && (
                 <Link className="btn btn--sm btn--primary" to={`/new?mode=cash&take=none&amount=${c.not_yet_logged.toFixed(2)}`}>Log it</Link>
               )}
             </li>
@@ -253,7 +257,7 @@ function Categories({ s }: { s: StatementOut }) {
                 <span className="stmtitem__icon" aria-hidden="true">{c.icon}</span>
                 <span className="stmtitem__main">
                   <span className="stmtitem__name">{c.name}</span>
-                  <span className="stmtitem__sub">{usuallyText(c.usual)}</span>
+                  {usuallyText(c.usual) && <span className="stmtitem__sub"><Nums text={usuallyText(c.usual) ?? ''} /></span>}
                 </span>
                 <span className="ui-num stmtitem__amount">{short(c.amount)}</span>
               </>

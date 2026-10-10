@@ -39,16 +39,19 @@ export interface BillChanged {
 
 export interface CashLeft { member_id: string; name: string; not_yet_logged: number }
 
-export interface CategoryOver { category_id: string | null; name: string; icon: string; amount: number; usual: number }
+export interface CategoryOver { category_id: string | null; name: string; icon: string; amount: number; usual: number | null }
 
 export interface BiggestExpense { transaction_id: string; date: string; label: string; category: string | null; amount: number }
 
-/** GET /api/v1/insights/statements/{month} and POST .../review (§3.2, §3.4). `reviewed_by` is a user id. */
+/** GET /api/v1/insights/statements/{month} and POST .../review (§3.2, §3.4). `reviewed_at` is naive UTC and is not
+ *  shown; `reviewed_on` is the household-local date (YYYY-MM-DD). `reviewed_by` is a user id (= me.id, members[].user_id). */
 export interface StatementOut {
   month: string
   label: string
   reviewed_at: string | null
+  reviewed_on: string | null
   reviewed_by: string | null
+  reviewed_by_name: string | null
   closed: boolean
   days_left: number | null
   totals: StatementTotals
@@ -69,6 +72,9 @@ export interface StatementListMonth {
   out: number
   net: number
   reviewed_at: string | null
+  reviewed_on: string | null
+  reviewed_by: string | null
+  reviewed_by_name: string | null
   closed: boolean
 }
 
