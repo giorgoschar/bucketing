@@ -73,6 +73,7 @@ async function setup(url: string, { desktop = true, routes = {}, defaults = DEFA
         children: [
           { index: true, element: <Screen name="home" /> },
           { path: 'activity', element: <Screen name="activity" /> },
+          { path: 'insights', element: <Screen name="insights" /> },
         ],
       },
       { element: <FullScreenShell />, children: [{ path: '/new', element: full(<Compose />) }, { path: '/edit/:id', element: full(<Compose />) }] },
@@ -295,4 +296,27 @@ it('a cold /new on a desktop opens the panel over Home', async () => {
   await setup('/new?amount=3')
   await waitFor(() => expect(amount()).toHaveValue('3'))
   expect(where()).toBe('/?add=1&amount=3')
+})
+
+// Review fix 2: Insights already uses ?from= for the start of a custom period.
+it('Add opens a form on a screen that has its own from= and closing keeps its period', async () => {
+  const user = userEvent.setup()
+  const period = '/insights?p=custom&from=2026-01-01&to=2026-03-31'
+  await setup(`${period}&add=1`)
+  await waitFor(() => expect(amount()).toHaveValue(''))
+  await user.keyboard('{Escape}')
+  await waitFor(() => expect(screen.queryByRole('complementary', { name: /entry$/ })).toBeNull())
+  expect(where()).toBe(period)
+})
+
+it('a /new?from=<id> link (copy as new) opens the panel as copy=<id>, and the phone keeps from=', async () => {
+  const { router } = await setup('/activity')
+  await screen.findByText('activity screen')
+  await act(() => router.navigate('/new?from=t9'))
+  await waitFor(() => expect(amount()).toHaveValue('64.20'))
+  expect(where()).toBe('/activity?add=1&copy=t9')
+  cleanup()
+  await setup('/activity?add=1&copy=t9', { desktop: false })
+  expect(await screen.findByText('Amount 64.20 euro')).toBeInTheDocument()
+  expect(where()).toBe('/new?from=t9')
 })

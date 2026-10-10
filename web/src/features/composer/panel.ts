@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react'
 
-/** What the Add side panel (shell/AddPanel.tsx) tells the composer it is mounted in. Absent on the phone, where
+/** What the Add side panel (shell/AddSidePanel.tsx) tells the composer it is mounted in. Absent on the phone, where
  *  the composer is a full screen. The composer is the same component either way (Phase A spec §4.5). */
 export interface PanelHost {
   /** Close the panel: the screen behind stays. Replaces "go back" for ✕, Esc and after an edit saves. */

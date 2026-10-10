@@ -2,11 +2,12 @@ import { useSearchParams } from 'react-router'
 
 /**
  * Add as a side panel (Phase A spec §4.5). On desktop the composer is not a route: it is the screen you are on
- * plus `?add=1` or `?edit=<id>` (and the composer's own `mode`, `take`, `amount`, `from`). On the phone the same
+ * plus `?add=1` or `?edit=<id>` (and the composer's own `mode`, `take`, `amount`, `copy`). On the phone the same
  * addresses mean the full-screen /new and /edit/:id routes, and these helpers translate both ways.
  */
 const PANEL_KEYS = ['add', 'edit'] as const
-const COMPOSER_KEYS = ['mode', 'take', 'amount', 'from'] as const
+// `copy` is the panel's name for /new?from=<id>: Insights already owns ?from= (a custom period's start).
+const COMPOSER_KEYS = ['mode', 'take', 'amount', 'copy'] as const
 const OWN_KEYS = [...PANEL_KEYS, ...COMPOSER_KEYS]
 /** Every query parameter the panel and the composer own; closing the panel removes them. */
 export const OWN_PANEL_KEYS: readonly string[] = OWN_KEYS
@@ -41,7 +42,7 @@ export function panelAddress(pathname: string, search: string): string {
   const edit = /^\/edit\/([^/]+)/.exec(pathname)
   if (edit) out.set('edit', decodeURIComponent(edit[1]))
   else out.set('add', '1')
-  new URLSearchParams(search).forEach((v, k) => out.set(k, v))
+  new URLSearchParams(search).forEach((v, k) => out.set(k === 'from' ? 'copy' : k, v))
   return `${path}?${out.toString()}`
 }
 
@@ -56,7 +57,7 @@ export function fullScreenAddress(params: URLSearchParams): string | null {
   const q = new URLSearchParams()
   for (const k of COMPOSER_KEYS) {
     const v = rest.get(k)
-    if (v !== null) q.set(k, v)
+    if (v !== null) q.set(k === 'copy' ? 'from' : k, v)
   }
   const tail = q.toString() ? `?${q.toString()}` : ''
   return panel.kind === 'edit' ? `/edit/${encodeURIComponent(panel.id)}${tail}` : `/new${tail}`

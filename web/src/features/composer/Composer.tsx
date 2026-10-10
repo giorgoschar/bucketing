@@ -20,7 +20,8 @@ export function Composer() {
   // In the side panel the entry is `?edit=<id>`; the router's :id belongs to the screen behind it.
   const panel = usePanel()
   const id = panel ? panel.editId : route.id
-  const from = params.get('from')
+  // The panel lives on another screen's address, where ?from= can mean something else (Insights' period).
+  const from = panel ? params.get('copy') : params.get('from')
   if (!data.ready || !defaults) return <ComposerSkeleton />
   const dk = draftKey(id, id ? null : from)
   // Keyed by id: moving from one entry to another starts that entry's form afresh.
