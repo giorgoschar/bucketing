@@ -25,6 +25,7 @@ ALERT_TYPES: tuple[AlertType, ...] = (
     AlertType(NotificationType.budget_warning.value, "Budgets", "Budget limit reached"),
     AlertType(NotificationType.stock_low.value, "Pantry", "Running low"),
     AlertType(NotificationType.price_drop.value, "Pantry", "Price drops"),
+    AlertType(NotificationType.month_review.value, "Insights", "Month ready to review"),
     AlertType(NotificationType.ingest_created.value, "Apple Pay", "Each new purchase"),
 )
 MUTABLE = frozenset(a.type for a in ALERT_TYPES)
