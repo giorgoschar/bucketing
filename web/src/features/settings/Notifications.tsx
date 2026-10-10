@@ -7,7 +7,13 @@ import { useNotificationPrefs } from './hooks'
 import { disabledAfter, useNotificationActions } from './notificationHooks'
 import './settings.css'
 
-const GROUPS = ['Bills', 'Budgets', 'Pantry', 'Insights', 'Apple Pay']
+/** The groups the screen knows, in the order it shows them. Any other group the server sends follows them. */
+const KNOWN_GROUPS = ['Bills', 'Budgets', 'Pantry', 'Insights', 'Apple Pay']
+
+function groupsOf(present: string[]): string[] {
+  const known = KNOWN_GROUPS.filter((g) => present.includes(g))
+  return [...known, ...Array.from(new Set(present.filter((g) => !KNOWN_GROUPS.includes(g))))]
+}
 
 export function Notifications() {
   const { state, refresh } = usePushState()
@@ -52,7 +58,7 @@ export function Notifications() {
           )}
         </section>
 
-        {prefs && GROUPS.map((group) => {
+        {prefs && groupsOf(prefs.types.map((t) => t.group)).map((group) => {
           const types = prefs.types.filter((t) => t.group === group)
           if (!types.length) return null
           const id = `alerts-${group.replace(/\s+/g, '-').toLowerCase()}`

@@ -445,7 +445,8 @@ it('saving a copy keeps the panel open with Saved, Undo and the date kept', asyn
   expect(within(panel()).getByRole('button', { name: /^Date: Yesterday/ })).toBeInTheDocument()
   expect(amount()).toBe(field) // the same form, reset, not a new one
   expect(amount()).toHaveValue('')
-  expect(where()).toBe('/activity?add=1')
+  // The address follows in a lower-priority transition: wait for it, as the cash-link test does.
+  await waitFor(() => expect(where()).toBe('/activity?add=1'))
 })
 
 // Re-review R2: Undo says what happened.
