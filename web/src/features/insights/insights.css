@@ -111,7 +111,10 @@
   .insights__bar--wide .insights__lens { flex: none; margin-top: 0; }
   .insights__bar--wide .insights__lens .ui-seg__opt { flex: none; min-height: 36px; padding-inline: 14px; }
   .insights.shell__main--wide { display: block; columns: 2; column-gap: 16px; padding-inline: 24px; }
-  .insights.shell__main--wide > * { break-inside: avoid; margin: 0 0 16px; min-width: 0; }
+  /* inline-block, not block: Chrome stretches a balanced column group far past its content when blocks
+     carry break-inside: avoid (a 300 px hole before the next wide card); inline-blocks balance exactly.
+     vertical-align: top keeps the line's strut from adding space under a card. */
+  .insights.shell__main--wide > :not(:empty) { display: inline-block; width: 100%; vertical-align: top; box-sizing: border-box; break-inside: avoid; margin: 0 0 16px; min-width: 0; }
   .insights.shell__main--wide > [data-widget='headline'],
   .insights.shell__main--wide > [data-widget='identity'],
   .insights.shell__main--wide > [data-widget='share'],
@@ -119,5 +122,5 @@
   .insights.shell__main--wide > [data-widget='billsPanel'],
   .insights.shell__main--wide > [data-widget='monthsTable'],
   .insights.shell__main--wide > [data-widget='categoriesTable'],
-  .insights.shell__main--wide > :not([data-widget]) { column-span: all; }
+  .insights.shell__main--wide > :not([data-widget]) { display: block; width: auto; column-span: all; }
 }

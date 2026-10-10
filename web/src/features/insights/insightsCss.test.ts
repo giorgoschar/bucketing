@@ -17,7 +17,11 @@ it('card footnotes that carry .ui-num still wrap', () => {
 it('the desktop dashboard flows cards down two columns, with wide cards across', () => {
   const desktop = css.slice(css.indexOf('@media (min-width: 1024px)'))
   expect(/\.insights\.shell__main--wide\s*\{([^}]*)\}/.exec(desktop)?.[1]).toMatch(/columns:\s*2/)
-  expect(/\.insights\.shell__main--wide > \*\s*\{([^}]*)\}/.exec(desktop)?.[1]).toMatch(/break-inside:\s*avoid/)
-  expect(desktop).toMatch(/\[data-widget='billsPanel'\][^{]*\{\s*column-span:\s*all/s)
+  // inline-block cards: with block + break-inside: avoid, Chrome leaves a ~300 px hole before the next wide card
+  const card = /\.insights\.shell__main--wide > :not\(:empty\)\s*\{([^}]*)\}/.exec(desktop)?.[1]
+  expect(card).toMatch(/break-inside:\s*avoid/)
+  expect(card).toMatch(/display:\s*inline-block/)
+  expect(card).toMatch(/vertical-align:\s*top/)
+  expect(desktop).toMatch(/\[data-widget='billsPanel'\][^{]*\{\s*display:\s*block;[^}]*column-span:\s*all/s)
   expect(desktop).not.toMatch(/grid-column/)
 })
