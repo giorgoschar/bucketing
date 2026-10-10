@@ -1,5 +1,7 @@
-import type { ReactNode } from 'react'
+import { type ReactNode, useRef, useState } from 'react'
 import { CheckIcon } from '../bridge'
+import { fold } from '../defaults'
+import { usePanel } from '../panel'
 import './pickers.css'
 
 export interface OptionProps {
@@ -29,4 +31,27 @@ export function Option({ name, sub, lead, selected, onPress }: OptionProps) {
 export const pickThenClose = <T,>(onPick: (v: T) => void, onClose: () => void) => (v: T) => {
   onPick(v)
   onClose()
+}
+
+/** The panel's pickers (spec §4.5) open as lists that filter as you type; Enter picks the first match. On the
+ *  phone `active` is false and none of this renders. */
+export function useFilterBox() {
+  const active = usePanel() !== null
+  const [text, setText] = useState('')
+  const ref = useRef<HTMLInputElement>(null)
+  return { active, text, setText, ref, q: fold(text) }
+}
+
+export function FilterField({ label, box, onEnter }: { label: string; box: ReturnType<typeof useFilterBox>; onEnter: () => void }) {
+  if (!box.active) return null
+  return (
+    <input ref={box.ref} type="search" className="ck-search" aria-label={label} placeholder={label} autoComplete="off"
+      value={box.text} onChange={(e) => box.setText(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key !== 'Enter' || e.nativeEvent.isComposing) return
+        e.preventDefault()
+        e.stopPropagation() // not the panel's Enter-saves
+        onEnter()
+      }} />
+  )
 }

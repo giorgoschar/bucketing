@@ -80,6 +80,7 @@ export function blankState(p: BlankInput): ComposerState {
 
 export type Action =
   | { type: 'key'; key: AmountKey }
+  | { type: 'setAmount'; value: string }
   | { type: 'setType'; value: TxnType; defaults: Remembered }
   | { type: 'setMerchant'; value: string; rule: { pattern: string; category_id: string } | null }
   | { type: 'pickBucket'; id: string | null; remembered: Remembered }
@@ -146,6 +147,17 @@ function step(s: ComposerState, a: Action): ComposerState {
   switch (a.type) {
     case 'key':
       return { ...s, amount: pressKey(s.amount, a.key), fromReceipt: drop(s.fromReceipt, 'amount'), scanNoTotal: false }
+    case 'setAmount': {
+      // A typed field (the desktop panel) goes through the keypad's own rules, key by key: "12,5" is 12.5, extra
+      // decimals and letters are dropped. A pasted "1,234.50" loses its thousands commas first.
+      const text = /^\d{1,3}(,\d{3})+(\.\d*)?$/.test(a.value.trim()) ? a.value.replaceAll(',', '') : a.value
+      let amount = ''
+      for (const ch of text) {
+        if (ch >= '0' && ch <= '9') amount = pressKey(amount, ch as AmountKey)
+        else if (ch === '.' || ch === ',') amount = pressKey(amount, '.')
+      }
+      return { ...s, amount, fromReceipt: drop(s.fromReceipt, 'amount'), scanNoTotal: false }
+    }
     case 'setType': {
       if (s.mode === 'edit' || s.type === a.value) return s
       return {

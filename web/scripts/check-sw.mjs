@@ -39,6 +39,8 @@ const checks = [
   ['the page links the manifest under /app/', entry.includes('/app/manifest.webmanifest')],
   [`the main chunk stays under ${MAIN_CHUNK_MAX / 1000} kB (${mainChunk} is ${(mainBytes / 1000).toFixed(1)} kB)`, mainBytes <= MAIN_CHUNK_MAX],
   ['react-router is its own precached chunk, not part of the main chunk', urls.some((u) => /^assets\/router-.*\.js$/.test(u))],
+  // The Activity tab root is a lazy chunk (Phase A): a cold start offline needs its code and its styles.
+  ['the Activity chunk (JS and CSS) is precached', urls.some((u) => /^assets\/ActivityRoute-.*\.js$/.test(u)) && urls.some((u) => /^assets\/ActivityRoute-.*\.css$/.test(u))],
   // Settings › Appearance: the before-first-paint boot must work offline and stay render-blocking.
   ['the theme boot script is precached', urls.includes('theme-boot.js')],
   ['the page loads the theme boot as a classic script in head, before the module script and the stylesheet', themeBootFirst(entry)],

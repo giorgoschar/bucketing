@@ -3,6 +3,7 @@ import { useBlocker, useNavigate, useSearchParams } from 'react-router'
 import { CloseIcon } from '../../shell/icons'
 import { AmountDisplay } from '../../ui/AmountDisplay'
 import { Keypad } from '../../ui/Keypad'
+import { DESKTOP_QUERY } from '../../ui/useIsDesktop'
 import { Pill } from '../../ui/Pill'
 import { type AmountKey, centsToString, convertCents, displayAmount, parseRate, toApiAmount, toCents } from './amount'
 import { Segmented, type ToastInput, useComposerToast, useOfferTickedPrompt, useOnline } from './bridge'
@@ -10,7 +11,10 @@ import { CashControls } from './CashControls'
 import { ConfirmSheet } from './ConfirmSheet'
 import { currencyName, currencySymbol, formatCents, spokenMoney } from './currencies'
 import { dayLabel, todayLocal } from './dates'
-import { type DefaultsRecord, matchRule, RULES_API_READY, sanitize, suggestMerchants } from './defaults'
+import { type DefaultsRecord, initialNew, matchRule, RULES_API_READY, sanitize, suggestMerchants } from './defaults'
+import { dropDraft, parkDraft, parkedDraft } from './draft'
+import { usePanel } from './panel'
+import { panelOf } from '../../shell/addPanel'
 import { DuplicateCard } from './DuplicateCard'
 import { EditTopMenu } from './EditTopMenu'
 import type { ComposerData } from './hooks/useComposerData'
@@ -42,8 +46,21 @@ const UPLOAD_FAILED = "Saved. The receipt didn't upload."
 const UNDO_MS = 5000
 const INTERACTIVE = 'button, a[href], select, summary, [role="button"], [role="option"], [role="switch"], [role="tab"], [role="menuitem"], [role="link"]'
 
-export function ComposerForm({ initial, data, defaults }: { initial: ComposerState; data: ComposerData; defaults: DefaultsRecord }) {
-  const [s, dispatch] = useReducer(reduce, initial)
+/** A modal sheet is open anywhere (they portal out, so their keys still bubble through this tree). */
+const modalOpen = () => !!document.querySelector('[aria-modal="true"], dialog[open]')
+
+type Note = { text: string; undoId?: string }
+
+export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
+  initial: ComposerState; data: ComposerData; defaults: DefaultsRecord; draftKey?: string
+}) {
+  const panel = usePanel()
+  // A form parked by the window crossing 1024 px (draft.ts) is picked up here; `initial` stays the baseline for "changed".
+  const [s, dispatch] = useReducer(reduce, initial, (i) => parkedDraft(draftKey) ?? i)
+  useEffect(() => { dropDraft(draftKey) }, [draftKey])
+  const amountRef = useRef<HTMLInputElement>(null)
+  const [note, setNote] = useState<Note | null>(null)
+  const [confirmClose, setConfirmClose] = useState(false)
   const today = todayLocal()
   const online = useOnline()
   const navigate = useNavigate()
@@ -84,14 +101,51 @@ export function ComposerForm({ initial, data, defaults }: { initial: ComposerSta
   const [initialBody] = useState(() => (initial.mode === 'edit' ? JSON.stringify(toUpdateBody(initial, ctx)) : ''))
   const dirty = s.mode === 'new' ? isDirtyNew(s) : JSON.stringify(toUpdateBody(s, ctx)) !== initialBody
   const leaving = useRef(false)
-  const blocker = useBlocker(
-    ({ currentLocation, nextLocation }) => dirty && !leaving.current && currentLocation.pathname !== nextLocation.pathname,
-  )
+  // On the phone leaving means another path. The panel also ends when only the address's panel parameters go
+  // (the browser's Back), which the pathname test alone would let through.
+  const blocker = useBlocker(({ currentLocation, nextLocation }) => {
+    if (!dirty || leaving.current) return false
+    if (currentLocation.pathname !== nextLocation.pathname) return true
+    return !!panel && !!panelOf(new URLSearchParams(currentLocation.search)) && !panelOf(new URLSearchParams(nextLocation.search))
+  })
   const leave = (to?: string) => {
     leaving.current = true
-    if (to) void navigate(to, { replace: true })
+    const edit = to && /^\/edit\/([^/?]+)/.exec(to)
+    if (panel && edit) panel.openEdit(decodeURIComponent(edit[1]))
+    else if (to) void navigate(to, { replace: true })
     else close()
   }
+  // The panel closes by changing only the query, which the blocker above doesn't see: ask here instead.
+  const requestClose = () => (dirty && !leaving.current ? setConfirmClose(true) : close())
+
+  // Crossing 1024 px unmounts this form and mounts the other layout's: park what was typed for it. Done in the
+  // unmount, not on the media event: the shell reacts to that event first and may unmount this form before its
+  // own listener runs. The query is read now and again at the unmount; a difference means the window crossed.
+  const latest = useRef({ s, dirty })
+  useEffect(() => { latest.current = { s, dirty } })
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const desktopAtMount = window.matchMedia(DESKTOP_QUERY).matches
+    return () => {
+      if (window.matchMedia(DESKTOP_QUERY).matches !== desktopAtMount && latest.current.dirty && !leaving.current) {
+        parkDraft(draftKey, latest.current.s)
+      }
+    }
+  }, [draftKey])
+
+  // Esc closes the panel (a sheet, a field's own list or the scan screen takes its own Esc first).
+  const closeRef = useRef(requestClose)
+  useEffect(() => { closeRef.current = requestClose })
+  useEffect(() => {
+    if (!panel) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || modalOpen() || document.querySelector('.scan')) return
+      e.preventDefault()
+      closeRef.current()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [panel])
 
   const cents = toCents(s.amount)
   const money = formatCents(cents, s.currency)
@@ -110,6 +164,37 @@ export function ComposerForm({ initial, data, defaults }: { initial: ComposerSta
     toast({ text: UPLOAD_FAILED, action: { label: 'Retry', onPress: () => void uploadReceipt(id, file) } })
   }
 
+  // The panel stays open after an add (spec §4.5): a new entry that keeps the date, budget and payer, a line saying
+  // what was saved, and the Undo the toast would have had.
+  function stayOpen(r: { status: string; id?: string }, receipt: File | null) {
+    const queued = r.status === 'queued'
+    const merchant = s.merchant.trim()
+    setNote(queued
+      ? { text: receipt ? QUEUED_NO_RECEIPT : QUEUED }
+      : { text: `Saved · ${money}${merchant ? ` ${merchant}` : ''}`, undoId: r.id })
+    if (!queued && r.id) {
+      if (s.type === 'expense') offerPantry()
+      if (receipt) void uploadReceipt(r.id, receipt)
+    }
+    const fresh = initialNew({
+      defaults, buckets: data.buckets, categories: data.categories, memberIds, meId: data.meId,
+      householdCurrency: data.householdCurrency, type: s.type, today, clientId: crypto.randomUUID(),
+      cash: false, amount: null, take: null,
+    })
+    dispatch({ type: 'replace', state: { ...fresh, date: s.date, bucketId: s.bucketId, paidBy: s.paidBy ?? fresh.paidBy } })
+    setDup(null)
+    setStashCents(null)
+    panel?.reset()
+    amountRef.current?.focus()
+  }
+
+  // The Undo lasts as long as the toast's would.
+  useEffect(() => {
+    if (!note?.undoId) return
+    const t = setTimeout(() => setNote({ text: note.text }), UNDO_MS)
+    return () => clearTimeout(t)
+  }, [note])
+
   const submitting = useRef(false)
   async function onSave(skipDuplicate = false) {
     if (!v.ok || submitting.current) return
@@ -126,6 +211,10 @@ export function ComposerForm({ initial, data, defaults }: { initial: ComposerSta
       const r = s.mode === 'new' ? await save.saveNew() : await save.saveEdit()
       if (r.status === 'busy' || r.status === 'failed') return // useAction already showed the server's detail
       const receipt = s.receipt
+      if (panel && s.mode === 'new') {
+        stayOpen(r, receipt)
+        return
+      }
       leave()
       if (r.status === 'queued') {
         toast({ text: receipt ? QUEUED_NO_RECEIPT : QUEUED })
@@ -163,6 +252,7 @@ export function ComposerForm({ initial, data, defaults }: { initial: ComposerSta
   const onSaveRef = useRef(onSave)
   useEffect(() => { onSaveRef.current = onSave })
   useLayoutEffect(() => {
+    if (panel) return // the panel's amount is a text field; Enter and Esc are handled below
     const onKeyDown = (e: KeyboardEvent) => {
       if (sheet || dup || confirmDelete || scanOpen || blocker.state === 'blocked') return
       const t = e.target as HTMLElement | null
@@ -181,7 +271,7 @@ export function ComposerForm({ initial, data, defaults }: { initial: ComposerSta
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [sheet, dup, confirmDelete, scanOpen, blocker.state])
+  }, [panel, sheet, dup, confirmDelete, scanOpen, blocker.state])
 
   const switchType = (value: TxnType) => {
     const r = sanitize(value === 'income' ? defaults.lastIncome : defaults.last, lookup(value))
@@ -210,13 +300,26 @@ export function ComposerForm({ initial, data, defaults }: { initial: ComposerSta
       setListClosed(true)
       setActive(-1)
     } else if (e.key === 'Enter') {
-      e.preventDefault()
       if (active >= 0 && active < n) {
+        e.preventDefault()
         const pick = suggestions[active]
         setMerchant(pick)
         setListClosed(true)
-      } else (e.target as HTMLInputElement).blur()
+      } else if (!panel) {
+        e.preventDefault()
+        ;(e.target as HTMLInputElement).blur()
+      } // in the panel Enter saves (onPanelKey)
     }
+  }
+
+  // Panel keyboard (spec §4.5): Enter saves from a field, ⌘/Ctrl+Enter from anywhere. A focused button, link or
+  // picker row keeps its own Enter; so does the notes textarea; sheets (portalled) and the scan screen their own.
+  const onPanelKey = (e: React.KeyboardEvent) => {
+    if (e.key !== 'Enter' || e.defaultPrevented || e.nativeEvent.isComposing || modalOpen() || scanOpen) return
+    const t = e.target as HTMLElement
+    if (!(e.metaKey || e.ctrlKey) && (t.closest(INTERACTIVE) || t.tagName === 'TEXTAREA')) return
+    e.preventDefault()
+    void onSave()
   }
   const rate = parseRate(s.rate)
   const converted = s.currency !== data.householdCurrency && rate !== null
@@ -247,36 +350,72 @@ export function ComposerForm({ initial, data, defaults }: { initial: ComposerSta
   )
   const payerValue = s.ownShare ? 'Each paid own share' : s.cashMode ? 'You' : memberName(payer)
 
+  const typeSwitch = (
+    <Segmented label="Entry type" value={s.type} onChange={switchType} disabled={s.mode === 'edit'}
+      options={[{ value: 'expense', label: 'Expense' }, { value: 'income', label: 'Income' }]} />
+  )
+  const slot = (
+    <span className="composer__slot">
+      {!online && <span className="composer__offline">Offline</span>}
+      {s.mode === 'edit' && <EditTopMenu onDelete={() => setConfirmDelete(true)} />}
+    </span>
+  )
+  const modes = s.mode === 'new' && !income && (
+    <div className="composer__modes" role="group" aria-label="Entry mode">
+      <button type="button" className="ck-chip" onClick={() => setScan(true)}>Scan receipt</button>
+      <button type="button" className={s.cashMode ? 'ck-chip on' : 'ck-chip'} aria-pressed={s.cashMode} onClick={toggleCash}>
+        Cash from wallet
+      </button>
+    </div>
+  )
+  const amountField = panel ? (
+    <div className={income ? 'amount amount--income panelamount' : 'amount panelamount'}>
+      <span className="panelamount__symbol" aria-hidden="true">{currencySymbol(s.currency)}</span>
+      <input ref={amountRef} className="panelamount__input" aria-label="Amount" inputMode="decimal" autoComplete="off"
+        placeholder="0.00" autoFocus value={s.amount} onChange={(e) => dispatch({ type: 'setAmount', value: e.target.value })} />
+      <button type="button" className="amount__cur" onClick={() => setSheet('currency')}
+        aria-label={`Currency: ${s.currency}. Change`}>
+        {s.currency}
+      </button>
+      {converted && <p className="amount__converted">{converted}</p>}
+      {s.fromReceipt.includes('amount') && <span className="amount__tag">from receipt</span>}
+    </div>
+  ) : (
+    <AmountDisplay text={displayAmount(s.amount)} symbol={currencySymbol(s.currency)} currency={s.currency}
+      spoken={`Amount ${centsToString(cents)} ${currencyName(s.currency)}`} tone={income ? 'income' : 'default'}
+      converted={converted} onCurrency={() => setSheet('currency')}
+      tag={s.fromReceipt.includes('amount') ? 'from receipt' : null} />
+  )
+
   return (
-    <div className="composer" data-type={s.type}>
+    <div className={panel ? 'composer composer--panel' : 'composer'} data-type={s.type} onKeyDown={panel ? onPanelKey : undefined}>
       <header className="composer__bar">
-        <button type="button" className="ui-iconbtn composer__close" aria-label="Close" onClick={close}>
-          <CloseIcon />
-        </button>
-        <Segmented label="Entry type" value={s.type} onChange={switchType} disabled={s.mode === 'edit'}
-          options={[{ value: 'expense', label: 'Expense' }, { value: 'income', label: 'Income' }]} />
-        <span className="composer__slot">
-          {!online && <span className="composer__offline">Offline</span>}
-          {s.mode === 'edit' && <EditTopMenu onDelete={() => setConfirmDelete(true)} />}
-        </span>
+        {panel ? (
+          <>
+            <h2 className="composer__title">{s.mode === 'edit' ? 'Edit entry' : 'New entry'}</h2>
+            {slot}
+            <button type="button" className="ui-iconbtn composer__close" aria-label="Close" onClick={requestClose}>
+              <CloseIcon />
+            </button>
+          </>
+        ) : (
+          <>
+            <button type="button" className="ui-iconbtn composer__close" aria-label="Close" onClick={close}>
+              <CloseIcon />
+            </button>
+            {typeSwitch}
+            {slot}
+          </>
+        )}
       </header>
 
       <div className="composer__body">
-        {s.mode === 'new' && !income && (
-          <div className="composer__modes" role="group" aria-label="Entry mode">
-            <button type="button" className="ck-chip" onClick={() => setScan(true)}>Scan receipt</button>
-            <button type="button" className={s.cashMode ? 'ck-chip on' : 'ck-chip'} aria-pressed={s.cashMode} onClick={toggleCash}>
-              Cash from wallet
-            </button>
-          </div>
-        )}
+        {!panel && modes}
 
         <ReviewBanner s={s} categories={data.categories} rulesReady={RULES_API_READY}
           onRemember={(on) => dispatch({ type: 'setRemember', on })} />
-        <AmountDisplay text={displayAmount(s.amount)} symbol={currencySymbol(s.currency)} currency={s.currency}
-          spoken={`Amount ${centsToString(cents)} ${currencyName(s.currency)}`} tone={income ? 'income' : 'default'}
-          converted={converted} onCurrency={() => setSheet('currency')}
-          tag={s.fromReceipt.includes('amount') ? 'from receipt' : null} />
+        {amountField}
+        {panel && typeSwitch}
         {s.scanNoTotal && <p className="composer__hint">Couldn't find the total</p>}
 
         <div className="composer__merchant-wrap">
@@ -305,7 +444,18 @@ export function ComposerForm({ initial, data, defaults }: { initial: ComposerSta
         </div>
 
         <div className="pills composer__pills">
-          {income ? (
+          {panel ? (
+            // The panel's Tab order (spec §4.5): budget, category, payer, method, date.
+            <>
+              {budgetPill}
+              {categoryPill}
+              {income
+                ? <Pill label="Received by" value={memberName(payer)} onPress={() => setSheet('payer')} />
+                : <Pill label="Payer" value={payerValue} readOnly={s.cashMode} onPress={() => setSheet('payer')} />}
+              {!income && <Pill label="Method" value={METHOD_LABELS[s.method]} onPress={() => setSheet('method')} />}
+              <Pill label="Date" value={dayLabel(s.date, today)} onPress={() => setSheet('date')} />
+            </>
+          ) : income ? (
             <>
               <Pill label="Received by" value={memberName(payer)} onPress={() => setSheet('payer')} />
               {categoryPill}
@@ -333,11 +483,23 @@ export function ComposerForm({ initial, data, defaults }: { initial: ComposerSta
           {income ? 'More: notes, receipt' : 'More: date, split, notes, receipt'}
           {moreDirty(s, { ...ctx, today }) && <span className="composer__dot" aria-hidden="true" />}
         </button>
+        {panel && modes}
       </div>
 
       <div className="composer__foot">
         {hint && <p className="composer__problem">{hint}</p>}
-        <Keypad onKey={(k) => dispatch({ type: 'key', key: k })} hidden={typing} />
+        {panel && note && (
+          <p className="composer__saved" role="status">
+            <span>{note.text}</span>
+            {note.undoId && (
+              <button type="button" className="composer__undo"
+                onClick={() => { void undo(note.undoId!).then((done) => { if (done) setNote({ text: 'Undone' }) }) }}>
+                Undo
+              </button>
+            )}
+          </p>
+        )}
+        {!panel && <Keypad onKey={(k) => dispatch({ type: 'key', key: k })} hidden={typing} />}
         <button type="button" aria-label={saveName} disabled={!v.ok || save.saving} onClick={() => void onSave()}
           className={`btn btn--primary btn--lg btn--block composer__save${income ? ' composer__save--income' : ''}`}>
           {saveLabel}
@@ -393,6 +555,9 @@ export function ComposerForm({ initial, data, defaults }: { initial: ComposerSta
       )}
       <ConfirmSheet open={blocker.state === 'blocked'} title="Discard this entry?" confirmLabel="Discard"
         cancelLabel="Keep editing" danger onConfirm={() => blocker.proceed?.()} onCancel={() => blocker.reset?.()} />
+      <ConfirmSheet open={confirmClose} title="Discard this entry?" confirmLabel="Discard"
+        cancelLabel="Keep editing" danger onConfirm={() => { leaving.current = true; setConfirmClose(false); close() }}
+        onCancel={() => setConfirmClose(false)} />
       <ConfirmSheet open={confirmDelete} title="Delete this entry?" confirmLabel="Delete" cancelLabel="Cancel" danger
         onConfirm={() => void onDelete()} onCancel={() => setConfirmDelete(false)} />
     </div>
