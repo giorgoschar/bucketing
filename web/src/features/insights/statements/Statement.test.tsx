@@ -4,7 +4,7 @@ import { onUnauthorized } from '../../../api/client'
 import { fakeApi, reply, type Routes } from '../../../test/fakeApi'
 import { entry, readRoutes } from '../../../test/fixtures'
 import { renderWithProviders, resetTestEnv, setOnline } from '../../../test/render'
-import { asRoutes, statement, statementRoutes } from './fixtures'
+import { statement, statementRoutes } from './fixtures'
 import { StatementView } from './Statement'
 import type { StatementOut } from './types'
 
@@ -213,9 +213,9 @@ it('a month with no data at all opens with zeros and the quiet lines, not an err
 
 it('Done: the button and its note; it posts, then the page says reviewed by you and the button is gone', async () => {
   const reviewed = statement({ reviewed_at: '2026-10-02T10:00:00', reviewed_on: '2026-10-02', reviewed_by: 'u1', closed: true, days_left: null })
-  const fake = fakeApi(routes(statement(), asRoutes({
-    'POST /api/v1/insights/statements/2026-09/review': () => reviewed,
-  })))
+  const fake = fakeApi(routes(statement(), {
+    'POST /api/v1/insights/statements/{month}/review': () => reviewed,
+  }))
   renderWithProviders(<StatementView month="2026-09" />, { route: '/insights/statements/2026-09' })
   expect(await screen.findByText('Marks September as reviewed for the whole household.')).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: 'Done' }))
@@ -227,10 +227,10 @@ it('Done: the button and its note; it posts, then the page says reviewed by you 
 
 it('Done after it succeeded refreshes the list too', async () => {
   const reviewed = statement({ reviewed_at: '2026-10-02T10:00:00', reviewed_on: '2026-10-02', reviewed_by: 'u1', closed: true, days_left: null })
-  fakeApi(routes(statement(), asRoutes({
-    'POST /api/v1/insights/statements/2026-09/review': () => reviewed,
+  fakeApi(routes(statement(), {
+    'POST /api/v1/insights/statements/{month}/review': () => reviewed,
     'GET /api/v1/insights/statements': () => ({ review: null, months: [] }),
-  })))
+  }))
   const { client } = renderWithProviders(<StatementView month="2026-09" />)
   client.setQueryData(['insights', 'statements', 'list'], { review: { month: '2026-09', label: 'September 2026', days_left: 3 }, months: [] })
   fireEvent.click(await screen.findByRole('button', { name: 'Done' }))
@@ -263,7 +263,7 @@ it('no Done button once reviewed or closed', async () => {
 it('an entry edited after the review: the new numbers and still "Reviewed on"', async () => {
   const reviewed = { reviewed_at: '2026-10-02T10:00:00', reviewed_on: '2026-10-02', reviewed_by: 'u1', closed: true, days_left: null }
   let current = statement(reviewed)
-  const fake = fakeApi(routes(current, asRoutes({ 'GET /api/v1/insights/statements/2026-09': () => current })))
+  const fake = fakeApi(routes(current, { 'GET /api/v1/insights/statements/{month}': () => current }))
   const { client } = renderWithProviders(<StatementView month="2026-09" />)
   expect(await screen.findByText('€2,240.00')).toBeInTheDocument()
   current = statement({ ...reviewed, totals: { in: 3000, out: 2500, net: 500, previous: null } })
@@ -299,7 +299,7 @@ it('a malformed month is never asked for: "No statement for this month yet." and
 
 it('a month the server refuses (404 current or future, 400) shows the same empty state, not "Couldn\u2019t load this."', async () => {
   for (const [month, status] of [['2026-10', 404], ['2027-01', 404], ['2026-05', 400]] as const) {
-    const fake = fakeApi({ ...readRoutes(), ...asRoutes({ [`GET /api/v1/insights/statements/${month}`]: () => reply(status, { detail: 'nope' }) }) })
+    const fake = fakeApi({ ...readRoutes(), ...{ 'GET /api/v1/insights/statements/{month}': () => reply(status, { detail: 'nope' }) } })
     const { unmount } = renderWithProviders(<StatementView month={month} />, { route: `/insights/statements/${month}` })
     expect(await screen.findByText('No statement for this month yet.')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'All statements' })).toHaveAttribute('href', '/insights/statements')
@@ -310,7 +310,7 @@ it('a month the server refuses (404 current or future, 400) shows the same empty
 })
 
 it('a server error other than 400 or 404 is still "Couldn\u2019t load this."', async () => {
-  fakeApi({ ...readRoutes(), ...asRoutes({ 'GET /api/v1/insights/statements/2026-09': () => reply(500) }) })
+  fakeApi({ ...readRoutes(), ...{ 'GET /api/v1/insights/statements/{month}': () => reply(500) } })
   renderWithProviders(<StatementView month="2026-09" />)
   expect(await screen.findByText('Couldn’t load this.')).toBeInTheDocument()
 })
@@ -338,7 +338,7 @@ it('by: "you" from the id, else the household name, else the server\u2019s name,
 it('Done goes through the API client: a 401 is announced like everywhere else', async () => {
   const heard = vi.fn()
   const off = onUnauthorized(heard)
-  fakeApi(routes(statement(), asRoutes({ 'POST /api/v1/insights/statements/2026-09/review': () => reply(401, { detail: 'no' }) })))
+  fakeApi(routes(statement(), { 'POST /api/v1/insights/statements/{month}/review': () => reply(401, { detail: 'no' }) }))
   renderWithProviders(<StatementView month="2026-09" />)
   fireEvent.click(await screen.findByRole('button', { name: 'Done' }))
   await waitFor(() => expect(heard).toHaveBeenCalled())

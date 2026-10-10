@@ -1,0 +1,53 @@
+{
+  "review": null,
+  "months": [
+    {
+      "month": "2026-09",
+      "label": "September 2026",
+      "in": 3000.0,
+      "out": 3249.0,
+      "net": -249.0,
+      "reviewed_at": "2026-10-10T09:51:03.660229",
+      "reviewed_on": "2026-10-10",
+      "reviewed_by": "fefb844e-3845-40d7-a3c3-176c63f18997",
+      "reviewed_by_name": "User1",
+      "closed": true
+    },
+    {
+      "month": "2026-08",
+      "label": "August 2026",
+      "in": 3000.0,
+      "out": 2940.0,
+      "net": 60.0,
+      "reviewed_at": null,
+      "reviewed_on": null,
+      "reviewed_by": null,
+      "reviewed_by_name": null,
+      "closed": true
+    },
+    {
+      "month": "2026-07",
+      "label": "July 2026",
+      "in": 0.0,
+      "out": 2940.0,
+      "net": -2940.0,
+      "reviewed_at": null,
+      "reviewed_on": null,
+      "reviewed_by": null,
+      "reviewed_by_name": null,
+      "closed": true
+    },
+    {
+      "month": "2026-06",
+      "label": "June 2026",
+      "in": 0.0,
+      "out": 2900.0,
+      "net": -2900.0,
+      "reviewed_at": null,
+      "reviewed_on": null,
+      "reviewed_by": null,
+      "reviewed_by_name": null,
+      "closed": true
+    }
+  ]
+}

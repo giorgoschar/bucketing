@@ -1,0 +1,137 @@
+{
+  "month": "2026-09",
+  "label": "September 2026",
+  "reviewed_at": "2026-10-10T09:51:03.660229",
+  "reviewed_on": "2026-10-10",
+  "reviewed_by": "fefb844e-3845-40d7-a3c3-176c63f18997",
+  "reviewed_by_name": "User1",
+  "closed": true,
+  "days_left": null,
+  "totals": {
+    "in": 3000.0,
+    "out": 3249.0,
+    "net": -249.0,
+    "previous": {
+      "month": "2026-08",
+      "in": 3000.0,
+      "out": 2940.0,
+      "net": 60.0
+    }
+  },
+  "planned": {
+    "in": {
+      "planned": 3000.0,
+      "actual": 3000.0
+    },
+    "out": {
+      "planned": 979.0,
+      "actual": 884.0
+    },
+    "open": [
+      {
+        "entry_id": "9015aa7f-9aad-4fc4-a605-e1a50b37d507",
+        "item_id": "3a1c7427-5906-4206-93ef-ef7be1361642",
+        "name": "Gym",
+        "direction": "out",
+        "due_date": "2026-09-28",
+        "amount": 35.0,
+        "estimated": false,
+        "status": "expected"
+      },
+      {
+        "entry_id": "85f85ce4-4c7f-4809-bfaa-d41a99754fbd",
+        "item_id": "4bf3b64c-65bd-4acc-94c0-a59083bd6caa",
+        "name": "Power",
+        "direction": "out",
+        "due_date": "2026-09-29",
+        "amount": 60.0,
+        "estimated": true,
+        "status": "expected"
+      }
+    ]
+  },
+  "budgets_over": [
+    {
+      "bucket_id": "e9a9ba35-eb99-4176-b4df-834bef134e8a",
+      "name": "Daily",
+      "budget": 1200.0,
+      "spent": 1310.0,
+      "over": 110.0
+    },
+    {
+      "bucket_id": "5e9edb4c-f551-4f1b-9fc6-ccabd599b80f",
+      "name": "Old",
+      "budget": 50.0,
+      "spent": 80.0,
+      "over": 30.0
+    }
+  ],
+  "bills_changed": [
+    {
+      "item_id": "97962f32-0016-4321-9cb4-a2ef1fe47b79",
+      "name": "Electricity",
+      "entry_id": "7f417c29-8bdc-436d-a8f7-48f128b695a3",
+      "due_date": "2026-09-14",
+      "amount": 84.0,
+      "usual": 61.0,
+      "basis": "recent",
+      "direction": "up",
+      "pct": 38,
+      "reason": null,
+      "reason_pct": null
+    }
+  ],
+  "cash": [
+    {
+      "member_id": "fefb844e-3845-40d7-a3c3-176c63f18997",
+      "name": "User1",
+      "not_yet_logged": 45.0
+    }
+  ],
+  "categories_over": [
+    {
+      "category_id": "0a692270-69ee-435e-a248-a230f3f26af2",
+      "name": "Eating out",
+      "icon": "🍽",
+      "amount": 370.0,
+      "usual": 240.0
+    }
+  ],
+  "biggest": [
+    {
+      "transaction_id": "f5751b8c-bcdf-46f0-b4ee-0b1846c595d9",
+      "date": "2026-09-07",
+      "label": "Transaction",
+      "category": null,
+      "amount": 1310.0
+    },
+    {
+      "transaction_id": "fcad57af-5c8d-4e29-8e8d-2bb1d2fe7f25",
+      "date": "2026-09-01",
+      "label": "Transaction",
+      "category": null,
+      "amount": 800.0
+    },
+    {
+      "transaction_id": "04c60f45-f453-4428-bf28-842177d4f50e",
+      "date": "2026-09-03",
+      "label": "IKEA",
+      "category": "Home",
+      "amount": 420.0
+    },
+    {
+      "transaction_id": "f559dcd9-1506-4951-b28d-24bce4456f22",
+      "date": "2026-09-20",
+      "label": "Dinner place",
+      "category": "Eating out",
+      "amount": 370.0
+    },
+    {
+      "transaction_id": "a3a53a42-d801-4529-8aa8-a01b086c98a8",
+      "date": "2026-09-07",
+      "label": "Transaction",
+      "category": null,
+      "amount": 100.0
+    }
+  ]
+}

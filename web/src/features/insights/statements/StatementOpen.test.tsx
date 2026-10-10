@@ -4,7 +4,7 @@ import { db } from '../../../offline/db'
 import { fakeApi, reply, type Routes } from '../../../test/fakeApi'
 import { entry, readRoutes } from '../../../test/fixtures'
 import { renderWithProviders, resetTestEnv, setOnline } from '../../../test/render'
-import { asRoutes, statement, statementRoutes } from './fixtures'
+import { statement, statementRoutes } from './fixtures'
 import { StatementView } from './Statement'
 import type { StatementOut } from './types'
 
@@ -84,7 +84,7 @@ it('offline with no saved copy of that day: the same line, no dead tap', async (
 it('Skip from the statement: the request, the row leaves "Still open" at once, and the statement is read again', async () => {
   let after = false
   const { fake } = render({
-    ...asRoutes({ 'GET /api/v1/insights/statements/2026-09': () => (after ? { ...open(), planned: { ...open().planned, open: open().planned.open.slice(1) } } : open()) }),
+    ...{ 'GET /api/v1/insights/statements/{month}': () => (after ? { ...open(), planned: { ...open().planned, open: open().planned.open.slice(1) } } : open()) },
     [SKIP]: () => { after = true; return { ...gym(), status: 'skipped' } },
   })
   fireEvent.click(await rows().findByRole('button', { name: /Gym/ }))
@@ -98,7 +98,7 @@ it('Skip from the statement: the request, the row leaves "Still open" at once, a
 it('Pay from the statement: the request carries the entry, the row leaves, the statement is read again', async () => {
   let after = false
   const { fake } = render({
-    ...asRoutes({ 'GET /api/v1/insights/statements/2026-09': () => (after ? { ...open(), planned: { ...open().planned, open: open().planned.open.slice(1) } } : open()) }),
+    ...{ 'GET /api/v1/insights/statements/{month}': () => (after ? { ...open(), planned: { ...open().planned, open: open().planned.open.slice(1) } } : open()) },
     [DONE]: () => { after = true; return { ...gym(), status: 'done' } },
   })
   fireEvent.click(await rows().findByRole('button', { name: /Gym/ }))

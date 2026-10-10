@@ -20,13 +20,8 @@ export function statement(over: Partial<StatementOut> = {}): StatementOut {
   }
 }
 
-/** The Phase B routes are not in the generated schema, so the typed Routes map needs one cast. */
-const asRoutes = (r: Record<string, unknown>) => r as unknown as Routes
-
 export const listRoutes = (list: StatementListOut, extra: Routes = {}): Routes =>
-  ({ ...asRoutes({ 'GET /api/v1/insights/statements': () => list }), ...extra })
+  ({ 'GET /api/v1/insights/statements': () => list, ...extra })
 
 export const statementRoutes = (s: StatementOut, extra: Routes = {}): Routes =>
-  ({ ...asRoutes({ [`GET /api/v1/insights/statements/${s.month}`]: () => s }), ...extra })
-
-export { asRoutes }
+  ({ 'GET /api/v1/insights/statements/{month}': () => s, ...extra })
