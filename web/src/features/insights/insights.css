@@ -120,6 +120,7 @@
   .insights.shell__main--wide > [data-widget='share'],
   .insights.shell__main--wide > [data-widget='empty'],
   .insights.shell__main--wide > [data-widget='billsPanel'],
+  .insights.shell__main--wide > [data-widget='statements'],
   .insights.shell__main--wide > [data-widget='fuel'],
   .insights.shell__main--wide > [data-widget='monthsTable'],
   .insights.shell__main--wide > [data-widget='categoriesTable'],
