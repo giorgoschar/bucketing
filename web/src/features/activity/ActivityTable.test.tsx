@@ -116,6 +116,35 @@ describe('Activity table', () => {
   })
 })
 
+describe('Bulk actions on desktop', () => {
+  it('never send the table sort to the bulk endpoint (it takes a strict filter)', async () => {
+    stubDesktop(true)
+    const BULK = 'POST /api/v1/transactions/bulk' as const
+    const { fake } = renderDesktopActivity(ROWS, {
+      route: '/activity?sort=amount_desc&missing_payer=1', total: 120,
+      extra: {
+        [BULK]: (req) => ({
+          dry_run: (req.body as { dry_run: boolean }).dry_run, batch_id: null, matched: 120, changed: 120, unchanged: 0,
+          total_out: 0, total_in: 0, skipped: [], bill: null, undo_until: null, buckets: [],
+        }) as never,
+      },
+    })
+    await screen.findByRole('grid')
+    fireEvent.click(screen.getByRole('button', { name: 'More' }))
+    fireEvent.click(screen.getByRole('button', { name: /Pick payments/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'All' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Bucket' }))
+    fireEvent.change(await screen.findByLabelText('Bucket'), { target: { value: 'b-bills' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+    await waitFor(() => expect(fake.callsTo(BULK)).toHaveLength(1))
+    const body = fake.callsTo(BULK)[0].body as { select: { filter: Record<string, unknown> } }
+    expect(body.select.filter).toEqual(expect.objectContaining({ missing_payer: true }))
+    expect(JSON.stringify(body)).not.toContain('sort')
+    // The totals line and the counts are not sorted either.
+    expect(fake.calls.filter((c) => !c.path.endsWith('/transactions') && c.query.has('sort'))).toEqual([])
+  })
+})
+
 describe('Detail pane', () => {
   it('a row click opens /activity/:id beside the table, with filters kept and the row marked', async () => {
     stubDesktop(true)
@@ -160,6 +189,9 @@ describe('Detail pane', () => {
     await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('complementary')).toBeNull())
     expect(loc()).toBe('/activity')
+    expect(screen.getByRole('row', { name: /Cosmote/ })).toHaveFocus()
+    await user.keyboard('{ArrowDown}')
+    expect(screen.getByRole('row', { name: /Bread/ })).toHaveFocus()
   })
 
   it('on the phone /activity/:id is the full-screen detail, no table', async () => {
@@ -169,7 +201,7 @@ describe('Detail pane', () => {
     expect(screen.queryByRole('complementary')).toBeNull()
   })
 
-  it('page 2 rows survive opening a row and closing the pane', async () => {
+  it('opening and closing a row keeps the same table: its rows are the same elements, with page 2 still loaded', async () => {
     stubDesktop(true)
     const first = Array.from({ length: 50 }, (_, i) => makeTxn({ id: `r${i}`, notes: `row ${i}` }))
     const fakeRows = [...first, makeTxn({ id: 'r50', notes: 'row 50' })]
@@ -181,8 +213,13 @@ describe('Detail pane', () => {
       },
     })
     fireEvent.click(await screen.findByRole('button', { name: 'Load more' }))
-    fireEvent.click(await screen.findByRole('row', { name: /row 50/ }))
+    const row = await screen.findByRole('row', { name: /row 50/ })
+    fireEvent.click(row)
     await screen.findByRole('complementary', { name: 'Payment details' })
-    expect(await screen.findByRole('row', { name: /row 50/ })).toBeInTheDocument()
+    expect(screen.getByRole('row', { name: /row 50/ })).toBe(row) // not unmounted and mounted again
+    fireEvent.click(within(screen.getByRole('complementary')).getByRole('button', { name: 'Back' }))
+    await waitFor(() => expect(screen.queryByRole('complementary')).toBeNull())
+    expect(screen.getByRole('row', { name: /row 50/ })).toBe(row)
+    expect(row).toHaveFocus() // the pane's close puts focus back on the row that was open
   })
 })

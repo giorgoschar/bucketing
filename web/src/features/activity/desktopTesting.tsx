@@ -1,8 +1,7 @@
 import { Route, Routes, useLocation } from 'react-router'
 import { renderWithProviders } from '../../test/render'
 import { fakeApi, type Routes as ApiRoutes } from '../../test/fakeApi'
-import { Activity } from './Activity'
-import { ActivityIdRoute } from './ActivityIdRoute'
+import { ActivityRoute } from './ActivityRoute'
 import { makeTxn, pageOf, refRoutes } from './testing'
 import type { Txn } from './hooks'
 
@@ -28,8 +27,8 @@ export function renderDesktopActivity(rows: Txn[], { route = '/activity', extra 
   const view = renderWithProviders(
     <>
       <Routes>
-        <Route path="/activity" element={<Activity />} />
-        <Route path="/activity/:id" element={<ActivityIdRoute />} />
+        <Route path="/activity" element={<ActivityRoute />} />
+        <Route path="/activity/:id" element={<ActivityRoute />} />
       </Routes>
       <Where />
     </>,

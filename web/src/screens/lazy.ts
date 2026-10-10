@@ -10,7 +10,8 @@ export const PantryDetail = lazy(() => import('../features/plan/pantry/Detail').
 
 // Phase 2 P3: the Activity detail, the Insights drill-downs and every Settings screen load on first visit
 // so the main bundle stays under 500 kB. The tab roots (Home, Activity, Insights) stay in the main bundle.
-export const ActivityDetail = lazy(() => import('../features/activity/ActivityIdRoute').then((m) => ({ default: m.ActivityIdRoute })))
+// The Activity list and its detail are one element for both routes, so opening a row keeps the table mounted.
+export const ActivityRoute = lazy(() => import('../features/activity/ActivityRoute').then((m) => ({ default: m.ActivityRoute })))
 export const CategoryScreen = lazy(() => import('../features/insights/CategoryScreen').then((m) => ({ default: m.CategoryScreen })))
 export const FuelScreen = lazy(() => import('../features/insights/FuelScreen').then((m) => ({ default: m.FuelScreen })))
 export const Settings = lazy(() => import('../features/settings/Settings').then((m) => ({ default: m.Settings })))

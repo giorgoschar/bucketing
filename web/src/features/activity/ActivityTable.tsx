@@ -52,11 +52,14 @@ export function ActivityTable({ rows, refData, rowProps, selecting, sort, onSort
   const stop = cursor ?? openId ?? rows[0]?.id
   const body = useRef<HTMLTableSectionElement>(null)
 
-  // Opening a row mounts the route again (router.tsx), which drops focus: put it back on the open row so
-  // Up, Down and Esc keep working from where the user was.
+  // Focus that would fall to the page goes back to the open row, or, when the pane just closed, the row that
+  // was open: Up, Down and Esc keep working from where the user was.
+  const was = useRef(openId)
   useEffect(() => {
-    if (openId && document.activeElement === document.body) {
-      body.current?.querySelector<HTMLElement>('tr[aria-selected="true"]')?.focus({ preventScroll: true })
+    const id = openId ?? was.current
+    was.current = openId
+    if (id && document.activeElement === document.body) {
+      body.current?.querySelector<HTMLElement>(`tr[data-id="${CSS.escape(id)}"]`)?.focus({ preventScroll: true })
     }
   }, [openId, rows.length])
 
@@ -64,7 +67,7 @@ export function ActivityTable({ rows, refData, rowProps, selecting, sort, onSort
   const open = (id: string) =>
     void navigate({ pathname: `/activity/${encodeURIComponent(id)}`, search: location.search }, { replace: !!openId })
 
-  const onKey = (e: KeyboardEvent<HTMLTableRowElement>, t: Txn, pending: boolean, act: () => void) => {
+  const onKey = (e: KeyboardEvent<HTMLTableRowElement>, pending: boolean, act: () => void) => {
     if (e.target !== e.currentTarget) return
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
@@ -74,7 +77,6 @@ export function ActivityTable({ rows, refData, rowProps, selecting, sort, onSort
       e.preventDefault()
       if (!pending) act()
     }
-    void t
   }
 
   return (
@@ -108,6 +110,7 @@ export function ActivityTable({ rows, refData, rowProps, selecting, sort, onSort
             return (
               <tr
                 key={t.id}
+                data-id={t.id}
                 className="atable__row"
                 aria-selected={marked}
                 aria-disabled={pending || undefined}
@@ -115,7 +118,7 @@ export function ActivityTable({ rows, refData, rowProps, selecting, sort, onSort
                 tabIndex={t.id === stop ? 0 : -1}
                 onFocus={() => setCursor(t.id)}
                 onClick={pending ? undefined : act}
-                onKeyDown={(e) => onKey(e, t, pending, act)}
+                onKeyDown={(e) => onKey(e, pending, act)}
               >
                 {selecting && <td className="atable__check"><Check checked={!!extra.selected} /></td>}
                 <td className="atable__date">{dateText(t.transaction_date)}</td>

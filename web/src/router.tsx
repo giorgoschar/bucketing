@@ -3,10 +3,9 @@ import { AppShell } from './shell/AppShell'
 import { ScreenError } from './shell/ScreenError'
 import { FullScreenShell } from './shell/FullScreenShell'
 import { Home } from './screens/Home'
-import { Activity } from './screens/Activity'
 import { Insights } from './screens/Insights'
 import {
-  ActivityDetail, Appearance, Automations, Categories, CategoryScreen, Compose, FuelScreen, Household, Items, Notifications,
+  ActivityRoute, Appearance, Automations, Categories, CategoryScreen, Compose, FuelScreen, Household, Items, Notifications,
   PantryDetail, Plan, Profile, Settings, ShoppingList,
 } from './screens/lazy'
 
@@ -21,8 +20,8 @@ export const router = createBrowserRouter(
       element: <AppShell />,
       children: guarded([
         { index: true, element: <Home /> },
-        { path: 'activity', element: <Activity /> },
-        { path: 'activity/:id', element: <ActivityDetail /> },
+        { path: 'activity', element: <ActivityRoute /> },
+        { path: 'activity/:id', element: <ActivityRoute /> },
         { path: 'plan', element: <Plan /> },
         { path: 'plan/items', element: <Items /> },
         // Static pantry routes before any 'plan/pantry/:id'.

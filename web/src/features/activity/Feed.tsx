@@ -32,10 +32,6 @@ export type TableArgs = {
   selecting?: boolean
 }
 
-/** How many extra pages the table had loaded per filter and sort. Opening a row mounts a different route
- *  (router.tsx), so the table starts again; this puts back the pages the user had already loaded. */
-const pagesLoaded = new Map<string, number>()
-
 /** What "Select › All" needs to know about the list beyond its selectable rows. */
 export type LoadedInfo = {
   /** Every server row of the filter is loaded. */
@@ -74,8 +70,7 @@ function FeedList({ filter, onClear, renderRow, hidden, selecting, rowProps, onL
   const refData: RefData | undefined = useRefData()
   const first = useFeedPage(filter, 1, sort)
   const [more, setMore] = useState<TxnPage[]>([])
-  const memoKey = JSON.stringify([filter, sort])
-  const [extra, setExtra] = useState(() => (renderTable ? pagesLoaded.get(memoKey) ?? 0 : 0))
+  const [extra, setExtra] = useState(0)
   const pendingAll = usePendingActivity()
   const plain = isEmpty({ ...filter, from_date: undefined, to_date: undefined })
 
@@ -113,10 +108,7 @@ function FeedList({ filter, onClear, renderRow, hidden, selecting, rowProps, onL
     (i: number, p: TxnPage) => setMore((m) => (m[i] === p ? m : Object.assign([...m], { [i]: p }))),
     [],
   )
-  const loadMore = useCallback(() => setExtra((n) => {
-    if (renderTable) pagesLoaded.set(memoKey, n + 1)
-    return n + 1
-  }), [renderTable, memoKey])
+  const loadMore = useCallback(() => setExtra((n) => n + 1), [])
   const sentinel = useRef<HTMLButtonElement>(null)
   useEffect(() => {
     const el = sentinel.current
