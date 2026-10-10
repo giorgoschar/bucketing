@@ -453,8 +453,9 @@ def test_last_year_matches_on_the_period_when_a_business_day_shift_crossed_a_mon
 def test_latest_is_deterministic_for_equal_due_dates():
     d = date(2026, 9, 1)
     base = series(50, 50, 50, 50, start=date(2026, 1, 14))
-    early = pt(d, 90, paid_at=datetime(2026, 9, 1, 8))  # noqa: DTZ001
+    # The later-paid point is created first, so its id sorts lower: only paid_at puts it last.
     late = pt(d, 50, paid_at=datetime(2026, 9, 1, 9))  # noqa: DTZ001
+    early = pt(d, 90, paid_at=datetime(2026, 9, 1, 8))  # noqa: DTZ001
     for order in ([early, late], [late, early]):
         assert assess(base + order, monthly=True) is None  # the later payment (50) is latest
     # Same paid_at: the id decides, whatever the input order.
