@@ -101,12 +101,18 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
   const [initialBody] = useState(() => (initial.mode === 'edit' ? JSON.stringify(toUpdateBody(initial, ctx)) : ''))
   const dirty = s.mode === 'new' ? isDirtyNew(s) : JSON.stringify(toUpdateBody(s, ctx)) !== initialBody
   const leaving = useRef(false)
-  // On the phone leaving means another path. The panel also ends when only the address's panel parameters go
-  // (the browser's Back), which the pathname test alone would let through.
+  // On the phone leaving means another path. In the panel, only an address that no longer shows this same panel
+  // (still an add, or the same edit id) is leaving: the screen behind (its pane, rows, filters) changes freely.
   const blocker = useBlocker(({ currentLocation, nextLocation }) => {
     if (!dirty || leaving.current) return false
-    if (currentLocation.pathname !== nextLocation.pathname) return true
-    return !!panel && !!panelOf(new URLSearchParams(currentLocation.search)) && !panelOf(new URLSearchParams(nextLocation.search))
+    if (!panel) return currentLocation.pathname !== nextLocation.pathname
+    const now = new URLSearchParams(currentLocation.search)
+    const next = new URLSearchParams(nextLocation.search)
+    const was = panelOf(now)
+    const to = panelOf(next)
+    if (!was) return currentLocation.pathname !== nextLocation.pathname
+    if (!to || to.kind !== was.kind) return true
+    return to.kind === 'edit' && was.kind === 'edit' && to.id !== was.id
   })
   const leave = (to?: string) => {
     leaving.current = true

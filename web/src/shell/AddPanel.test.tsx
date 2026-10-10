@@ -358,6 +358,43 @@ it('with the pane open, Esc in a dirty panel asks once and keeps the pane', asyn
   expect(where()).toBe('/activity/t9?add=1')
 })
 
+// Final review 1: what happens behind a dirty panel is not the panel's business.
+it('closing the pane behind a dirty panel asks nothing and keeps what was typed', async () => {
+  const user = userEvent.setup()
+  await setup('/activity/t9?add=1', { activity: true })
+  await waitFor(() => amount())
+  await user.type(amount(), '5')
+  await user.click(within(await screen.findByRole('complementary', { name: 'Payment details' })).getByRole('button', { name: 'Back' }))
+  await waitFor(() => expect(where()).toBe('/activity?add=1'))
+  expect(screen.queryByRole('dialog', { name: 'Discard this entry?' })).toBeNull()
+  expect(amount()).toHaveValue('5')
+})
+
+it('opening another row, or changing another query parameter, behind a dirty panel asks nothing', async () => {
+  const user = userEvent.setup()
+  const { router } = await setup('/activity/t9?add=1', { activity: true })
+  await waitFor(() => amount())
+  await user.type(amount(), '5')
+  await act(() => router.navigate('/activity/t8?add=1'))
+  await act(() => router.navigate('/activity/t8?add=1&q=lidl'))
+  expect(screen.queryByRole('dialog', { name: 'Discard this entry?' })).toBeNull()
+  expect(where()).toBe('/activity/t8?add=1&q=lidl')
+  expect(amount()).toHaveValue('5')
+})
+
+it('a real leave (another screen, or the panel ending) still asks', async () => {
+  const user = userEvent.setup()
+  const { router } = await setup('/activity?add=1')
+  await waitFor(() => amount())
+  await user.type(amount(), '5')
+  await act(() => router.navigate('/insights'))
+  expect(await screen.findByRole('dialog', { name: 'Discard this entry?' })).toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: 'Keep editing' }))
+  await act(() => router.navigate('/activity?edit=t9'))
+  expect(await screen.findByRole('dialog', { name: 'Discard this entry?' })).toBeInTheDocument()
+  expect(amount()).toHaveValue('5')
+})
+
 // Review fix 11: closing through the address (the browser's Back) must not lose a typed entry silently.
 it('leaving a dirty panel through the address asks first', async () => {
   const user = userEvent.setup()
