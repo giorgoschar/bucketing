@@ -81,6 +81,11 @@ buckets, cash/settlement data), i.e. they destroy data entered since the upgrade
 Redeploy the previous release and restore `/backups/pre-migrate-<date>.sql.gz`
 (or `expenses-pre-v2.sql.gz`) as in section 5.
 
+**Phase A (bill usage, migration `c5d6e7f8a9b0`):** an image from before Phase A will not start against a database
+that already has this revision (its `alembic upgrade head` finds a revision it has no script for). Before rolling back
+to such an image, run `alembic downgrade f2a3b4c5d6e7` inside the running Phase A container, then deploy the old
+image. The downgrade drops every recorded usage figure and every usage unit.
+
 ## Planning redesign upgrade (migration a7b8c9d0e1f2)
 
 Production runs commit `8b01313` (alembic head `f0a1b2c3d4e5`, user_oidc_subject).

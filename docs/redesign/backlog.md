@@ -97,3 +97,11 @@ Gaps found in the current app that the new app (web/) must cover.
   - S11c: foreign-currency items mix the item's currency with base-converted transaction amounts; they agree today only because `pay_occurrence` sets no rate.
   - SN1: the scheduler's bill-change job reloads each bill with its own query after the first 200-item chunk commit; collect the fields up front.
   - SN3: the bill-change transaction lookup loads every linked entry for all time and could pass the parameter limit at huge sizes; select only the needed columns and batch the ids.
+- **Whole-branch review (`.superpowers/sdd/phase-a/final-review.md`):**
+  - F4: the first scheduler run after deploy can send several bill alerts at once (the new rule also covers fixed-amount items and a 20% / EUR 10 gate); tell the household to expect them. No code change.
+  - F6: a queued Pay or Set amount that carries `usage` is rejected whole (422) if the other member turned the unit off meanwhile; decide whether `/done` and `/amount` should ignore `usage` for an item with no unit (departs from spec section 3.2).
+  - F7: Home's bill row and the history note format money as `EUR1200` where the push says `EUR1,200` (and use the default currency); format with `Intl.NumberFormat('en-IE', ...)`, wrap the figures in `ui-num`.
+  - F8: until a phone takes the update, its old service worker maps `/app/insights/bills/{id}` to Home, so the first bill push opens Home; self-corrects, no change.
+  - F9: a 404 from the history route shows "Couldn't load this." (or stale saved history for ever); show "This bill no longer exists" with a link to Bills, as the composer's `Gone` does.
+  - F10: Home's "See why" is a button that navigates; make it a `Link`.
+  - F11: missing tests where streams meet: `afterTxnWrite` covers `keys.insightsBills()` and `keys.itemHistory('x')`; the Add panel over `/insights/bills/:id` and over Plan; `router.tsx` registering `insights/bills/:id`.
