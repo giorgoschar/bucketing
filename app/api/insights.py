@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.api.plan import parse_month
 from app.api.planning_models import BillRowOut, CategoryUsualOut, Money
-from app.api.statement_models import StatementOut
+from app.api.statement_models import StatementListOut, StatementOut
 from app.api_auth import require_api_auth
 from app.core.clock import local_today
 from app.core.database import get_db
@@ -19,8 +19,11 @@ from app.services.bill_history import bills_overview
 from app.services.insights import get_category_detail, resolve_insight_period
 from app.services.person import get_person_summary
 from app.services.statement import (
+    build_list,
     build_statement,
     is_past,
+    mark_reviewed,
+    month_key,
     parse_month_key,
 )
 from app.services.usual import categories_vs_usual
@@ -295,9 +298,28 @@ def _past_month(value: str) -> tuple[int, int]:
     return parsed
 
 
+@router.get("/statements", response_model=StatementListOut)
+def statements(auth=Depends(require_api_auth), db: Session = Depends(get_db)):
+    """Every past month with its In, Out and Net, newest first, and the month
+    waiting for review (if any). Household-wide; ignores the Insights lens."""
+    user, hh_id = auth
+    return build_list(db, hh_id, today=local_today())
+
+
 @router.get("/statements/{month}", response_model=StatementOut)
 def statement(month: str, auth=Depends(require_api_auth), db: Session = Depends(get_db)):
     """One past month, recalculated now from the services behind each screen."""
     user, hh_id = auth
     year, mon = _past_month(month)
+    return build_statement(db, hh_id, year, mon, today=local_today(), viewer_id=user.id)
+
+
+@router.post("/statements/{month}/review", response_model=StatementOut)
+def review_statement(month: str, auth=Depends(require_api_auth), db: Session = Depends(get_db)):
+    """Mark a past month as reviewed for the whole household. Idempotent: the
+    first reviewer and time are kept. There is no un-review."""
+    user, hh_id = auth
+    year, mon = _past_month(month)
+    mark_reviewed(db, hh_id, month_key(year, mon), user.id)
+    db.commit()
     return build_statement(db, hh_id, year, mon, today=local_today(), viewer_id=user.id)

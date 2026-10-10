@@ -101,3 +101,24 @@ class StatementOut(BaseModel):
     cash: list[CashLeftOut]
     categories_over: list[CategoryOverOut]
     biggest: list[BiggestOut]
+
+
+class StatementReviewOut(BaseModel):
+    month: str
+    label: str
+    days_left: int
+
+
+class StatementMonthOut(BaseModel):
+    month: str
+    label: str
+    in_: Money = Field(alias="in")
+    out: Money
+    net: Money
+    reviewed_at: datetime | None
+    closed: bool
+
+
+class StatementListOut(BaseModel):
+    review: StatementReviewOut | None
+    months: list[StatementMonthOut]

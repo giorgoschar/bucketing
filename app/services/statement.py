@@ -11,8 +11,10 @@ from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import exists, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.clock import utcnow_naive
 from app.core.money import ZERO, quantize
 from app.models import (
     BillOccurrence,
@@ -38,6 +40,7 @@ from app.services.usual import categories_vs_usual
 REVIEW_DAYS = 5  # days 1 to 5 of a month review the month before it
 OPEN_LIMIT = 50
 BIGGEST_LIMIT = 5
+LIST_LIMIT = 120
 UNLOGGED_MIN = Decimal("0.005")
 
 _MONTH = re.compile(r"^(\d{4})-(\d{2})$")
@@ -129,6 +132,32 @@ def first_data_month(db: Session, household_id: str) -> tuple[int, int] | None:
 
 def get_review(db: Session, household_id: str, month: str) -> MonthReview | None:
     return db.query(MonthReview).filter_by(household_id=household_id, month=month).first()
+
+
+def mark_reviewed(db: Session, household_id: str, month: str, user_id: str) -> MonthReview:
+    """Record the review; the first reviewer is kept. Two members pressing
+    Done together end with one row and no error for either. Does not commit."""
+    existing = get_review(db, household_id, month)
+    if existing is not None:
+        return existing
+    try:
+        with db.begin_nested():
+            row = MonthReview(
+                household_id=household_id,
+                month=month,
+                reviewed_at=utcnow_naive(),
+                reviewed_by=user_id,
+            )
+            db.add(row)
+            db.flush()
+        return row
+    except IntegrityError:
+        # The other request won: keep its row.
+        db.expire_all()
+        existing = get_review(db, household_id, month)
+        if existing is None:
+            raise
+        return existing
 
 
 # -------------------------------------------------------------- sections
@@ -316,3 +345,57 @@ def build_statement(
         "categories_over": _categories_over(db, household_id, year, month),
         "biggest": _biggest(db, household_id, year, month),
     }
+
+
+# ------------------------------------------------------------------ list
+
+
+def review_candidate(db: Session, household_id: str, today: date) -> dict | None:
+    """Last month, when today is in its review window, it is not reviewed and
+    it has any data; else None (spec §3.3)."""
+    if today.day > REVIEW_DAYS:
+        return None
+    year, month = previous_month(today.year, today.month)
+    if get_review(db, household_id, month_key(year, month)) is not None:
+        return None
+    if not month_has_data(db, household_id, year, month):
+        return None
+    _closed, days_left = review_state(year, month, False, today)
+    return {
+        "month": month_key(year, month),
+        "label": month_label(year, month),
+        "days_left": days_left,
+    }
+
+
+def build_list(db: Session, household_id: str, *, today: date) -> dict:
+    """The statements list (spec §3.3): every month from the first one with
+    data to last month, newest first, at most LIST_LIMIT."""
+    last = previous_month(today.year, today.month)
+    first = first_data_month(db, household_id)
+    if first is None or first > last:
+        return {"review": None, "months": []}
+    span = []
+    y, m = last
+    while (y, m) >= first and len(span) < LIST_LIMIT:
+        span.append((y, m))
+        y, m = previous_month(y, m)
+    totals = in_out_by_month(db, household_id, date(*span[-1], 1), date(*last, 1))
+    reviews = {
+        r.month: r.reviewed_at for r in db.query(MonthReview).filter_by(household_id=household_id)
+    }
+    months = []
+    for y, m in span:
+        key = month_key(y, m)
+        reviewed_at = reviews.get(key)
+        closed, _left = review_state(y, m, reviewed_at is not None, today)
+        months.append(
+            {
+                "month": key,
+                "label": month_label(y, m),
+                **totals[(y, m)],
+                "reviewed_at": reviewed_at,
+                "closed": closed,
+            }
+        )
+    return {"review": review_candidate(db, household_id, today), "months": months}
