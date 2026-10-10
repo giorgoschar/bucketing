@@ -86,6 +86,11 @@ that already has this revision (its `alembic upgrade head` finds a revision it h
 to such an image, run `alembic downgrade f2a3b4c5d6e7` inside the running Phase A container, then deploy the old
 image. The downgrade drops every recorded usage figure and every usage unit.
 
+**Phase B (month reviews, migration `d6e7f8a9b0c1`):** the same applies. Before rolling back to an image from before
+Phase B, run `alembic downgrade c5d6e7f8a9b0` inside the running Phase B container, then deploy the old image. The
+downgrade drops the record of which months were reviewed and deletes "month ready to review" notifications. No money
+data is touched.
+
 ## Planning redesign upgrade (migration a7b8c9d0e1f2)
 
 Production runs commit `8b01313` (alembic head `f0a1b2c3d4e5`, user_oidc_subject).

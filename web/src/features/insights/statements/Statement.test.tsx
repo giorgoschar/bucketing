@@ -163,7 +163,7 @@ it('5. cash: one row per member, Log it only on your own row; empty says so', as
   const { unmount } = open(FULL)
   const s = await section('Cash not logged')
   expect(s.getByText('Giorgos')).toBeInTheDocument()
-  expect(s.getByText('€45')).toBeInTheDocument()
+  expect(s.getByText('€45.00')).toBeInTheDocument()
   expect(s.queryByText('not logged yet')).toBeNull()
   expect(s.getByText('€12.50')).toBeInTheDocument()
   const log = s.getAllByRole('link', { name: 'Log it' })

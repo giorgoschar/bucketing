@@ -41,8 +41,8 @@ export function useMarkReviewed(month: string) {
   return async () => {
     const out = await act(
       () => api.POST('/api/v1/insights/statements/{month}/review', { params: { path: { month } } }),
-      // The page is replaced by the answer below; only the list (the review banner, the marks) needs a refetch.
-      { invalidates: [keys.statements()] },
+      // The page shows the answer below at once; the refetch also replaces the copy saved on this device.
+      { invalidates: [keys.statements(), keys.statement(month)] },
     )
     if (out.ok && out.data) qc.setQueryData(keys.statement(month), out.data)
     return out

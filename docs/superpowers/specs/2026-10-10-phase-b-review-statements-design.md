@@ -149,7 +149,7 @@ One row per month: label, In, Out, Net (signed, as text), and a small "Reviewed"
 
 ### 4.4 Insights
 
-A **Statements** card after the Bills card: the last 3 months with their net, and "All statements". On desktop it is a half-width card in the column flow. It shows in an empty period too, as the Bills card does.
+A **Statements** card after the Bills card: the last 3 months with their net, and "All statements". On desktop it spans the dashboard, as the Bills panel does (a half-width card sat alone with a hole beside it). It shows in an empty period too, as the Bills card does.
 
 ### 4.5 Home › Needs attention
 

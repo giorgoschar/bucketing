@@ -21,6 +21,9 @@ import '../insights.css'
 import '../bills/bills.css'
 import './statements.css'
 
+/** A right-aligned amount on its own: two decimals like the tiles and tables; a dash when the figure is missing. */
+const standalone = (n: number) => (Number.isFinite(n) ? eur(n) : short(n))
+
 /** The route element: /insights/statements/:month. */
 export function Statement() {
   const { month = '' } = useParams()
@@ -243,7 +246,7 @@ function Cash({ s, meId }: { s: StatementOut; meId: string | undefined }) {
               <span className="stmtitem__main">
                 <span className="stmtitem__name">{c.name}</span>
               </span>
-              <span className="ui-num stmtitem__amount">{short(c.not_yet_logged)}</span>
+              <span className="ui-num stmtitem__amount">{standalone(c.not_yet_logged)}</span>
               {c.member_id === meId && Number.isFinite(c.not_yet_logged) && (
                 <Link className="btn btn--sm btn--primary" to={`/new?mode=cash&take=none&amount=${c.not_yet_logged.toFixed(2)}`}>Log it</Link>
               )}
@@ -269,7 +272,7 @@ function Categories({ s }: { s: StatementOut }) {
                   <span className="stmtitem__name">{c.name}</span>
                   {usuallyText(c.usual) && <span className="stmtitem__sub"><Nums text={usuallyText(c.usual) ?? ''} /></span>}
                 </span>
-                <span className="ui-num stmtitem__amount">{short(c.amount)}</span>
+                <span className="ui-num stmtitem__amount">{standalone(c.amount)}</span>
               </>
             )
             return (
