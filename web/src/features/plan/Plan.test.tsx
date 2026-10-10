@@ -87,3 +87,13 @@ it('?view=cash shows the Cash screen', () => {
   expect(planView().getByRole('button', { name: 'Cash' })).toHaveAttribute('aria-pressed', 'true')
   expect(document.querySelector('.cash')).not.toBeNull()
 })
+
+// Final review 3: the Add panel's parameters ride along when the view changes (desktop); Plan's own are replaced.
+it('switching view keeps the Add panel parameters and drops the old view\'s', async () => {
+  fakeApi(routes())
+  const { router } = renderWithProviders(<Plan />, { route: '/plan?view=month&add=1&copy=t9&mode=cash&scale=year' })
+  fireEvent.click(screen.getByRole('button', { name: 'Budgets' }))
+  expect(router.state.location.search).toBe('?add=1&mode=cash&copy=t9&view=budgets')
+  fireEvent.click(screen.getByRole('button', { name: 'Upcoming' }))
+  expect(router.state.location.search).toBe('?add=1&mode=cash&copy=t9')
+})

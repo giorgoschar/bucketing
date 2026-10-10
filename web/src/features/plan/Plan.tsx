@@ -1,4 +1,5 @@
 import { Link, useSearchParams } from 'react-router'
+import { OWN_PANEL_KEYS } from '../../shell/addPanel'
 import { TopBar } from '../../shell/TopBar'
 import { Segmented } from '../../ui/Segmented'
 import { Budgets } from './Budgets'
@@ -22,7 +23,13 @@ export function Plan() {
   // Year folded into Month (cash spec §4.1): old ?view=year links open Month at the Year scale.
   const asked = params.get('view') === 'year' ? 'month' : params.get('view')
   const view: View = VIEWS.find((v) => v.value === asked)?.value ?? 'upcoming'
-  const choose = (v: View) => setParams(v === 'upcoming' ? {} : { view: v }, { replace: true })
+  // Only the Add panel's own parameters survive a switch: the other views' parameters belong to the view left.
+  const choose = (v: View) => setParams((p) => {
+    const next = new URLSearchParams()
+    for (const k of OWN_PANEL_KEYS) { const x = p.get(k); if (x !== null) next.set(k, x) }
+    if (v !== 'upcoming') next.set('view', v)
+    return next
+  }, { replace: true })
   return (
     <>
       <TopBar title="Plan" actions={<Link to="/plan/items" className="btn btn--sm">Items</Link>} />

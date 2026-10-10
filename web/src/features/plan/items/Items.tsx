@@ -25,7 +25,7 @@ export function Items() {
   const [entry, setEntry] = useState<EntryOut | null>(null)
   const closeSheet = () => {
     setEditing(null)
-    if (creating) setParams({}, { replace: true })
+    if (creating) setParams((p) => { const n = new URLSearchParams(p); n.delete('new'); return n }, { replace: true })
   }
 
   return (

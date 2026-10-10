@@ -154,7 +154,9 @@
 @media (min-width: 1024px) and (prefers-reduced-motion: reduce) { .addpanel { animation: none; } }
 
 /* A refinement inside the desktop layout (the controller accepted it as such), not a second breakpoint for the phone.
-   From 1440 px the screen behind makes room for the panel, so the pane and the Amount column stay visible. */
+   From 1440 px the screen behind makes room for the panel so the Amount column stays visible. With the detail
+   pane open there is no room for both (the table would be ~300 px), so the panel lies over the pane instead,
+   as it does below 1440 px: the pane shows the entry being edited, which the panel already holds. */
 @media (min-width: 1440px) {
-  .shell:has(.addpanel) { padding-right: 440px; }
+  .shell:has(.addpanel):not(:has(.dact__pane)) { padding-right: 440px; }
 }
