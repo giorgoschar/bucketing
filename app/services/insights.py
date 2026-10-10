@@ -227,6 +227,45 @@ def monthly_in_out(
     return rows
 
 
+def in_out_by_month(db: Session, household_id: str, first: date, last: date) -> dict:
+    """In, Out and Net for every calendar month from ``first``'s to ``last``'s,
+    keyed ``(year, month)``, in a fixed number of queries.
+
+    Each month equals what :func:`in_out` gives for that whole month: In from
+    the same income rule as :func:`get_insights_income`, Out the logged
+    expenses plus the not-yet-logged cash and labelled outs of every member
+    (:func:`app.services.cash.cash_spending`; a month's cash figure does not
+    depend on the window it is asked for). Household-wide, no filters.
+    """
+    start, end = date(first.year, first.month, 1), _month_range(last.year, last.month)[1]
+    spent = _sum_expenses_by(db, household_id, start, end, group_by="month")
+    income: dict = defaultdict(Decimal)
+    rows = (
+        _income_query(db, household_id, Transaction.transaction_date, func.sum(base_amount_expr()))
+        .filter(Transaction.transaction_date >= start, Transaction.transaction_date <= end)
+        .group_by(Transaction.transaction_date)
+        .all()
+    )
+    for d, total in rows:
+        income[(d.year, d.month)] += to_decimal(total or 0)
+    cash = cash_spending(db, household_id, start, end, cash_scope(db, household_id, None))
+    not_logged: dict = defaultdict(dict)
+    for key, amount in cash.not_logged.items():
+        not_logged[key][key] = amount
+    outs: dict = defaultdict(list)
+    for item in cash.outs:
+        outs[(item[0].year, item[0].month)].append(item)
+    result = {}
+    y, m = start.year, start.month
+    while (y, m) <= (end.year, end.month):
+        month_cash = CashSpend(not_logged=not_logged.get((y, m), {}), outs=outs.get((y, m), []))
+        inc = quantize(income.get((y, m), ZERO))
+        out = quantize(spent.get((y, m), ZERO) + month_cash.total)
+        result[(y, m)] = {"in": inc, "out": out, "net": quantize(inc - out)}
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+    return result
+
+
 def get_bills_due_month_total(db: Session, household_id: str, year: int, month: int) -> Decimal:
     """Sum of amounts for bill occurrences due within the given calendar month."""
     start, end = _month_range(year, month)
@@ -764,6 +803,22 @@ def get_insights_summary(
     }
 
 
+def _income_query(db: Session, household_id: str, *entities):
+    """Income transactions that count (see :func:`get_insights_income`):
+    bucket-less, or in a bucket that tracks income."""
+    return (
+        db.query(*entities)
+        .select_from(Transaction)
+        .outerjoin(Bucket, Bucket.id == Transaction.bucket_id)
+        .filter(
+            Transaction.active(),
+            Transaction.household_id == household_id,
+            Transaction.type == TransactionType.income,
+            or_(Transaction.bucket_id.is_(None), Bucket.show_income.is_(True)),
+        )
+    )
+
+
 def get_insights_income(
     db: Session,
     household_id: str,
@@ -781,16 +836,7 @@ def get_insights_income(
     only income in those buckets. The Person filter is the recipient
     (``paid_by``): income is not split.
     """
-    q = (
-        db.query(func.coalesce(func.sum(base_amount_expr()), 0))
-        .outerjoin(Bucket, Bucket.id == Transaction.bucket_id)
-        .filter(
-            Transaction.active(),
-            Transaction.household_id == household_id,
-            Transaction.type == TransactionType.income,
-            or_(Transaction.bucket_id.is_(None), Bucket.show_income.is_(True)),
-        )
-    )
+    q = _income_query(db, household_id, func.coalesce(func.sum(base_amount_expr()), 0))
     if start:
         q = q.filter(Transaction.transaction_date >= start)
     if end:

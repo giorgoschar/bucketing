@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.api.plan import parse_month
 from app.api.planning_models import BillRowOut, CategoryUsualOut, Money
+from app.api.statement_models import StatementListOut, StatementOut
 from app.api_auth import require_api_auth
 from app.core.clock import local_today
 from app.core.database import get_db
@@ -17,6 +18,15 @@ from app.services import InsightFilters, build_insights
 from app.services.bill_history import bills_overview
 from app.services.insights import get_category_detail, resolve_insight_period
 from app.services.person import get_person_summary
+from app.services.statement import (
+    build_list,
+    build_statement,
+    first_data_month,
+    is_past,
+    mark_reviewed,
+    month_key,
+    parse_month_key,
+)
 from app.services.usual import categories_vs_usual
 from app.validators import household_member_ids
 
@@ -272,3 +282,51 @@ def category_detail(
     if data is None:
         raise HTTPException(status_code=404, detail="Category not found")
     return data
+
+
+# --- Month statements (Phase B). Static paths under /statements cannot clash
+# with /categories/{id} or /bills; /statements/{month} is one segment.
+
+
+def _past_month(value: str, today: dt.date) -> tuple[int, int]:
+    """'YYYY-MM' of a month before the current one: 400 for a bad format, 404
+    for the current or a future month (no statement yet)."""
+    parsed = parse_month_key(value)
+    if parsed is None:
+        raise HTTPException(status_code=400, detail="month must be YYYY-MM.")
+    if not is_past(*parsed, today):
+        raise HTTPException(status_code=404, detail="No statement for this month yet.")
+    return parsed
+
+
+@router.get("/statements", response_model=StatementListOut)
+def statements(auth=Depends(require_api_auth), db: Session = Depends(get_db)):
+    """Every past month with its In, Out and Net, newest first, and the month
+    waiting for review (if any). Household-wide; ignores the Insights lens."""
+    user, hh_id = auth
+    return build_list(db, hh_id, today=local_today())
+
+
+@router.get("/statements/{month}", response_model=StatementOut)
+def statement(month: str, auth=Depends(require_api_auth), db: Session = Depends(get_db)):
+    """One past month, recalculated now from the services behind each screen."""
+    user, hh_id = auth
+    today = local_today()
+    year, mon = _past_month(month, today)
+    return build_statement(db, hh_id, year, mon, today=today, viewer_id=user.id)
+
+
+@router.post("/statements/{month}/review", response_model=StatementOut)
+def review_statement(month: str, auth=Depends(require_api_auth), db: Session = Depends(get_db)):
+    """Mark a past month as reviewed for the whole household. Idempotent: the
+    first reviewer and time are kept. There is no un-review."""
+    user, hh_id = auth
+    today = local_today()
+    year, mon = _past_month(month, today)
+    first = first_data_month(db, hh_id)
+    if first is not None and (year, mon) < first:
+        # Nothing to review before the household's first data.
+        raise HTTPException(status_code=404, detail="No statement for this month.")
+    mark_reviewed(db, hh_id, month_key(year, mon), user.id)
+    db.commit()
+    return build_statement(db, hh_id, year, mon, today=today, viewer_id=user.id)

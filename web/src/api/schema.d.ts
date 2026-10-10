@@ -565,6 +565,68 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/insights/statements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Statements
+         * @description Every past month with its In, Out and Net, newest first, and the month
+         *     waiting for review (if any). Household-wide; ignores the Insights lens.
+         */
+        get: operations["statements_api_v1_insights_statements_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/insights/statements/{month}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Statement
+         * @description One past month, recalculated now from the services behind each screen.
+         */
+        get: operations["statement_api_v1_insights_statements__month__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/insights/statements/{month}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Review Statement
+         * @description Mark a past month as reviewed for the whole household. Idempotent: the
+         *     first reviewer and time are kept. There is no un-review.
+         */
+        post: operations["review_statement_api_v1_insights_statements__month__review_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/matches": {
         parameters: {
             query?: never;
@@ -2008,6 +2070,22 @@ export interface components {
             /** Total */
             total: number;
         };
+        /** BiggestOut */
+        BiggestOut: {
+            /** Amount */
+            amount: number;
+            /** Category */
+            category: string | null;
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Label */
+            label: string;
+            /** Transaction Id */
+            transaction_id: string;
+        };
         /**
          * BillChangeOut
          * @description The latest done entry of an item against its usual (app.services.bill_change).
@@ -2023,6 +2101,34 @@ export interface components {
             direction: string;
             /** Entry Id */
             entry_id: string;
+            /** Pct */
+            pct: number;
+            /** Reason */
+            reason: string | null;
+            /** Reason Pct */
+            reason_pct: number | null;
+            /** Usual */
+            usual: number;
+        };
+        /** BillChangedOut */
+        BillChangedOut: {
+            /** Amount */
+            amount: number;
+            /** Basis */
+            basis: string;
+            /** Direction */
+            direction: string;
+            /**
+             * Due Date
+             * Format: date
+             */
+            due_date: string;
+            /** Entry Id */
+            entry_id: string;
+            /** Item Id */
+            item_id: string;
+            /** Name */
+            name: string;
             /** Pct */
             pct: number;
             /** Reason */
@@ -3028,6 +3134,19 @@ export interface components {
             /** Still To Come */
             still_to_come: number;
         };
+        /** BudgetOverOut */
+        BudgetOverOut: {
+            /** Bucket Id */
+            bucket_id: string;
+            /** Budget */
+            budget: number;
+            /** Name */
+            name: string;
+            /** Over */
+            over: number;
+            /** Spent */
+            spent: number;
+        };
         /** BudgetRowOut */
         BudgetRowOut: {
             /** Archive Suggested */
@@ -3091,6 +3210,15 @@ export interface components {
             unchanged: number;
             /** Undo Until */
             undo_until: string | null;
+        };
+        /** CashLeftOut */
+        CashLeftOut: {
+            /** Member Id */
+            member_id: string;
+            /** Name */
+            name: string;
+            /** Not Yet Logged */
+            not_yet_logged: number;
         };
         /** CashMovementOut */
         CashMovementOut: {
@@ -3231,6 +3359,19 @@ export interface components {
             total: number;
             /** Year */
             year: number;
+        };
+        /** CategoryOverOut */
+        CategoryOverOut: {
+            /** Amount */
+            amount: number;
+            /** Category Id */
+            category_id: string | null;
+            /** Icon */
+            icon: string;
+            /** Name */
+            name: string;
+            /** Usual */
+            usual: number;
         };
         /** CategoryRefOut */
         CategoryRefOut: {
@@ -3702,6 +3843,28 @@ export interface components {
             /** Types */
             types: components["schemas"]["AlertTypeOut"][];
         };
+        /** OpenEntryOut */
+        OpenEntryOut: {
+            /** Amount */
+            amount: number | null;
+            /** Direction */
+            direction: string;
+            /**
+             * Due Date
+             * Format: date
+             */
+            due_date: string;
+            /** Entry Id */
+            entry_id: string;
+            /** Estimated */
+            estimated: boolean;
+            /** Item Id */
+            item_id: string;
+            /** Name */
+            name: string;
+            /** Status */
+            status: string;
+        };
         /** PaceOut */
         PaceOut: {
             /** Bucket Id */
@@ -3783,6 +3946,13 @@ export interface components {
             transaction_count: number;
             /** User Id */
             user_id: string;
+        };
+        /** PlannedSideOut */
+        PlannedSideOut: {
+            /** Actual */
+            actual: number;
+            /** Planned */
+            planned: number;
         };
         /**
          * PriceIn
@@ -4309,6 +4479,103 @@ export interface components {
             amount: number;
             /** User Id */
             user_id: string;
+        };
+        /** StatementListOut */
+        StatementListOut: {
+            /** Months */
+            months: components["schemas"]["StatementMonthOut"][];
+            review: components["schemas"]["StatementReviewOut"] | null;
+        };
+        /** StatementMonthOut */
+        StatementMonthOut: {
+            /** Closed */
+            closed: boolean;
+            /** In */
+            in: number;
+            /** Label */
+            label: string;
+            /** Month */
+            month: string;
+            /** Net */
+            net: number;
+            /** Out */
+            out: number;
+            /** Reviewed At */
+            reviewed_at: string | null;
+            /** Reviewed By */
+            reviewed_by: string | null;
+            /** Reviewed By Name */
+            reviewed_by_name: string | null;
+            /** Reviewed On */
+            reviewed_on: string | null;
+        };
+        /** StatementOut */
+        StatementOut: {
+            /** Biggest */
+            biggest: components["schemas"]["BiggestOut"][];
+            /** Bills Changed */
+            bills_changed: components["schemas"]["BillChangedOut"][];
+            /** Budgets Over */
+            budgets_over: components["schemas"]["BudgetOverOut"][];
+            /** Cash */
+            cash: components["schemas"]["CashLeftOut"][];
+            /** Categories Over */
+            categories_over: components["schemas"]["CategoryOverOut"][];
+            /** Closed */
+            closed: boolean;
+            /** Days Left */
+            days_left: number | null;
+            /** Label */
+            label: string;
+            /** Month */
+            month: string;
+            planned: components["schemas"]["StatementPlannedOut"];
+            /** Reviewed At */
+            reviewed_at: string | null;
+            /** Reviewed By */
+            reviewed_by: string | null;
+            /** Reviewed By Name */
+            reviewed_by_name: string | null;
+            /** Reviewed On */
+            reviewed_on: string | null;
+            totals: components["schemas"]["StatementTotalsOut"];
+        };
+        /** StatementPlannedOut */
+        StatementPlannedOut: {
+            in: components["schemas"]["PlannedSideOut"];
+            /** Open */
+            open: components["schemas"]["OpenEntryOut"][];
+            out: components["schemas"]["PlannedSideOut"];
+        };
+        /** StatementPreviousOut */
+        StatementPreviousOut: {
+            /** In */
+            in: number;
+            /** Month */
+            month: string;
+            /** Net */
+            net: number;
+            /** Out */
+            out: number;
+        };
+        /** StatementReviewOut */
+        StatementReviewOut: {
+            /** Days Left */
+            days_left: number;
+            /** Label */
+            label: string;
+            /** Month */
+            month: string;
+        };
+        /** StatementTotalsOut */
+        StatementTotalsOut: {
+            /** In */
+            in: number;
+            /** Net */
+            net: number;
+            /** Out */
+            out: number;
+            previous: components["schemas"]["StatementPreviousOut"] | null;
         };
         /** StockAdd */
         StockAdd: {
@@ -6040,6 +6307,88 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PersonShareOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    statements_api_v1_insights_statements_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatementListOut"];
+                };
+            };
+        };
+    };
+    statement_api_v1_insights_statements__month__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                month: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatementOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    review_statement_api_v1_insights_statements__month__review_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                month: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatementOut"];
                 };
             };
             /** @description Validation Error */

@@ -161,6 +161,7 @@ class NotificationType(str, enum.Enum):
     general = "general"
     stock_low = "stock_low"  # a stock item fell to its minimum
     price_drop = "price_drop"  # tracked product ≥10% under its 30-day median
+    month_review = "month_review"  # last month is ready to review (Phase B)
     # WARNING: on PostgreSQL this is a native ENUM type (created in migration
     # 2c1adaf99fa2), so adding a member here REQUIRES a migration running
     # ALTER TYPE notificationtype ADD VALUE — otherwise inserts fail at runtime
@@ -895,6 +896,22 @@ class NotificationMute(Base):
     household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), primary_key=True)
     # A NotificationType value as plain VARCHAR: never the native PG enum.
     type = Column(String(32), primary_key=True)
+
+
+class MonthReview(Base):
+    """A household marked a past month as reviewed (Phase B). One row per
+    household and month; the first reviewer is kept."""
+
+    __tablename__ = "month_reviews"
+    __table_args__ = (
+        UniqueConstraint("household_id", "month", name="uq_month_review_household_month"),
+    )
+
+    id = Column(String, primary_key=True, default=gen_id)
+    household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False)
+    month = Column(String(7), nullable=False)  # YYYY-MM
+    reviewed_at = Column(DateTime, nullable=False, default=utcnow_naive)
+    reviewed_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
 
 # ---------------------------------------------------------------------------

@@ -407,6 +407,108 @@ def _notify_bill_drift(db, today: date) -> None:
         db.commit()
 
 
+def _notify_month_review(db, today: date) -> None:
+    """On days 1 to 5, tell every member that last month is ready to review
+    (Phase B spec §3.5). Households with no data in that month, or that have
+    already reviewed it, get nothing. The dedupe key is per household and
+    month, so it is sent once however often the job runs.
+    """
+    from app.models import (
+        CashMovement,
+        Household,
+        MonthReview,
+        Notification,
+        NotificationType,
+        Transaction,
+    )
+    from app.services.bill_change import _money_text
+    from app.services.insights import _month_range, in_out_by_month
+    from app.services.statement import (
+        REVIEW_DAYS,
+        cash_data_filter,
+        month_key,
+        month_label,
+        previous_month,
+    )
+
+    if today.day > REVIEW_DAYS:
+        return
+    year, month = previous_month(today.year, today.month)
+    key = month_key(year, month)
+    start, end = _month_range(year, month)
+
+    with_data = {
+        hh
+        for (hh,) in db.query(Transaction.household_id)
+        .filter(
+            Transaction.active(),
+            Transaction.transaction_date >= start,
+            Transaction.transaction_date <= end,
+        )
+        .distinct()
+    } | {
+        hh
+        for (hh,) in db.query(CashMovement.household_id)
+        .filter(
+            cash_data_filter(),
+            CashMovement.movement_date >= start,
+            CashMovement.movement_date <= end,
+        )
+        .distinct()
+    }
+    reviewed = {hh for (hh,) in db.query(MonthReview.household_id).filter(MonthReview.month == key)}
+    # Households already told about this month are not worked out again.
+    notified = {
+        hh
+        for (hh,) in db.query(Notification.household_id)
+        .filter(
+            Notification.type == NotificationType.month_review,
+            Notification.dedupe_key.like(f"month_review:%:{key}"),
+        )
+        .distinct()
+    }
+    wanted = sorted(with_data - reviewed - notified)
+    if not wanted:
+        return
+    households = {
+        h.id: h
+        for h in db.query(Household).filter(
+            Household.id.in_(wanted), Household.archived_at.is_(None)
+        )
+    }
+    members_by_hh = _members_by_household(db, set(households))
+
+    for hh_id in wanted:
+        household = households.get(hh_id)
+        if household is None:
+            continue
+        # One bad household must not cost the others their notification.
+        try:
+            with db.begin_nested():
+                totals = in_out_by_month(db, hh_id, start, start)[(year, month)]
+                currency = household.default_currency
+                net = totals["net"]
+                sign = "+" if net > 0 else "-" if net < 0 else ""
+                body = (
+                    f"In {_money_text(totals['in'], currency)} · "
+                    f"Out {_money_text(totals['out'], currency)} · "
+                    f"Net {sign}{_money_text(abs(net), currency)}"
+                )
+                _notify_members(
+                    db,
+                    members_by_hh.get(hh_id, []),
+                    household_id=hh_id,
+                    type=NotificationType.month_review,
+                    title=f"{month_label(year, month).split()[0]} is ready to review",
+                    body=body,
+                    link=f"/app/insights/statements/{key}",
+                    dedupe_key=f"month_review:{hh_id}:{key}",
+                )
+        except Exception:
+            logger.exception("Month review notification failed for household %s", hh_id)
+    db.commit()
+
+
 def _notify_budget_thresholds(db, today: date) -> None:
     """Warn when a bucket's spend for the current month crosses its budget."""
     from app.core.money import ZERO, to_decimal
@@ -760,6 +862,7 @@ def auto_mark_paid_job() -> None:
             _notify_overdue,
             _notify_contracts_expiring,
             _notify_bill_drift,
+            _notify_month_review,
             _notify_budget_thresholds,
             _refresh_tracked_prices,
             _notify_stock_and_prices,

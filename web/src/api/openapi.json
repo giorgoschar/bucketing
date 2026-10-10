@@ -245,6 +245,47 @@
         "title": "BestStoreOut",
         "type": "object"
       },
+      "BiggestOut": {
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "number"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "transaction_id": {
+            "title": "Transaction Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "transaction_id",
+          "date",
+          "label",
+          "category",
+          "amount"
+        ],
+        "title": "BiggestOut",
+        "type": "object"
+      },
       "BillChangeOut": {
         "description": "The latest done entry of an item against its usual (app.services.bill_change).",
         "properties": {
@@ -311,6 +352,84 @@
           "reason_pct"
         ],
         "title": "BillChangeOut",
+        "type": "object"
+      },
+      "BillChangedOut": {
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "number"
+          },
+          "basis": {
+            "title": "Basis",
+            "type": "string"
+          },
+          "direction": {
+            "title": "Direction",
+            "type": "string"
+          },
+          "due_date": {
+            "format": "date",
+            "title": "Due Date",
+            "type": "string"
+          },
+          "entry_id": {
+            "title": "Entry Id",
+            "type": "string"
+          },
+          "item_id": {
+            "title": "Item Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "pct": {
+            "title": "Pct",
+            "type": "integer"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "reason_pct": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Pct"
+          },
+          "usual": {
+            "title": "Usual",
+            "type": "number"
+          }
+        },
+        "required": [
+          "item_id",
+          "name",
+          "entry_id",
+          "due_date",
+          "amount",
+          "usual",
+          "basis",
+          "direction",
+          "pct",
+          "reason",
+          "reason_pct"
+        ],
+        "title": "BillChangedOut",
         "type": "object"
       },
       "BillIn": {
@@ -2035,6 +2154,39 @@
         "title": "BucketsMonthOut",
         "type": "object"
       },
+      "BudgetOverOut": {
+        "properties": {
+          "bucket_id": {
+            "title": "Bucket Id",
+            "type": "string"
+          },
+          "budget": {
+            "title": "Budget",
+            "type": "number"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "over": {
+            "title": "Over",
+            "type": "number"
+          },
+          "spent": {
+            "title": "Spent",
+            "type": "number"
+          }
+        },
+        "required": [
+          "bucket_id",
+          "name",
+          "budget",
+          "spent",
+          "over"
+        ],
+        "title": "BudgetOverOut",
+        "type": "object"
+      },
       "BudgetRowOut": {
         "properties": {
           "archive_suggested": {
@@ -2257,6 +2409,29 @@
           "undo_until"
         ],
         "title": "BulkResult",
+        "type": "object"
+      },
+      "CashLeftOut": {
+        "properties": {
+          "member_id": {
+            "title": "Member Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "not_yet_logged": {
+            "title": "Not Yet Logged",
+            "type": "number"
+          }
+        },
+        "required": [
+          "member_id",
+          "name",
+          "not_yet_logged"
+        ],
+        "title": "CashLeftOut",
         "type": "object"
       },
       "CashMovementOut": {
@@ -2677,6 +2852,46 @@
           "total"
         ],
         "title": "CategoryMonthOut",
+        "type": "object"
+      },
+      "CategoryOverOut": {
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "number"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "icon": {
+            "title": "Icon",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "usual": {
+            "title": "Usual",
+            "type": "number"
+          }
+        },
+        "required": [
+          "category_id",
+          "name",
+          "icon",
+          "amount",
+          "usual"
+        ],
+        "title": "CategoryOverOut",
         "type": "object"
       },
       "CategoryRefOut": {
@@ -4192,6 +4407,62 @@
         "title": "NotificationPrefsOut",
         "type": "object"
       },
+      "OpenEntryOut": {
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "direction": {
+            "title": "Direction",
+            "type": "string"
+          },
+          "due_date": {
+            "format": "date",
+            "title": "Due Date",
+            "type": "string"
+          },
+          "entry_id": {
+            "title": "Entry Id",
+            "type": "string"
+          },
+          "estimated": {
+            "title": "Estimated",
+            "type": "boolean"
+          },
+          "item_id": {
+            "title": "Item Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entry_id",
+          "item_id",
+          "name",
+          "direction",
+          "due_date",
+          "amount",
+          "estimated",
+          "status"
+        ],
+        "title": "OpenEntryOut",
+        "type": "object"
+      },
       "PaceOut": {
         "properties": {
           "bucket_id": {
@@ -4446,6 +4717,24 @@
           "transaction_count"
         ],
         "title": "PersonShareOut",
+        "type": "object"
+      },
+      "PlannedSideOut": {
+        "properties": {
+          "actual": {
+            "title": "Actual",
+            "type": "number"
+          },
+          "planned": {
+            "title": "Planned",
+            "type": "number"
+          }
+        },
+        "required": [
+          "planned",
+          "actual"
+        ],
+        "title": "PlannedSideOut",
         "type": "object"
       },
       "PriceIn": {
@@ -6243,6 +6532,363 @@
           "amount"
         ],
         "title": "SplitOut",
+        "type": "object"
+      },
+      "StatementListOut": {
+        "properties": {
+          "months": {
+            "items": {
+              "$ref": "#/components/schemas/StatementMonthOut"
+            },
+            "title": "Months",
+            "type": "array"
+          },
+          "review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatementReviewOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "review",
+          "months"
+        ],
+        "title": "StatementListOut",
+        "type": "object"
+      },
+      "StatementMonthOut": {
+        "properties": {
+          "closed": {
+            "title": "Closed",
+            "type": "boolean"
+          },
+          "in": {
+            "title": "In",
+            "type": "number"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "month": {
+            "title": "Month",
+            "type": "string"
+          },
+          "net": {
+            "title": "Net",
+            "type": "number"
+          },
+          "out": {
+            "title": "Out",
+            "type": "number"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "reviewed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed By"
+          },
+          "reviewed_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed By Name"
+          },
+          "reviewed_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed On"
+          }
+        },
+        "required": [
+          "month",
+          "label",
+          "in",
+          "out",
+          "net",
+          "reviewed_at",
+          "reviewed_on",
+          "reviewed_by",
+          "reviewed_by_name",
+          "closed"
+        ],
+        "title": "StatementMonthOut",
+        "type": "object"
+      },
+      "StatementOut": {
+        "properties": {
+          "biggest": {
+            "items": {
+              "$ref": "#/components/schemas/BiggestOut"
+            },
+            "title": "Biggest",
+            "type": "array"
+          },
+          "bills_changed": {
+            "items": {
+              "$ref": "#/components/schemas/BillChangedOut"
+            },
+            "title": "Bills Changed",
+            "type": "array"
+          },
+          "budgets_over": {
+            "items": {
+              "$ref": "#/components/schemas/BudgetOverOut"
+            },
+            "title": "Budgets Over",
+            "type": "array"
+          },
+          "cash": {
+            "items": {
+              "$ref": "#/components/schemas/CashLeftOut"
+            },
+            "title": "Cash",
+            "type": "array"
+          },
+          "categories_over": {
+            "items": {
+              "$ref": "#/components/schemas/CategoryOverOut"
+            },
+            "title": "Categories Over",
+            "type": "array"
+          },
+          "closed": {
+            "title": "Closed",
+            "type": "boolean"
+          },
+          "days_left": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days Left"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "month": {
+            "title": "Month",
+            "type": "string"
+          },
+          "planned": {
+            "$ref": "#/components/schemas/StatementPlannedOut"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "reviewed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed By"
+          },
+          "reviewed_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed By Name"
+          },
+          "reviewed_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed On"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/StatementTotalsOut"
+          }
+        },
+        "required": [
+          "month",
+          "label",
+          "reviewed_at",
+          "reviewed_on",
+          "reviewed_by",
+          "reviewed_by_name",
+          "closed",
+          "days_left",
+          "totals",
+          "planned",
+          "budgets_over",
+          "bills_changed",
+          "cash",
+          "categories_over",
+          "biggest"
+        ],
+        "title": "StatementOut",
+        "type": "object"
+      },
+      "StatementPlannedOut": {
+        "properties": {
+          "in": {
+            "$ref": "#/components/schemas/PlannedSideOut"
+          },
+          "open": {
+            "items": {
+              "$ref": "#/components/schemas/OpenEntryOut"
+            },
+            "title": "Open",
+            "type": "array"
+          },
+          "out": {
+            "$ref": "#/components/schemas/PlannedSideOut"
+          }
+        },
+        "required": [
+          "in",
+          "out",
+          "open"
+        ],
+        "title": "StatementPlannedOut",
+        "type": "object"
+      },
+      "StatementPreviousOut": {
+        "properties": {
+          "in": {
+            "title": "In",
+            "type": "number"
+          },
+          "month": {
+            "title": "Month",
+            "type": "string"
+          },
+          "net": {
+            "title": "Net",
+            "type": "number"
+          },
+          "out": {
+            "title": "Out",
+            "type": "number"
+          }
+        },
+        "required": [
+          "month",
+          "in",
+          "out",
+          "net"
+        ],
+        "title": "StatementPreviousOut",
+        "type": "object"
+      },
+      "StatementReviewOut": {
+        "properties": {
+          "days_left": {
+            "title": "Days Left",
+            "type": "integer"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "month": {
+            "title": "Month",
+            "type": "string"
+          }
+        },
+        "required": [
+          "month",
+          "label",
+          "days_left"
+        ],
+        "title": "StatementReviewOut",
+        "type": "object"
+      },
+      "StatementTotalsOut": {
+        "properties": {
+          "in": {
+            "title": "In",
+            "type": "number"
+          },
+          "net": {
+            "title": "Net",
+            "type": "number"
+          },
+          "out": {
+            "title": "Out",
+            "type": "number"
+          },
+          "previous": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatementPreviousOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "in",
+          "out",
+          "net",
+          "previous"
+        ],
+        "title": "StatementTotalsOut",
         "type": "object"
       },
       "StockAdd": {
@@ -10058,6 +10704,129 @@
           }
         ],
         "summary": "Person Share",
+        "tags": [
+          "insights"
+        ]
+      }
+    },
+    "/api/v1/insights/statements": {
+      "get": {
+        "description": "Every past month with its In, Out and Net, newest first, and the month\nwaiting for review (if any). Household-wide; ignores the Insights lens.",
+        "operationId": "statements_api_v1_insights_statements_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatementListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Statements",
+        "tags": [
+          "insights"
+        ]
+      }
+    },
+    "/api/v1/insights/statements/{month}": {
+      "get": {
+        "description": "One past month, recalculated now from the services behind each screen.",
+        "operationId": "statement_api_v1_insights_statements__month__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "month",
+            "required": true,
+            "schema": {
+              "title": "Month",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatementOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Statement",
+        "tags": [
+          "insights"
+        ]
+      }
+    },
+    "/api/v1/insights/statements/{month}/review": {
+      "post": {
+        "description": "Mark a past month as reviewed for the whole household. Idempotent: the\nfirst reviewer and time are kept. There is no un-review.",
+        "operationId": "review_statement_api_v1_insights_statements__month__review_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "month",
+            "required": true,
+            "schema": {
+              "title": "Month",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatementOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Review Statement",
         "tags": [
           "insights"
         ]
