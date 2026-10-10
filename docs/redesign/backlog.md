@@ -105,3 +105,4 @@ Gaps found in the current app that the new app (web/) must cover.
   - F9: a 404 from the history route shows "Couldn't load this." (or stale saved history for ever); show "This bill no longer exists" with a link to Bills, as the composer's `Gone` does.
   - F10: Home's "See why" is a button that navigates; make it a `Link`.
   - F11: missing tests where streams meet: `afterTxnWrite` covers `keys.insightsBills()` and `keys.itemHistory('x')`; the Add panel over `/insights/bills/:id` and over Plan; `router.tsx` registering `insights/bills/:id`.
+- **Add panel, a different `copy` id over a dirty panel:** an add → add navigation whose `copy` differs remounts the form without asking. Nothing in the app produces it today. Block when the next `copy` is set and differs (final re-review R1).
