@@ -62,6 +62,14 @@ export const keys = {
   itemHistory: (id: string) => ['insights', 'bills', 'history', id] as const,
   /** The prefix of both bill reads above (affects.item, which does not touch 'insights', adds it). */
   billsAll: () => ['insights', 'bills'] as const,
+  /** StatementListOut: GET /insights/statements (Insights › Statements, the Insights card, Home's review row). Under
+   *  the 'insights' prefix, so every write that refreshes Insights (affects.entry, sync, cash, a transaction or
+   *  budget write) refreshes it too. */
+  statements: () => ['insights', 'statements', 'list'] as const,
+  /** StatementOut: GET /insights/statements/{month}; month is 'YYYY-MM'. Also under 'insights'. */
+  statement: (month: string) => ['insights', 'statements', 'month', month] as const,
+  /** The prefix of both statement reads (affects.item, which does not touch 'insights', adds it; so does Done). */
+  statementsAll: () => ['insights', 'statements'] as const,
   household: () => ['household'] as const,
   buckets: () => ['buckets'] as const,
   categories: () => ['categories'] as const,
@@ -96,7 +104,7 @@ export const affects = {
     keys.plan.all, keys.home.all, keys.recurring.all, keys.matches(), keys.transactions.all, keys.insights.all,
     keys.cashAll(), keys.cashStash(),
   ],
-  item: [keys.plan.all, keys.home.all, keys.recurring.all, keys.billsAll()],
+  item: [keys.plan.all, keys.home.all, keys.recurring.all, keys.billsAll(), keys.statementsAll()],
   sync: [
     keys.plan.all, keys.home.all, keys.recurring.all, keys.matches(), keys.transactions.all, keys.insights.all,
     keys.buckets(), keys.cashAll(), keys.cashStash(),
