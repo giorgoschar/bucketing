@@ -3,6 +3,7 @@ import { formatShortDate } from '../../../ui/format'
 import { Money } from '../../../ui/Money'
 import { changeLabel } from './format'
 import { Sparkline } from './Sparkline'
+import './bills.css'
 import type { BillRow } from './types'
 
 const TITLE = (b: BillRow) =>

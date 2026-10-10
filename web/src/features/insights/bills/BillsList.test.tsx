@@ -50,7 +50,7 @@ it('paused bills are listed last under "Paused"', async () => {
 it('says in one line that the lens and period do not apply', async () => {
   fakeApi(billsRoutes([billRow()]))
   renderWithProviders(<BillsList />, { route: '/insights/bills?p=last_month' })
-  expect(await screen.findByText('Bills cover all time. The lens and period above do not apply.')).toBeInTheDocument()
+  expect(await screen.findByText('Bills cover all time. The lens and period do not apply.')).toBeInTheDocument()
 })
 
 it('offline with a saved copy: the rows and "Offline · showing saved history"', async () => {
@@ -76,4 +76,11 @@ it('loading shows the skeleton', () => {
   fakeApi({ 'GET /api/v1/insights/bills': () => hang() } as unknown as Routes)
   renderWithProviders(<BillsList />)
   expect(screen.getByRole('status', { name: 'Loading' })).toBeInTheDocument()
+})
+
+it('F17: the empty state is the title and the link, as the spec gives it', async () => {
+  fakeApi(billsRoutes([]))
+  const { container } = renderWithProviders(<BillsList />, { route: '/insights/bills' })
+  await screen.findByText('No recurring bills yet')
+  expect(container.querySelector('.ui-empty__body')).toBeNull()
 })

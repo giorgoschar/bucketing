@@ -31,7 +31,7 @@ it('shows the three items with the highest 12-month total, each with its last am
 it('says in one line that the lens and period do not apply', async () => {
   fakeApi(billsRoutes(rows))
   renderWithProviders(<BillsCard />)
-  expect(await screen.findByText('All time. The lens and period do not apply.')).toBeInTheDocument()
+  expect(await screen.findByText('Bills cover all time. The lens and period do not apply.')).toBeInTheDocument()
 })
 
 it('no bills: the card points to Plan › Items', async () => {

@@ -39,3 +39,19 @@ it('the bill history two-column layout only exists inside the desktop media quer
   expect(phone).not.toMatch(/repeat\(2, minmax\(0, 1fr\)\); align-items: start/)
   expect(phone).not.toMatch(/:hover/)
 })
+
+// Review findings 8 and 9.
+it('every desktop-only table rule sits inside the media query', () => {
+  const phone = outsideMedia(read('./insights.css'))
+  expect(phone).not.toMatch(/insights__table/)
+  expect(phone).not.toMatch(/insights__tablewrap/)
+  expect(phone).not.toMatch(/insights__cap/)
+  expect(phone).not.toMatch(/insights__year/)
+})
+
+it('the desktop bar rule is scoped to the dashboard, not the category screen that shares .insights__bar', () => {
+  const css = read('./insights.css')
+  const inMedia = css.slice(css.indexOf('@media (min-width: 1024px)'))
+  expect(inMedia).not.toMatch(/(^|\n)\s*\.insights__bar\s*[{,]/)
+  expect(inMedia).toMatch(/\.insights__bar--wide/)
+})

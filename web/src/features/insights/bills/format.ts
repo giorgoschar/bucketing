@@ -35,3 +35,6 @@ export function changeBody(c: BillChange, unit: string | null, currency = 'EUR')
 export function changeSentence(name: string, c: BillChange, unit: string | null, currency = 'EUR'): string {
   return `${changeTitle(name, c, currency)}. ${changeBody(c, unit, currency)}`
 }
+
+/** The one line every Bills screen and card carries (spec §5.2). */
+export const BILLS_SCOPE_NOTE = 'Bills cover all time. The lens and period do not apply.'

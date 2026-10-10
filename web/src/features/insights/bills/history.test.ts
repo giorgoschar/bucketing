@@ -74,3 +74,9 @@ it('unitPriceOf is amount over usage to 4 places, null without usage or with 0',
   expect(unitPriceOf(84, 0)).toBeNull()
   expect(unitPriceOf(84, null)).toBeNull()
 })
+
+it('usage 0: the month has usage 0, no unit price and no division', () => {
+  const cells = yearCells([P('2026-03-01', 50, 0), P('2026-04-01', 40, 100)], 2026)
+  expect(cells[2]).toMatchObject({ amount: 50, usage: 0, unitPrice: null })
+  expect(cells[3]).toMatchObject({ unitPrice: 0.4 })
+})

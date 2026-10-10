@@ -7,6 +7,7 @@ import { BillHistoryView } from './BillHistory'
 import { change, history, point } from './fixtures'
 import type { ItemHistoryOut } from './types'
 import { billsRoutes } from './fixtures'
+import { keys } from '../../../data/keys'
 
 beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-09T12:00:00')) })
 afterEach(resetTestEnv)
@@ -201,4 +202,78 @@ it('offline with nothing saved: an empty state', async () => {
   serve(FULL).down()
   render()
   expect(await screen.findByText('No saved history yet. Connect once to load it.')).toBeInTheDocument()
+})
+
+
+// ---- Fix round 1 ----
+
+it('F3: the unit-price axis starts at its minimum, not at 0, and the labels do not collide', async () => {
+  serve(FULL)
+  render()
+  const chart = await screen.findByRole('img', { name: /Price per kWh by month, 2026/ })
+  const labels = [...chart.querySelectorAll('text')].map((t) => t.textContent)
+  expect(labels).not.toContain('€0.000')
+  // lowest price in 2026: 61/300 = 0.2033
+  expect(labels).toContain('€0.203')
+  expect(labels.filter((l) => l === '€0.203')).toHaveLength(1)
+})
+
+it('F6: axis labels are short: whole euros for amounts and bare numbers for usage', async () => {
+  serve({ ...FULL, points: [P('2026-08-14', 1200, 400), P('2026-09-14', 70, 330)] })
+  render()
+  const amount = await screen.findByRole('img', { name: /Amount by month, 2026/ })
+  expect([...amount.querySelectorAll('text')].map((t) => t.textContent)).toContain('€1,200')
+  const usage = screen.getByRole('img', { name: /Usage by month, 2026/ })
+  const texts = [...usage.querySelectorAll('text')].map((t) => t.textContent ?? '')
+  expect(texts.some((t) => t.includes('kWh'))).toBe(false)
+  expect(screen.getByRole('heading', { name: 'Usage (kWh)' })).toBeInTheDocument()
+})
+
+it('F4: Edit usage also refreshes the Plan and Home entries that carry usage', async () => {
+  serve(FULL, { [USAGE]: () => ({}) })
+  const { client } = render()
+  await screen.findByRole('table', { name: 'Electricity history' })
+  client.setQueryData([...keys.plan.all, 'upcoming', 30], [])
+  client.setQueryData([...keys.home.all, 'overdue', 'a', 'b'], [])
+  fireEvent.click(screen.getByRole('button', { name: `Edit usage, ${d('2026-09-14')}` }))
+  fireEvent.change(screen.getByLabelText('Usage (kWh)'), { target: { value: '400' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save usage' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(client.getQueryState([...keys.plan.all, 'upcoming', 30])?.isInvalidated).toBe(true)
+  expect(client.getQueryState([...keys.home.all, 'overdue', 'a', 'b'])?.isInvalidated).toBe(true)
+})
+
+it('F10: an item with no unit still shows the usage it once had', async () => {
+  serve({ ...FULL, item: { ...FULL.item, usage_unit: null } })
+  render()
+  const table = await screen.findByRole('table', { name: 'Electricity history' })
+  expect(within(table).getByRole('columnheader', { name: 'Usage' })).toBeInTheDocument()
+  expect(within(table).getAllByRole('row')[1]).toHaveTextContent('330')
+  expect(screen.queryByRole('button', { name: /Edit usage/ })).toBeNull()
+})
+
+it('F11: the summary is a group around the list, the Last tile separates amount and date, the year is announced', async () => {
+  serve(FULL)
+  render()
+  const group = await screen.findByRole('group', { name: 'Summary' })
+  expect(group.tagName).toBe('DIV')
+  expect(group.querySelector('dl')).not.toBeNull()
+  const lastDd = within(group).getByText('Last').nextSibling as HTMLElement
+  expect(lastDd.querySelectorAll('dd, span').length).toBeGreaterThan(0)
+  expect(lastDd.textContent).toMatch(/€70\.00[,\s]/)
+  expect(screen.getByText('2026', { selector: '.billhist__yearlabel' })).toHaveAttribute('aria-live', 'polite')
+})
+
+it('F12: the last-year bars have an outline so they do not rely on a pale fill', async () => {
+  serve(FULL)
+  render()
+  const chart = await screen.findByRole('img', { name: /Amount by month, 2026/ })
+  const bar = chart.querySelector('[data-kind="last-year"]') as SVGElement
+  expect(bar.getAttribute('style')).toMatch(/stroke:\s*var\(--c1\)/)
+})
+
+it('F14: the scope note is one sentence', async () => {
+  serve(FULL)
+  render()
+  expect(await screen.findByText('Bills cover all time. The lens and period do not apply.')).toBeInTheDocument()
 })

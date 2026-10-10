@@ -14,6 +14,7 @@ const TOP = 12
 const BOTTOM = 20
 const MONTH_LETTERS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D']
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+// The lighter bar also carries a 1 px outline in the series colour, so it does not rely on a pale fill alone.
 const LAST_YEAR_FILL = 'color-mix(in srgb, var(--c1) 38%, var(--surface))'
 
 const plotW = W - LEFT - RIGHT
@@ -28,7 +29,7 @@ function barPath(x: number, w: number, h: number): string {
   return `M${x} ${base} V${base - h + r} Q${x} ${base - h} ${x + r} ${base - h} H${x + w - r} Q${x + w} ${base - h} ${x + w} ${base - h + r} V${base} Z`
 }
 
-function Frame({ title, max, format, children }: { title: string; max: number; format: (n: number) => string; children: React.ReactNode }) {
+function Frame({ title, max, min = 0, format, children }: { title: string; max: number; min?: number; format: (n: number) => string; children: React.ReactNode }) {
   const id = useId()
   return (
     <svg className="chart billchart" viewBox={`0 0 ${W} ${H}`} role="img" aria-labelledby={id} focusable="false">
@@ -36,7 +37,7 @@ function Frame({ title, max, format, children }: { title: string; max: number; f
       <line className="chart__grid" x1={LEFT} x2={W - RIGHT} y1={TOP} y2={TOP} strokeDasharray="4 4" />
       <text x={LEFT - 4} y={TOP + 3} textAnchor="end">{format(max)}</text>
       <line className="chart__grid" x1={LEFT} x2={W - RIGHT} y1={TOP + plotH} y2={TOP + plotH} />
-      <text x={LEFT - 4} y={TOP + plotH + 3} textAnchor="end">{format(0)}</text>
+      <text x={LEFT - 4} y={TOP + plotH + 3} textAnchor="end">{format(min)}</text>
       {children}
       {MONTH_LETTERS.map((l, i) => <text key={i} x={cx(i + 1)} y={H - 6} textAnchor="middle">{l}</text>)}
     </svg>
@@ -52,17 +53,19 @@ export interface BarsProps {
   /** The lighter bar for the same month a year earlier. */
   compare?: (c: MonthCell) => number | null
   format: (n: number) => string
+  /** Shorter labels for the axis (whole euros, no unit); defaults to `format`. */
+  axisFormat?: (n: number) => string
 }
 
 /** Twelve months of bars for a year, each with an optional lighter bar for the same month last year. */
-export function YearBars({ title, year, cells, value, compare, format }: BarsProps) {
+export function YearBars({ title, year, cells, value, compare, format, axisFormat = format }: BarsProps) {
   const all = cells.flatMap((c) => [value(c), compare?.(c) ?? null]).filter((v): v is number => v !== null)
   const max = scaleMax(all)
   const hasLast = compare !== undefined && cells.some((c) => compare(c) !== null)
   const barW = hasLast ? Math.min(9, slot / 2 - 1) : Math.min(14, slot - 4)
   return (
     <figure className="chart-fig billchart__fig">
-      <Frame title={title} max={max} format={format}>
+      <Frame title={title} max={max} format={axisFormat}>
         {cells.map((c) => {
           const v = value(c)
           const prev = compare?.(c) ?? null
@@ -74,7 +77,7 @@ export function YearBars({ title, year, cells, value, compare, format }: BarsPro
             <g key={c.month}>
               {prev !== null && (
                 <path data-kind="last-year" data-month={c.month} d={barPath(xPrev, barW, Math.max(1, (barPct(prev, max) / 100) * plotH))}
-                  style={{ fill: LAST_YEAR_FILL }}>
+                  style={{ fill: LAST_YEAR_FILL, stroke: 'var(--c1)', strokeWidth: 1 }}>
                   <title>{`${MONTH_NAMES[c.month - 1]} ${year - 1}: ${format(prev)}`}</title>
                 </path>
               )}
@@ -117,8 +120,7 @@ export function UnitPriceLine({ title, year, cells, format }: { title: string; y
   const last = have[have.length - 1]
   return (
     <figure className="chart-fig billchart__fig">
-      <Frame title={title} max={hi} format={format}>
-        <text x={LEFT - 4} y={TOP + plotH - 8} textAnchor="end">{format(lo)}</text>
+      <Frame title={title} max={hi} min={lo} format={format}>
         {segments.filter((s) => s.length > 1).map((s, i) => (
           <path key={i} fill="none" d={s.map((c, j) => `${j ? 'L' : 'M'}${cx(c.month).toFixed(1)} ${y(c.unitPrice as number).toFixed(1)}`).join(' ')}
             style={{ stroke: 'var(--c1)', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }} />

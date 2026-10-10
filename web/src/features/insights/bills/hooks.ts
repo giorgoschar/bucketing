@@ -1,6 +1,6 @@
 import { useCachedQuery } from '../../../data/cachedQuery'
 import { unwrap } from '../../../data/http'
-import { keys } from '../../../data/keys'
+import { affects, keys } from '../../../data/keys'
 import { useOnlineAction } from '../../../data/onlineAction'
 import { fetchJson } from '../../../data/rawJson'
 import { api } from '../../../api/client'
@@ -28,7 +28,8 @@ export function useSetUsage(itemId: string) {
   const act = useOnlineAction()
   return (entryId: string, usage: number | null) =>
     act(() => fetchJson('PUT', `/api/v1/recurring/entries/${encodeURIComponent(entryId)}/usage`, { usage }), {
-      invalidates: [keys.itemHistory(itemId), keys.insightsBills(), keys.recurring.all],
+      // `usage` rides on EntryOut too (Plan, Home): refresh what every entry write refreshes, plus this history.
+      invalidates: [keys.itemHistory(itemId), keys.insightsBills(), ...affects.entry],
       success: 'Usage saved',
     })
 }

@@ -10,6 +10,7 @@ import { HOUSEHOLD, insightsSearch } from '../lens'
 import { singleMonth } from '../overview'
 import { CASH_NOT_LOGGED, UNCATEGORISED } from '../types'
 import { BillRowLink } from '../bills/BillRowLink'
+import { BILLS_SCOPE_NOTE } from '../bills/format'
 import { useBills } from '../bills/hooks'
 import { Card } from './Card'
 
@@ -221,7 +222,7 @@ export function BillsCard() {
       ) : (
         <>
           <div className="billscard__list">{top.map((b) => <BillRowLink key={b.item_id} bill={b} compact />)}</div>
-          <p className="insights__note">All time. The lens and period do not apply.</p>
+          <p className="insights__note">{BILLS_SCOPE_NOTE}</p>
         </>
       )}
     </Card>

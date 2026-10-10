@@ -3,6 +3,7 @@ import { EmptyState } from '../../../ui/EmptyState'
 import { QueryView } from '../../../ui/QueryView'
 import { BillRowLink } from './BillRowLink'
 import { useBills } from './hooks'
+import { BILLS_SCOPE_NOTE } from './format'
 import { OfflineNote } from './OfflineNote'
 import '../insights.css'
 import './bills.css'
@@ -22,11 +23,10 @@ export function BillsList() {
               <>
                 {bills.stale && <OfflineNote />}
                 {rows.length === 0 ? (
-                  <EmptyState title="No recurring bills yet" body="Add a bill in Plan and its history builds up here as you pay it."
-                    action={{ label: 'Open items', to: '/plan/items' }} />
+                  <EmptyState title="No recurring bills yet" action={{ label: 'Open items', to: '/plan/items' }} />
                 ) : (
                   <>
-                    <p className="insights__note">Bills cover all time. The lens and period above do not apply.</p>
+                    <p className="insights__note">{BILLS_SCOPE_NOTE}</p>
                     {active.length > 0 && (
                       <div className="ui-card bills__group">
                         {active.map((b) => <BillRowLink key={b.item_id} bill={b} />)}

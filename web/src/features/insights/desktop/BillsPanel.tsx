@@ -1,5 +1,6 @@
 import { Link } from 'react-router'
 import { BillRowLink } from '../bills/BillRowLink'
+import { BILLS_SCOPE_NOTE } from '../bills/format'
 import { useBills } from '../bills/hooks'
 import { Card } from '../widgets/Card'
 import '../bills/bills.css'
@@ -10,7 +11,8 @@ export const PANEL_ROWS = 8
 export function BillsPanel() {
   const bills = useBills().data
   if (!bills) return null
-  const shown = bills.filter((b) => b.is_active).slice(0, PANEL_ROWS)
+  // Paused bills follow the active ones (the server's order), so a household with only paused bills still sees them.
+  const shown = bills.slice(0, PANEL_ROWS)
   return (
     <Card title="Bills" action={bills.length > 0 ? <Link to="/insights/bills">All bills</Link> : undefined}>
       {shown.length === 0 ? (
@@ -18,7 +20,7 @@ export function BillsPanel() {
       ) : (
         <>
           <div className="billscard__list">{shown.map((b) => <BillRowLink key={b.item_id} bill={b} />)}</div>
-          <p className="insights__note">All time. The lens and period do not apply.</p>
+          <p className="insights__note">{BILLS_SCOPE_NOTE}</p>
         </>
       )}
     </Card>

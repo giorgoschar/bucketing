@@ -116,3 +116,20 @@ it('the screen asks for the wide column', async () => {
   await screen.findByRole('region', { name: 'Bills' })
   expect(container.querySelector('section.insights')).toHaveClass('shell__main--wide')
 })
+
+it('F7: the panel lists paused bills when nothing is active, not the empty copy', async () => {
+  stubDesktop(true)
+  fakeApi(routes({ ...billsRoutes([billRow({ name: 'Old gym', is_active: false })]) }))
+  renderWithProviders(<Insights />, { route: '/insights' })
+  const panel = await screen.findByRole('region', { name: 'Bills' })
+  await within(panel).findByRole('link', { name: /Old gym/ })
+  expect(within(panel).queryByText(/No recurring bills yet/)).toBeNull()
+})
+
+it('F2: an empty period still shows the Bills card (phone) and panel (desktop)', async () => {
+  const empty = makeInsights({ total_spent: 0, in_out: { in: 0, out: 0, logged: 0, cash_not_logged: 0, net: 0 }, kpis: { ...makeInsights().kpis, count: 0 } })
+  fakeApi(routes({ 'GET /api/v1/insights': () => empty }))
+  renderWithProviders(<Insights />, { route: '/insights' })
+  expect(await screen.findByText('No spending in this period')).toBeInTheDocument()
+  expect(await screen.findByRole('region', { name: 'Bills' })).toBeInTheDocument()
+})

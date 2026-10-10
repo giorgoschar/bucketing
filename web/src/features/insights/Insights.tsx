@@ -91,7 +91,7 @@ export function Insights() {
           </button>
         }
       />
-      <div className="insights__bar">
+      <div className="insights__bar insights__bar--wide">
         <Chips label="Period" options={PRESETS} value={period.preset} onChange={pickPreset} />
         {/* Desktop: the lens joins the period controls in one row (spec §5.4). */}
         {desktop && lensControl}
