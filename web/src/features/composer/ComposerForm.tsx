@@ -493,7 +493,7 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
             <span>{note.text}</span>
             {note.undoId && (
               <button type="button" className="composer__undo"
-                onClick={() => { void undo(note.undoId!); setNote({ text: 'Undone' }) }}>
+                onClick={() => { void undo(note.undoId!).then((done) => { if (done) setNote({ text: 'Undone' }) }) }}>
                 Undo
               </button>
             )}

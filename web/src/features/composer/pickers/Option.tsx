@@ -45,7 +45,7 @@ export function useFilterBox() {
 export function FilterField({ label, box, onEnter }: { label: string; box: ReturnType<typeof useFilterBox>; onEnter: () => void }) {
   if (!box.active) return null
   return (
-    <input ref={box.ref} type="search" className="ck-search" aria-label={label} placeholder="Type to filter" autoComplete="off"
+    <input ref={box.ref} type="search" className="ck-search" aria-label={label} placeholder={label} autoComplete="off"
       value={box.text} onChange={(e) => box.setText(e.target.value)}
       onKeyDown={(e) => {
         if (e.key !== 'Enter' || e.nativeEvent.isComposing) return

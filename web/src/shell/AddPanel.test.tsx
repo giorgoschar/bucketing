@@ -392,3 +392,34 @@ it('the new entry after a save is empty of notes, a split and a receipt, not onl
   await within(panel()).findByText(/^Saved/)
   expect(within(panel()).getByRole('button', { name: 'More options' })).toBeInTheDocument() // not "More options, changed"
 })
+
+// Re-review R1: a "Copy as new" saved in the panel stays open like an add does.
+it('saving a copy keeps the panel open with Saved, Undo and the date kept', async () => {
+  const user = userEvent.setup()
+  const { api } = await setup('/activity?add=1&copy=t9')
+  await waitFor(() => expect(amount()).toHaveValue('64.20'))
+  await user.click(within(panel()).getByRole('button', { name: /^Date:/ }))
+  await user.click(await screen.findByRole('button', { name: /^Yesterday/ }))
+  const field = amount()
+  await user.keyboard('{Control>}{Enter}{/Control}')
+  await waitFor(() => expect(writes(api)).toHaveLength(1))
+  expect(await within(panel()).findByRole('status')).toHaveTextContent('Saved · €64.20 Taverna')
+  expect(within(panel()).getByRole('button', { name: 'Undo' })).toBeInTheDocument()
+  expect(within(panel()).getByRole('button', { name: /^Date: Yesterday/ })).toBeInTheDocument()
+  expect(amount()).toBe(field) // the same form, reset, not a new one
+  expect(amount()).toHaveValue('')
+  expect(where()).toBe('/activity?add=1')
+})
+
+// Re-review R2: Undo says what happened.
+it('Undo offline says it needs a connection and does not claim "Undone"', async () => {
+  const user = userEvent.setup()
+  await setup('/?add=1')
+  await waitFor(() => amount())
+  await user.type(amount(), '5{Enter}')
+  const undo = await within(panel()).findByRole('button', { name: 'Undo' })
+  goOffline()
+  await user.click(undo)
+  expect(await screen.findByText('Undo needs a connection.')).toBeInTheDocument()
+  expect(within(panel()).queryByText('Undone')).toBeNull()
+})

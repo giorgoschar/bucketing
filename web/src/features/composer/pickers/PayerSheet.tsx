@@ -24,7 +24,7 @@ export function PayerSheet({ open, onClose, title, members, selectedId, ownShare
   const shown = members.filter((m) => fold(memberName(m)).includes(box.q))
   return (
     <Sheet open={open} onClose={close} title={title} initialFocus={box.active ? box.ref : undefined}>
-      <FilterField label="Filter people" box={box} onEnter={() => shown[0] && pick(shown[0].user_id)} />
+      <FilterField label="Search people" box={box} onEnter={() => shown[0] && pick(shown[0].user_id)} />
       <div className="ck-options">
         {shown.map((m) => (
           <Option key={m.user_id} name={memberName(m)}

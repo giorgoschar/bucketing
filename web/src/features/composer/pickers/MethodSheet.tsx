@@ -13,7 +13,7 @@ export function MethodSheet({ open, onClose, selected, onPick }: {
   const shown = METHODS.filter((m) => fold(METHOD_LABELS[m]).includes(box.q))
   return (
     <Sheet open={open} onClose={close} title="Payment method" initialFocus={box.active ? box.ref : undefined}>
-      <FilterField label="Filter methods" box={box} onEnter={() => shown[0] && pick(shown[0])} />
+      <FilterField label="Search methods" box={box} onEnter={() => shown[0] && pick(shown[0])} />
       <div className="ck-options">
         {shown.map((m) => <Option key={m} name={METHOD_LABELS[m]} selected={m === selected} onPress={() => pick(m)} />)}
       </div>

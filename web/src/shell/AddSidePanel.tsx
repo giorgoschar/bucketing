@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router'
 import { PanelProvider } from '../features/composer/panel'
 import { Compose } from '../screens/lazy'
@@ -8,6 +8,9 @@ import { OWN_PANEL_KEYS, panelOf, resetPanelParams } from './addPanel'
 export default function AddPanel() {
   const [params, setParams] = useSearchParams()
   const panel = panelOf(params)
+  // A new copy link remounts the form; the reset after a save (which clears `copy`) does not.
+  const copy = useRef<string | null>(null)
+  if (params.get('copy')) copy.current = params.get('copy')
 
   const host = useMemo(() => ({
     editId: panel?.kind === 'edit' ? panel.id : undefined,
@@ -35,7 +38,7 @@ export default function AddPanel() {
   return (
     <aside className="addpanel" aria-label={panel.kind === 'edit' ? 'Edit entry' : 'Add entry'}>
       <PanelProvider value={host}>
-        <Compose key={panel.kind === 'edit' ? `edit:${panel.id}` : 'add'} />
+        <Compose key={panel.kind === 'edit' ? `edit:${panel.id}` : copy.current ? `copy:${copy.current}` : 'add'} />
       </PanelProvider>
     </aside>
   )

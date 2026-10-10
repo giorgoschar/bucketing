@@ -21,7 +21,7 @@ export function BucketSheet({ open, onClose, buckets, type, selectedId, onPick }
   const shown = buckets.filter((b) => b.status === 'active' && (type === 'expense' || b.show_income) && fold(b.name).includes(box.q))
   return (
     <Sheet open={open} onClose={close} title="Budget" initialFocus={box.active ? box.ref : undefined}>
-      <FilterField label="Filter budgets" box={box} onEnter={() => shown[0] && pick(shown[0].id)} />
+      <FilterField label="Search budgets" box={box} onEnter={() => shown[0] && pick(shown[0].id)} />
       <div className="ck-options">
         {type === 'income' && box.q === '' && <Option name="None" selected={selectedId === null} onPress={() => pick(null)} />}
         {shown.map((b) => (
