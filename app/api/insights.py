@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.api.plan import parse_month
 from app.api.planning_models import BillRowOut, CategoryUsualOut, Money
+from app.api.statement_models import StatementOut
 from app.api_auth import require_api_auth
 from app.core.clock import local_today
 from app.core.database import get_db
@@ -17,6 +18,11 @@ from app.services import InsightFilters, build_insights
 from app.services.bill_history import bills_overview
 from app.services.insights import get_category_detail, resolve_insight_period
 from app.services.person import get_person_summary
+from app.services.statement import (
+    build_statement,
+    is_past,
+    parse_month_key,
+)
 from app.services.usual import categories_vs_usual
 from app.validators import household_member_ids
 
@@ -272,3 +278,26 @@ def category_detail(
     if data is None:
         raise HTTPException(status_code=404, detail="Category not found")
     return data
+
+
+# --- Month statements (Phase B). Static paths under /statements cannot clash
+# with /categories/{id} or /bills; /statements/{month} is one segment.
+
+
+def _past_month(value: str) -> tuple[int, int]:
+    """'YYYY-MM' of a month before the current one: 400 for a bad format, 404
+    for the current or a future month (no statement yet)."""
+    parsed = parse_month_key(value)
+    if parsed is None:
+        raise HTTPException(status_code=400, detail="month must be YYYY-MM.")
+    if not is_past(*parsed, local_today()):
+        raise HTTPException(status_code=404, detail="No statement for this month yet.")
+    return parsed
+
+
+@router.get("/statements/{month}", response_model=StatementOut)
+def statement(month: str, auth=Depends(require_api_auth), db: Session = Depends(get_db)):
+    """One past month, recalculated now from the services behind each screen."""
+    user, hh_id = auth
+    year, mon = _past_month(month)
+    return build_statement(db, hh_id, year, mon, today=local_today(), viewer_id=user.id)

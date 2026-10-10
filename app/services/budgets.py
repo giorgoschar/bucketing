@@ -57,19 +57,72 @@ def bucket_period(bucket: Bucket, today: date) -> tuple[date | None, date | None
     return _month_range(today.year, today.month)
 
 
+def _spend_query(db: Session, *entities):
+    """Expenses that count towards a bucket's budget (the one spending rule
+    behind :func:`bucket_spent` and :func:`monthly_overruns`)."""
+    return db.query(*entities).filter(
+        Transaction.active(),
+        Transaction.type == TransactionType.expense,
+    )
+
+
 def bucket_spent(db: Session, bucket: Bucket, today: date) -> Decimal:
     """Expenses in the bucket over its budget period, in base currency."""
     start, end = bucket_period(bucket, today)
-    q = db.query(func.coalesce(func.sum(base_amount_expr()), 0)).filter(
-        Transaction.active(),
-        Transaction.bucket_id == bucket.id,
-        Transaction.type == TransactionType.expense,
+    q = _spend_query(db, func.coalesce(func.sum(base_amount_expr()), 0)).filter(
+        Transaction.bucket_id == bucket.id
     )
     if start:
         q = q.filter(Transaction.transaction_date >= start)
     if end:
         q = q.filter(Transaction.transaction_date <= end)
     return quantize(q.scalar())
+
+
+def monthly_overruns(db: Session, household_id: str, year: int, month: int) -> list[dict]:
+    """Monthly buckets whose spending in the given month was above their
+    budget, largest overrun first (Phase B statement). Spending is
+    :func:`bucket_spent`'s rule, for all buckets in one query. Archived
+    buckets count (they may have been active then); event budgets do not.
+    """
+    start, end = _month_range(year, month)
+    buckets = (
+        db.query(Bucket)
+        .filter(
+            Bucket.household_id == household_id,
+            Bucket.kind == BucketKind.monthly.value,
+            Bucket.budget.isnot(None),
+        )
+        .all()
+    )
+    if not buckets:
+        return []
+    spent_by = dict(
+        _spend_query(db, Transaction.bucket_id, func.sum(base_amount_expr()))
+        .filter(
+            Transaction.bucket_id.in_([b.id for b in buckets]),
+            Transaction.transaction_date >= start,
+            Transaction.transaction_date <= end,
+        )
+        .group_by(Transaction.bucket_id)
+        .all()
+    )
+    rows = []
+    for b in buckets:
+        budget = quantize(b.budget)
+        spent = quantize(spent_by.get(b.id) or 0)
+        if budget > 0 and spent > budget:
+            rows.append(
+                {
+                    "bucket_id": b.id,
+                    "name": b.name,
+                    "budget": budget,
+                    "spent": spent,
+                    "over": quantize(spent - budget),
+                }
+            )
+    rows.sort(key=lambda r: (-r["over"], r["name"]))
+    return rows
 
 
 @dataclass(frozen=True)

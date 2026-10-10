@@ -31,7 +31,7 @@ from app.models import (
     TransactionType,
     default_payment_method,
 )
-from app.services.bills import estimate_amount
+from app.services.bills import estimate_amount, estimate_amounts
 from app.services.budgets import bucket_spent
 from app.services.cash import cash_scope, cash_spending
 from app.services.insights import _month_range
@@ -130,7 +130,19 @@ def list_entries(
         .order_by(BillOccurrence.due_date, RecurringBill.name, BillOccurrence.id)
         .all()
     )
-    estimates: dict = {}
+    # One query for every item that needs an estimate, not one per item.
+    needy = {
+        o.bill_id
+        for o in occs
+        if o.amount is None
+        and o.bill.amount is None
+        and not (
+            o.status == OccurrenceStatus.paid
+            and o.transaction is not None
+            and o.transaction.deleted_at is None
+        )
+    }
+    estimates: dict = estimate_amounts(db, needy)
     return [_entry(db, o, today, estimates) for o in occs]
 
 

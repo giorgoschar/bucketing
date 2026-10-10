@@ -622,25 +622,33 @@ def set_entry_amount(occ: BillOccurrence, amount: Decimal) -> None:
     occ.amount = _q(amount)
 
 
+def estimate_amounts(db: Session, bill_ids) -> dict[str, Decimal | None]:
+    """:func:`estimate_amount` for several items in one query."""
+    ids = list(dict.fromkeys(bill_ids))
+    seen: dict[str, list[Decimal]] = {i: [] for i in ids}
+    if ids:
+        rows = (
+            db.query(BillOccurrence.bill_id, BillOccurrence.amount)
+            .filter(
+                BillOccurrence.bill_id.in_(ids),
+                BillOccurrence.status == OccurrenceStatus.paid,
+                BillOccurrence.amount.isnot(None),
+            )
+            .order_by(BillOccurrence.bill_id, BillOccurrence.due_date.desc())
+            .all()
+        )
+        for bill_id, amount in rows:
+            if len(seen[bill_id]) < ESTIMATE_FROM_LAST:
+                seen[bill_id].append(_dec(amount))
+    return {i: (_q(sum(a, Decimal(0)) / len(a)) if (a := seen[i]) else None) for i in ids}
+
+
 def estimate_amount(db: Session, bill_id: str) -> Decimal | None:
     """The "≈" amount of a variable item: the mean of its last 3 done amounts.
 
     None when nothing has been done with an amount yet.
     """
-    rows = [
-        _dec(a)
-        for (a,) in db.query(BillOccurrence.amount)
-        .filter(
-            BillOccurrence.bill_id == bill_id,
-            BillOccurrence.status == OccurrenceStatus.paid,
-            BillOccurrence.amount.isnot(None),
-        )
-        .order_by(BillOccurrence.due_date.desc())
-        .limit(ESTIMATE_FROM_LAST)
-    ]
-    if not rows:
-        return None
-    return _q(sum(rows, Decimal(0)) / len(rows))
+    return estimate_amounts(db, [bill_id])[bill_id]
 
 
 def effective_overrides(bill: RecurringBill, submitted) -> dict[str, Decimal] | None:
