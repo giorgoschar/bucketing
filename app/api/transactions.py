@@ -95,6 +95,28 @@ class FeedQuery(TransactionFilter):
 
     page: int = Field(1, ge=1)
     page_size: int = Field(50, ge=1, le=200)
+    # date_desc (default) | date_asc | amount_desc | amount_asc. Checked in the
+    # feed route (400), so /totals, which shares this model, ignores it.
+    sort: str = "date_desc"
+
+
+FEED_SORTS = ("date_desc", "date_asc", "amount_desc", "amount_asc")
+
+
+def _feed_order(sort: str) -> list:
+    """ORDER BY terms for the feed. Every sort ends in the id, so a page boundary
+    never repeats or drops a row, and amount ties keep today's newest-first order."""
+    newest_first = [
+        Transaction.transaction_date.desc(),
+        Transaction.created_at.desc(),
+        Transaction.id,
+    ]
+    if sort == "date_desc":
+        return newest_first
+    if sort == "date_asc":
+        return [Transaction.transaction_date, Transaction.created_at, Transaction.id]
+    amount = base_amount_expr()
+    return [amount.desc() if sort == "amount_desc" else amount.asc(), *newest_first]
 
 
 def _takes(db: Session, ids: list[str]) -> set[str]:
@@ -184,8 +206,13 @@ def list_transactions(
     db: Session = Depends(get_db),
 ):
     """The Activity feed (2c spec §5.1): the shared TransactionFilter, 50 a
-    page (max 200), newest first, with each shown day's net."""
+    page (max 200), newest first unless ``sort`` says otherwise, with each shown
+    day's net (date sorts only)."""
     user, hh_id = auth
+    if f.sort not in FEED_SORTS:
+        raise HTTPException(
+            status_code=400, detail=f"sort must be one of: {', '.join(FEED_SORTS)}."
+        )
     filtered = apply_filter(
         db.query(Transaction).filter(Transaction.active(), Transaction.household_id == hh_id),
         f,
@@ -195,9 +222,7 @@ def list_transactions(
     total = filtered.count()
     items = (
         filtered.options(joinedload(Transaction.splits))
-        .order_by(
-            Transaction.transaction_date.desc(), Transaction.created_at.desc(), Transaction.id
-        )
+        .order_by(*_feed_order(f.sort))
         .offset((f.page - 1) * f.page_size)
         .limit(f.page_size)
         .all()
@@ -208,7 +233,12 @@ def list_transactions(
         "page": f.page,
         "page_size": f.page_size,
         "items": [transaction_out(t, t.id in takes) for t in items],
-        "day_totals": _day_totals(filtered, sorted({t.transaction_date for t in items})),
+        # Per-day nets only mean something in date order.
+        "day_totals": (
+            _day_totals(filtered, sorted({t.transaction_date for t in items}))
+            if f.sort.startswith("date_")
+            else {}
+        ),
     }
 
 

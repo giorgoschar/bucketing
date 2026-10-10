@@ -63,6 +63,8 @@ class Entry:
     overdue: bool  # expected and due before today
     infrequent: bool  # the item recurs less than monthly (§5.3)
     payment_method: str  # the item's: what Pay / Mark received records by default
+    usage: Decimal | None = None  # what the entry used, in the item's usage_unit
+    usage_unit: str | None = None  # the item's
 
 
 def _infrequent(bill: RecurringBill) -> bool:
@@ -102,6 +104,8 @@ def _entry(db: Session, occ: BillOccurrence, today: date, estimates: dict) -> En
         overdue=status == "expected" and occ.due_date < today,
         infrequent=_infrequent(bill),
         payment_method=bill.payment_method or default_payment_method(bill.direction),
+        usage=occ.usage,
+        usage_unit=bill.usage_unit,
     )
 
 

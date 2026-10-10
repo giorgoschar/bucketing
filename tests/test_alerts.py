@@ -74,7 +74,7 @@ def test_spike_is_reported(db, authed, run_job):
 
     notes = _drift_notifications(db)
     assert len(notes) == 1
-    assert "up" in notes[0].title
+    assert notes[0].title == "Electricity was €90, usually €50"
     assert "Electricity" in notes[0].title
 
 
@@ -84,7 +84,7 @@ def test_drop_is_reported(db, authed, run_job):
 
     notes = _drift_notifications(db)
     assert len(notes) == 1
-    assert "down" in notes[0].title
+    assert notes[0].title == "Electricity was €40, usually €100"
 
 
 def test_stable_bill_is_quiet(db, authed, run_job):

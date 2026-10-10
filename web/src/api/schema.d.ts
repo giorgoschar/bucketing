@@ -480,6 +480,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/insights/bills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Bills
+         * @description Every recurring out item that is active or has been paid, with its last
+         *     amount, a sparkline, its 12-month total and, when the latest payment is
+         *     recent and unusual, its change. Ignores the Insights lens and period.
+         */
+        get: operations["bills_api_v1_insights_bills_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/insights/categories-vs-usual": {
         parameters: {
             query?: never;
@@ -891,6 +913,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/recurring/entries/{entry_id}/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Entry Usage
+         * @description Set (or, with null, clear) the usage of an expected, done or skipped entry
+         *     of an item that tracks usage.
+         */
+        put: operations["entry_usage_api_v1_recurring_entries__entry_id__usage_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/recurring/preview": {
         parameters: {
             query?: never;
@@ -931,6 +974,27 @@ export interface paths {
         post?: never;
         /** Delete Item */
         delete: operations["delete_item_api_v1_recurring__item_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/recurring/{item_id}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get History
+         * @description The item's done entries (the most recent 240, oldest first), each with its
+         *     usage and price per unit, and the change of the latest one against its usual.
+         */
+        get: operations["get_history_api_v1_recurring__item_id__history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1570,7 +1634,8 @@ export interface paths {
         /**
          * List Transactions
          * @description The Activity feed (2c spec §5.1): the shared TransactionFilter, 50 a
-         *     page (max 200), newest first, with each shown day's net.
+         *     page (max 200), newest first unless ``sort`` says otherwise, with each shown
+         *     day's net (date sorts only).
          */
         get: operations["list_transactions_api_v1_transactions_get"];
         put?: never;
@@ -1943,6 +2008,30 @@ export interface components {
             /** Total */
             total: number;
         };
+        /**
+         * BillChangeOut
+         * @description The latest done entry of an item against its usual (app.services.bill_change).
+         */
+        BillChangeOut: {
+            /** Amount */
+            amount: number;
+            /** Basis */
+            basis: string;
+            /** Delta */
+            delta: number;
+            /** Direction */
+            direction: string;
+            /** Entry Id */
+            entry_id: string;
+            /** Pct */
+            pct: number;
+            /** Reason */
+            reason: string | null;
+            /** Reason Pct */
+            reason_pct: number | null;
+            /** Usual */
+            usual: number;
+        };
         /** BillIn */
         BillIn: {
             /** Amount */
@@ -2003,6 +2092,18 @@ export interface components {
             /** Total Occurrences */
             total_occurrences?: number | null;
         };
+        /** BillLastOut */
+        BillLastOut: {
+            /** Amount */
+            amount: number;
+            /**
+             * Due Date
+             * Format: date
+             */
+            due_date: string;
+            /** Entry Id */
+            entry_id: string;
+        };
         /** BillMoveOut */
         BillMoveOut: {
             /** Bucket After */
@@ -2013,6 +2114,27 @@ export interface components {
             id: string;
             /** Name */
             name: string;
+        };
+        /** BillRowOut */
+        BillRowOut: {
+            /** Average 12M */
+            average_12m: number | null;
+            /** Category Id */
+            category_id: string | null;
+            change: components["schemas"]["BillChangeOut"] | null;
+            /** Is Active */
+            is_active: boolean;
+            /** Item Id */
+            item_id: string;
+            last: components["schemas"]["BillLastOut"] | null;
+            /** Name */
+            name: string;
+            /** Recent */
+            recent: number[];
+            /** Total 12M */
+            total_12m: number | null;
+            /** Usage Unit */
+            usage_unit: string | null;
         };
         /** BillSplitIn */
         BillSplitIn: {
@@ -3262,6 +3384,8 @@ export interface components {
         EntryAmountIn: {
             /** Amount */
             amount: number | string;
+            /** Usage */
+            usage?: number | string | null;
         };
         /** EntryDoneIn */
         EntryDoneIn: {
@@ -3271,6 +3395,8 @@ export interface components {
             payment_method?: string | null;
             /** Person */
             person?: string | null;
+            /** Usage */
+            usage?: number | string | null;
         };
         /** EntryOut */
         EntryOut: {
@@ -3307,6 +3433,10 @@ export interface components {
             status: string;
             /** Transaction Id */
             transaction_id: string | null;
+            /** Usage */
+            usage?: number | null;
+            /** Usage Unit */
+            usage_unit?: string | null;
         };
         /** EntryUndoIn */
         EntryUndoIn: {
@@ -3315,6 +3445,11 @@ export interface components {
              * @default false
              */
             delete_transaction: boolean;
+        };
+        /** EntryUsageIn */
+        EntryUsageIn: {
+            /** Usage */
+            usage: number | string | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -3342,17 +3477,27 @@ export interface components {
             /** Text */
             text: string;
         };
+        /** HistoryItemOut */
+        HistoryItemOut: {
+            /** Category Id */
+            category_id: string | null;
+            /** Currency */
+            currency: string;
+            /** Direction */
+            direction: string;
+            /** Id */
+            id: string;
+            /** Is Active */
+            is_active: boolean;
+            /** Name */
+            name: string;
+            /** Usage Unit */
+            usage_unit: string | null;
+        };
         /** HistoryOut */
         HistoryOut: {
             /** Events */
             events: components["schemas"]["HistoryEventOut"][];
-        };
-        /** HistoryPointOut */
-        HistoryPointOut: {
-            /** Date */
-            date: string;
-            /** Min Price */
-            min_price: number;
         };
         /** HouseholdIn */
         HouseholdIn: {
@@ -3426,6 +3571,13 @@ export interface components {
         IngestAttemptsOut: {
             /** Items */
             items: components["schemas"]["IngestAttemptOut"][];
+        };
+        /** ItemHistoryOut */
+        ItemHistoryOut: {
+            change: components["schemas"]["BillChangeOut"] | null;
+            item: components["schemas"]["HistoryItemOut"];
+            /** Points */
+            points: components["schemas"]["app__api__planning_models__HistoryPointOut"][];
         };
         /** LineCheckIn */
         LineCheckIn: {
@@ -3881,6 +4033,8 @@ export interface components {
             start_date: string;
             /** Total Occurrences */
             total_occurrences?: number | null;
+            /** Usage Unit */
+            usage_unit?: string | null;
         };
         /** RecurringItemOut */
         RecurringItemOut: {
@@ -3942,6 +4096,8 @@ export interface components {
             start_date: string;
             /** Total Occurrences */
             total_occurrences: number | null;
+            /** Usage Unit */
+            usage_unit?: string | null;
         };
         /** RetailerOut */
         RetailerOut: {
@@ -4202,7 +4358,7 @@ export interface components {
             brand: string | null;
             cheapest: components["schemas"]["CheapestOut"] | null;
             /** History */
-            history: components["schemas"]["HistoryPointOut"][];
+            history: components["schemas"]["app__api__stock__HistoryPointOut"][];
             /** Id */
             id: string;
             /** Image Url */
@@ -4768,6 +4924,31 @@ export interface components {
             infrequent_monthly_average: number;
             /** Months */
             months: components["schemas"]["YearMonthOut"][];
+        };
+        /** HistoryPointOut */
+        app__api__planning_models__HistoryPointOut: {
+            /** Amount */
+            amount: number;
+            /**
+             * Due Date
+             * Format: date
+             */
+            due_date: string;
+            /** Entry Id */
+            entry_id: string;
+            /** Transaction Id */
+            transaction_id: string | null;
+            /** Unit Price */
+            unit_price: number | null;
+            /** Usage */
+            usage: number | null;
+        };
+        /** HistoryPointOut */
+        app__api__stock__HistoryPointOut: {
+            /** Date */
+            date: string;
+            /** Min Price */
+            min_price: number;
         };
     };
     responses: never;
@@ -5723,6 +5904,7 @@ export interface operations {
                 bucket_ids?: string;
                 category_ids?: string;
                 paid_by?: string;
+                months?: string;
             };
             header?: never;
             path?: never;
@@ -5746,6 +5928,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bills_api_v1_insights_bills_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillRowOut"][];
                 };
             };
         };
@@ -6443,6 +6645,41 @@ export interface operations {
             };
         };
     };
+    entry_usage_api_v1_recurring_entries__entry_id__usage_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EntryUsageIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EntryOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     preview_api_v1_recurring_preview_post: {
         parameters: {
             query?: never;
@@ -6559,6 +6796,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_history_api_v1_recurring__item_id__history_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemHistoryOut"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -7831,6 +8099,7 @@ export interface operations {
                 month?: number | null;
                 page?: number;
                 page_size?: number;
+                sort?: string;
             };
             header?: never;
             path?: never;
@@ -8180,6 +8449,7 @@ export interface operations {
                 month?: number | null;
                 page?: number;
                 page_size?: number;
+                sort?: string;
             };
             header?: never;
             path?: never;

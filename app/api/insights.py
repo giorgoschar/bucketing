@@ -9,16 +9,20 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api.plan import parse_month
-from app.api.planning_models import CategoryUsualOut, Money
+from app.api.planning_models import BillRowOut, CategoryUsualOut, Money
 from app.api_auth import require_api_auth
+from app.core.clock import local_today
 from app.core.database import get_db
 from app.services import InsightFilters, build_insights
+from app.services.bill_history import bills_overview
 from app.services.insights import get_category_detail, resolve_insight_period
 from app.services.person import get_person_summary
 from app.services.usual import categories_vs_usual
 from app.validators import household_member_ids
 
 router = APIRouter(prefix="/insights", tags=["insights"])
+
+MONTH_SERIES = ("6", "12", "24")
 
 
 def _bucket_row(row: dict, extra: dict) -> dict:
@@ -49,6 +53,7 @@ def insights(
     bucket_ids: str = Query(default=""),  # comma-separated
     category_ids: str = Query(default=""),  # comma-separated
     paid_by: str = Query(default=""),
+    months: str = Query(default="6"),  # 6 | 12 | 24: the length of monthly_in_out
     auth=Depends(require_api_auth),
     db: Session = Depends(get_db),
 ):
@@ -57,6 +62,8 @@ def insights(
     Use the `preset` parameter for common date ranges, or `start_date`/`end_date` for custom.
     """
     user, hh_id = auth
+    if months not in MONTH_SERIES:
+        raise HTTPException(status_code=400, detail="months must be 6, 12 or 24.")
 
     # Shared with the HTML route so both endpoints compute identical figures.
     data = build_insights(
@@ -70,6 +77,7 @@ def insights(
             bucket_ids=bucket_ids,
             category_ids=category_ids,
             paid_by=paid_by,
+            months=int(months),
         ),
     )
     period, start, end = data["period"], data["start"], data["end"]
@@ -90,7 +98,7 @@ def insights(
         "net": data["net"],
         # In / Out (logged + not-yet-logged cash) / Net for the period.
         "in_out": data["in_out"],
-        # Six calendar months to this one, oldest first; ignores the period (2d §7.3).
+        # `months` (6, 12 or 24) calendar months to this one, oldest first; ignores the period (2d §7.3).
         "monthly_in_out": data["monthly_in_out"],
         "paid_by": summary.get("paid_by", {}),
         "kpis": data["kpis"],
@@ -132,6 +140,15 @@ def categories_usual(
     user, hh_id = auth
     year, mon = parse_month(month)
     return categories_vs_usual(db, hh_id, year, mon)
+
+
+@router.get("/bills", response_model=list[BillRowOut])
+def bills(auth=Depends(require_api_auth), db: Session = Depends(get_db)):
+    """Every recurring out item that is active or has been paid, with its last
+    amount, a sparkline, its 12-month total and, when the latest payment is
+    recent and unusual, its change. Ignores the Insights lens and period."""
+    user, hh_id = auth
+    return bills_overview(db, hh_id, local_today())
 
 
 class PersonLargestOut(BaseModel):

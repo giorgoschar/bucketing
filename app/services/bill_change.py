@@ -1,0 +1,281 @@
+"""When did a recurring bill change? (Phase A spec §3.4)
+
+One rule, used by the history endpoint, the Bills list and the daily alert.
+``entry_points`` reads an item's done entries; ``assess`` is pure and judges the
+latest one against a baseline: the same month a year earlier when there is one
+(a seasonal bill is compared with its own season), else the median of the three
+entries before it. Both gates must pass, and a usage reading, when every entry
+involved has one, says whether the usage or the price per unit moved.
+"""
+
+import re
+from collections.abc import Iterable
+from dataclasses import dataclass
+from datetime import date, datetime
+from decimal import ROUND_HALF_UP, Decimal
+from statistics import median
+
+from sqlalchemy.orm import Session
+
+from app.core.money import quantize
+from app.models import (
+    BillOccurrence,
+    ItemDirection,
+    OccurrenceStatus,
+    RecurringBill,
+    RuleKind,
+    Transaction,
+)
+from app.services.money import to_base
+
+PCT_GATE = Decimal("20")  # |change| in percent, at least
+ABS_GATE = Decimal("10")  # |change| in household currency, at least
+RECENT_N = 3  # entries before the latest that form the "recent" baseline
+ALERT_WINDOW_DAYS = 35  # the latest entry must be this recent to alert (list, Home, push)
+
+_HUNDRED = Decimal(100)
+
+
+@dataclass(frozen=True)
+class Point:
+    """One done entry of an item."""
+
+    entry_id: str
+    due_date: date
+    amount: Decimal  # the entry amount, in the household currency
+    usage: Decimal | None
+    transaction_id: str | None  # None when the linked transaction is deleted
+    period: str | None = None  # the rule's period, before business-day adjustment
+    paid_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class Change:
+    """The latest done entry against its baseline (fields as in spec §3.4)."""
+
+    entry_id: str
+    amount: Decimal
+    usual: Decimal
+    basis: str  # "last_year" | "recent"
+    delta: Decimal
+    pct: int
+    direction: str  # "up" | "down"
+    reason: str | None  # "usage" | "price"
+    reason_pct: int | None
+
+
+def _whole(value: Decimal) -> int:
+    """A percentage at the edge: a whole number, half rounded away from zero."""
+    return int(value.quantize(Decimal(1), rounding=ROUND_HALF_UP))
+
+
+_MONTH_KEY = re.compile(r"^(\d{4})-(\d{2})$")
+
+
+def _order(p: Point) -> tuple:
+    """Oldest first: due date, then when it was paid (unknown first), then id."""
+    return (p.due_date, p.paid_at is not None, p.paid_at, p.entry_id)
+
+
+def _month_of(p: Point) -> tuple[int, int]:
+    """The calendar month an entry belongs to: its period when that is a
+    "YYYY-MM" key (a business-day shift can move the due date into the next
+    or previous month), else the due date's month."""
+    m = _MONTH_KEY.match(p.period or "")
+    if m and 1 <= int(m.group(2)) <= 12:
+        return int(m.group(1)), int(m.group(2))
+    return p.due_date.year, p.due_date.month
+
+
+def is_monthly(item: RecurringBill) -> bool:
+    """True when the item's rule gives at most one entry a month (not weekly)."""
+    return item.rule_kind != RuleKind.weekly.value
+
+
+# ---------------------------------------------------------------- reading
+
+
+def entry_points_by_item(db: Session, items: Iterable[RecurringBill]) -> dict[str, list[Point]]:
+    """Each item's done entries, oldest first. Two queries however many items.
+
+    The amount is the entry amount: ``occ.amount``; else the linked
+    transaction's amount converted to base (the whole payment, never one
+    member's share); else the item's amount. An entry with none of them has
+    nothing to compare and is left out.
+    """
+    by_id = {i.id: i for i in items}
+    out: dict[str, list[Point]] = {i: [] for i in by_id}
+    if not by_id:
+        return out
+    occs = (
+        db.query(BillOccurrence)
+        .filter(
+            BillOccurrence.bill_id.in_(list(by_id)),
+            BillOccurrence.status == OccurrenceStatus.paid,
+        )
+        .order_by(BillOccurrence.due_date, BillOccurrence.id)
+        .all()
+    )
+    txn_ids = {o.transaction_id for o in occs if o.transaction_id}
+    txns = (
+        {t.id: t for t in db.query(Transaction).filter(Transaction.id.in_(txn_ids))}
+        if txn_ids
+        else {}
+    )
+    for occ in occs:
+        item = by_id[occ.bill_id]
+        txn = txns.get(occ.transaction_id) if occ.transaction_id else None
+        if txn is not None and txn.deleted_at is not None:
+            txn = None
+        if occ.amount is not None:
+            amount = Decimal(occ.amount)
+        elif txn is not None:
+            amount = to_base(txn.amount, txn.exchange_rate)
+        elif item.amount is not None:
+            amount = Decimal(item.amount)
+        else:
+            continue
+        out[item.id].append(
+            Point(
+                entry_id=occ.id,
+                due_date=occ.due_date,
+                amount=amount,
+                usage=None if occ.usage is None else Decimal(occ.usage),
+                transaction_id=txn.id if txn is not None else None,
+                period=occ.period,
+                paid_at=occ.paid_at,
+            )
+        )
+    for pts in out.values():
+        pts.sort(key=_order)
+    return out
+
+
+def entry_points(db: Session, item: RecurringBill) -> list[Point]:
+    """``item``'s done entries, oldest first (see :func:`entry_points_by_item`)."""
+    return entry_points_by_item(db, [item])[item.id]
+
+
+# ---------------------------------------------------------------- judging
+
+
+def _reason(latest: Point, usual: Decimal, baseline: list[Point]):
+    """``("usage" | "price", signed whole percent)`` or ``(None, None)``."""
+    if not (latest.usage and latest.usage > 0):
+        return None, None
+    if not baseline or any(not (p.usage and p.usage > 0) for p in baseline):
+        return None, None
+    base_usage = median(p.usage for p in baseline)
+    usage_pct = (latest.usage - base_usage) / base_usage * _HUNDRED
+    base_price = usual / base_usage
+    if base_price <= 0:
+        return None, None
+    price_pct = (latest.amount / latest.usage - base_price) / base_price * _HUNDRED
+    if abs(usage_pct) >= abs(price_pct):
+        return "usage", _whole(usage_pct)
+    return "price", _whole(price_pct)
+
+
+def assess(points: list[Point], *, monthly: bool) -> Change | None:
+    """Judge the latest of ``points`` (done entries, oldest first), or None.
+
+    ``monthly`` is False for weekly rules, which never use the last-year
+    baseline. Pure: no database.
+    """
+    if not points:
+        return None
+    ordered = sorted(points, key=_order)
+    latest, before = ordered[-1], ordered[:-1]
+    baseline: list[Point] = []
+    basis = "recent"
+    if monthly:
+        year, month = _month_of(latest)
+        same_month = [p for p in before if _month_of(p) == (year - 1, month)]
+        if same_month:
+            baseline, basis = [same_month[-1]], "last_year"
+    if not baseline:
+        if len(before) < RECENT_N:
+            return None
+        baseline = before[-RECENT_N:]
+        usual = Decimal(median(p.amount for p in baseline))
+    else:
+        usual = baseline[0].amount
+    if usual <= 0:
+        return None
+    delta = latest.amount - usual
+    pct = delta / usual * _HUNDRED
+    if abs(pct) < PCT_GATE or abs(delta) < ABS_GATE:
+        return None
+    reason, reason_pct = _reason(latest, usual, baseline)
+    return Change(
+        entry_id=latest.entry_id,
+        amount=quantize(latest.amount),
+        usual=quantize(usual),
+        basis=basis,
+        delta=quantize(delta),
+        pct=_whole(pct),
+        direction="up" if delta > 0 else "down",
+        reason=reason,
+        reason_pct=reason_pct,
+    )
+
+
+def assess_item(item: RecurringBill, points: list[Point]) -> Change | None:
+    """:func:`assess` for an item: income items are never assessed, paused ones are."""
+    if item.direction == ItemDirection.in_.value:
+        return None
+    return assess(points, monthly=is_monthly(item))
+
+
+# ------------------------------------------------------------- the words
+
+
+def _money_text(amount: Decimal, currency: str | None) -> str:
+    """``€84`` for a whole amount, ``€84.50`` otherwise (the alert's wording)."""
+    from app.templates import format_currency
+
+    text = format_currency(amount, currency or "EUR")
+    return text[:-3] if text.endswith(".00") else text
+
+
+def change_title(name: str, change: Change, currency: str | None) -> str:
+    """``Electricity was €84, usually €61``."""
+    return (
+        f"{name} was {_money_text(change.amount, currency)}, "
+        f"usually {_money_text(change.usual, currency)}"
+    )
+
+
+def change_body(change: Change, currency: str | None, usage_unit: str | None) -> str:
+    """Where the usual comes from, then the reason when there is one."""
+    usual = _money_text(change.usual, currency)
+    if change.basis == "last_year":
+        text = f"Same month last year: {usual}."
+    else:
+        text = f"Usual from the last {RECENT_N} payments: {usual}."
+    if change.reason and change.reason_pct is not None and usage_unit:
+        size = abs(change.reason_pct)
+        if change.reason == "usage":
+            more = "more" if change.reason_pct > 0 else "less"
+            text += f" You used {size}% {more} {usage_unit}."
+        else:
+            went = "went up" if change.reason_pct > 0 else "went down"
+            text += f" The price per {usage_unit} {went} {size}%."
+    return text
+
+
+__all__ = [
+    "ABS_GATE",
+    "ALERT_WINDOW_DAYS",
+    "PCT_GATE",
+    "RECENT_N",
+    "Change",
+    "Point",
+    "assess",
+    "assess_item",
+    "change_body",
+    "change_title",
+    "entry_points",
+    "entry_points_by_item",
+    "is_monthly",
+]
