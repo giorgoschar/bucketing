@@ -7,6 +7,8 @@ export interface PanelHost {
   close: () => void
   /** The entry being edited (`?edit=<id>`). In the panel the router's :id is the screen behind's, not this. */
   editId?: string
+  /** The form was reset to a new entry (stay-open): drop `amount`, `mode`, `take`, `copy` from the address. */
+  reset: () => void
   /** Swap to editing another entry ("Open that one"). */
   openEdit: (id: string) => void
 }

@@ -35,6 +35,11 @@ export function rememberScreen(pathname: string, search: string): void {
   lastScreen = pathname + (rest ? `?${rest}` : '')
 }
 
+/** Sign-out: the next account must not inherit this one's last screen. */
+export function resetScreen(): void {
+  lastScreen = '/'
+}
+
 /** Desktop: /new?… or /edit/:id?… becomes the current screen plus the panel parameters. */
 export function panelAddress(pathname: string, search: string): string {
   const [path, query = ''] = lastScreen.split('?')
@@ -61,6 +66,15 @@ export function fullScreenAddress(params: URLSearchParams): string | null {
   }
   const tail = q.toString() ? `?${q.toString()}` : ''
   return panel.kind === 'edit' ? `/edit/${encodeURIComponent(panel.id)}${tail}` : `/new${tail}`
+}
+
+/** The address of a panel that has been reset to a fresh entry: the panel parameters only (`add=1`), no values. */
+export function resetPanelParams(p: URLSearchParams): URLSearchParams {
+  const next = new URLSearchParams(p)
+  for (const k of COMPOSER_KEYS) next.delete(k)
+  next.delete('edit')
+  next.set('add', '1')
+  return next
 }
 
 /** Opens Add: the panel over the current screen. */

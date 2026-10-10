@@ -14,6 +14,7 @@ import { dayLabel, todayLocal } from './dates'
 import { type DefaultsRecord, initialNew, matchRule, RULES_API_READY, sanitize, suggestMerchants } from './defaults'
 import { dropDraft, parkDraft, parkedDraft } from './draft'
 import { usePanel } from './panel'
+import { panelOf } from '../../shell/addPanel'
 import { DuplicateCard } from './DuplicateCard'
 import { EditTopMenu } from './EditTopMenu'
 import type { ComposerData } from './hooks/useComposerData'
@@ -100,9 +101,13 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
   const [initialBody] = useState(() => (initial.mode === 'edit' ? JSON.stringify(toUpdateBody(initial, ctx)) : ''))
   const dirty = s.mode === 'new' ? isDirtyNew(s) : JSON.stringify(toUpdateBody(s, ctx)) !== initialBody
   const leaving = useRef(false)
-  const blocker = useBlocker(
-    ({ currentLocation, nextLocation }) => dirty && !leaving.current && currentLocation.pathname !== nextLocation.pathname,
-  )
+  // On the phone leaving means another path. The panel also ends when only the address's panel parameters go
+  // (the browser's Back), which the pathname test alone would let through.
+  const blocker = useBlocker(({ currentLocation, nextLocation }) => {
+    if (!dirty || leaving.current) return false
+    if (currentLocation.pathname !== nextLocation.pathname) return true
+    return !!panel && !!panelOf(new URLSearchParams(currentLocation.search)) && !panelOf(new URLSearchParams(nextLocation.search))
+  })
   const leave = (to?: string) => {
     leaving.current = true
     const edit = to && /^\/edit\/([^/?]+)/.exec(to)
@@ -179,6 +184,7 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
     dispatch({ type: 'replace', state: { ...fresh, date: s.date, bucketId: s.bucketId, paidBy: s.paidBy ?? fresh.paidBy } })
     setDup(null)
     setStashCents(null)
+    panel?.reset()
     amountRef.current?.focus()
   }
 

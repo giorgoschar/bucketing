@@ -2,7 +2,7 @@ import { useEffect, useMemo } from 'react'
 import { useSearchParams } from 'react-router'
 import { PanelProvider } from '../features/composer/panel'
 import { Compose } from '../screens/lazy'
-import { OWN_PANEL_KEYS, panelOf } from './addPanel'
+import { OWN_PANEL_KEYS, panelOf, resetPanelParams } from './addPanel'
 
 /** The composer in a 440 px panel over the screen behind (Phase A spec §4.5). The URL drives it, so a reload keeps it. */
 export default function AddPanel() {
@@ -16,6 +16,7 @@ export default function AddPanel() {
       for (const k of OWN_PANEL_KEYS) next.delete(k)
       return next
     }, { replace: true }),
+    reset: () => setParams((p) => resetPanelParams(p), { replace: true }),
     openEdit: (id: string) => setParams((p) => {
       const next = new URLSearchParams(p)
       next.delete('add')

@@ -130,3 +130,10 @@ it('N does nothing on the phone (no sidebar)', async () => {
   await userEvent.keyboard('n')
   expect(where()).toBe('/activity')
 })
+
+it.each([['Control'], ['Meta'], ['Alt']])('%s+N is not the Add shortcut', async (mod) => {
+  at('/activity', true)
+  await screen.findByRole('navigation', { name: 'Main' })
+  await userEvent.keyboard(`{${mod}>}n{/${mod}}`)
+  expect(where()).toBe('/activity')
+})

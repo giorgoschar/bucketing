@@ -1,5 +1,5 @@
 import { QueryClientProvider } from '@tanstack/react-query'
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createMemoryRouter, RouterProvider, useLocation } from 'react-router'
@@ -16,6 +16,7 @@ import { goOffline, loose, writes } from '../features/composer/testHelpers'
 import { resetTickedPrompt } from '../features/plan/pantry/tickedOffer'
 import type { Session } from '../session/SessionProvider'
 import { rememberScreen } from './addPanel'
+import { ActivityRoute } from '../features/activity/ActivityRoute'
 import { AppShell } from './AppShell'
 import { stubDesktop } from './desktopStub'
 import { FullScreenShell } from './FullScreenShell'
@@ -48,8 +49,8 @@ const panel = () => screen.getByRole('complementary', { name: /entry$/ })
 const amount = () => within(panel()).getByRole('textbox', { name: 'Amount' }) as HTMLInputElement
 
 /** The real shells and the real composer, on a desktop or a phone, with the API faked. */
-async function setup(url: string, { desktop = true, routes = {}, defaults = DEFAULTS }: {
-  desktop?: boolean; routes?: Record<string, unknown>; defaults?: DefaultsRecord
+async function setup(url: string, { desktop = true, routes = {}, defaults = DEFAULTS, activity = false }: {
+  desktop?: boolean; routes?: Record<string, unknown>; defaults?: DefaultsRecord; activity?: boolean
 } = {}) {
   await wipe()
   setIdentity({ user_id: 'u1', household_id: 'h1' })
@@ -62,6 +63,12 @@ async function setup(url: string, { desktop = true, routes = {}, defaults = DEFA
     'GET /api/v1/transactions/t9': TXN,
     'PUT /api/v1/transactions/t9': () => ({ ...TXN, amount: 70 }),
     'DELETE /api/v1/transactions/t1': () => null,
+    ...(activity ? {
+      'GET /api/v1/transactions/counts': { no_payer: 0, duplicate_groups: 0 },
+      'GET /api/v1/transactions/t9/history': { events: [] },
+      'GET /api/v1/recurring': [],
+      'GET /api/v1/recurring/entries': [],
+    } : {}),
     ...routes,
   }))
   const mq = stubDesktop(desktop)
@@ -72,7 +79,8 @@ async function setup(url: string, { desktop = true, routes = {}, defaults = DEFA
         path: '/', element: <AppShell />,
         children: [
           { index: true, element: <Screen name="home" /> },
-          { path: 'activity', element: <Screen name="activity" /> },
+          { path: 'activity', element: activity ? <><ActivityRoute /><Where /></> : <Screen name="activity" /> },
+          ...(activity ? [{ path: 'activity/:id', element: <><ActivityRoute /><Where /></> }] : []),
           { path: 'insights', element: <Screen name="insights" /> },
         ],
       },
@@ -108,6 +116,8 @@ it('a /new?mode=cash&take=none&amount=45.00 link opens the panel over the curren
   await userEvent.keyboard('{Enter}')
   await waitFor(() => expect(writes(api)).toHaveLength(1))
   expect(writes(api)[0].body).toMatchObject({ amount: '45.00', payment_method: 'cash', took_cash: false, paid_by: 'u1' })
+  // The form reset, so the address must not still say "€45, cash": a reload or a resize would bring it back.
+  await waitFor(() => expect(where()).toBe('/activity?add=1'))
 })
 
 it('saves from the keyboard, takes a comma, and stays open with the date, budget and payer kept', async () => {
@@ -319,4 +329,66 @@ it('a /new?from=<id> link (copy as new) opens the panel as copy=<id>, and the ph
   await setup('/activity?add=1&copy=t9', { desktop: false })
   expect(await screen.findByText('Amount 64.20 euro')).toBeInTheDocument()
   expect(where()).toBe('/new?from=t9')
+})
+
+// Review fix 3: Esc with the detail pane and the Add panel both open.
+it('Esc closes the Add panel first and the pane on the next Esc', async () => {
+  const user = userEvent.setup()
+  await setup('/activity/t9?add=1', { activity: true })
+  await waitFor(() => amount())
+  act(() => within(panel()).getByRole('button', { name: /^Budget:/ }).focus())
+  await user.keyboard('{Escape}')
+  await waitFor(() => expect(screen.queryByRole('complementary', { name: /entry$/ })).toBeNull())
+  expect(screen.getByRole('complementary', { name: 'Payment details' })).toBeInTheDocument()
+  expect(where()).toBe('/activity/t9')
+  await user.keyboard('{Escape}')
+  await waitFor(() => expect(screen.queryByRole('complementary')).toBeNull())
+  expect(where()).toBe('/activity')
+})
+
+it('with the pane open, Esc in a dirty panel asks once and keeps the pane', async () => {
+  const user = userEvent.setup()
+  await setup('/activity/t9?add=1', { activity: true })
+  await waitFor(() => amount())
+  await user.type(amount(), '5')
+  act(() => within(panel()).getByRole('button', { name: /^Budget:/ }).focus())
+  await user.keyboard('{Escape}')
+  expect(await screen.findAllByRole('dialog', { name: 'Discard this entry?' })).toHaveLength(1)
+  expect(screen.getByRole('complementary', { name: 'Payment details' })).toBeInTheDocument()
+  expect(where()).toBe('/activity/t9?add=1')
+})
+
+// Review fix 11: closing through the address (the browser's Back) must not lose a typed entry silently.
+it('leaving a dirty panel through the address asks first', async () => {
+  const user = userEvent.setup()
+  const { router } = await setup('/activity?add=1')
+  await waitFor(() => amount())
+  await user.type(amount(), '4')
+  await act(() => router.navigate('/activity'))
+  expect(await screen.findByRole('dialog', { name: 'Discard this entry?' })).toBeInTheDocument()
+  expect(where()).toBe('/activity?add=1')
+})
+
+// Review fix 14: the double save guard.
+it('Enter twice at once saves once', async () => {
+  const { api } = await setup('/?add=1')
+  await waitFor(() => amount())
+  fireEvent.change(amount(), { target: { value: '5' } })
+  fireEvent.keyDown(amount(), { key: 'Enter' })
+  fireEvent.keyDown(amount(), { key: 'Enter', ctrlKey: true })
+  await within(panel()).findByText(/^Saved/)
+  expect(writes(api)).toHaveLength(1)
+})
+
+it('the new entry after a save is empty of notes, a split and a receipt, not only the amount', async () => {
+  const user = userEvent.setup()
+  await setup('/?add=1')
+  await waitFor(() => amount())
+  await user.type(amount(), '5')
+  await user.click(within(panel()).getByRole('button', { name: /^More options/ }))
+  await user.type(await screen.findByRole('textbox', { name: /notes/i }), 'for the party')
+  await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Close' }))
+  await user.keyboard('{Control>}{Enter}{/Control}')
+  await within(panel()).findByText(/^Saved/)
+  expect(within(panel()).getByRole('button', { name: 'More options' })).toBeInTheDocument() // not "More options, changed"
 })

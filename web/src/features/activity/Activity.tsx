@@ -84,8 +84,8 @@ export function Activity() {
   // A new filter is a new list: a selection made on the old one no longer means anything.
   const set = useCallback((next: FeedState) => {
     dispatch({ type: 'cancel' })
-    setParams(toSearch(next, params), { replace: true })
-  }, [setParams, params])
+    setParams(toSearch(next, desktop ? params : undefined), { replace: true })
+  }, [setParams, params, desktop])
   const f = state.filter
   const setFilter = (filter: TransactionFilter) => set({ ...state, filter })
   const onSearch = useCallback(

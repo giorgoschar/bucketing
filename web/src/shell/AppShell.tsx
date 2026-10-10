@@ -11,7 +11,7 @@ import { Toaster } from '../ui/Toast'
 import { useIsDesktop } from '../ui/useIsDesktop'
 import { TickedPrompt } from '../features/plan/pantry/TickedPrompt'
 import { resetTickedPrompt } from '../features/plan/pantry/tickedOffer'
-import { fullScreenAddress, panelOf, rememberScreen } from './addPanel'
+import { fullScreenAddress, panelOf, rememberScreen, resetScreen } from './addPanel'
 import { CloseIcon } from './icons'
 import { TabBar } from './TabBar'
 import './shell.css'
@@ -50,6 +50,7 @@ export function AppShell() {
       // and opening the composer must not wipe the "Waiting to sync" markers.
       clearPending()
       resetTickedPrompt() // a pantry offer is this account's too
+      resetScreen() // and so is the screen a /new link would open over
       return
     }
     const stopBridge = installQueueBridge(queryClient)

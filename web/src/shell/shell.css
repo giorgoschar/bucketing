@@ -211,7 +211,7 @@
   }
   .ui-sheet-layer .ui-sheet__grab { display: none; }
   .sheet {
-    inset: 0; height: fit-content; max-width: 560px; border-radius: var(--r-lg);
+    inset: 0; margin: auto; height: fit-content; max-width: 560px; border-radius: var(--r-lg);
     box-shadow: 0 20px 60px rgba(0, 0, 0, .35);
   }
   .sheet__grab { display: none; }
