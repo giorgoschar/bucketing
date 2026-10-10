@@ -19,6 +19,7 @@ export const BillsList = lazy(() => import('../features/insights/bills/BillsList
 export const BillHistory = lazy(() => import('../features/insights/bills/BillHistory').then((m) => ({ default: m.BillHistory })))
 // Phase B: Insights › Statements (the list, and each past month's statement).
 export const StatementsList = lazy(() => import('../features/insights/statements/StatementsList').then((m) => ({ default: m.StatementsList })))
+export const Statement = lazy(() => import('../features/insights/statements/Statement').then((m) => ({ default: m.Statement })))
 export const Settings = lazy(() => import('../features/settings/Settings').then((m) => ({ default: m.Settings })))
 export const Profile = lazy(() => import('../features/settings/Profile').then((m) => ({ default: m.Profile })))
 export const Household = lazy(() => import('../features/settings/Household').then((m) => ({ default: m.Household })))

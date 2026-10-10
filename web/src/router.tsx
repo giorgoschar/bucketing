@@ -6,7 +6,7 @@ import { Home } from './screens/Home'
 import { Insights } from './screens/Insights'
 import {
   ActivityRoute, Appearance, Automations, BillHistory, BillsList, Categories, CategoryScreen, Compose, FuelScreen, Household, Items, Notifications,
-  PantryDetail, Plan, Profile, Settings, ShoppingList, StatementsList,
+  PantryDetail, Plan, Profile, Settings, ShoppingList, Statement, StatementsList,
 } from './screens/lazy'
 
 /** Each screen gets the error screen (a lazy chunk that 404s after a deploy, P3 M2). On the screen route,
@@ -33,6 +33,7 @@ export const router = createBrowserRouter(
         { path: 'insights/bills', element: <BillsList /> },
         { path: 'insights/bills/:id', element: <BillHistory /> },
         { path: 'insights/statements', element: <StatementsList /> },
+        { path: 'insights/statements/:month', element: <Statement /> },
         { path: 'settings', element: <Settings /> },
         { path: 'settings/profile', element: <Profile /> },
         { path: 'settings/household', element: <Household /> },

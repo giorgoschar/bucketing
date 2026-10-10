@@ -46,3 +46,13 @@ export function useMarkReviewed(month: string) {
     return out
   }
 }
+
+/** The recurring entries due on one day (the same read Plan uses), so an open entry can open Plan's sheet in place. */
+export function useEntriesOn(date: string | null) {
+  const day = date ?? ''
+  return useCachedQuery(
+    keys.recurring.entries(day, day),
+    (signal) => unwrap(api.GET('/api/v1/recurring/entries', { params: { query: { from: day, to: day } }, signal })),
+    { enabled: date !== null },
+  )
+}
