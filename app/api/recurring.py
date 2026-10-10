@@ -3,6 +3,7 @@
 expected entries (spec §3, §6.3). The new app's only way to change them.
 """
 
+import unicodedata
 from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from itertools import islice
@@ -65,6 +66,7 @@ router = APIRouter(prefix="/recurring", tags=["recurring"])
 
 MAX_RANGE_DAYS = 400
 USAGE_UNIT_MAX = 12
+_BAD_UNIT_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp"})  # controls, format, line/paragraph
 USAGE_MAX = Decimal("1000000000")  # 9 digits before the point
 _MILLI = Decimal("0.001")
 
@@ -76,7 +78,7 @@ def _clean_usage_unit(value):
     if not isinstance(value, str):
         raise ValueError("usage_unit must be text")
     value = value.strip()
-    if any(ord(c) < 32 or ord(c) == 127 for c in value):
+    if any(unicodedata.category(c) in _BAD_UNIT_CATEGORIES for c in value):
         raise ValueError("usage_unit has a control character")
     if len(value) > USAGE_UNIT_MAX:
         raise ValueError(f"usage_unit is at most {USAGE_UNIT_MAX} characters")
@@ -89,9 +91,13 @@ def _clean_usage(value):
         return None
     if not value.is_finite() or value < 0:
         raise ValueError("usage must be 0 or more")
-    value = value.quantize(_MILLI, rounding=ROUND_HALF_UP)
-    if value >= USAGE_MAX:
+    if value >= USAGE_MAX:  # before quantize, which fails on huge values
         raise ValueError("usage has at most 9 digits before the point")
+    value = value.quantize(_MILLI, rounding=ROUND_HALF_UP)
+    if value >= USAGE_MAX:  # 999999999.9996 rounds up
+        raise ValueError("usage has at most 9 digits before the point")
+    if value == 0:
+        value = Decimal(0).quantize(_MILLI)  # "-0" is stored as 0
     return value
 
 
@@ -286,7 +292,9 @@ def _apply(db: Session, item: RecurringBill, body: RecurringItemIn, hh_id: str) 
     item.is_auto_pay = body.is_auto_pay
     item.is_active = body.is_active
     item.notes = (body.notes or "").strip() or None
-    item.usage_unit = body.usage_unit
+    # An edit from a client that does not know the field leaves it alone; null clears it.
+    if not item.id or "usage_unit" in body.model_fields_set:
+        item.usage_unit = body.usage_unit
 
 
 def _replace_splits(db: Session, item: RecurringBill, body: RecurringItemIn) -> None:

@@ -327,3 +327,38 @@ def test_query_count_does_not_grow_with_the_number_of_items(client, db, api):  #
     many = _count_queries(db, lambda: client.get(URL, headers=headers))
     assert len(client.get(URL, headers=headers).json()) == 12
     assert many == few
+
+
+def test_totals_stop_at_the_end_of_this_month(client, db, api):  # noqa: F811
+    headers, hh = api
+    item = _item(db, hh.household_id)
+    _done(db, item, _months_back(0, day=1), 30)
+    _done(db, item, _months_back(-1, day=1), 500)  # paid ahead, due next month
+    db.commit()
+    [row] = client.get(URL, headers=headers).json()
+    assert row["total_12m"] == 30.0 and row["average_12m"] == 30.0
+
+
+def test_history_point_of_a_deleted_transaction_has_no_link(client, db, api):  # noqa: F811
+    from app.core.clock import utcnow_naive
+    from app.models import Transaction, TransactionType
+
+    headers, hh = api
+    item = _item(db, hh.household_id)
+    t = Transaction(
+        household_id=hh.household_id,
+        bucket_id=hh.bucket_id,
+        amount=D("80"),
+        currency="EUR",
+        type=TransactionType.expense,
+        paid_by=hh.user_id,
+        transaction_date=date(2026, 1, 14),
+        deleted_at=utcnow_naive(),
+    )
+    db.add(t)
+    db.flush()
+    occ = _done(db, item, date(2026, 1, 14), 80)
+    occ.transaction_id = t.id
+    db.commit()
+    [p] = client.get(f"/api/v1/recurring/{item.id}/history", headers=headers).json()["points"]
+    assert p["transaction_id"] is None

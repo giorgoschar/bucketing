@@ -65,7 +65,10 @@ def test_usage_unit_length_and_control_characters(client, api):  # noqa: F811
     assert _make(client, headers, usage_unit="x" * 12)["usage_unit"] == "x" * 12
     too_long = client.post(URL, headers=headers, json=_item(usage_unit="x" * 13))
     assert too_long.status_code == 422
-    for bad in ("kW\x00h", "kW\nh", "k\th", "kWh\x7f"):
+    for bad in (
+        "kW\x00h", "kW\nh", "k\th", "kWh\x7f", "kW\x85h", "k\u202eWh", "k\u2028h",
+        "k\u200bh", "k\u2029h",
+    ):  # fmt: skip
         r = client.post(URL, headers=headers, json=_item(usage_unit=bad))
         assert r.status_code == 422, bad
 
@@ -147,7 +150,9 @@ def test_usage_for_an_item_without_a_unit_is_422(client, api):  # noqa: F811
     )
 
 
-@pytest.mark.parametrize("bad", [-1, "-0.5", "1000000000", "abc"])
+@pytest.mark.parametrize(
+    "bad", [-1, "-0.5", "1000000000", "999999999.9996", "1e26", "1e400", "abc"]
+)
 def test_usage_range_is_validated(client, api, bad):  # noqa: F811
     headers, _ = api
     item = _make(client, headers)
@@ -289,3 +294,32 @@ def test_old_app_pages_still_save_an_item_and_keep_usage_unit(client, db, authed
     db.expire_all()
     db.refresh(bill)
     assert bill.name == "Internet 2" and bill.usage_unit == "GB"
+
+
+def test_put_usage_huge_values_are_422_not_500(client, api):  # noqa: F811
+    headers, _ = api
+    item = _make(client, headers)
+    for bad in ("1e26", "1e400", 1e30):
+        r = client.put(
+            f"{URL}/entries/{_entry_id(item)}/usage", headers=headers, json={"usage": bad}
+        )
+        assert r.status_code == 422, bad
+
+
+def test_negative_zero_is_stored_as_zero(client, db, api):  # noqa: F811
+    headers, _ = api
+    item = _make(client, headers)
+    r = client.put(f"{URL}/entries/{_entry_id(item)}/usage", headers=headers, json={"usage": "-0"})
+    assert r.status_code == 200 and str(db.get(BillOccurrence, _entry_id(item)).usage) == "0.000"
+    assert r.json()["usage"] == 0.0 and str(r.json()["usage"]) == "0.0"
+
+
+def test_item_put_without_usage_unit_keeps_it_and_null_clears_it(client, api):  # noqa: F811
+    headers, _ = api
+    item = _make(client, headers)
+    body = _item()
+    del body["usage_unit"]
+    r = client.put(f"{URL}/{item['id']}", headers=headers, json=body)
+    assert r.status_code == 200 and r.json()["usage_unit"] == "kWh"
+    r = client.put(f"{URL}/{item['id']}", headers=headers, json={**body, "usage_unit": None})
+    assert r.json()["usage_unit"] is None

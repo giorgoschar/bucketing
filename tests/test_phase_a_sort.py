@@ -168,3 +168,26 @@ def test_bad_months_is_400(client, api, bad):  # noqa: F811
     headers, _ = api
     r = client.get("/api/v1/insights", headers=headers, params={"months": bad})
     assert r.status_code == 400
+
+
+def test_other_filters_work_with_amount_sorts_and_paging(client, db, api):  # noqa: F811
+    headers, hh = api
+    made = []
+    for i, amount in enumerate((10, 40, 20, 40, 30)):
+        t = _txn(db, hh, amount, date(2026, 6, 1 + i))
+        t.notes = "lidl run" if i != 2 else "other shop"
+        made.append(t)
+    db.commit()
+    params = {"sort": "amount_desc", "page_size": 2}
+    by_q = {**params, "q": "lidl"}
+    got = []
+    for page in (1, 2):
+        ids, body = _ids(client, headers, page=page, **by_q)
+        assert body["total"] == 4
+        got += ids
+    assert got == [made[3].id, made[1].id, made[4].id, made[0].id]  # equal 40s: newest first
+    ids, body = _ids(client, headers, sort="amount_asc", bucket_id=hh.bucket_id,
+                     from_date="2026-06-02", to_date="2026-06-04")  # fmt: skip
+    assert ids == [made[2].id, made[3].id, made[1].id] and body["total"] == 3
+    ids, _ = _ids(client, headers, sort="amount_desc", min_amount="25")
+    assert ids == [made[3].id, made[1].id, made[4].id]

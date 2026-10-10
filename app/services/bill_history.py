@@ -59,9 +59,11 @@ def item_history(db: Session, item: RecurringBill) -> dict:
     }
 
 
-def _window_start(today: date) -> date:
-    """The first day of the 12 calendar months that end this month."""
-    return today.replace(day=1) - relativedelta(months=11)
+def _window(today: date) -> tuple[date, date]:
+    """The first day of the 12 calendar months that end this month, and the
+    first day after them."""
+    first = today.replace(day=1)
+    return first - relativedelta(months=11), first + relativedelta(months=1)
 
 
 def bills_overview(db: Session, household_id: str, today: date) -> list[dict]:
@@ -81,7 +83,7 @@ def bills_overview(db: Session, household_id: str, today: date) -> list[dict]:
     points = entry_points_by_item(db, items)
     # A done entry whose amount could not be found is not a point, so "has a done
     # entry" is asked of the points: they are what the row shows.
-    start = _window_start(today)
+    start, stop = _window(today)
     recent_cutoff = today - timedelta(days=ALERT_WINDOW_DAYS)
     rows = []
     for item in items:
@@ -90,7 +92,7 @@ def bills_overview(db: Session, household_id: str, today: date) -> list[dict]:
         if not active and not pts:
             continue
         last = pts[-1] if pts else None
-        in_window = [p.amount for p in pts if start <= p.due_date]
+        in_window = [p.amount for p in pts if start <= p.due_date < stop]
         total = quantize(sum(in_window, Decimal(0))) if in_window else None
         average = quantize(sum(in_window, Decimal(0)) / len(in_window)) if in_window else None
         change = assess_item(item, pts) if last and last.due_date >= recent_cutoff else None

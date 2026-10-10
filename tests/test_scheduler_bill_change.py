@@ -242,3 +242,24 @@ def test_the_old_drift_constants_are_gone():
     import app.scheduler as scheduler
 
     assert not [n for n in dir(scheduler) if n.startswith("DRIFT_")]
+
+
+def test_one_failing_item_does_not_lose_the_others(db, authed, run_job, monkeypatch):
+    import app.services.bill_change as bc
+
+    good = _bill(db, authed, name="Good")
+    bad = _bill(db, authed, name="Bad")
+    also_good = _bill(db, authed, name="Also good")
+    for b in (good, bad, also_good):
+        _recent(db, b, [60, 60, 60, 84])
+    db.commit()
+    real = bc.change_title
+
+    def flaky(name, change, currency):
+        if name == "Bad":
+            raise RuntimeError("boom")
+        return real(name, change, currency)
+
+    monkeypatch.setattr(bc, "change_title", flaky)
+    run_job()
+    assert sorted(n.title.split(" was")[0] for n in _notes(db)) == ["Also good", "Good"]

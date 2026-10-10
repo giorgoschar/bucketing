@@ -386,20 +386,25 @@ def _notify_bill_drift(db, today: date) -> None:
             points = points_by_item[bill.id]
             if not points or points[-1].due_date < window_start:
                 continue
-            change = assess_item(bill, points)
-            if change is None:
-                continue
-            _notify_members(
-                db,
-                members_by_hh.get(bill.household_id, []),
-                household_id=bill.household_id,
-                type=NotificationType.bill_drift,
-                title=change_title(bill.name, change, bill.currency),
-                body=change_body(change, bill.currency, bill.usage_unit),
-                link=f"/app/insights/bills/{bill.id}",
-                dedupe_key=f"bill_drift:{change.entry_id}",
-            )
-    db.commit()
+            # One bad item must not cost the others their notifications or dedupe rows.
+            try:
+                with db.begin_nested():
+                    change = assess_item(bill, points)
+                    if change is None:
+                        continue
+                    _notify_members(
+                        db,
+                        members_by_hh.get(bill.household_id, []),
+                        household_id=bill.household_id,
+                        type=NotificationType.bill_drift,
+                        title=change_title(bill.name, change, bill.currency),
+                        body=change_body(change, bill.currency, bill.usage_unit),
+                        link=f"/app/insights/bills/{bill.id}",
+                        dedupe_key=f"bill_drift:{change.entry_id}",
+                    )
+            except Exception:
+                logger.exception("Bill change alert failed for item %s", bill.id)
+        db.commit()
 
 
 def _notify_budget_thresholds(db, today: date) -> None:

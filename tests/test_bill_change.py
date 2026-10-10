@@ -1,7 +1,8 @@
 """Phase A S2 (spec §3.4): the comparison rule, as a table of cases, and the
 entry points it reads."""
 
-from datetime import date
+import itertools
+from datetime import date, datetime
 from decimal import Decimal
 
 import pytest
@@ -30,14 +31,18 @@ from app.services.bill_change import (
 D = Decimal
 
 
-def pt(due, amount, usage=None, n=[0]):  # noqa: B006
-    n[0] += 1
+_ids = itertools.count(1)
+
+
+def pt(due, amount, usage=None, period=None, paid_at=None):
     return Point(
-        entry_id=f"e{n[0]}",
+        entry_id=f"e{next(_ids):04d}",
         due_date=due,
         amount=D(str(amount)),
         usage=None if usage is None else D(str(usage)),
         transaction_id=None,
+        period=period,
+        paid_at=paid_at,
     )
 
 
@@ -411,3 +416,62 @@ def test_assess_item_skips_income_and_assesses_paused(db, make_household):
     assert assess_item(paused, pts) is not None
     weekly = _item(db, hh, name="Weekly", rule_kind="weekly", rule_weekday=1)
     assert assess_item(weekly, pts).basis == "recent"
+
+
+def test_a_reason_tie_goes_to_usage():
+    # usage +20 % and price +20 % exactly.
+    ch = assess(series((60, 300), (60, 300), (60, 300), (86.4, 360)), monthly=True)
+    assert ch.reason == "usage" and ch.reason_pct == 20
+
+
+def test_two_entries_in_last_years_month_use_the_later_one():
+    points = [
+        pt(date(2025, 9, 5), 100),
+        pt(date(2025, 9, 20), 60),
+        pt(date(2026, 9, 14), 84),
+    ]
+    ch = assess(points, monthly=True)
+    assert ch.basis == "last_year" and ch.usual == D("60.00")
+
+
+def test_last_year_matches_on_the_period_when_a_business_day_shift_crossed_a_month():
+    # November 2025's entry was moved back to 31 Oct; November 2026's is due 2 Nov.
+    points = [
+        pt(date(2025, 10, 31), 60, period="2025-11"),
+        pt(date(2026, 7, 14), 200),
+        pt(date(2026, 8, 14), 200),
+        pt(date(2026, 9, 14), 200),
+        pt(date(2026, 11, 2), 84, period="2026-11"),
+    ]
+    ch = assess(points, monthly=True)
+    assert ch.basis == "last_year" and ch.usual == D("60.00")
+    # Without period keys the due-date months decide: no match, so the last 3.
+    bare = [Point(p.entry_id, p.due_date, p.amount, p.usage, None) for p in points]
+    assert assess(bare, monthly=True).basis == "recent"
+
+
+def test_latest_is_deterministic_for_equal_due_dates():
+    d = date(2026, 9, 1)
+    base = series(50, 50, 50, 50, start=date(2026, 1, 14))
+    early = pt(d, 90, paid_at=datetime(2026, 9, 1, 8))  # noqa: DTZ001
+    late = pt(d, 50, paid_at=datetime(2026, 9, 1, 9))  # noqa: DTZ001
+    for order in ([early, late], [late, early]):
+        assert assess(base + order, monthly=True) is None  # the later payment (50) is latest
+    # Same paid_at: the id decides, whatever the input order.
+    a, b = pt(d, 90), pt(d, 50)
+    first = assess(base + [a, b], monthly=True)
+    second = assess(base + [b, a], monthly=True)
+    assert (first is None) == (second is None)
+
+
+def test_a_deleted_transaction_is_not_linked(db, make_household):
+    hh = make_household()
+    item = _item(db, hh, amount=D("45"))
+    gone = _txn(db, hh, 80, deleted_at=utcnow_naive())
+    live = _txn(db, hh, 70)
+    _done(db, item, date(2026, 1, 14), 5, txn=gone)  # has its own amount
+    _done(db, item, date(2026, 2, 14), None, txn=live)
+    db.commit()
+    pts = entry_points(db, item)
+    assert pts[0].amount == D("5") and pts[0].transaction_id is None
+    assert pts[1].transaction_id == live.id

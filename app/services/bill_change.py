@@ -8,9 +8,10 @@ entries before it. Both gates must pass, and a usage reading, when every entry
 involved has one, says whether the usage or the price per unit moved.
 """
 
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from statistics import median
 
@@ -43,7 +44,9 @@ class Point:
     due_date: date
     amount: Decimal  # the entry amount, in the household currency
     usage: Decimal | None
-    transaction_id: str | None
+    transaction_id: str | None  # None when the linked transaction is deleted
+    period: str | None = None  # the rule's period, before business-day adjustment
+    paid_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -64,6 +67,24 @@ class Change:
 def _whole(value: Decimal) -> int:
     """A percentage at the edge: a whole number, half rounded away from zero."""
     return int(value.quantize(Decimal(1), rounding=ROUND_HALF_UP))
+
+
+_MONTH_KEY = re.compile(r"^(\d{4})-(\d{2})$")
+
+
+def _order(p: Point) -> tuple:
+    """Oldest first: due date, then when it was paid (unknown first), then id."""
+    return (p.due_date, p.paid_at is not None, p.paid_at, p.entry_id)
+
+
+def _month_of(p: Point) -> tuple[int, int]:
+    """The calendar month an entry belongs to: its period when that is a
+    "YYYY-MM" key (a business-day shift can move the due date into the next
+    or previous month), else the due date's month."""
+    m = _MONTH_KEY.match(p.period or "")
+    if m and 1 <= int(m.group(2)) <= 12:
+        return int(m.group(1)), int(m.group(2))
+    return p.due_date.year, p.due_date.month
 
 
 def is_monthly(item: RecurringBill) -> bool:
@@ -95,20 +116,17 @@ def entry_points_by_item(db: Session, items: Iterable[RecurringBill]) -> dict[st
         .order_by(BillOccurrence.due_date, BillOccurrence.id)
         .all()
     )
-    txn_ids = {o.transaction_id for o in occs if o.amount is None and o.transaction_id}
+    txn_ids = {o.transaction_id for o in occs if o.transaction_id}
     txns = (
-        {
-            t.id: t
-            for t in db.query(Transaction).filter(
-                Transaction.id.in_(txn_ids), Transaction.deleted_at.is_(None)
-            )
-        }
+        {t.id: t for t in db.query(Transaction).filter(Transaction.id.in_(txn_ids))}
         if txn_ids
         else {}
     )
     for occ in occs:
         item = by_id[occ.bill_id]
         txn = txns.get(occ.transaction_id) if occ.transaction_id else None
+        if txn is not None and txn.deleted_at is not None:
+            txn = None
         if occ.amount is not None:
             amount = Decimal(occ.amount)
         elif txn is not None:
@@ -123,9 +141,13 @@ def entry_points_by_item(db: Session, items: Iterable[RecurringBill]) -> dict[st
                 due_date=occ.due_date,
                 amount=amount,
                 usage=None if occ.usage is None else Decimal(occ.usage),
-                transaction_id=occ.transaction_id,
+                transaction_id=txn.id if txn is not None else None,
+                period=occ.period,
+                paid_at=occ.paid_at,
             )
         )
+    for pts in out.values():
+        pts.sort(key=_order)
     return out
 
 
@@ -162,17 +184,13 @@ def assess(points: list[Point], *, monthly: bool) -> Change | None:
     """
     if not points:
         return None
-    ordered = sorted(points, key=lambda p: p.due_date)
+    ordered = sorted(points, key=_order)
     latest, before = ordered[-1], ordered[:-1]
     baseline: list[Point] = []
     basis = "recent"
     if monthly:
-        same_month = [
-            p
-            for p in before
-            if (p.due_date.year, p.due_date.month)
-            == (latest.due_date.year - 1, latest.due_date.month)
-        ]
+        year, month = _month_of(latest)
+        same_month = [p for p in before if _month_of(p) == (year - 1, month)]
         if same_month:
             baseline, basis = [same_month[-1]], "last_year"
     if not baseline:
