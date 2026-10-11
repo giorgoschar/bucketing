@@ -16,7 +16,7 @@
 .insights__lens { margin-top: 2px; }
 .insights__lens .ui-seg__opt, .insights__tabs .ui-seg__opt, .insights__monthseg .ui-seg__opt { flex: 1; min-height: 44px; }
 .insights__tabs { margin-top: 2px; flex-wrap: nowrap; }
-.insights__tabs .ui-seg__opt { min-width: 0; padding-inline: 6px; }
+.insights__tabs .ui-seg__opt { flex: 1 1 auto; min-width: 0; padding-inline: 6px; white-space: nowrap; } /* widths follow the labels, so the long one stays on a line */
 .insights__monthseg { align-self: flex-start; }
 .insights__monthseg .ui-seg__opt { flex: none; padding-inline: 14px; }
 .insights__monthpanel { display: flex; flex-direction: column; gap: 12px; }
