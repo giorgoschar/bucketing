@@ -11,12 +11,12 @@ import { LensControl } from './LensControl'
 import { RangeSheet } from './RangeSheet'
 import { useInsights, useMembers, usePersonShare } from './hooks'
 import { HOUSEHOLD, type Lens, lensOptions, useLens } from './lens'
-import { type WidgetId, visibleWidgets } from './overview'
+import { type WidgetId, isFlowing, visibleWidgets } from './overview'
 import { type Period, type Preset, PRESETS, usePeriod } from './period'
 import { type InsightFilters, type InsightsData, NO_FILTERS } from './types'
 import { Biggest, BillsCard, BudgetsCard, ByMonth, FuelCard, HowYouPaid, StatementsCard, VsUsual, WhereItWent } from './widgets/cards'
 import { EmptyPeriod, Identity, ShareCard, Summary } from './widgets/summary'
-import { InsightsTabs, useInsightsTab } from './InsightsTabs'
+import { InsightsTabs, PANEL_ID, tabId, useInsightsTab } from './InsightsTabs'
 import './insights.css'
 
 // Desktop only (spec §5.4): kept out of the phone's main chunk.
@@ -96,14 +96,16 @@ export function Insights() {
       <section className="screen insights shell__main--wide">
         {!desktop && lensControl}
         <InsightsTabs value={tab} onChange={setTab} />
+        <div role="tabpanel" id={PANEL_ID} aria-labelledby={tabId(tab)} className="insights__panel">
         <QueryView
           result={insights}
           noDataText={firstView ? 'No saved data yet. Connect once to load Insights.' : 'No saved data for this view. Connect once to load it.'}
         >
           {(data) => {
             const ctx: WidgetCtx = { data, period, lens, members: members ?? [], meId, filters, setPeriod }
-            return visibleWidgets(data, { tab, lens, period, bills: true, statements: true, desktop }).map((id) => (
-              <div key={id} data-widget={id} className="insights__widget">
+            const ids = visibleWidgets(data, { tab, lens, period, bills: true, statements: true, desktop })
+            return ids.map((id) => (
+              <div key={id} data-widget={id} className={isFlowing(id) ? 'insights__widget insights__flow' : 'insights__widget'}>
                 {id === 'identity' ? (
                   <Identity member={member} />
                 ) : id === 'share' ? (
@@ -115,6 +117,7 @@ export function Insights() {
             ))
           }}
         </QueryView>
+        </div>
       </section>
       <RangeSheet
         open={sheet}

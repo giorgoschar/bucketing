@@ -93,6 +93,8 @@ it('the categories table lists every category with its amount, share and against
   expect(rows[0]).toHaveTextContent('€362.40')
   expect(rows[0]).toHaveTextContent('28%')
   expect(within(rows[0]).getByRole('link', { name: /Groceries/ })).toHaveAttribute('href', expect.stringContaining('/insights/category/g'))
+  // Back from the category returns to the Trends tab, where this table lives
+  expect(within(rows[0]).getByRole('link', { name: /Groceries/ })).toHaveAttribute('href', expect.stringContaining('tab=trends'))
   expect(rows[1]).toHaveTextContent('—') // no usual for Uncategorised
 })
 

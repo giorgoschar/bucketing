@@ -140,3 +140,76 @@ describe('old links to Bills and Statements', () => {
     expect(screen.getByRole('tab', { name: 'Trends' })).toHaveAttribute('aria-selected', 'true')
   })
 })
+
+describe('a lone flowing card spans (desktop columns)', () => {
+  // the contract with the CSS: the visible flowing cards are the non-empty .insights__flow wrappers
+  const solo = (c: HTMLElement) => [...c.querySelectorAll('.insights__flow:not(:empty)')].map((e) => e.getAttribute('data-widget'))
+  const emptyPeriod = () => hooks.useInsights.mockReturnValue(query(makeInsights({
+    total_spent: 0, in_out: { in: 0, out: 0, logged: 0, cash_not_logged: 0, net: 0 }, by_method: [], fuel: null,
+    kpis: { ...makeInsights().kpis, count: 0, total: 0, largest: null },
+  })))
+
+  it('Trends in an empty period: By month is the only flowing card', () => {
+    emptyPeriod()
+    const { container } = renderAt('/insights?tab=trends')
+    expect(solo(container)).toEqual(['byMonth'])
+  })
+
+  it('Overview with only Where it went: the only flowing card', () => {
+    hooks.useInsights.mockReturnValue(query(makeInsights({ budget_status: [] })))
+    hooks.useCategoriesVsUsual.mockReturnValue(query([]))
+    const { container } = renderAt('/insights')
+    expect(order(container)).toEqual(['summary', 'where', 'vsUsual'])
+    expect(solo(container)).toEqual(['where']) // vsUsual renders nothing, so it does not count
+  })
+
+  it('the normal multi-card case has several flowing cards', () => {
+    const { container } = renderAt('/insights')
+    expect(solo(container).length).toBeGreaterThan(1)
+    fireEvent.click(screen.getByRole('tab', { name: 'Trends' }))
+    expect(solo(container).length).toBeGreaterThan(1)
+  })
+})
+
+describe('the tab in the URL, edge cases', () => {
+  it.each(['constructor', 'toString', '__proto__', 'xyz', 'overview', ''])('?tab=%s falls back to Overview, selected and focusable', (v) => {
+    renderAt(`/insights?tab=${v}`)
+    const overview = screen.getByRole('tab', { name: 'Overview' })
+    expect(overview).toHaveAttribute('aria-selected', 'true')
+    expect(overview).toHaveAttribute('tabindex', '0')
+    expect(screen.getAllByRole('tab').filter((t) => t.getAttribute('aria-selected') === 'true')).toHaveLength(1)
+  })
+
+  it('?tab=xyz#bills opens Bills & statements', () => {
+    renderAt('/insights?tab=xyz#bills')
+    expect(screen.getByRole('tab', { name: 'Bills & statements' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('changing the tab keeps every other parameter, and Overview drops only tab', () => {
+    renderAt('/insights?add=1&mode=cash&p=last_month&lens=m&bucket_ids=b1')
+    fireEvent.click(screen.getByRole('tab', { name: 'Trends' }))
+    const q = new URLSearchParams(at().split('?')[1])
+    expect([...q.keys()].sort()).toEqual(['add', 'bucket_ids', 'lens', 'mode', 'p', 'tab'])
+    fireEvent.click(screen.getByRole('tab', { name: 'Overview' }))
+    expect([...new URLSearchParams(at().split('?')[1]).keys()].sort()).toEqual(['add', 'bucket_ids', 'lens', 'mode', 'p'])
+  })
+
+  it('tab changes replace the history entry (Back leaves Insights, like period and lens)', () => {
+    renderAt('/insights')
+    fireEvent.click(screen.getByRole('tab', { name: 'Trends' }))
+    // MemoryRouter: a replace leaves a single entry, so the location is the only one; push would keep /insights behind it
+    expect(at()).toContain('tab=trends')
+  })
+})
+
+describe('tab accessibility', () => {
+  it('each tab controls the panel, and the panel is named by the selected tab', () => {
+    renderAt('/insights?tab=trends')
+    const trends = screen.getByRole('tab', { name: 'Trends' })
+    const panel = screen.getAllByRole('tabpanel').find((p) => p.id === 'insights-panel') as HTMLElement
+    expect(trends).toHaveAttribute('aria-controls', panel.id)
+    expect(panel).toHaveAttribute('aria-labelledby', trends.id)
+    expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-controls', panel.id)
+    expect(within(panel).queryByRole('tablist', { name: 'Insights sections' })).toBeNull()
+  })
+})

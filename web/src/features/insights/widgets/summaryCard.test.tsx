@@ -89,6 +89,36 @@ describe('Summary', () => {
   })
 })
 
+describe('Summary, fix round 1', () => {
+  it('shows the savings line only where parts.savings says so, whatever the other parts', () => {
+    hooks.usePlanMonth.mockReturnValue(query(undefined))
+    // not empty, but no rate: no line; empty with a rate: still no line
+    const noRate = makeInsights({ kpis: { ...makeInsights().kpis, savings_rate: null } })
+    const { unmount } = wrap(<Summary {...base} data={noRate} />)
+    expect(screen.queryByText(/came in/)).toBeNull()
+    unmount()
+    wrap(<Summary {...base} data={makeInsights({ total_spent: 0, in_out: { in: 0, out: 0, logged: 0, cash_not_logged: 0, net: 0 }, kpis: { ...makeInsights().kpis, count: 0, savings_rate: 57.2 } })} />)
+    expect(screen.queryByText(/of what came in/)).toBeNull()
+  })
+
+  it('asks for the month plan only where the On track line can show', () => {
+    hooks.usePlanMonth.mockClear()
+    hooks.usePlanMonth.mockReturnValue(PLAN)
+    const { unmount } = wrap(<Summary {...base} period={{ preset: 'last_3m' }} />)
+    unmount()
+    wrap(<Summary {...base} lens="m" members={MARIA} />)
+    expect(hooks.usePlanMonth).not.toHaveBeenCalled()
+    wrap(<Summary {...base} />)
+    expect(hooks.usePlanMonth).toHaveBeenCalledWith('2026-10')
+  })
+
+  it('the In / Out / Net row has no aria-label on a bare dl', () => {
+    hooks.usePlanMonth.mockReturnValue(query(undefined))
+    const { container } = wrap(<Summary {...base} />)
+    expect(container.querySelector('dl')?.hasAttribute('aria-label')).toBe(false)
+  })
+})
+
 describe('By month', () => {
   const tabs = () => screen.getAllByRole('tab')
 

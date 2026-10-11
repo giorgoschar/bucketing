@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { makeInsights } from './fixtures'
-import { deltaText, paidOutSentence, summaryParts, visibleWidgets } from './overview'
+import { deltaText, paidOutSentence, isFlowing, summaryParts, visibleWidgets } from './overview'
 
 const THIS = { preset: 'this_month' } as const
 
@@ -69,5 +69,13 @@ describe('sentences', () => {
     expect(deltaText(12.5)).toBe('+12.5% vs the previous period')
     expect(deltaText(0)).toBe('Same as the previous period')
     expect(deltaText(null)).toBeNull()
+  })
+})
+
+// Fix round 1: the cards that flow in two columns; the CSS spans the only visible one.
+describe('isFlowing', () => {
+  it('the spanning cards do not flow, the rest do', () => {
+    for (const id of ['identity', 'share', 'summary', 'empty', 'billsPanel', 'statements', 'monthsTable', 'categoriesTable'] as const) expect(isFlowing(id)).toBe(false)
+    for (const id of ['where', 'vsUsual', 'budgets', 'byMonth', 'biggest', 'method', 'fuel', 'bills'] as const) expect(isFlowing(id)).toBe(true)
   })
 })

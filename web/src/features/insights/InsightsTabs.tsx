@@ -3,7 +3,10 @@ import { useLocation, useSearchParams } from 'react-router'
 import { type InsightsTab, TABS } from './overview'
 import './insights.css'
 
-const FROM_PARAM: Record<string, InsightsTab> = { trends: 'trends', bills: 'bills' }
+export const PANEL_ID = 'insights-panel'
+export const tabId = (t: InsightsTab) => `insights-tab-${t}`
+/** Only these two values are written; anything else (or nothing) is Overview. */
+const parseTab = (v: string | null): InsightsTab | null => (v === 'trends' || v === 'bills' ? v : null)
 
 /** The tab lives in the query string (`?tab=trends`, `?tab=bills`); Overview is the default and writes nothing.
  *  An old `/insights#bills` or `#statements` link opens the Bills & statements tab, and is rewritten to `?tab=bills`
@@ -12,8 +15,9 @@ export function useInsightsTab(): [InsightsTab, (next: InsightsTab) => void] {
   const [params, setParams] = useSearchParams()
   const { hash } = useLocation()
   const fromHash = hash === '#bills' || hash === '#statements'
-  const param = params.get('tab')
-  const tab: InsightsTab = param != null ? (FROM_PARAM[param] ?? 'overview') : fromHash ? 'bills' : 'overview'
+  const param = parseTab(params.get('tab'))
+  // An explicit valid tab wins over the hash; a stray or unknown value does not.
+  const tab: InsightsTab = param ?? (fromHash ? 'bills' : 'overview')
   useEffect(() => {
     if (param == null && fromHash) setParams((prev) => { const p = new URLSearchParams(prev); p.set('tab', 'bills'); return p }, { replace: true })
   }, [param, fromHash, setParams])
@@ -41,7 +45,7 @@ export function InsightsTabs({ value, onChange }: { value: InsightsTab; onChange
   return (
     <div className="ui-seg insights__tabs" role="tablist" aria-label="Insights sections">
       {TABS.map((t, i) => (
-        <button key={t.value} type="button" role="tab" id={`insights-tab-${t.value}`} className="ui-seg__opt"
+        <button key={t.value} type="button" role="tab" id={tabId(t.value)} aria-controls={PANEL_ID} className="ui-seg__opt"
           aria-selected={t.value === value} tabIndex={t.value === value ? 0 : -1}
           onClick={() => onChange(t.value)} onKeyDown={(e) => move(e, i)}>
           {t.label}

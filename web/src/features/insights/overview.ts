@@ -36,6 +36,14 @@ export function summaryParts(
   }
 }
 
+/** Cards that span both desktop columns whatever else is in the tab (the CSS span list). */
+const SPANNING: readonly WidgetId[] = ['identity', 'share', 'summary', 'empty', 'billsPanel', 'statements', 'monthsTable', 'categoriesTable']
+
+/** A card that flows down the two desktop columns (the others span). The CSS lets the only visible flowing card
+ *  span too, so none sits at half width with a hole beside it; a card that renders nothing (Categories vs usual
+ *  with no rows) is an empty wrapper and does not count. */
+export const isFlowing = (id: WidgetId) => !SPANNING.includes(id)
+
 /** The cards of one tab, in order (spec §2.2), minus what this lens, period or data hides. */
 export function visibleWidgets(
   d: InsightsData,

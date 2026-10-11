@@ -84,18 +84,25 @@ export function EmptyPeriod({ data, period, onPeriod }: { data: InsightsData; pe
 }
 
 /** One card for what four used to say (spec §2.2): the spent figure and change, the month's projection, In / Out / Net
- *  and the savings rate. Each part shows where its old card did; the old footnotes sit under "How these are counted". */
-export function Summary({ data, lens, period, members }: Pick<WidgetCtx, 'data' | 'lens' | 'period' | 'members'>) {
+ *  and the savings rate. Each part shows where its old card did; the old footnotes sit under "How these are counted".
+ *  The month plan is asked for only where the On track line can show, as the old card did. */
+export function Summary(props: Pick<WidgetCtx, 'data' | 'lens' | 'period' | 'members'>) {
+  return summaryParts(props.data, props).onTrack ? <SummaryWithPlan {...props} /> : <SummaryBody {...props} onTrack={null} />
+}
+
+function SummaryWithPlan(props: Pick<WidgetCtx, 'data' | 'lens' | 'period' | 'members'>) {
+  return <SummaryBody {...props} onTrack={useOnTrackText({ data: props.data })} />
+}
+
+function SummaryBody({ data, lens, period, members, onTrack }: Pick<WidgetCtx, 'data' | 'lens' | 'period' | 'members'> & { onTrack: string | null }) {
   const parts = summaryParts(data, { lens, period })
-  const onTrack = useOnTrackText({ data })
-  const showOnTrack = parts.onTrack && onTrack != null
   return (
     <Card title="Summary">
       <Headline data={data} />
-      {showOnTrack && <p className="insights__lead">{onTrack}</p>}
+      {onTrack != null && <p className="insights__lead">{onTrack}</p>}
       {parts.inOut && <InOut data={data} lens={lens} members={members} />}
       {parts.savings && <SavingsRate data={data} />}
-      {showOnTrack && (
+      {onTrack != null && (
         <details className="insights__counted">
           <summary>How these are counted</summary>
           <p className="insights__note">{ON_TRACK_NOTE}</p>

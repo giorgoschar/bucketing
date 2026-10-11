@@ -45,7 +45,7 @@ export function InOut({ data, lens, members }: Pick<WidgetCtx, 'data' | 'lens' |
   const inLabel = lens === HOUSEHOLD || !who ? 'In' : `In · received by ${firstName(who.display_name || who.username)}`
   const net = data.in_out.net
   return (
-    <dl className="insights__trio" aria-label="In, Out and Net">
+    <dl className="insights__trio">
       <div><dt>{inLabel}</dt><dd className="ui-num">{eur(data.in_out.in)}</dd></div>
       <div><dt>Out</dt><dd className="ui-num">{eur(data.in_out.out)}</dd></div>
       <div><dt>Net</dt><dd className={net >= 0 ? 'ui-num ui-pos' : 'ui-num'}>{eur(net)}</dd></div>
