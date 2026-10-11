@@ -1,9 +1,10 @@
-import { render, screen } from '@testing-library/react'
+import { cleanup, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { expect, it } from 'vitest'
 import { BackHeader } from './BackHeader'
 
 const href = (ui: React.ReactElement, url = '/x?p=last_month&lens=m') => {
+  cleanup()
   render(<MemoryRouter initialEntries={[url]}>{ui}</MemoryRouter>)
   return screen.getByRole('link', { name: 'Back' }).getAttribute('href')
 }
