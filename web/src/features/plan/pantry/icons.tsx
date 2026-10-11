@@ -16,9 +16,6 @@ export const CartIcon = () => (
   <Icon><circle cx="9" cy="20" r="1.3" /><circle cx="18" cy="20" r="1.3" /><path d="M2.5 3h2.6l2.4 12.2a1.6 1.6 0 0 0 1.6 1.3h8.7a1.6 1.6 0 0 0 1.6-1.2L21 7.5H6" /></Icon>
 )
 export const TrendDownIcon = () => <Icon><path d="m22 17-8.5-8.5-5 5L2 7" /><path d="M16 17h6v-6" /></Icon>
-export const ScanIcon = () => (
-  <Icon><path d="M3 7V5a2 2 0 0 1 2-2h2" /><path d="M17 3h2a2 2 0 0 1 2 2v2" /><path d="M21 17v2a2 2 0 0 1-2 2h-2" /><path d="M7 21H5a2 2 0 0 1-2-2v-2" /><path d="M8 7v10M12 7v10M16 7v10" /></Icon>
-)
 export const PackageIcon = () => (
   <Icon><path d="M21 8 12 3 3 8v8l9 5 9-5Z" /><path d="m3 8 9 5 9-5" /><path d="M12 13v8" /></Icon>
 )

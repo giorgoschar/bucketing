@@ -4,7 +4,7 @@ import { Sheet } from '../../../ui/Sheet'
 import { OFFLINE_WRITE } from './BarcodeSheet'
 import { editBody, type EditField, type EditForm, initialForm, OTHER, UNITS } from './edit'
 import { useStockWrites } from './hooks'
-import { ScanIcon } from './icons'
+import { ScanIcon } from '../../../ui/icons'
 import type { StockDetail } from './types'
 
 /** The camera and its decoder: the same lazy chunk Add to pantry uses. */

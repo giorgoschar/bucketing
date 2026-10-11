@@ -70,3 +70,7 @@ export const EyeOffIcon = () => (
     <path d="m2 2 20 20" />
   </Icon>
 )
+
+export const ScanIcon = () => (
+  <Icon><path d="M3 7V5a2 2 0 0 1 2-2h2" /><path d="M17 3h2a2 2 0 0 1 2 2v2" /><path d="M21 17v2a2 2 0 0 1-2 2h-2" /><path d="M7 21H5a2 2 0 0 1-2-2v-2" /><path d="M8 7v10M12 7v10M16 7v10" /></Icon>
+)

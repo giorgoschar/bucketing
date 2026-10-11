@@ -56,7 +56,7 @@ it.each([
   const fake = fakeApi(routes({ 'GET /api/v1/matches': () => (served ? [] : [match()]) }))
   fake.on(route, () => new Promise<Response>((r) => { answer = r }))
   renderWithProviders(<NeedsAttention />)
-  fireEvent.click(await screen.findByRole('button', { name: button }))
+  fireEvent.click(await screen.findByRole('button', { name: new RegExp(`^${button}`) }))
   await waitFor(() => expect(fake.callsTo(route)).toHaveLength(1))
   expect(fake.callsTo(route)[0].path).toBe(path)
   // The request is still pending: only the optimistic patch can have removed the row.
@@ -76,7 +76,7 @@ it.each([['Link', LINK], ['Not this', DISMISS]] as const)(
     const fake = fakeApi(routes({ 'GET /api/v1/matches': () => (++reads === 1 ? [match()] : hang()) }))
     fake.on(route, () => new Promise<Response>((r) => { answer = r }))
     renderWithProviders(<NeedsAttention />)
-    fireEvent.click(await screen.findByRole('button', { name: button }))
+    fireEvent.click(await screen.findByRole('button', { name: new RegExp(`^${button}`) }))
     await waitFor(() => expect(kinds()).not.toContain('match'))
     answer(reply(409, { detail: 'This payment is already linked.' }))
     await waitFor(() => expect(kinds()).toContain('match'))
@@ -88,7 +88,7 @@ it('Not this dismisses', async () => {
   const fake = fakeApi(routes({ 'GET /api/v1/matches': () => (served ? [] : [match()]) }))
   fake.on(DISMISS, () => { served = true; return null })
   renderWithProviders(<NeedsAttention />)
-  fireEvent.click(await screen.findByRole('button', { name: 'Not this' }))
+  fireEvent.click(await screen.findByRole('button', { name: /^Not this/ }))
   await waitFor(() => expect(fake.callsTo(DISMISS)).toHaveLength(1))
   expect(kinds()).not.toContain('match')
 })
@@ -96,7 +96,7 @@ it('Not this dismisses', async () => {
 it('an overdue row opens the Entry sheet; a missing amount opens it on Set amount', async () => {
   fakeApi(routes())
   renderWithProviders(<NeedsAttention />)
-  fireEvent.click(await screen.findByRole('button', { name: /Rent/ }))
+  fireEvent.click(await screen.findByRole('button', { name: /^Rent/ }))
   expect(screen.getByRole('dialog', { name: 'Rent' })).toHaveTextContent('Overdue')
   fireEvent.click(screen.getByRole('button', { name: 'Close' }))
   fireEvent.click(screen.getByRole('button', { name: /Electricity needs an amount/ }))
@@ -202,4 +202,12 @@ it.each([
   await waitFor(() => expect(kinds()).toEqual(['overdue', 'match', 'missingAmount', 'budget', 'category']))
   expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   expect(screen.queryByText(/pantry/)).not.toBeInTheDocument()
+})
+
+it('a match about a bill that is also overdue stays its own row', async () => {
+  fakeApi(routes({ 'GET /api/v1/matches': () => [match({ entry: entry({ id: 'e9', item_id: 'i9', name: 'Rent' }) })] }))
+  renderWithProviders(<NeedsAttention />)
+  await waitFor(() => expect(kinds()).toEqual(['overdue', 'match', 'missingAmount', 'budget', 'category']))
+  expect(screen.getByRole('button', { name: 'Paid: Rent' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Link to Rent' })).toBeInTheDocument()
 })

@@ -80,8 +80,8 @@ it('one attention row keeps its filled button and has no expander; none shows Al
   fakeApi(base({ 'GET /api/v1/matches': () => [match()] }))
   renderWithProviders(<NeedsAttention />)
   await waitFor(() => expect(kinds()).toEqual(['match']))
-  expect(screen.getByRole('button', { name: 'Link' })).toHaveClass('btn--primary')
-  expect(screen.getByRole('button', { name: 'Not this' })).not.toHaveClass('btn--primary')
+  expect(screen.getByRole('button', { name: /^Link/ })).toHaveClass('btn--primary')
+  expect(screen.getByRole('button', { name: /^Not this/ })).not.toHaveClass('btn--primary')
   expect(screen.queryByRole('button', { name: /Show/ })).toBeNull()
 })
 
@@ -92,10 +92,10 @@ it('only the first row has a filled button; every other action is quiet', async 
   renderWithProviders(<NeedsAttention />)
   await waitFor(() => expect(kinds()).toEqual(['match', 'match']))
   expect(filled()).toBe(1)
-  const links = screen.getAllByRole('button', { name: 'Link' })
+  const links = screen.getAllByRole('button', { name: /^Link/ })
   expect(links[0]).toHaveClass('btn--primary')
   expect(links[1]).toHaveClass('btn--ghost')
-  expect(screen.getAllByRole('button', { name: 'Not this' }).every((b) => b.classList.contains('btn--ghost'))).toBe(true)
+  expect(screen.getAllByRole('button', { name: /^Not this/ }).every((b) => b.classList.contains('btn--ghost'))).toBe(true)
 })
 
 it('budget and category rows are links to Plan › Budgets and to the category screen', async () => {
@@ -157,26 +157,26 @@ it('overdue first: a filled "Paid" that opens the entry sheet; the same action i
   renderWithProviders(<NeedsAttention />)
   await waitFor(() => expect(kinds()).toEqual(['overdue', 'overdue']))
   expect(filled()).toBe(1)
-  const paid = screen.getAllByRole('button', { name: 'Paid' })
+  const paid = screen.getAllByRole('button', { name: /^Paid/ })
   expect(paid[0]).toHaveClass('btn--primary')
   expect(paid[1]).toHaveClass('btn--ghost')
   fireEvent.click(paid[0])
   expect(screen.getByRole('dialog', { name: 'Rent' })).toHaveTextContent('Overdue')
   fireEvent.click(screen.getByRole('button', { name: 'Close' }))
-  fireEvent.click(screen.getByRole('button', { name: /Water/ }))
+  fireEvent.click(screen.getByRole('button', { name: /^Water/ }))
   expect(screen.getByRole('dialog', { name: 'Water' })).toBeInTheDocument()
 })
 
 it('an overdue income entry reads "Received"', async () => {
   fakeApi(base({ 'GET /api/v1/recurring/entries': () => [entry({ id: 'o1', item_id: 'a', name: 'Salary', direction: 'in', overdue: true, due_date: '2026-10-01' })] }))
   renderWithProviders(<NeedsAttention />)
-  expect(await screen.findByRole('button', { name: 'Received' })).toHaveClass('btn--primary')
+  expect(await screen.findByRole('button', { name: /^Received/ })).toHaveClass('btn--primary')
 })
 
 it('missing amount first: "Set" is the filled button and opens the amount step', async () => {
   fakeApi(base({ 'GET /api/v1/plan/upcoming': () => [day('2026-10-09', [entry({ id: 'e5', name: 'Electricity', estimated: true, amount: 83.5 })], 900)] }))
   renderWithProviders(<NeedsAttention />)
-  const set = await screen.findByRole('button', { name: 'Set' })
+  const set = await screen.findByRole('button', { name: /^Set/ })
   expect(filled()).toBe(1)
   expect(set).toHaveClass('btn--primary')
   fireEvent.click(set)
@@ -205,7 +205,7 @@ it('the expanded choice outlasts leaving Home and coming back in the same sessio
 
 // ---- The category row opens this month for the household, whatever Insights last showed
 it('the category row carries this month and the household lens, even with a stored 6-month period and a member lens', async () => {
-  localStorage.setItem('tameio.insights.period', JSON.stringify({ preset: '6_months' }))
+  localStorage.setItem('tameio.insights.period', JSON.stringify({ preset: 'last_6m' }))
   localStorage.setItem('tameio.insights.lens', 'me')
   setAttentionExpanded(true)
   fakeApi(many())

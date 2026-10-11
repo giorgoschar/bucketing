@@ -131,7 +131,7 @@ function AttentionRow({ item, lead, onOpen }: { item: AttentionItem; lead: boole
             title={e.name}
             subtitle={<><Money amount={e.amount} currency={e.currency} nullText="No amount yet" /> · was due {formatShortDate(e.due_date)}</>}
             badges={<Badge tone="neg">Overdue</Badge>} />
-          <button type="button" className={act(lead)} onClick={() => onOpen(e, 'default')}>{e.direction === 'in' ? 'Received' : 'Paid'}</button>
+          <button type="button" className={act(lead)} aria-label={`${e.direction === 'in' ? 'Received' : 'Paid'}: ${e.name}`} onClick={() => onOpen(e, 'default')}>{e.direction === 'in' ? 'Received' : 'Paid'}</button>
         </div>
       )
     }
@@ -143,7 +143,7 @@ function AttentionRow({ item, lead, onOpen }: { item: AttentionItem; lead: boole
             leading={<span className="ui-ico ui-ico--warn"><AlertIcon /></span>}
             title={`${e.name} needs an amount`}
             subtitle={<>Due {formatShortDate(e.due_date)}{e.amount !== null && <> · usually <Money amount={e.amount} estimated currency={e.currency} /></>}</>} />
-          <button type="button" className={act(lead)} onClick={() => onOpen(e, 'amount')}>Set</button>
+          <button type="button" className={act(lead)} aria-label={`Set amount: ${e.name}`} onClick={() => onOpen(e, 'amount')}>Set</button>
         </div>
       )
     }
@@ -240,8 +240,8 @@ function MatchRow({ match, lead }: { match: MatchOut; lead: boolean }) {
         {formatShortDate(match.entry.due_date)}
       </p>
       <div className="home-attn__acts">
-        <button type="button" className={act(lead)} disabled={actions.busy} onClick={() => void actions.link()}>Link</button>
-        <button type="button" className="btn btn--sm btn--ghost" disabled={actions.busy} onClick={() => void actions.dismiss()}>Not this</button>
+        <button type="button" className={act(lead)} disabled={actions.busy} aria-label={`Link to ${match.entry.name}`} onClick={() => void actions.link()}>Link</button>
+        <button type="button" className="btn btn--sm btn--ghost" disabled={actions.busy} aria-label={`Not this: ${match.entry.name}`} onClick={() => void actions.dismiss()}>Not this</button>
       </div>
     </div>
   )

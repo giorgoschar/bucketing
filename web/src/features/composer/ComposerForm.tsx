@@ -10,7 +10,7 @@ import { type AmountKey, centsToString, convertCents, displayAmount, parseRate, 
 import { Segmented, type ToastInput, useComposerToast, useOfferTickedPrompt, useOnline } from './bridge'
 import { CashControls } from './CashControls'
 import { ScanChoiceSheet } from './ScanChoiceSheet'
-import { ScanIcon } from '../plan/pantry/icons'
+import { ScanIcon } from '../../ui/icons'
 import { ConfirmSheet } from './ConfirmSheet'
 import { currencyName, currencySymbol, formatCents, spokenMoney } from './currencies'
 import { dayLabel, todayLocal } from './dates'
