@@ -25,3 +25,20 @@ it('the desktop dashboard flows cards down two columns, with wide cards across',
   expect(desktop).toMatch(/\[data-widget='billsPanel'\][^{]*\{\s*display:\s*block;[^}]*column-span:\s*all/s)
   expect(desktop).not.toMatch(/grid-column/)
 })
+
+// Phase C §2.2: on desktop each tab uses the two-column flow; Summary, Bills, Statements and the tables span both.
+it('the Summary, Bills, Statements and the two tables span both desktop columns; the others flow', () => {
+  const desktop = css.slice(css.indexOf('@media (min-width: 1024px)'))
+  for (const id of ['summary', 'billsPanel', 'statements', 'monthsTable', 'categoriesTable']) {
+    expect(desktop).toContain(`[data-widget='${id}']`)
+  }
+  const span = /((?:\.insights\.shell__main--wide > \[data-widget='[a-zA-Z]+'\],\s*)+)\.insights\.shell__main--wide > :not\(\[data-widget\]\)\s*\{[^}]*column-span:\s*all/.exec(desktop)?.[1] ?? ''
+  for (const id of ['byMonth', 'biggest', 'method', 'fuel', 'where', 'budgets', 'vsUsual', 'bills']) {
+    expect(span).not.toContain(`[data-widget='${id}']`)
+  }
+})
+
+it('the tab switch is desktop-sized only inside the desktop media query', () => {
+  const phone = css.slice(0, css.indexOf('@media (min-width: 1024px)'))
+  expect(phone).toMatch(/\.insights__tabs \.ui-seg__opt[^{]*\{[^}]*min-height:\s*44px/)
+})
