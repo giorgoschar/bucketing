@@ -4,7 +4,7 @@ import { reply } from '../../test/fakeApi'
 import { resetTestEnv } from '../../test/render'
 import { goOffline, writes } from '../composer/testHelpers'
 import { renderComposer, TXN } from '../composer/testing'
-import { dismissToast } from '../../ui/Toast'
+import { dismissToast, toast } from '../../ui/Toast'
 
 vi.mock('../../session/SessionProvider', () => ({
   useSession: () => ({
@@ -41,7 +41,7 @@ async function saveOne(extra: Record<string, unknown> = {}) {
 
 it('after a save, the server is asked about the new entry and the toast offers the rule', async () => {
   const { api } = await saveOne()
-  expect(await screen.findByText('Always use Groceries for Lidl?')).toBeInTheDocument()
+  expect(await screen.findByText(/Always use Groceries for Lidl\?/)).toBeInTheDocument()
   expect(askedFor(api)).toHaveLength(1)
   expect(askedFor(api)[0].query.get('transaction_id')).toBe('t1')
   const region = within(screen.getByRole('status'))
@@ -65,7 +65,7 @@ it('Not now sends the dismissal with the pattern and creates no rule', async () 
   await waitFor(() => expect(writes(api).some((c) => c.path === '/api/v1/category-rules/suggestion/dismiss')).toBe(true))
   expect(writes(api).find((c) => c.path.endsWith('/dismiss'))!.body).toEqual({ pattern: 'lidl' })
   expect(writes(api).some((c) => c.path === RULE)).toBe(false)
-  expect(screen.queryByText('Always use Groceries for Lidl?')).not.toBeInTheDocument()
+  expect(screen.queryByText(/Always use Groceries for Lidl\?/)).not.toBeInTheDocument()
 })
 
 it('a failed Always says so and does not claim the rule is saved', async () => {
@@ -77,7 +77,7 @@ it('a failed Always says so and does not claim the rule is saved', async () => {
 
 it('ignoring the prompt sends nothing', async () => {
   const { api } = await saveOne()
-  await screen.findByText('Always use Groceries for Lidl?')
+  await screen.findByText(/Always use Groceries for Lidl\?/)
   dismissToast()
   expect(writes(api).filter((c) => c.path !== '/api/v1/transactions')).toHaveLength(0)
 })
@@ -134,8 +134,49 @@ it('editing with another category asks about that entry', async () => {
   fireEvent.click(await screen.findByRole('button', { name: /^Groceries/ }))
   fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
   await screen.findByText('home screen')
-  expect(await screen.findByText('Always use Groceries for Lidl?')).toBeInTheDocument()
+  expect(await screen.findByText(/Always use Groceries for Lidl\?/)).toBeInTheDocument()
   expect(askedFor(api)[0].query.get('transaction_id')).toBe('t9')
+})
+
+// Fix round 1, finding 4: the question joins the Saved toast; it never replaces it or another toast.
+it('the Saved toast keeps its text and Undo, with the question and both answers added', async () => {
+  await saveOne()
+  const region = within(screen.getByRole('status'))
+  expect(await region.findByText(/^Saved €5\.00 to Day to day/)).toHaveTextContent('Always use Groceries for Lidl?')
+  expect(region.getAllByRole('button').map((b) => b.textContent)).toEqual(['Undo', 'Always', 'Not now'])
+})
+
+it('Undo still works after the question has arrived', async () => {
+  const { api } = await saveOne({ 'DELETE /api/v1/transactions/t1': () => null })
+  fireEvent.click(await within(screen.getByRole('status')).findByRole('button', { name: 'Undo' }))
+  await waitFor(() => expect(api.calls.some((c) => c.method === 'DELETE' && c.path === '/api/v1/transactions/t1')).toBe(true))
+})
+
+function slowSuggestion() {
+  let release: (v: Response) => void = () => {}
+  const gate = new Promise<Response>((r) => { release = r })
+  return { handler: () => gate, answer: () => release(Response.json(SUGGESTION)) }
+}
+
+it('no question is shown for an entry that was undone before the answer arrived', async () => {
+  const slow = slowSuggestion()
+  await saveOne({ [SUGGEST]: slow.handler, 'DELETE /api/v1/transactions/t1': () => null })
+  fireEvent.click(await screen.findByRole('button', { name: 'Undo' }))
+  slow.answer()
+  await new Promise((r) => setTimeout(r, 40))
+  expect(screen.queryByText(/Always use/)).not.toBeInTheDocument()
+})
+
+it('a different toast on screen when the answer arrives is left alone', async () => {
+  const slow = slowSuggestion()
+  await saveOne({ [SUGGEST]: slow.handler })
+  toast('Saved. The receipt didn’t upload.', { actions: [{ label: 'Retry', onClick: () => {} }] })
+  slow.answer()
+  await new Promise((r) => setTimeout(r, 40))
+  const region = screen.getByRole('status')
+  expect(region).toHaveTextContent('Saved. The receipt didn’t upload.')
+  expect(within(region).getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+  expect(region).not.toHaveTextContent('Always use')
 })
 
 // §3.4

@@ -1,5 +1,5 @@
 import type { QueryClient } from '@tanstack/react-query'
-import { toast } from '../../ui/Toast'
+import { amendToast, toast } from '../../ui/Toast'
 import { acceptSuggestion, dismissSuggestion, type RuleSuggestion } from './hooks'
 
 export const promptText = (s: RuleSuggestion) => `Always use ${s.category_name} for ${s.label}?`
@@ -12,11 +12,17 @@ export async function answerAlways(qc: QueryClient, s: RuleSuggestion): Promise<
   return r.ok ? { ok: true, text: RULE_SAVED } : { ok: false, text: r.detail }
 }
 
-/** The phone's prompt: the "Saved" toast's question, with its two answers. It goes away with the toast. */
-export function showRuleToast(qc: QueryClient, s: RuleSuggestion): void {
-  toast(promptText(s), {
+/**
+ * The phone's prompt: the question is added to the "Saved" toast itself (id `toastId`), next to its own action (Undo).
+ * Only while that toast is still on screen: if it expired, was undone or was replaced, nothing is shown (ignoring a
+ * prompt counts as nothing, and the server offers it again next time). Never touches a different toast.
+ */
+export function amendSavedToast(qc: QueryClient, toastId: number, base: { text: string; action?: { label: string; onPress: () => void } }, s: RuleSuggestion): boolean {
+  return amendToast(toastId, {
+    message: `${base.text} · ${promptText(s)}`,
     durationMs: PROMPT_MS,
     actions: [
+      ...(base.action ? [{ label: base.action.label, onClick: base.action.onPress }] : []),
       {
         label: 'Always',
         onClick: () => {

@@ -29,7 +29,7 @@ export interface ToastInput {
   durationMs?: number
 }
 
-const showToast = (t: ToastInput) =>
+const showToast = (t: ToastInput): number =>
   toast(t.text, {
     action: t.action && { label: t.action.label, onClick: t.action.onPress },
     actions: t.actions?.map((a) => ({ label: a.label, onClick: a.onPress })),
@@ -37,7 +37,7 @@ const showToast = (t: ToastInput) =>
   })
 
 /** 2b's toast shape over 2a's module-level toast(); safe to call after the composer has unmounted. */
-export function useComposerToast(): (t: ToastInput) => void {
+export function useComposerToast(): (t: ToastInput) => number {
   return showToast
 }
 

@@ -28,7 +28,7 @@ import { useUndoCreate } from './hooks/undo'
 import { firstProblem, isDirtyNew, isFuel, moreDirty, toUpdateBody, validate } from './model'
 import { MoreSheet } from './MoreSheet'
 import { askForSuggestion, dismissSuggestion, type RuleSuggestion } from '../rules/hooks'
-import { answerAlways, RulePromptLine, showRuleToast } from '../rules/RulePrompt'
+import { amendSavedToast, answerAlways, RulePromptLine } from '../rules/RulePrompt'
 import { ReviewBanner } from './scan/ReviewBanner'
 import { ScanScreen } from './scan/ScanScreen'
 import { SplitSheet } from './SplitSheet'
@@ -250,8 +250,9 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
         toast({ text: receipt ? QUEUED_NO_RECEIPT : QUEUED })
         return
       }
-      toast(savedToast(r.id))
-      void askRule(r.id)?.then((rule) => { if (rule) showRuleToast(qc, rule) })
+      const saved = savedToast(r.id)
+      const savedId = toast(saved)
+      void askRule(r.id)?.then((rule) => { if (rule) amendSavedToast(qc, savedId, saved, rule) })
       // Pantry spec §4.6: a new expense saved online may prompt for ticked items. Fire and forget: never awaited.
       if (s.mode === 'new' && s.type === 'expense') offerPantry()
       if (receipt) void uploadReceipt(r.id, receipt)
