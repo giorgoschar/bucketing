@@ -793,6 +793,23 @@ class CategoryRule(Base):
     category = relationship("Category")
 
 
+class CategoryRuleDismissal(Base):
+    """"Not now" on a suggested rule (Phase C spec §3.3): how many times the
+    household has said no to a folded pattern. Two stop the suggestion; creating
+    the rule deletes the row."""
+
+    __tablename__ = "category_rule_dismissals"
+    __table_args__ = (
+        UniqueConstraint("household_id", "pattern", name="uq_category_rule_dismissal"),
+    )
+
+    id = Column(String, primary_key=True, default=gen_id)
+    household_id = Column(String, ForeignKey("households.id", ondelete="CASCADE"), nullable=False)
+    pattern = Column(String(200), nullable=False)
+    times = Column(Integer, default=1, server_default="1", nullable=False)
+    updated_at = Column(DateTime, default=utcnow_naive, onupdate=utcnow_naive)
+
+
 class Settlement(Base):
     """A recorded debt payment between two household members.
 

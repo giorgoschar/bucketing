@@ -16,10 +16,19 @@ from sqlalchemy.orm import Session
 
 from app.api_auth import require_api_auth
 from app.core.database import get_db
-from app.models import Category, CategoryRule
-from app.services.category_rules import learn_rule, list_rules, normalise_pattern
+from app.models import Category, CategoryRule, Transaction
+from app.services.category_rules import (
+    clear_dismissal,
+    dismiss_suggestion,
+    learn_rule,
+    list_rules,
+    normalise_pattern,
+    suggest_rule,
+)
 
 router = APIRouter(prefix="/settings/category-rules", tags=["settings"])
+# Phase C spec §3.1: the suggestion lives beside, not under, Settings.
+suggestion_router = APIRouter(prefix="/category-rules", tags=["settings"])
 
 INVALID_RULE_MSG = "Enter at least 2 characters and pick a category from this household."
 PATTERN_TAKEN_MSG = "Another rule already uses this pattern."
@@ -132,6 +141,7 @@ def update_category_rule(
         raise HTTPException(status_code=409, detail=PATTERN_TAKEN_MSG)
     rule.pattern = pattern
     rule.category_id = category_id
+    clear_dismissal(db, hh_id, pattern)
     try:
         db.commit()
     except IntegrityError:
@@ -150,3 +160,48 @@ def delete_category_rule(
     db.delete(_rule_or_404(db, rule_id, hh_id))
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+class RuleSuggestionOut(BaseModel):
+    pattern: str  # folded, as a rule would store it
+    label: str  # the merchant as typed on this entry
+    category_id: str
+    category_name: str
+
+
+class DismissIn(BaseModel):
+    pattern: str
+
+
+class DismissOut(BaseModel):
+    pattern: str
+    times: int
+
+
+@suggestion_router.get("/suggestion", response_model=RuleSuggestionOut | None)
+def rule_suggestion(
+    transaction_id: str,
+    auth=Depends(require_api_auth),
+    db: Session = Depends(get_db),
+):
+    """Whether to offer "always use this category for this merchant" after the
+    entry was saved: a suggestion, or null. Another household's entry is 404."""
+    user, hh_id = auth
+    txn = db.get(Transaction, transaction_id)
+    if txn is None or txn.household_id != hh_id or txn.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return suggest_rule(db, txn)
+
+
+@suggestion_router.post("/suggestion/dismiss", response_model=DismissOut)
+def dismiss_rule_suggestion(
+    body: DismissIn, auth=Depends(require_api_auth), db: Session = Depends(get_db)
+):
+    """"Not now": one more dismissal for this pattern (two stop the offer)."""
+    user, hh_id = auth
+    pattern = normalise_pattern(body.pattern)
+    if not pattern:
+        raise HTTPException(status_code=400, detail="Enter at least 2 characters.")
+    times = dismiss_suggestion(db, hh_id, pattern)
+    db.commit()
+    return DismissOut(pattern=pattern, times=times)
