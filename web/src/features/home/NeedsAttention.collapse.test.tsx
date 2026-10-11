@@ -60,6 +60,14 @@ it('one hidden row reads "Show 1 more"', async () => {
   expect(await screen.findByRole('button', { name: 'Show 1 more' })).toBeInTheDocument()
 })
 
+it('the badge counts the things that need attention, merged lines included; Show N more counts rows', async () => {
+  fakeApi(rentRoutes())
+  renderWithProviders(<NeedsAttention />)
+  await waitFor(() => expect(kinds()).toEqual(['overdue']))
+  expect(screen.getByRole('heading', { name: /Needs attention/ })).toHaveTextContent('Needs attention3')
+  expect(screen.queryByRole('button', { name: /Show/ })).toBeNull()
+})
+
 it('exactly 3 rows or fewer: no expander, no "Show 0 more"', async () => {
   fakeApi(base({ ...many(), 'GET /api/v1/plan/budgets': () => [], 'GET /api/v1/insights/categories-vs-usual': () => [] }))
   renderWithProviders(<NeedsAttention />)
@@ -97,7 +105,7 @@ it('budget and category rows are links to Plan › Budgets and to the category s
   const budget = await screen.findByRole('link', { name: /Day to day/ })
   expect(budget).toHaveAttribute('href', '/plan?view=budgets')
   expect(budget).toHaveTextContent('€1,050 of €1,200')
-  expect(screen.getByRole('link', { name: /Groceries above usual/ })).toHaveAttribute('href', '/insights/category/c1')
+  expect(screen.getByRole('link', { name: /Groceries above usual/ })).toHaveAttribute('href', '/insights/category/c1?p=this_month&lens=household')
 })
 
 // Review Focus 2: overdue + needs an amount + changed, then the change is dismissed.
@@ -112,7 +120,7 @@ it('one row per item: the sub-lines are links, and ✕ removes only the bill-cha
   const { unmount, client } = renderWithProviders(<NeedsAttention />)
   await waitFor(() => expect(kinds()).toEqual(['overdue']))
   const row = document.querySelector('[data-attn="overdue"]') as HTMLElement
-  expect(screen.getByRole('heading', { name: /Needs attention/ })).toHaveTextContent('Needs attention1')
+  expect(screen.getByRole('heading', { name: /Needs attention/ })).toHaveTextContent('Needs attention3')
   const bill = within(row).getByRole('link', { name: 'Was €84, usually €61' })
   expect(bill).toHaveAttribute('href', '/insights/bills/rent')
   expect(within(row).getByRole('button', { name: 'Needs an amount for 13 Oct' })).toBeInTheDocument()
@@ -133,4 +141,86 @@ it('a sub-line for a missing amount opens the entry sheet on Set amount', async 
   renderWithProviders(<NeedsAttention />)
   fireEvent.click(await screen.findByRole('button', { name: 'Needs an amount for 13 Oct' }))
   expect(screen.getByRole('dialog', { name: 'Rent' })).toBeInTheDocument()
+  expect(screen.getByLabelText('Amount')).toBeInTheDocument() // the amount step, not the menu
+})
+
+// ---- The first row always has one filled button (spec 2.1, Review Focus 1)
+const twoOverdue = () => base({
+  'GET /api/v1/recurring/entries': () => [
+    entry({ id: 'o1', item_id: 'a', name: 'Rent', overdue: true, due_date: '2026-10-01', amount: 650 }),
+    entry({ id: 'o2', item_id: 'b', name: 'Water', overdue: true, due_date: '2026-10-02', amount: 20 }),
+  ],
+})
+
+it('overdue first: a filled "Paid" that opens the entry sheet; the same action is quiet on the next row; the row tap still works', async () => {
+  fakeApi(twoOverdue())
+  renderWithProviders(<NeedsAttention />)
+  await waitFor(() => expect(kinds()).toEqual(['overdue', 'overdue']))
+  expect(filled()).toBe(1)
+  const paid = screen.getAllByRole('button', { name: 'Paid' })
+  expect(paid[0]).toHaveClass('btn--primary')
+  expect(paid[1]).toHaveClass('btn--ghost')
+  fireEvent.click(paid[0])
+  expect(screen.getByRole('dialog', { name: 'Rent' })).toHaveTextContent('Overdue')
+  fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+  fireEvent.click(screen.getByRole('button', { name: /Water/ }))
+  expect(screen.getByRole('dialog', { name: 'Water' })).toBeInTheDocument()
+})
+
+it('an overdue income entry reads "Received"', async () => {
+  fakeApi(base({ 'GET /api/v1/recurring/entries': () => [entry({ id: 'o1', item_id: 'a', name: 'Salary', direction: 'in', overdue: true, due_date: '2026-10-01' })] }))
+  renderWithProviders(<NeedsAttention />)
+  expect(await screen.findByRole('button', { name: 'Received' })).toHaveClass('btn--primary')
+})
+
+it('missing amount first: "Set" is the filled button and opens the amount step', async () => {
+  fakeApi(base({ 'GET /api/v1/plan/upcoming': () => [day('2026-10-09', [entry({ id: 'e5', name: 'Electricity', estimated: true, amount: 83.5 })], 900)] }))
+  renderWithProviders(<NeedsAttention />)
+  const set = await screen.findByRole('button', { name: 'Set' })
+  expect(filled()).toBe(1)
+  expect(set).toHaveClass('btn--primary')
+  fireEvent.click(set)
+  expect(screen.getByLabelText('Amount')).toBeInTheDocument()
+})
+
+// ---- Hidden rows are reachable and work
+it('Show 2 more, then the revealed budget row opens Plan › Budgets', async () => {
+  fakeApi(many())
+  const { router } = renderWithProviders(<NeedsAttention />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Show 2 more' }))
+  fireEvent.click(screen.getByRole('link', { name: /Day to day/ }))
+  expect(router.state.location.pathname).toBe('/plan')
+  expect(router.state.location.search).toBe('?view=budgets')
+})
+
+it('the expanded choice outlasts leaving Home and coming back in the same session', async () => {
+  fakeApi(many())
+  const first = renderWithProviders(<NeedsAttention />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Show 2 more' }))
+  first.unmount()
+  renderWithProviders(<NeedsAttention />)
+  expect(await screen.findByRole('button', { name: 'Show fewer' })).toBeInTheDocument()
+  expect(kinds()).toHaveLength(5)
+})
+
+// ---- The category row opens this month for the household, whatever Insights last showed
+it('the category row carries this month and the household lens, even with a stored 6-month period and a member lens', async () => {
+  localStorage.setItem('tameio.insights.period', JSON.stringify({ preset: '6_months' }))
+  localStorage.setItem('tameio.insights.lens', 'me')
+  setAttentionExpanded(true)
+  fakeApi(many())
+  renderWithProviders(<NeedsAttention />)
+  const href = (await screen.findByRole('link', { name: /Groceries above usual/ })).getAttribute('href') ?? ''
+  const [path, query] = href.split('?')
+  expect(path).toBe('/insights/category/c1')
+  const q = new URLSearchParams(query)
+  expect(q.get('p')).toBe('this_month')
+  expect(q.get('lens')).toBe('household')
+})
+
+it('one row, or none, has no expander (none shows All clear)', async () => {
+  fakeApi(base())
+  renderWithProviders(<NeedsAttention />)
+  expect(await screen.findByText('All clear')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /Show/ })).toBeNull()
 })

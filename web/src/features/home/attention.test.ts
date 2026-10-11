@@ -37,6 +37,28 @@ it('orders the attention items as the spec lists them', () => {
   ])
 })
 
+it('the two missing-amount entries of the same item became lines of the merged row', () => {
+  const rows = buildAttention(full())
+  expect(rows[1].key).toBe('overdue:late1')
+  expect(rows[1].also?.map((a) => a.key)).toEqual(['amount:est', 'amount:novalue'])
+})
+
+it('pins the whole order: swapping any two neighbouring kinds fails', () => {
+  const rows = buildAttention({
+    today: '2026-10-03', failed: [{ id: 7, error: 'x', createdAt: 1 }],
+    review: { month: '2026-09', label: 'September 2026', days_left: 3 },
+    matches: [match()],
+    overdue: [entry({ id: 'o', item_id: 'io', overdue: true, due_date: '2026-10-01' })],
+    upcoming: [day('2026-10-09', [entry({ id: 'm', item_id: 'im', estimated: true })], 0)],
+    bills: [billRow({ item_id: 'ib', change: change({ entry_id: 'b' }) })],
+    cashNotLogged: 5, pantryLow: 2,
+    budgets: [budgetRow({ pct: 90 })], categories: [categoryUsual()],
+  })
+  expect(rows.map((r) => r.kind)).toEqual([
+    'failed', 'overdue', 'monthReview', 'match', 'missingAmount', 'cash', 'billChange', 'budget', 'pantry', 'category',
+  ])
+})
+
 it('nothing to do is an empty list', () => {
   expect(buildAttention(full({ matches: [], overdue: [], upcoming: [], budgets: [], categories: [], failed: [] }))).toEqual([])
 })

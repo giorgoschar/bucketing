@@ -9,6 +9,8 @@ import { ListRow } from '../../ui/ListRow'
 import { Money } from '../../ui/Money'
 import { EntrySheet, type EntryIntent } from '../plan/EntrySheet'
 import { changeTitle, moneyShort } from '../insights/bills/format'
+import { HOUSEHOLD, insightsSearch } from '../insights/lens'
+import { DEFAULT_PERIOD } from '../insights/period'
 import { visibleAttention, type AttentionItem } from './attention'
 import { setAttentionExpanded, useAttentionExpanded } from './attentionExpanded'
 import { dismissBill } from './billDismiss'
@@ -21,12 +23,14 @@ export function NeedsAttention() {
   const expanded = useAttentionExpanded()
   if (!ready && items.length === 0) return null
   const { shown, hidden } = visibleAttention(items, expanded)
+  // The badge counts the things that need attention (merged lines too); "Show N more" counts rows.
+  const total = items.reduce((n, it) => n + 1 + (it.also?.length ?? 0), 0)
   const onOpen = (entry: EntryOut, intent: EntryIntent) => setOpen({ entry, intent })
   return (
     <section className="home-attn" aria-labelledby="attn-title">
       <div className="ui-sec">
         <h2 id="attn-title" className="ui-sec__title">
-          Needs attention{items.length > 0 && <Badge tone="neg">{items.length}</Badge>}
+          Needs attention{items.length > 0 && <Badge tone="neg">{total}</Badge>}
         </h2>
       </div>
       {items.length === 0 ? (
@@ -121,21 +125,26 @@ function AttentionRow({ item, lead, onOpen }: { item: AttentionItem; lead: boole
     case 'overdue': {
       const e = item.entry
       return (
-        <ListRow onClick={() => onOpen(e, 'default')}
-          leading={<span className="ui-ico ui-ico--neg"><AlertIcon /></span>}
-          title={e.name}
-          subtitle={<><Money amount={e.amount} currency={e.currency} nullText="No amount yet" /> · was due {formatShortDate(e.due_date)}</>}
-          badges={<Badge tone="neg">Overdue</Badge>} />
+        <div className="home-attn__split">
+          <ListRow onClick={() => onOpen(e, 'default')}
+            leading={<span className="ui-ico ui-ico--neg"><AlertIcon /></span>}
+            title={e.name}
+            subtitle={<><Money amount={e.amount} currency={e.currency} nullText="No amount yet" /> · was due {formatShortDate(e.due_date)}</>}
+            badges={<Badge tone="neg">Overdue</Badge>} />
+          <button type="button" className={act(lead)} onClick={() => onOpen(e, 'default')}>{e.direction === 'in' ? 'Received' : 'Paid'}</button>
+        </div>
       )
     }
     case 'missingAmount': {
       const e = item.entry
       return (
-        <ListRow onClick={() => onOpen(e, 'amount')}
-          leading={<span className="ui-ico ui-ico--warn"><AlertIcon /></span>}
-          title={`${e.name} needs an amount`}
-          subtitle={<>Due {formatShortDate(e.due_date)}{e.amount !== null && <> · usually <Money amount={e.amount} estimated currency={e.currency} /></>}</>}
-          trailing={<span className="home-attn__cta">Set</span>} />
+        <div className="home-attn__split">
+          <ListRow onClick={() => onOpen(e, 'amount')}
+            leading={<span className="ui-ico ui-ico--warn"><AlertIcon /></span>}
+            title={`${e.name} needs an amount`}
+            subtitle={<>Due {formatShortDate(e.due_date)}{e.amount !== null && <> · usually <Money amount={e.amount} estimated currency={e.currency} /></>}</>} />
+          <button type="button" className={act(lead)} onClick={() => onOpen(e, 'amount')}>Set</button>
+        </div>
       )
     }
     case 'budget': {
@@ -150,7 +159,7 @@ function AttentionRow({ item, lead, onOpen }: { item: AttentionItem; lead: boole
     case 'category': {
       const c = item.row
       return (
-        <LinkRow to={`/insights/category/${encodeURIComponent(c.category_id ?? 'uncategorised')}`}
+        <LinkRow to={`/insights/category/${encodeURIComponent(c.category_id ?? 'uncategorised')}${insightsSearch(DEFAULT_PERIOD, HOUSEHOLD)}`}
           leading={<span className="home-attn__emoji" aria-hidden="true">{c.icon}</span>}
           title={`${c.name} above usual`}
           subtitle={<><Money amount={c.this_month} whole /> this month{c.usual !== null && <> · usually <Money amount={c.usual} whole /></>}</>}

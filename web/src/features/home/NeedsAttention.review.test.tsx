@@ -32,7 +32,7 @@ const routes = (list: Parameters<typeof listRoutes>[0] | null, over: Routes = {}
 })
 const kinds = () => Array.from(document.querySelectorAll('[data-attn]')).map((n) => n.getAttribute('data-attn'))
 
-it('"Review September" is the first row, and Review opens the statement', async () => {
+it('"Review September" shows as a row with no failed or overdue ones, and Review opens the statement', async () => {
   fakeApi(routes(statementList({ review, months: [listMonth()] })))
   const { router } = renderWithProviders(<NeedsAttention />)
   await waitFor(() => expect(kinds()).toEqual(['monthReview', 'missingAmount', 'billChange']))
@@ -77,7 +77,7 @@ it('does not hold back "All clear" while the list loads', async () => {
   expect(await screen.findByText('All clear')).toBeInTheDocument()
 })
 
-it('comes before every other row (pure order)', () => {
+it('comes before the amount, cash and bill rows (pure order)', () => {
   const order = buildAttention({
     today: '2026-10-02', failed: [], cashNotLogged: 12, review,
     bills: [billRow({ change: change() })],
