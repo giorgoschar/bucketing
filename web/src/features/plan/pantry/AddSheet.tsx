@@ -224,8 +224,8 @@ export function ManualFooter({ formId, online }: { formId: string; online: boole
   )
 }
 
-export function ManualForm({ id, barcode, online, onBack, onAdded }: {
-  id: string; barcode: string | null; online: boolean; onBack: () => void; onAdded: (name: string) => void
+export function ManualForm({ id, barcode, online, onBack, onAdded, backLabel = 'Search PosoKanei instead' }: {
+  id: string; barcode: string | null; online: boolean; onBack: () => void; onAdded: (name: string) => void; backLabel?: string
 }) {
   const add = useAddProduct()
   const base = useId()
@@ -286,7 +286,7 @@ export function ManualForm({ id, barcode, online, onBack, onAdded }: {
         {amount('min', 'Keep at least')}
       </div>
       {error && <p className="ui-field__error" role="alert">{error}</p>}
-      <button type="button" className="pantry-link pantry-manual__back" onClick={onBack}>Search PosoKanei instead</button>
+      <button type="button" className="pantry-link pantry-manual__back" onClick={onBack}>{backLabel}</button>
     </form>
   )
 }

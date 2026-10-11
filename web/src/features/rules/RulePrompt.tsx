@@ -36,10 +36,13 @@ export function amendSavedToast(qc: QueryClient, toastId: number, base: { text: 
 
 /** The desktop panel's prompt, under its "Saved ·" line. `done` replaces the question with the result. */
 export function RulePromptLine({ s, done, onAlways, onNotNow }: {
-  s: RuleSuggestion; done: string | null; onAlways: () => void; onNotNow: () => void
+  s: RuleSuggestion; done: { ok: boolean; text: string } | null; onAlways: () => void; onNotNow: () => void
 }) {
-  if (done) return <p className="composer__rule" role="status">{done}</p>
+  // A saved rule replaces the question; a failed one is shown in the error style and the question stays for a retry.
+  if (done?.ok) return <p className="composer__rule" role="status">{done.text}</p>
   return (
+    <div role="status">
+    {done && <p className="composer__rule composer__rule--fail">{done.text}</p>}
     <p className="composer__rule" role="group" aria-label="Rule suggestion">
       <span>{promptText(s)}</span>
       <span className="composer__rule-acts">
@@ -47,5 +50,6 @@ export function RulePromptLine({ s, done, onAlways, onNotNow }: {
         <button type="button" className="composer__undo" onClick={onNotNow}>Not now</button>
       </span>
     </p>
+    </div>
   )
 }

@@ -26,7 +26,7 @@ export function PantryScanFlow({ onClose }: { onClose: () => void }) {
     return <Scanner onDetect={(code) => setStep({ k: 'lookup', code })} onUnavailable={() => setStep({ k: 'type' })} onClose={onClose} />
   }
   if (step.k === 'type') return <TypeDigits onLookup={(code) => setStep({ k: 'lookup', code })} onClose={onClose} />
-  if (step.k === 'manual') return <Manual barcode={step.barcode} onAdded={added} onClose={onClose} />
+  if (step.k === 'manual') return <Manual barcode={step.barcode} onAdded={added} onClose={onClose} onBack={() => setStep({ k: 'camera' })} />
   return (
     <BarcodeSheet code={step.code} onClose={onClose}
       onScanAnother={() => setStep({ k: 'camera' })}
@@ -57,11 +57,11 @@ function TypeDigits({ onLookup, onClose }: { onLookup: (code: string) => void; o
   )
 }
 
-function Manual({ barcode, onAdded, onClose }: { barcode: string; onAdded: (name: string) => void; onClose: () => void }) {
+function Manual({ barcode, onAdded, onClose, onBack }: { barcode: string; onAdded: (name: string) => void; onClose: () => void; onBack: () => void }) {
   const online = useOnline()
   return (
     <Sheet open onClose={onClose} title="Add to pantry" footer={<ManualFooter formId="composer-pantry-manual" online={online} />}>
-      <ManualForm id="composer-pantry-manual" barcode={barcode} online={online} onBack={onClose} onAdded={onAdded} />
+      <ManualForm id="composer-pantry-manual" barcode={barcode} online={online} onBack={onBack} backLabel="Scan another" onAdded={onAdded} />
     </Sheet>
   )
 }

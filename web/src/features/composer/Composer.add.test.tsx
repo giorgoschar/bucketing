@@ -211,3 +211,23 @@ it('editing a foreign entry keeps the currency on the form', async () => {
   await ready()
   expect(screen.getByRole('button', { name: 'Currency: GBP. Change' })).toBeInTheDocument()
 })
+
+// Fix round 1, finding 12: the edited entry's own currency is what keeps the chip on the form after it is switched back.
+it('an edited foreign entry switched to the household currency keeps the currency on the form', async () => {
+  await renderComposer('/edit/t9', { routes: { 'GET /api/v1/transactions/t9': { ...TXN, currency: 'GBP', exchange_rate: 1.15 } } })
+  await ready()
+  fireEvent.click(screen.getByRole('button', { name: 'Currency: GBP. Change' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'EUR · euro' }))
+  expect(await screen.findByRole('button', { name: 'Currency: EUR. Change' })).toBeInTheDocument()
+})
+
+// Finding 8: the currency picked from More returns to More, where the rate is.
+it('picking the currency from More goes back to More', async () => {
+  await renderComposer('/new')
+  await ready()
+  fireEvent.click(screen.getByRole('button', { name: 'More options' }))
+  fireEvent.click(within(await screen.findByRole('dialog', { name: 'More' })).getByRole('button', { name: 'Currency: EUR. Change' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'GBP · pounds' }))
+  const more = await screen.findByRole('dialog', { name: 'More' })
+  expect(within(more).getByLabelText('Rate')).toBeInTheDocument()
+})

@@ -41,6 +41,8 @@ it('foreign currency: Save waits for a rate; the ≈ line and the rate are sent'
   expect(screen.queryByRole('button', { name: 'Currency: EUR. Change' })).not.toBeInTheDocument()
   fireEvent.click(within(await openMore()).getByRole('button', { name: 'Currency: EUR. Change' }))
   fireEvent.click(await screen.findByRole('button', { name: 'GBP · pounds' }))
+  // the currency sheet returns to More (review 8); close it to see the form
+  fireEvent.click(within(await screen.findByRole('dialog', { name: 'More' })).getByRole('button', { name: 'Done' }))
   press('2', '0')
   expect(screen.getByRole('button', { name: /^Save 20 pounds/ })).toBeDisabled()
   expect(screen.getByText('Enter the rate')).toBeInTheDocument()

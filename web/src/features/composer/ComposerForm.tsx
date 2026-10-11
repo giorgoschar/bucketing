@@ -57,7 +57,7 @@ const INTERACTIVE = 'button, a[href], select, summary, [role="button"], [role="o
 /** A modal sheet is open anywhere (they portal out, so their keys still bubble through this tree). */
 const modalOpen = () => !!document.querySelector('[aria-modal="true"], dialog[open]')
 
-type Note = { text: string; undoId?: string; id?: string; rule?: RuleSuggestion; ruleDone?: string | null }
+type Note = { text: string; undoId?: string; id?: string; rule?: RuleSuggestion; ruleDone?: { ok: boolean; text: string } | null }
 
 export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
   initial: ComposerState; data: ComposerData; defaults: DefaultsRecord; draftKey?: string
@@ -83,6 +83,8 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
   const qc = useQueryClient()
   const [sheet, setSheet] = useState<SheetName | null>(null)
   const [pantryScan, setPantryScan] = useState(false)
+  // The currency sheet opened from More returns to More (the rate is there), as the split sheet does.
+  const currencyFromMore = useRef(false)
   const [dup, setDup] = useState<Duplicate | null>(null)
   const [typing, setTyping] = useState(false)
   // Merchant combobox: the highlighted suggestion (-1 none) and whether Escape closed the list.
@@ -539,7 +541,7 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
           <RulePromptLine s={note.rule} done={note.ruleDone ?? null}
             onAlways={() => {
               const rule = note.rule!
-              void answerAlways(qc, rule).then((res) => setNote((n) => (n && n.rule === rule ? { ...n, ruleDone: res.text } : n)))
+              void answerAlways(qc, rule).then((res) => setNote((n) => (n && n.rule === rule ? { ...n, ruleDone: res } : n)))
             }}
             onNotNow={() => {
               void dismissSuggestion(note.rule!)
@@ -569,14 +571,14 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
       )}
       <MethodSheet open={sheet === 'method'} onClose={() => setSheet(null)} selected={s.method}
         onPick={(m) => dispatch({ type: 'pickMethod', method: m })} />
-      <CurrencySheet open={sheet === 'currency'} onClose={() => setSheet(null)} selected={s.currency}
+      <CurrencySheet open={sheet === 'currency'} onClose={() => { setSheet(currencyFromMore.current ? 'more' : null); currencyFromMore.current = false }} selected={s.currency}
         onPick={(code) => dispatch({ type: 'pickCurrency', code, householdCurrency: data.householdCurrency, lastRate: defaults.rates[code] })} />
       <DateSheet open={sheet === 'date'} onClose={() => setSheet(null)} value={s.date} today={today}
         onPick={(d) => dispatch({ type: 'setDate', value: d })} />
       <MoreSheet open={sheet === 'more'} onClose={() => setSheet(null)} s={s} dispatch={dispatch}
         ctx={{
           today, online, householdCurrency: data.householdCurrency, fuelCategoryId: data.fuelCategoryId,
-          members: data.members, meId: data.meId, problems: v.problems, onOpenSplit: () => setSheet('split'), onOpenCurrency: () => setSheet('currency'),
+          members: data.members, meId: data.meId, problems: v.problems, onOpenSplit: () => setSheet('split'), onOpenCurrency: () => { currencyFromMore.current = true; setSheet('currency') },
         }} />
       <SplitSheet open={sheet === 'split' || sheet === 'own'} variant={sheet === 'own' ? 'own' : 'split'} totalCents={cents}
         currency={s.currency} members={data.members} payerId={s.paidBy} initial={{ mode: s.splitMode, shares: s.splits, typed: (sheet === 'own' ? s.ownShare : s.splitOn) ? s.splitTyped : undefined }}

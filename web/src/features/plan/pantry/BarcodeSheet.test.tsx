@@ -156,15 +156,16 @@ it('Open Food Facts but already in the pantry: Open still wins over Add', async 
 const ADJUST = 'POST /api/v1/stock/{item_id}/adjust' as const
 
 it.each([
-  ['found', () => barcodeProduct({ in_pantry: { stock_item_id: 's1', quantity: 5 } })],
-  ['not listed anywhere (a custom barcode)', () => reply(404, { detail: 'Product not found', in_pantry: { stock_item_id: 's1', quantity: 5 } })],
-])('in pantry, %s: the item is named and + / − change its count in the sheet', async (_, answer) => {
+  ['found', () => barcodeProduct({ in_pantry: { stock_item_id: 's1', quantity: 5 } }), 1],
+  ['not listed anywhere (a custom barcode)', () => reply(404, { detail: 'Product not found', in_pantry: { stock_item_id: 's1', quantity: 5 } }), 2],
+])('in pantry, %s: the item is named and + / − change its count in the sheet', async (_, answer, names) => {
   const fake = fakeApi({ ...pantryRoutes(), [BARCODE]: answer, [ADJUST]: () => Response.json(stockItem({ quantity: 6 })) })
   renderWithProviders(<BarcodeSheet code="12345678" {...handlers()} />)
   const sheet = await screen.findByRole('dialog')
   expect(await within(sheet).findByText('In your pantry')).toBeInTheDocument()
-  // spec §2.6: for the 404 row the name is now the heading as well as the stepper's name
-  expect((await within(sheet).findAllByText('Barilla spaghetti')).length).toBeGreaterThan(0)
+  // spec §2.6: the stepper always names the item; on the 404 row the heading is that name too (2 places, not 1)
+  expect(await within(sheet).findAllByText('Barilla spaghetti')).toHaveLength(names)
+  expect(within(sheet).getByTestId('pantry-qty').closest('.pantry-have')).toHaveTextContent('Barilla spaghetti')
   expect(sheet).toHaveTextContent('In pantry: 5')
   fireEvent.click(within(sheet).getByRole('button', { name: 'Increase Barilla spaghetti' }))
   expect(within(sheet).getByTestId('pantry-qty')).toHaveTextContent('6')
