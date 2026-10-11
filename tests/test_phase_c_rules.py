@@ -234,3 +234,8 @@ def test_the_suggestion_route_is_in_the_openapi_with_a_model(client):
     get = spec[SUGGEST]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
     assert "RuleSuggestionOut" in json.dumps(get)
     assert "RuleDismissOut" in json.dumps(spec[DISMISS]["post"])
+
+
+def test_normalisation_fixture_is_the_same_file_as_the_web_copy():
+    web = Path(__file__).parent.parent / "web/src/features/rules/rule_normalisation_cases.json"
+    assert web.read_text("utf-8") == (Path(__file__).parent / "fixtures/rule_normalisation_cases.json").read_text("utf-8")
