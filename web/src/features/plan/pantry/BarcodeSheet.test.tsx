@@ -153,7 +153,7 @@ it('Open Food Facts but already in the pantry: Open still wins over Add', async 
 })
 
 // A scanned barcode that is already one of yours can be topped up in the sheet (user report, 2026-10-11).
-const ADJUST = 'POST /api/v1/stock/s1/adjust'
+const ADJUST = 'POST /api/v1/stock/{item_id}/adjust' as const
 
 it.each([
   ['found', () => barcodeProduct({ in_pantry: { stock_item_id: 's1', quantity: 5 } })],
