@@ -2,6 +2,8 @@ import { act, cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createMemoryRouter, RouterProvider, useLocation } from 'react-router'
+import { QueryClientProvider } from '@tanstack/react-query'
+import { testQueryClient } from '../test/render'
 import type { Session } from '../session/SessionProvider'
 import { AppShell } from './AppShell'
 import { stubDesktop } from './desktopStub'
@@ -43,7 +45,8 @@ function at(url: string, desktop?: boolean) {
     [{ path: '/', element: <AppShell />, children: [{ path: '*', element: <Screen /> }] }],
     { initialEntries: [url] },
   )
-  render(<RouterProvider router={router} />)
+  // The sidebar's search box reads the saved statements list (Phase C spec §4.2), so it needs a query client.
+  render(<QueryClientProvider client={testQueryClient()}><RouterProvider router={router} /></QueryClientProvider>)
   return { router, mq }
 }
 const where = () => screen.getByTestId('where').textContent

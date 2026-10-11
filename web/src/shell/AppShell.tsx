@@ -13,6 +13,8 @@ import { TickedPrompt } from '../features/plan/pantry/TickedPrompt'
 import { resetTickedPrompt } from '../features/plan/pantry/tickedOffer'
 import { fullScreenAddress, panelOf, rememberScreen, resetScreen } from './addPanel'
 import { CloseIcon } from './icons'
+import { SearchScreen } from '../features/search/SearchScreen'
+import { searchIsOpen } from '../features/search/searchState'
 import { TabBar } from './TabBar'
 import './shell.css'
 
@@ -93,6 +95,7 @@ export function AppShell() {
         </Suspense>
       </main>
       {!desktop && <TabBar />}
+      {!desktop && searchIsOpen(location.state) && <SearchScreen />}
       {desktop && panel && <Suspense fallback={null}><AddPanel /></Suspense>}
       <Toaster />
       {/* Pantry spec §4.6: the composer's post-save offer shows here, where the composer returns. */}
