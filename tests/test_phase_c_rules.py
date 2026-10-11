@@ -195,7 +195,10 @@ def test_dismiss_rejects_an_unusable_pattern(client, api):  # noqa: F811
 
 
 def test_other_households_entry_is_404_and_dismissals_are_per_household(
-    client, db, api, make_household  # noqa: F811
+    client,
+    db,
+    api,
+    make_household,  # noqa: F811
 ):
     headers, hh = api
     cat = _cat(db, hh)
@@ -203,8 +206,12 @@ def test_other_households_entry_is_404_and_dismissals_are_per_household(
     other = make_household(username="neighbour")
     ocat = _cat(db, other)
     theirs = _two(db, other, ocat)
-    assert client.get(SUGGEST, params={"transaction_id": theirs}, headers=headers).status_code == 404
-    assert client.get(SUGGEST, params={"transaction_id": "nope"}, headers=headers).status_code == 404
+    assert (
+        client.get(SUGGEST, params={"transaction_id": theirs}, headers=headers).status_code == 404
+    )
+    assert (
+        client.get(SUGGEST, params={"transaction_id": "nope"}, headers=headers).status_code == 404
+    )
     # Another household's entries never count towards mine.
     solo = _txn(db, hh, "Spar", cat)
     _txn(db, other, "Spar", ocat)

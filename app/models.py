@@ -794,7 +794,7 @@ class CategoryRule(Base):
 
 
 class CategoryRuleDismissal(Base):
-    """"Not now" on a suggested rule (Phase C spec §3.3): how many times the
+    """ "Not now" on a suggested rule (Phase C spec §3.3): how many times the
     household has said no to a folded pattern. Two stop the suggestion; creating
     the rule deletes the row."""
 

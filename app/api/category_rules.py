@@ -197,7 +197,7 @@ def rule_suggestion(
 def dismiss_rule_suggestion(
     body: DismissIn, auth=Depends(require_api_auth), db: Session = Depends(get_db)
 ):
-    """"Not now": one more dismissal for this pattern (two stop the offer)."""
+    """ "Not now": one more dismissal for this pattern (two stop the offer)."""
     user, hh_id = auth
     pattern = normalise_pattern(body.pattern)
     if not pattern:

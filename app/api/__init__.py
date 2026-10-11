@@ -23,6 +23,7 @@ from app.api import (
     personal_tokens,
     plan,
     recurring,
+    search,
     security,
     settings,
     stock,
@@ -59,3 +60,4 @@ router.include_router(stock.products_router)
 router.include_router(recurring.router)
 router.include_router(matches.router)
 router.include_router(plan.router)
+router.include_router(search.router)

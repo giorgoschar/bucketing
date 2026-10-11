@@ -193,15 +193,20 @@ def dismiss_suggestion(db: Session, household_id: str, pattern: str) -> int:
         CategoryRuleDismissal.household_id == household_id,
         CategoryRuleDismissal.pattern == pattern,
     )
-    bump = update(CategoryRuleDismissal).where(*where).values(
-        times=CategoryRuleDismissal.times + 1, updated_at=utcnow_naive()
+    bump = (
+        update(CategoryRuleDismissal)
+        .where(*where)
+        .values(times=CategoryRuleDismissal.times + 1, updated_at=utcnow_naive())
     )
     if db.execute(bump).rowcount == 0:
         try:
             with db.begin_nested():
                 db.add(
                     CategoryRuleDismissal(
-                        household_id=household_id, pattern=pattern, times=1, updated_at=utcnow_naive()
+                        household_id=household_id,
+                        pattern=pattern,
+                        times=1,
+                        updated_at=utcnow_naive(),
                     )
                 )
                 db.flush()
