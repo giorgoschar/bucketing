@@ -138,3 +138,18 @@ it('a toast with more than one action puts its buttons on their own row; one act
   act(() => { toast('Q?', { actions: [{ label: 'A', onClick: () => {} }, { label: 'B', onClick: () => {} }] }) })
   expect(document.querySelector('.ui-toast')).toHaveClass('ui-toast--multi')
 })
+
+it('amendToast keeps a hover/focus pause: the new time starts when the pointer leaves', () => {
+  vi.useFakeTimers()
+  render(<Toaster />)
+  let id = 0
+  act(() => { id = toast('Saved', { action: { label: 'Undo', onClick: () => {} }, durationMs: 5000 }) })
+  const undo = screen.getByRole('button', { name: 'Undo' })
+  act(() => undo.focus())
+  act(() => { amendToast(id, { message: 'Saved · Q?', durationMs: 8000 }) })
+  act(() => { vi.advanceTimersByTime(20_000) })
+  expect(screen.getByRole('status')).toHaveTextContent('Saved · Q?')
+  act(() => screen.getByRole('button', { name: 'Undo' }).blur())
+  act(() => { vi.advanceTimersByTime(8001) })
+  expect(screen.getByRole('status')).toBeEmptyDOMElement()
+})

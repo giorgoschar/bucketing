@@ -22,7 +22,6 @@ export function amendSavedToast(qc: QueryClient, toastId: number, base: { text: 
     message: `${base.text} · ${promptText(s)}`,
     durationMs: PROMPT_MS,
     actions: [
-      ...(base.action ? [{ label: base.action.label, onClick: base.action.onPress }] : []),
       {
         label: 'Always',
         onClick: () => {
@@ -30,6 +29,8 @@ export function amendSavedToast(qc: QueryClient, toastId: number, base: { text: 
         },
       },
       { label: 'Not now', onClick: () => void dismissSuggestion(s) },
+      // Undo last: it stays where it was, in the bottom-right corner.
+      ...(base.action ? [{ label: base.action.label, onClick: base.action.onPress }] : []),
     ],
   })
 }

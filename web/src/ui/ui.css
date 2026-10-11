@@ -144,7 +144,7 @@ textarea.ui-input { min-height: 88px; padding: 10px 14px; resize: vertical; }
   flex: none; min-height: 44px; padding: 0 10px; border: 0; background: transparent; color: inherit;
   font-weight: 750; text-decoration: underline; text-underline-offset: 3px; cursor: pointer;
 }
-.ui-toast--multi { flex-wrap: wrap; }
+.ui-toast--multi { flex-wrap: wrap; justify-content: flex-end; }
 .ui-toast--multi .ui-toast__text { flex: 1 1 100%; }
 .ui-toast--error .ui-icon { color: var(--neg); }
 

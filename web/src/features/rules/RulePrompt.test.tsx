@@ -143,7 +143,7 @@ it('the Saved toast keeps its text and Undo, with the question and both answers 
   await saveOne()
   const region = within(screen.getByRole('status'))
   expect(await region.findByText(/^Saved €5\.00 to Day to day/)).toHaveTextContent('Always use Groceries for Lidl?')
-  expect(region.getAllByRole('button').map((b) => b.textContent)).toEqual(['Undo', 'Always', 'Not now'])
+  expect(region.getAllByRole('button').map((b) => b.textContent)).toEqual(['Always', 'Not now', 'Undo'])
 })
 
 it('Undo still works after the question has arrived', async () => {

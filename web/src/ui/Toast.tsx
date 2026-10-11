@@ -54,9 +54,10 @@ export function toast(message: string, opts: ToastOptions = {}): number {
 export function amendToast(id: number, patch: Partial<Pick<ToastOptions, 'actions' | 'durationMs'>> & { message?: string }): boolean {
   if (!current || current.id !== id) return false
   current = { ...current, ...patch }
-  paused = false
   emit()
-  startTimer(patch.durationMs ?? DEFAULT_MS)
+  // A hover or focus that is holding the toast keeps holding it; the new time runs from when it lets go.
+  if (paused) remaining = patch.durationMs ?? DEFAULT_MS
+  else startTimer(patch.durationMs ?? DEFAULT_MS)
   return true
 }
 
