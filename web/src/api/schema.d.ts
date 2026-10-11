@@ -360,6 +360,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/category-rules/suggestion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Rule Suggestion
+         * @description Whether to offer "always use this category for this merchant" after the
+         *     entry was saved: a suggestion, or null. Another household's entry is 404.
+         */
+        get: operations["rule_suggestion_api_v1_category_rules_suggestion_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/category-rules/suggestion/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dismiss Rule Suggestion
+         * @description "Not now": one more dismissal for this pattern (two stop the offer).
+         */
+        post: operations["dismiss_rule_suggestion_api_v1_category_rules_suggestion_dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/dashboard": {
         parameters: {
             query?: never;
@@ -1054,6 +1095,23 @@ export interface paths {
          *     usage and price per unit, and the change of the latest one against its usual.
          */
         get: operations["get_history_api_v1_recurring__item_id__history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search Everything */
+        get: operations["search_everything_api_v1_search_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3539,6 +3597,24 @@ export interface components {
             /** Usage */
             usage?: number | string | null;
         };
+        /** EntryHit */
+        EntryHit: {
+            /** Amount */
+            amount: number;
+            /** Category */
+            category: string | null;
+            /** Currency */
+            currency: string;
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+        };
         /** EntryOut */
         EntryOut: {
             /** Amount */
@@ -3720,6 +3796,17 @@ export interface components {
             /** Points */
             points: components["schemas"]["app__api__planning_models__HistoryPointOut"][];
         };
+        /** ItemHit */
+        ItemHit: {
+            /** Direction */
+            direction: string;
+            /** Id */
+            id: string;
+            /** Is Active */
+            is_active: boolean;
+            /** Name */
+            name: string;
+        };
         /** LineCheckIn */
         LineCheckIn: {
             /** Checked */
@@ -3881,6 +3968,17 @@ export interface components {
             pct: number;
             /** Spent */
             spent: number;
+        };
+        /** PantryHit */
+        PantryHit: {
+            /** Brand */
+            brand: string | null;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Quantity */
+            quantity: number;
         };
         /** PasswordIn */
         PasswordIn: {
@@ -4293,6 +4391,18 @@ export interface components {
             /** Unit Price */
             unit_price: number | null;
         };
+        /** RuleDismissIn */
+        RuleDismissIn: {
+            /** Pattern */
+            pattern: string;
+        };
+        /** RuleDismissOut */
+        RuleDismissOut: {
+            /** Pattern */
+            pattern: string;
+            /** Times */
+            times: number;
+        };
         /**
          * RulePreviewIn
          * @description The schedule fields of RecurringItemIn, plus how many dates to return.
@@ -4340,6 +4450,28 @@ export interface components {
         RulePreviewOut: {
             /** Dates */
             dates: string[];
+        };
+        /** RuleSuggestionOut */
+        RuleSuggestionOut: {
+            /** Category Id */
+            category_id: string;
+            /** Category Name */
+            category_name: string;
+            /** Label */
+            label: string;
+            /** Pattern */
+            pattern: string;
+        };
+        /** SearchOut */
+        SearchOut: {
+            /** Entries */
+            entries: components["schemas"]["EntryHit"][];
+            /** Entries More */
+            entries_more: boolean;
+            /** Items */
+            items: components["schemas"]["ItemHit"][];
+            /** Pantry */
+            pantry: components["schemas"]["PantryHit"][];
         };
         /** SecurityOut */
         SecurityOut: {
@@ -6008,6 +6140,70 @@ export interface operations {
             };
         };
     };
+    rule_suggestion_api_v1_category_rules_suggestion_get: {
+        parameters: {
+            query: {
+                transaction_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuleSuggestionOut"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dismiss_rule_suggestion_api_v1_category_rules_suggestion_dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuleDismissIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuleDismissOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     dashboard_summary_api_v1_dashboard_get: {
         parameters: {
             query?: {
@@ -7185,6 +7381,51 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    search_everything_api_v1_search_get: {
+        parameters: {
+            query?: {
+                q?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchOut"];
+                };
+            };
+            /** @description q is shorter than 2 or longer than 100 characters */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description More than 60 searches a minute for this user */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
