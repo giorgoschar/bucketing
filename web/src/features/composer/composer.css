@@ -5,8 +5,8 @@
   display: flex; flex-direction: column; gap: 12px; background: var(--bg); color: var(--ink);
   overscroll-behavior: contain;
 }
-.composer__bar { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; gap: 10px; flex: none; }
-.composer__bar .ui-seg { justify-self: center; width: 100%; max-width: 220px; }
+.composer__bar { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 10px; flex: none; }
+.composer__bar .ui-seg { justify-self: center; width: 100%; max-width: 220px; min-width: 0; }
 .composer__bar .ui-seg__opt { flex: 1; }
 .composer__close { background: transparent; }
 .composer__slot { display: flex; justify-content: flex-end; align-items: center; }
