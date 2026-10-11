@@ -4,9 +4,11 @@ import { Badge } from '../../../ui/Badge'
 import { Money } from '../../../ui/Money'
 import type { HouseholdMember } from '../../settings/hooks'
 import { dayRange, eur } from '../format'
-import { deltaText, paidOutSentence } from '../overview'
+import { deltaText, paidOutSentence, summaryParts } from '../overview'
 import { type Period, periodPhrase, previousPeriod } from '../period'
 import type { InsightsData, PersonShare } from '../types'
+import type { WidgetCtx } from '../Insights'
+import { InOut, ON_TRACK_NOTE, SavingsRate, useOnTrackText } from './cards'
 import { Card } from './Card'
 
 export function Identity({ member }: { member: HouseholdMember | undefined }) {
@@ -77,6 +79,28 @@ export function EmptyPeriod({ data, period, onPeriod }: { data: InsightsData; pe
   return (
     <Card title="No spending in this period">
       {prev && <button type="button" className="btn btn--sm insights__prev" onClick={() => onPeriod(prev)}>See the previous period</button>}
+    </Card>
+  )
+}
+
+/** One card for what four used to say (spec §2.2): the spent figure and change, the month's projection, In / Out / Net
+ *  and the savings rate. Each part shows where its old card did; the old footnotes sit under "How these are counted". */
+export function Summary({ data, lens, period, members }: Pick<WidgetCtx, 'data' | 'lens' | 'period' | 'members'>) {
+  const parts = summaryParts(data, { lens, period })
+  const onTrack = useOnTrackText({ data })
+  const showOnTrack = parts.onTrack && onTrack != null
+  return (
+    <Card title="Summary">
+      <Headline data={data} />
+      {showOnTrack && <p className="insights__lead">{onTrack}</p>}
+      {parts.inOut && <InOut data={data} lens={lens} members={members} />}
+      {parts.savings && <SavingsRate data={data} />}
+      {showOnTrack && (
+        <details className="insights__counted">
+          <summary>How these are counted</summary>
+          <p className="insights__note">{ON_TRACK_NOTE}</p>
+        </details>
+      )}
     </Card>
   )
 }
