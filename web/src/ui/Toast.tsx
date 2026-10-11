@@ -4,6 +4,8 @@ import { AlertIcon } from './icons'
 export interface ToastAction { label: string; onClick: () => void }
 export interface ToastOptions {
   action?: ToastAction
+  /** Several buttons (a question with its answers). Wins over `action`. */
+  actions?: ToastAction[]
   durationMs?: number
   tone?: 'default' | 'error'
   /** Called once when this toast leaves the screen: its time ran out, it was dismissed or acted on, or another
@@ -35,13 +37,27 @@ function startTimer(ms: number) {
 }
 
 /** Show a toast; it replaces the one on screen. Callable outside React (useAction uses it). */
-export function toast(message: string, opts: ToastOptions = {}): void {
+export function toast(message: string, opts: ToastOptions = {}): number {
   paused = false
   const prev = current
   current = { ...opts, id: ++seq, message }
   emit()
   startTimer(opts.durationMs ?? DEFAULT_MS)
   prev?.onClose?.()
+  return current.id
+}
+
+/**
+ * Change a toast in place, only while it is still the one on screen (not expired, dismissed or replaced). The same
+ * node stays, its `onClose` does not fire, and the timer restarts. true when it was amended.
+ */
+export function amendToast(id: number, patch: Partial<Pick<ToastOptions, 'actions' | 'durationMs'>> & { message?: string }): boolean {
+  if (!current || current.id !== id) return false
+  current = { ...current, ...patch }
+  paused = false
+  emit()
+  startTimer(patch.durationMs ?? DEFAULT_MS)
+  return true
 }
 
 export function dismissToast(): void {
@@ -82,19 +98,21 @@ export function useToast(): typeof handle {
 export function Toaster() {
   const t = useSyncExternalStore(subscribe, () => current, () => null)
   const isError = t?.tone === 'error'
-  const hold = t?.action
+  const buttons = t?.actions ?? (t?.action ? [t.action] : [])
+  const hold = buttons.length
     ? { onPointerEnter: pauseToast, onPointerLeave: resumeToast, onFocus: pauseToast, onBlur: resumeToast }
     : {}
   const body = t && (
-    <div key={t.id} className={isError ? 'ui-toast ui-toast--error' : 'ui-toast'} {...hold}>
+    <div key={t.id} className={`${isError ? 'ui-toast ui-toast--error' : 'ui-toast'}${buttons.length > 1 ? ' ui-toast--multi' : ''}`} {...hold}>
       {isError && <AlertIcon />}
       <span className="ui-toast__text">{t.message}</span>
-      {t.action && (
-        <button type="button" className="ui-toast__action"
-          onClick={() => { t.action?.onClick(); dismissToast() }}>
-          {t.action.label}
+      {buttons.map((a) => (
+        <button key={a.label} type="button" className="ui-toast__action"
+          // An action may show its own toast (a confirmation): only dismiss the one it was pressed on.
+          onClick={() => { a.onClick(); if (current?.id === t.id) dismissToast() }}>
+          {a.label}
         </button>
-      )}
+      ))}
     </div>
   )
   return (

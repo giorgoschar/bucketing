@@ -1,0 +1,86 @@
+[
+  {
+    "input": "Lidl",
+    "pattern": "lidl"
+  },
+  {
+    "input": "LIDL",
+    "pattern": "lidl"
+  },
+  {
+    "input": "Lidl ",
+    "pattern": "lidl"
+  },
+  {
+    "input": "  lidl   express ",
+    "pattern": "lidl express"
+  },
+  {
+    "input": "Λιντλ",
+    "pattern": "λιντλ"
+  },
+  {
+    "input": "ΛΙΝΤΛ",
+    "pattern": "λιντλ"
+  },
+  {
+    "input": "Σκλαβενίτης",
+    "pattern": "σκλαβενιτησ"
+  },
+  {
+    "input": "ΣΚΛΑΒΕΝΙΤΗΣ",
+    "pattern": "σκλαβενιτησ"
+  },
+  {
+    "input": "ΚΑΦΈ",
+    "pattern": "καφε"
+  },
+  {
+    "input": "Café Nero",
+    "pattern": "cafe nero"
+  },
+  {
+    "input": "L",
+    "pattern": null
+  },
+  {
+    "input": "  x ",
+    "pattern": null
+  },
+  {
+    "input": "",
+    "pattern": null
+  },
+  {
+    "input": "Straße 5",
+    "pattern": "strasse 5"
+  },
+  {
+    "input": "Café ☕️",
+    "pattern": "cafe ☕️"
+  },
+  {
+    "input": "ﬁne foods",
+    "pattern": "fine foods"
+  },
+  {
+    "input": "µ-market",
+    "pattern": "μ-market"
+  },
+  {
+    "input": "ᾈθήνα",
+    "pattern": "αιθηνα"
+  },
+  {
+    "input": "Lidlx",
+    "pattern": "lidl x"
+  },
+  {
+    "input": "A.B. Βασιλόπουλος",
+    "pattern": "a.b. βασιλοπουλοσ"
+  },
+  {
+    "input": "ΜΑΪΟΣ",
+    "pattern": "μαιοσ"
+  }
+]

@@ -18,6 +18,8 @@ export interface ComposerData {
   /** Distinct recent merchants, newest first (suggestions only). */
   merchants: string[]
   fuelCategoryId: string | null
+  /** One of the last 20 entries was in another currency (spec §2.4: then the currency stays on the main form). */
+  recentForeign: boolean
   /** Buckets, categories and household have data or are definitely unavailable: the composer can open. */
   ready: boolean
 }
@@ -49,6 +51,7 @@ export function useComposerData(): ComposerData {
     rules: (rules.data ?? []).map((r): Rule => ({ id: r.id, pattern: r.pattern, category_id: r.category_id })),
     merchants,
     fuelCategoryId: fuelCategoryId(cats),
+    recentForeign: (recent.data?.items ?? []).slice(0, 20).some((t) => !!t.currency && t.currency !== (household.data?.default_currency ?? 'EUR')),
     ready: !buckets.isLoading && !categories.isLoading && !household.isLoading,
   }
 }

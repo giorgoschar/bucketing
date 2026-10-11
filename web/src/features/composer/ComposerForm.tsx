@@ -1,4 +1,5 @@
-import { useEffect, useId, useLayoutEffect, useReducer, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useId, useLayoutEffect, useReducer, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useBlocker, useNavigate, useSearchParams } from 'react-router'
 import { CloseIcon } from '../../shell/icons'
 import { AmountDisplay } from '../../ui/AmountDisplay'
@@ -8,6 +9,8 @@ import { Pill } from '../../ui/Pill'
 import { type AmountKey, centsToString, convertCents, displayAmount, parseRate, toApiAmount, toCents } from './amount'
 import { Segmented, type ToastInput, useComposerToast, useOfferTickedPrompt, useOnline } from './bridge'
 import { CashControls } from './CashControls'
+import { ScanChoiceSheet } from './ScanChoiceSheet'
+import { ScanIcon } from '../plan/pantry/icons'
 import { ConfirmSheet } from './ConfirmSheet'
 import { currencyName, currencySymbol, formatCents, spokenMoney } from './currencies'
 import { dayLabel, todayLocal } from './dates'
@@ -24,6 +27,8 @@ import { useSaveTransaction } from './hooks/useSaveTransaction'
 import { useUndoCreate } from './hooks/undo'
 import { firstProblem, isDirtyNew, isFuel, moreDirty, toUpdateBody, validate } from './model'
 import { MoreSheet } from './MoreSheet'
+import { askForSuggestion, dismissSuggestion, type RuleSuggestion } from '../rules/hooks'
+import { amendSavedToast, answerAlways, RulePromptLine } from '../rules/RulePrompt'
 import { ReviewBanner } from './scan/ReviewBanner'
 import { ScanScreen } from './scan/ScanScreen'
 import { SplitSheet } from './SplitSheet'
@@ -38,7 +43,10 @@ import { type ComposerState, reduce, type Remembered, type TxnType } from './sta
 import type { Duplicate } from './types'
 import { useClose } from './useClose'
 
-type SheetName = 'bucket' | 'category' | 'payer' | 'method' | 'currency' | 'date' | 'more' | 'split' | 'own'
+type SheetName = 'scan' | 'bucket' | 'category' | 'payer' | 'method' | 'currency' | 'date' | 'more' | 'split' | 'own'
+
+// The pantry camera and its barcode sheet: their own chunk, never part of the composer's (Phase C spec §5).
+const PantryScanFlow = lazy(() => import('./PantryScanFlow').then((m) => ({ default: m.PantryScanFlow })))
 
 const QUEUED = "Saved on this phone. It will sync when you're back online."
 const QUEUED_NO_RECEIPT = "Saved on this phone. The receipt wasn't attached: add it when you're back online."
@@ -49,7 +57,7 @@ const INTERACTIVE = 'button, a[href], select, summary, [role="button"], [role="o
 /** A modal sheet is open anywhere (they portal out, so their keys still bubble through this tree). */
 const modalOpen = () => !!document.querySelector('[aria-modal="true"], dialog[open]')
 
-type Note = { text: string; undoId?: string }
+type Note = { text: string; undoId?: string; id?: string; rule?: RuleSuggestion; ruleDone?: { ok: boolean; text: string } | null }
 
 export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
   initial: ComposerState; data: ComposerData; defaults: DefaultsRecord; draftKey?: string
@@ -72,13 +80,18 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
   const checkDuplicate = useDuplicateCheck()
   const upload = useReceiptUpload()
   const undo = useUndoCreate()
+  const qc = useQueryClient()
   const [sheet, setSheet] = useState<SheetName | null>(null)
+  const [pantryScan, setPantryScan] = useState(false)
+  // The currency sheet opened from More returns to More (the rate is there), as the split sheet does.
+  const currencyFromMore = useRef(false)
   const [dup, setDup] = useState<Duplicate | null>(null)
   const [typing, setTyping] = useState(false)
   // Merchant combobox: the highlighted suggestion (-1 none) and whether Escape closed the list.
   const [active, setActive] = useState(-1)
   const [listClosed, setListClosed] = useState(false)
   const listId = useId()
+  const hintId = useId()
   const [stashCents, setStashCents] = useState<number | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const splitTyped = useRef<Record<string, string>>({})
@@ -172,15 +185,27 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
 
   // The panel stays open after an add (spec §4.5): a new entry that keeps the date, budget and payer, a line saying
   // what was saved, and the Undo the toast would have had.
+  // Rules that learn (Phase C spec §3.2): after an online save that created an entry or changed its category, ask the
+  // server whether to offer a rule. Null for anything else, and for a queued entry (it has no server id yet).
+  function askRule(id: string): Promise<RuleSuggestion | null> | null {
+    if (s.type !== 'expense' || !s.categoryId || !online) return null
+    if (s.mode === 'edit' && s.categoryId === initial.categoryId) return null
+    return askForSuggestion(id)
+  }
+
   function stayOpen(r: { status: string; id?: string }, receipt: File | null) {
     const queued = r.status === 'queued'
     const merchant = s.merchant.trim()
     setNote(queued
       ? { text: receipt ? QUEUED_NO_RECEIPT : QUEUED }
-      : { text: `Saved · ${money}${merchant ? ` ${merchant}` : ''}`, undoId: r.id })
+      : { text: `Saved · ${money}${merchant ? ` ${merchant}` : ''}`, undoId: r.id, id: r.id })
     if (!queued && r.id) {
       if (s.type === 'expense') offerPantry()
       if (receipt) void uploadReceipt(r.id, receipt)
+      const id = r.id
+      void askRule(id)?.then((rule) => {
+        if (rule) setNote((n) => (n && n.id === id ? { ...n, rule } : n))
+      })
     }
     const fresh = initialNew({
       defaults, buckets: data.buckets, categories: data.categories, memberIds, meId: data.meId,
@@ -195,11 +220,12 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
   }
 
   // The Undo lasts as long as the toast's would.
+  const undoId = note?.undoId
   useEffect(() => {
-    if (!note?.undoId) return
-    const t = setTimeout(() => setNote({ text: note.text }), UNDO_MS)
+    if (!undoId) return
+    const t = setTimeout(() => setNote((n) => (n && n.undoId === undoId ? { ...n, undoId: undefined } : n)), UNDO_MS)
     return () => clearTimeout(t)
-  }, [note])
+  }, [undoId])
 
   const submitting = useRef(false)
   async function onSave(skipDuplicate = false) {
@@ -226,7 +252,9 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
         toast({ text: receipt ? QUEUED_NO_RECEIPT : QUEUED })
         return
       }
-      toast(savedToast(r.id))
+      const saved = savedToast(r.id)
+      const savedId = toast(saved)
+      void askRule(r.id)?.then((rule) => { if (rule) amendSavedToast(qc, savedId, saved, rule) })
       // Pantry spec §4.6: a new expense saved online may prompt for ticked items. Fire and forget: never awaited.
       if (s.mode === 'new' && s.type === 'expense') offerPantry()
       if (receipt) void uploadReceipt(r.id, receipt)
@@ -260,7 +288,7 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
   useLayoutEffect(() => {
     if (panel) return // the panel's amount is a text field; Enter and Esc are handled below
     const onKeyDown = (e: KeyboardEvent) => {
-      if (sheet || dup || confirmDelete || scanOpen || blocker.state === 'blocked') return
+      if (sheet || dup || confirmDelete || scanOpen || pantryScan || blocker.state === 'blocked') return
       const t = e.target as HTMLElement | null
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
       let key: AmountKey | null = null
@@ -277,15 +305,12 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [panel, sheet, dup, confirmDelete, scanOpen, blocker.state])
+  }, [panel, sheet, dup, confirmDelete, scanOpen, pantryScan, blocker.state])
 
   const switchType = (value: TxnType) => {
     const r = sanitize(value === 'income' ? defaults.lastIncome : defaults.last, lookup(value))
     dispatch({ type: 'setType', value, defaults: { ...r, paid_by: r.paid_by ?? data.meId } })
   }
-  const toggleCash = () =>
-    dispatch({ type: 'setCashMode', on: !s.cashMode, meId: data.meId, defaultMethod: remembered(defaults.last).payment_method ?? 'card' })
-
   const rule = matchRule(s.merchant, data.rules)
   const suggestions = typing && !listClosed ? suggestMerchants(s.merchant, data.merchants) : []
   const setMerchant = (value: string) => {
@@ -341,12 +366,18 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
     : income
       ? `Save income ${spokenMoney(cents, s.currency)}`
       : `Save ${spokenMoney(cents, s.currency)}${bucketName ? ` to ${bucketName}` : ''}`
-  const allowOwnShare = !income && data.members.length > 1 && s.tookFrom === 'none' && !s.cashMode
+  // The payer is you, and fixed, only while cash is taken from a wallet or the bank (took_cash needs you as payer).
+  const payerLocked = s.mode === 'new' && !income && s.method === 'cash' && s.tookFrom !== 'none'
+  const allowOwnShare = !income && data.members.length > 1 && s.tookFrom === 'none'
+
+  // Currency lives in More (spec §2.4). It stays on the main form for a foreign entry, being edited or typed, and
+  // when one of the last 20 entries was foreign; `initial` is the saved entry on an edit.
+  const showCurrency = s.currency !== data.householdCurrency || initial.currency !== data.householdCurrency || data.recentForeign
 
   const pillIcon = (glyph: string) => <span className="ck-pill__glyph">{glyph}</span>
   const budgetPill = s.fixedCost
     ? <Pill label="Budget" value="Fixed cost" readOnly />
-    : <Pill label="Budget" value={bucketName ?? (income ? 'None' : 'Choose a budget')} empty={!s.bucketId && !income}
+    : <Pill label="Budget" value={bucketName ?? (income ? 'None' : 'Choose a budget')} empty={!s.bucketId && !income} attention={!s.bucketId && !income}
         onPress={() => setSheet('bucket')} />
   const categoryPill = (
     <Pill label="Category" value={category?.name ?? 'None'} empty={!category && income}
@@ -354,42 +385,43 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
       tag={s.ruleLabel ?? (s.fromReceipt.includes('category') ? 'from receipt' : null)}
       onPress={() => setSheet('category')} />
   )
-  const payerValue = s.ownShare ? 'Each paid own share' : s.cashMode ? 'You' : memberName(payer)
+  const payerValue = s.ownShare ? 'Each paid own share' : payerLocked ? 'You' : memberName(payer)
 
   const typeSwitch = (
     <Segmented label="Entry type" value={s.type} onChange={switchType} disabled={s.mode === 'edit'}
       options={[{ value: 'expense', label: 'Expense' }, { value: 'income', label: 'Income' }]} />
   )
+  // One scan button (spec §2.4): Receipt QR or Pantry barcode. New expenses only, as the old chip was.
+  const scanButton = s.mode === 'new' && !income && (
+    <button type="button" className="ui-iconbtn composer__scan" aria-label="Scan" onClick={() => setSheet('scan')}>
+      <ScanIcon />
+    </button>
+  )
   const slot = (
     <span className="composer__slot">
       {!online && <span className="composer__offline">Offline</span>}
+      {scanButton}
       {s.mode === 'edit' && <EditTopMenu onDelete={() => setConfirmDelete(true)} />}
     </span>
-  )
-  const modes = s.mode === 'new' && !income && (
-    <div className="composer__modes" role="group" aria-label="Entry mode">
-      <button type="button" className="ck-chip" onClick={() => setScan(true)}>Scan receipt</button>
-      <button type="button" className={s.cashMode ? 'ck-chip on' : 'ck-chip'} aria-pressed={s.cashMode} onClick={toggleCash}>
-        Cash from wallet
-      </button>
-    </div>
   )
   const amountField = panel ? (
     <div className={income ? 'amount amount--income panelamount' : 'amount panelamount'}>
       <span className="panelamount__symbol" aria-hidden="true">{currencySymbol(s.currency)}</span>
       <input ref={amountRef} className="panelamount__input" aria-label="Amount" inputMode="decimal" autoComplete="off"
         placeholder="0.00" autoFocus value={s.amount} onChange={(e) => dispatch({ type: 'setAmount', value: e.target.value })} />
-      <button type="button" className="amount__cur" onClick={() => setSheet('currency')}
-        aria-label={`Currency: ${s.currency}. Change`}>
-        {s.currency}
-      </button>
+      {showCurrency ? (
+        <button type="button" className="amount__cur" onClick={() => setSheet('currency')}
+          aria-label={`Currency: ${s.currency}. Change`}>
+          {s.currency}
+        </button>
+      ) : <span className="amount__cur">{s.currency}</span>}
       {converted && <p className="amount__converted">{converted}</p>}
       {s.fromReceipt.includes('amount') && <span className="amount__tag">from receipt</span>}
     </div>
   ) : (
     <AmountDisplay text={displayAmount(s.amount)} symbol={currencySymbol(s.currency)} currency={s.currency}
       spoken={`Amount ${centsToString(cents)} ${currencyName(s.currency)}`} tone={income ? 'income' : 'default'}
-      converted={converted} onCurrency={() => setSheet('currency')}
+      converted={converted} onCurrency={showCurrency ? () => setSheet('currency') : undefined}
       tag={s.fromReceipt.includes('amount') ? 'from receipt' : null} />
   )
 
@@ -416,8 +448,6 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
       </header>
 
       <div className="composer__body">
-        {!panel && modes}
-
         <ReviewBanner s={s} categories={data.categories} rulesReady={RULES_API_READY}
           onRemember={(on) => dispatch({ type: 'setRemember', on })} />
         {amountField}
@@ -457,7 +487,7 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
               {categoryPill}
               {income
                 ? <Pill label="Received by" value={memberName(payer)} onPress={() => setSheet('payer')} />
-                : <Pill label="Payer" value={payerValue} readOnly={s.cashMode} onPress={() => setSheet('payer')} />}
+                : <Pill label="Payer" value={payerValue} readOnly={payerLocked} onPress={() => setSheet('payer')} />}
               {!income && <Pill label="Method" value={METHOD_LABELS[s.method]} onPress={() => setSheet('method')} />}
               <Pill label="Date" value={dayLabel(s.date, today)} onPress={() => setSheet('date')} />
             </>
@@ -472,14 +502,14 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
             <>
               {budgetPill}
               {categoryPill}
-              <Pill label="Payer" value={payerValue} readOnly={s.cashMode} onPress={() => setSheet('payer')} />
+              <Pill label="Payer" value={payerValue} readOnly={payerLocked} onPress={() => setSheet('payer')} />
               <Pill label="Method" value={METHOD_LABELS[s.method]} onPress={() => setSheet('method')} />
             </>
           )}
         </div>
 
         {s.mode === 'new' && !income && s.method === 'cash' && (
-          <CashControls s={s} dispatch={dispatch} householdCurrency={data.householdCurrency} onStash={setStashCents} />
+          <CashControls s={s} dispatch={dispatch} meId={data.meId} householdCurrency={data.householdCurrency} onStash={setStashCents} />
         )}
 
         {dup && <DuplicateCard dup={dup} onOpen={() => leave(`/edit/${dup.id}`)} onSaveAnyway={() => void onSave(true)} />}
@@ -489,11 +519,13 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
           {income ? 'More: notes, receipt' : 'More: date, split, notes, receipt'}
           {moreDirty(s, { ...ctx, today }) && <span className="composer__dot" aria-hidden="true" />}
         </button>
-        {panel && modes}
       </div>
 
       <div className="composer__foot">
-        {hint && <p className="composer__problem">{hint}</p>}
+        {hint && (
+          // The budget reason is the amber chip's job: still read out as Save's description, but not shown twice.
+          <p id={hintId} className={hint === v.problems.bucket ? 'ck-visually-hidden' : 'composer__problem'}>{hint}</p>
+        )}
         {panel && note && (
           <p className="composer__saved" role="status">
             <span>{note.text}</span>
@@ -505,8 +537,19 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
             )}
           </p>
         )}
+        {panel && note?.rule && (
+          <RulePromptLine s={note.rule} done={note.ruleDone ?? null}
+            onAlways={() => {
+              const rule = note.rule!
+              void answerAlways(qc, rule).then((res) => setNote((n) => (n && n.rule === rule ? { ...n, ruleDone: res } : n)))
+            }}
+            onNotNow={() => {
+              void dismissSuggestion(note.rule!)
+              setNote((n) => (n ? { ...n, rule: undefined } : n))
+            }} />
+        )}
         {!panel && <Keypad onKey={(k) => dispatch({ type: 'key', key: k })} hidden={typing} />}
-        <button type="button" aria-label={saveName} disabled={!v.ok || save.saving} onClick={() => void onSave()}
+        <button type="button" aria-label={saveName} aria-describedby={hint ? hintId : undefined} disabled={!v.ok || save.saving} onClick={() => void onSave()}
           className={`btn btn--primary btn--lg btn--block composer__save${income ? ' composer__save--income' : ''}`}>
           {saveLabel}
         </button>
@@ -521,21 +564,21 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
         recentIds={defaults.recentCategoryIds} selectedId={s.categoryId}
         suggestion={rule ? { id: rule.category_id, reason: `rule: ${rule.pattern}` } : null}
         onPick={(id) => dispatch({ type: 'pickCategory', id, remembered: remembered(defaults.byCategory[id]) })} />
-      {!s.cashMode && (
+      {!payerLocked && (
         <PayerSheet open={sheet === 'payer'} onClose={() => setSheet(null)} title={income ? 'Received by' : 'Payer'}
           members={data.members} selectedId={s.paidBy} ownShare={s.ownShare} allowOwnShare={allowOwnShare}
           onPick={(id) => dispatch({ type: 'pickPayer', id })} onOwnShare={() => setSheet('own')} />
       )}
       <MethodSheet open={sheet === 'method'} onClose={() => setSheet(null)} selected={s.method}
         onPick={(m) => dispatch({ type: 'pickMethod', method: m })} />
-      <CurrencySheet open={sheet === 'currency'} onClose={() => setSheet(null)} selected={s.currency}
+      <CurrencySheet open={sheet === 'currency'} onClose={() => { setSheet(currencyFromMore.current ? 'more' : null); currencyFromMore.current = false }} selected={s.currency}
         onPick={(code) => dispatch({ type: 'pickCurrency', code, householdCurrency: data.householdCurrency, lastRate: defaults.rates[code] })} />
       <DateSheet open={sheet === 'date'} onClose={() => setSheet(null)} value={s.date} today={today}
         onPick={(d) => dispatch({ type: 'setDate', value: d })} />
       <MoreSheet open={sheet === 'more'} onClose={() => setSheet(null)} s={s} dispatch={dispatch}
         ctx={{
           today, online, householdCurrency: data.householdCurrency, fuelCategoryId: data.fuelCategoryId,
-          members: data.members, meId: data.meId, problems: v.problems, onOpenSplit: () => setSheet('split'),
+          members: data.members, meId: data.meId, problems: v.problems, onOpenSplit: () => setSheet('split'), onOpenCurrency: () => { currencyFromMore.current = true; setSheet('currency') },
         }} />
       <SplitSheet open={sheet === 'split' || sheet === 'own'} variant={sheet === 'own' ? 'own' : 'split'} totalCents={cents}
         currency={s.currency} members={data.members} payerId={s.paidBy} initial={{ mode: s.splitMode, shares: s.splits, typed: (sheet === 'own' ? s.ownShare : s.splitOn) ? s.splitTyped : undefined }}
@@ -545,6 +588,13 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
           dispatch(sheet === 'own' ? { type: 'setOwnShare', splits: r.shares, typed } : { type: 'setSplit', on: true, mode: r.mode, splits: r.shares, typed })
         }}
         onClose={() => setSheet(sheet === 'split' ? 'more' : null)} />
+      <ScanChoiceSheet open={sheet === 'scan'} onClose={() => setSheet(null)}
+        onReceipt={() => setScan(true)} onPantry={() => setPantryScan(true)} />
+      {pantryScan && (
+        <Suspense fallback={null}>
+          <PantryScanFlow onClose={() => setPantryScan(false)} />
+        </Suspense>
+      )}
       {scanOpen && (
         <ScanScreen
           online={online}

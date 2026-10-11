@@ -37,8 +37,12 @@ it('fuel: price per litre prefilled from the last one, litres shown, price sent'
 it('foreign currency: Save waits for a rate; the ≈ line and the rate are sent', async () => {
   const { api } = await renderComposer()
   await screen.findByRole('button', { name: 'Budget: Day to day. Change' })
-  fireEvent.click(screen.getByRole('button', { name: 'Currency: EUR. Change' }))
+  // spec §2.4: the currency is the first field in More, not on the main form
+  expect(screen.queryByRole('button', { name: 'Currency: EUR. Change' })).not.toBeInTheDocument()
+  fireEvent.click(within(await openMore()).getByRole('button', { name: 'Currency: EUR. Change' }))
   fireEvent.click(await screen.findByRole('button', { name: 'GBP · pounds' }))
+  // the currency sheet returns to More (review 8); close it to see the form
+  fireEvent.click(within(await screen.findByRole('dialog', { name: 'More' })).getByRole('button', { name: 'Done' }))
   press('2', '0')
   expect(screen.getByRole('button', { name: /^Save 20 pounds/ })).toBeDisabled()
   expect(screen.getByText('Enter the rate')).toBeInTheDocument()

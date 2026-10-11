@@ -13,7 +13,7 @@ function minHeight(css: string, selector: string): number | null {
 }
 
 it.each([
-  ['../features/composer/composer.css', '.composer__modes .ck-chip'],
+  ['../features/composer/composer.css', '.ck-more__cur'], // spec §2.4: the chips moved out; the currency button in More is the new composer.css target,
   ['../ui/composer-kit.css', '.amount__cur'],
   ['../features/composer/pickers/pickers.css', '.ck-chip'],
   ['../features/composer/pickers/pickers.css', '.ck-date__input'],

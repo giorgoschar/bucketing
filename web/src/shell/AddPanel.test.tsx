@@ -28,6 +28,11 @@ const session: Session = {
 }
 vi.mock('../session/SessionProvider', () => ({ useSession: () => session }))
 
+// The pantry camera is replaced by a modal dialog like the real one (role dialog, aria-modal).
+vi.mock('../features/plan/pantry/scan/Scanner', () => ({
+  Scanner: () => <div role="dialog" aria-modal="true" aria-label="Scan barcode" />,
+}))
+
 afterEach(async () => {
   cleanup()
   vi.unstubAllGlobals()
@@ -112,7 +117,8 @@ it('a /new?mode=cash&take=none&amount=45.00 link opens the panel over the curren
   await waitFor(() => expect(amount()).toHaveValue('45'))
   expect(where()).toBe('/activity?add=1&mode=cash&take=none&amount=45.00')
   expect(screen.getByText('activity screen')).toBeInTheDocument()
-  expect(within(panel()).getByRole('button', { name: 'Cash from wallet' })).toHaveAttribute('aria-pressed', 'true')
+  expect(within(panel()).getByRole('button', { name: 'Method: Cash. Change' })).toBeInTheDocument() // spec §2.4: Cash lives in the method chip
+  expect(within(within(panel()).getByRole('group', { name: 'Took from' })).getByRole('button', { name: 'Not tracked' })).toHaveAttribute('aria-pressed', 'true')
   await userEvent.keyboard('{Enter}')
   await waitFor(() => expect(writes(api)).toHaveLength(1))
   expect(writes(api)[0].body).toMatchObject({ amount: '45.00', payment_method: 'cash', took_cash: false, paid_by: 'u1' })
@@ -223,7 +229,9 @@ it('the cash-from-wallet mode locks the payer to you and saves as cash', async (
   const user = userEvent.setup()
   const { api } = await setup('/?add=1')
   await waitFor(() => amount())
-  await user.click(within(panel()).getByRole('button', { name: 'Cash from wallet' }))
+  await user.click(within(panel()).getByRole('button', { name: /^Method:/ })) // spec §2.4: Cash lives in the method chip
+  await user.click(within(screen.getByRole('dialog', { name: 'Payment method' })).getByRole('button', { name: 'Cash' }))
+  await user.click(within(panel()).getByRole('button', { name: 'My wallet' })) // Cash starts on Not tracked; the wallet is the user's choice
   expect(within(panel()).getByRole('group', { name: 'Payer: You' })).toBeInTheDocument()
   await user.type(amount(), '6{Enter}')
   await waitFor(() => expect(writes(api)).toHaveLength(1))
@@ -241,7 +249,7 @@ it('Tab order follows the spec: amount, type, description, budget, category, pay
     names.push(el.getAttribute('aria-label') ?? el.textContent ?? '')
   }
   const idx = (re: RegExp) => names.findIndex((n) => re.test(n))
-  const order = [/^Currency/, /^Expense$/, /^Income$/, /^Merchant$/, /^Budget:/, /^Category:/, /^Payer:/, /^Method:/, /^Date:/, /^More options/]
+  const order = [/^Expense$/, /^Income$/, /^Merchant$/, /^Budget:/, /^Category:/, /^Payer:/, /^Method:/, /^Date:/, /^More options/]
     .map(idx)
   expect(order.every((i) => i >= 0)).toBe(true)
   expect([...order].sort((a, b) => a - b)).toEqual(order)
@@ -460,4 +468,86 @@ it('Undo offline says it needs a connection and does not claim "Undone"', async 
   await user.click(undo)
   expect(await screen.findByText('Undo needs a connection.')).toBeInTheDocument()
   expect(within(panel()).queryByText('Undone')).toBeNull()
+})
+
+// Phase C spec §2.4: the panel gets the same four changes as the phone form.
+it('the panel has one Scan button with both choices, the amber budget chip, and the currency only in More', async () => {
+  const user = userEvent.setup()
+  await setup('/?add=1')
+  await waitFor(() => amount())
+  expect(within(panel()).queryByRole('button', { name: 'Scan receipt' })).not.toBeInTheDocument()
+  expect(within(panel()).queryByRole('button', { name: /^Currency:/ })).not.toBeInTheDocument()
+  await user.click(within(panel()).getByRole('button', { name: 'Scan' }))
+  const choices = within(await screen.findByRole('dialog', { name: 'Scan' }))
+  expect(choices.getByRole('button', { name: /^Receipt QR/ })).toBeInTheDocument()
+  expect(choices.getByRole('button', { name: /^Pantry barcode/ })).toBeInTheDocument()
+  await user.keyboard('{Escape}')
+  await user.click(within(panel()).getByRole('button', { name: 'More options' }))
+  expect(within(await screen.findByRole('dialog', { name: 'More' })).getByRole('button', { name: /^Currency:/ })).toBeInTheDocument()
+})
+
+it('the panel shows the amber budget chip with no second line when no budget is chosen', async () => {
+  await setup('/?add=1', { defaults: { ...DEFAULTS, last: { ...DEFAULTS.last, bucket_id: undefined } } })
+  await waitFor(() => amount())
+  await userEvent.type(amount(), '5')
+  expect(within(panel()).getByRole('button', { name: /^Budget: Choose a budget/ })).toHaveClass('pill--attention')
+  expect(panel().querySelector('.composer__problem')).toBeNull()
+})
+
+// Phase C spec §3.2: in the panel the rule prompt sits under the "Saved ·" line.
+const SUGGESTION = { pattern: 'lidl', label: 'Lidl', category_id: 'c-food', category_name: 'Groceries' }
+const ruleRoutes = {
+  'GET /api/v1/category-rules/suggestion': SUGGESTION,
+  'POST /api/v1/settings/category-rules': () => ({ id: 'r1', pattern: 'lidl', category_id: 'c-food' }),
+  'POST /api/v1/category-rules/suggestion/dismiss': () => ({ ok: true }),
+}
+
+it('the panel offers the rule under "Saved ·", and Always saves it and says where to change it', async () => {
+  const user = userEvent.setup()
+  const { api } = await setup('/?add=1', { routes: ruleRoutes })
+  await waitFor(() => amount())
+  await user.type(amount(), '6{Enter}')
+  const line = await within(panel()).findByRole('group', { name: 'Rule suggestion' })
+  expect(line).toHaveTextContent('Always use Groceries for Lidl?')
+  expect(within(panel()).getByText(/^Saved ·/)).toBeInTheDocument() // the panel stays open with its Saved line
+  await user.click(within(line).getByRole('button', { name: 'Always' }))
+  expect(await within(panel()).findByText('Rule saved. Change it in Settings › Categories.')).toBeInTheDocument()
+  expect(writes(api).find((c) => c.path === '/api/v1/settings/category-rules')!.body).toEqual({ pattern: 'lidl', category_id: 'c-food' })
+})
+
+it('in the panel, Not now dismisses the pattern and the question goes', async () => {
+  const user = userEvent.setup()
+  const { api } = await setup('/?add=1', { routes: ruleRoutes })
+  await waitFor(() => amount())
+  await user.type(amount(), '6{Enter}')
+  await user.click(await within(panel()).findByRole('button', { name: 'Not now' }))
+  expect(within(panel()).queryByRole('group', { name: 'Rule suggestion' })).not.toBeInTheDocument()
+  await waitFor(() => expect(writes(api).some((c) => c.path === '/api/v1/category-rules/suggestion/dismiss')).toBe(true))
+  expect(writes(api).find((c) => c.path.endsWith('/dismiss'))!.body).toEqual({ pattern: 'lidl' })
+})
+
+// Fix round 1, finding 3: in the panel too, Enter does not save the entry behind the pantry camera.
+it('the panel does not save on Enter while the pantry camera is open', async () => {
+  const user = userEvent.setup()
+  const { api } = await setup('/?add=1')
+  await waitFor(() => amount())
+  await user.type(amount(), '6')
+  await user.click(within(panel()).getByRole('button', { name: 'Scan' }))
+  await user.click(within(await screen.findByRole('dialog', { name: 'Scan' })).getByRole('button', { name: /^Pantry barcode/ }))
+  await screen.findByRole('dialog', { name: 'Scan barcode' })
+  fireEvent.keyDown(amount(), { key: 'Enter' })
+  fireEvent.keyDown(amount(), { key: 'Enter', metaKey: true })
+  expect(writes(api)).toHaveLength(0)
+  expect(amount()).toHaveValue('6')
+})
+
+it('in the panel a failed Always is shown as a failure and the question stays for another try', async () => {
+  const user = userEvent.setup()
+  await setup('/?add=1', { routes: { ...ruleRoutes, 'POST /api/v1/settings/category-rules': () => Response.json({ detail: 'Boom' }, { status: 500 }) } })
+  await waitFor(() => amount())
+  await user.type(amount(), '6{Enter}')
+  await user.click(await within(panel()).findByRole('button', { name: 'Always' }))
+  expect(await within(panel()).findByText('Boom')).toHaveClass('composer__rule--fail')
+  expect(within(panel()).queryByText(/Rule saved/)).not.toBeInTheDocument()
+  expect(within(panel()).getByRole('button', { name: 'Always' })).toBeInTheDocument()
 })

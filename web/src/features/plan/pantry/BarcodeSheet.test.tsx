@@ -78,7 +78,7 @@ it('offline: Add to pantry is disabled with the reason', async () => {
 // Pantry fix round 1, I3: a miss (404) or PosoKanei being down (503) still says whether the barcode is in the
 // pantry, in a JSON body {detail, in_pantry}.
 it.each([
-  [404, 'Product not found', 'Not on PosoKanei'],
+  [404, 'Product not found', 'Your own item · no store lists this barcode'], // spec §2.6: was 'Not on PosoKanei'
   [503, 'Prices unavailable', 'Prices unavailable right now'],
 ])('%i with in_pantry: says "In pantry: 3" and offers Open, not Add manually', async (status, detail, head) => {
   fakeApi({ ...pantryRoutes(), [BARCODE]: () => reply(status, { detail, in_pantry: { stock_item_id: 's1', quantity: 3 } }) })
@@ -156,14 +156,16 @@ it('Open Food Facts but already in the pantry: Open still wins over Add', async 
 const ADJUST = 'POST /api/v1/stock/{item_id}/adjust' as const
 
 it.each([
-  ['found', () => barcodeProduct({ in_pantry: { stock_item_id: 's1', quantity: 5 } })],
-  ['not listed anywhere (a custom barcode)', () => reply(404, { detail: 'Product not found', in_pantry: { stock_item_id: 's1', quantity: 5 } })],
-])('in pantry, %s: the item is named and + / − change its count in the sheet', async (_, answer) => {
+  ['found', () => barcodeProduct({ in_pantry: { stock_item_id: 's1', quantity: 5 } }), 1],
+  ['not listed anywhere (a custom barcode)', () => reply(404, { detail: 'Product not found', in_pantry: { stock_item_id: 's1', quantity: 5 } }), 2],
+])('in pantry, %s: the item is named and + / − change its count in the sheet', async (_, answer, names) => {
   const fake = fakeApi({ ...pantryRoutes(), [BARCODE]: answer, [ADJUST]: () => Response.json(stockItem({ quantity: 6 })) })
   renderWithProviders(<BarcodeSheet code="12345678" {...handlers()} />)
   const sheet = await screen.findByRole('dialog')
   expect(await within(sheet).findByText('In your pantry')).toBeInTheDocument()
-  expect(await within(sheet).findByText('Barilla spaghetti')).toBeInTheDocument()
+  // spec §2.6: the stepper always names the item; on the 404 row the heading is that name too (2 places, not 1)
+  expect(await within(sheet).findAllByText('Barilla spaghetti')).toHaveLength(names)
+  expect(within(sheet).getByTestId('pantry-qty').closest('.pantry-have')).toHaveTextContent('Barilla spaghetti')
   expect(sheet).toHaveTextContent('In pantry: 5')
   fireEvent.click(within(sheet).getByRole('button', { name: 'Increase Barilla spaghetti' }))
   expect(within(sheet).getByTestId('pantry-qty')).toHaveTextContent('6')
@@ -183,4 +185,31 @@ it('not in the pantry: no stepper', async () => {
   const sheet = await screen.findByRole('dialog', { name: 'Dodoni Feta PDO' })
   expect(within(sheet).queryByText('In your pantry')).not.toBeInTheDocument()
   expect(within(sheet).queryByTestId('pantry-qty')).not.toBeInTheDocument()
+})
+
+// Phase C spec §2.6: a barcode that is the household's own and that no store lists.
+const OWN = 'Your own item · no store lists this barcode'
+const ownMiss = () => reply(404, { detail: 'Product not found', in_pantry: { stock_item_id: 's1', quantity: 3 } })
+
+it('404 with a pantry match: the heading is the item\'s name from the saved list, and the line says it is your own', async () => {
+  fakeApi({ ...pantryRoutes(), [BARCODE]: ownMiss })
+  renderWithProviders(<BarcodeSheet code="12345678" {...handlers()} />)
+  const sheet = await screen.findByRole('dialog', { name: 'Barilla spaghetti' })
+  expect(await within(sheet).findByText(OWN)).toBeInTheDocument()
+  expect(sheet).not.toHaveTextContent('Not on PosoKanei')
+  expect(sheet).toHaveTextContent('In pantry: 3')
+})
+
+it('404 with a pantry match but no name in the saved list: the heading stays "Barcode 123…"', async () => {
+  fakeApi({ ...pantryRoutes({ items: [stockItem({ id: 'other', name: 'Something else' })] }), [BARCODE]: ownMiss })
+  renderWithProviders(<BarcodeSheet code="12345678" {...handlers()} />)
+  const sheet = await screen.findByRole('dialog', { name: 'Barcode 12345678' })
+  expect(await within(sheet).findByText(OWN)).toBeInTheDocument()
+})
+
+it('404 with no pantry match, and 503 with one, keep their wording', async () => {
+  fakeApi({ ...pantryRoutes(), [BARCODE]: () => reply(404, { detail: 'x', in_pantry: null }) })
+  renderWithProviders(<BarcodeSheet code="12345678" {...handlers()} />)
+  expect(await screen.findByText('Not on PosoKanei')).toBeInTheDocument()
+  expect(screen.queryByText(OWN)).not.toBeInTheDocument()
 })

@@ -22,13 +22,22 @@ export { Sheet } from '../../ui/Sheet'
 export { useOfferTickedPrompt } from '../plan/pantry/tickedOffer'
 export { toast, Toaster }
 
-export interface ToastInput { text: string; action?: { label: string; onPress: () => void }; durationMs?: number }
+export interface ToastInput {
+  text: string
+  action?: { label: string; onPress: () => void }
+  actions?: { label: string; onPress: () => void }[]
+  durationMs?: number
+}
 
-const showToast = (t: ToastInput) =>
-  toast(t.text, { action: t.action && { label: t.action.label, onClick: t.action.onPress }, durationMs: t.durationMs })
+const showToast = (t: ToastInput): number =>
+  toast(t.text, {
+    action: t.action && { label: t.action.label, onClick: t.action.onPress },
+    actions: t.actions?.map((a) => ({ label: a.label, onClick: a.onPress })),
+    durationMs: t.durationMs,
+  })
 
 /** 2b's toast shape over 2a's module-level toast(); safe to call after the composer has unmounted. */
-export function useComposerToast(): (t: ToastInput) => void {
+export function useComposerToast(): (t: ToastInput) => number {
   return showToast
 }
 

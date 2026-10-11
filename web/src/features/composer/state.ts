@@ -88,7 +88,7 @@ export type Action =
   | { type: 'pickPayer'; id: string }
   | { type: 'setOwnShare'; splits: Share[]; typed?: Record<string, string> }
   | { type: 'pickMethod'; method: Method }
-  | { type: 'setTookFrom'; value: TookFrom }
+  | { type: 'setTookFrom'; value: TookFrom; meId?: string }
   | { type: 'setCashMode'; on: boolean; meId: string; defaultMethod: Method }
   | { type: 'pickCurrency'; code: string; householdCurrency: string; lastRate: string | undefined }
   | { type: 'setRate'; value: string }
@@ -199,7 +199,10 @@ function step(s: ComposerState, a: Action): ComposerState {
         cashMode: a.method === 'cash' && s.cashMode, touched: add(s.touched, 'method'),
       }
     case 'setTookFrom':
-      return { ...s, tookFrom: a.value }
+      // A tracked take needs you as the payer (validate: "Cash taken must be paid by you"): the chip locks to you.
+      return a.value !== 'none' && a.meId
+        ? { ...s, tookFrom: a.value, paidBy: a.meId, ownShare: false, splits: s.ownShare ? [] : s.splits }
+        : { ...s, tookFrom: a.value }
     case 'setCashMode':
       return a.on
         ? { ...s, cashMode: true, method: 'cash', tookFrom: 'stash', paidBy: a.meId, ownShare: false, splits: s.ownShare ? [] : s.splits }

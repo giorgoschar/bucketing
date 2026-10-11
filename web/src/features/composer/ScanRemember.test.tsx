@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { resetTestEnv } from '../../test/render'
 import { writes } from './testHelpers'
@@ -31,7 +31,8 @@ it('changing the scanned category offers Remember, on by default; Save sends one
     },
   })
   await screen.findByRole('button', { name: 'Budget: Day to day. Change' })
-  fireEvent.click(screen.getByRole('button', { name: 'Scan receipt' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Scan' })) // spec §2.4: one scan button, then Receipt QR
+  fireEvent.click(within(await screen.findByRole('dialog', { name: 'Scan' })).getByRole('button', { name: /^Receipt QR/ }))
   await waitFor(() => expect(cam.decode).not.toBeNull())
   act(() => cam.decode!('https://www1.aade.gr/tameiakes/myweb/q1.php?SIG=abc'))
   await screen.findByText('Read from myDATA QR')

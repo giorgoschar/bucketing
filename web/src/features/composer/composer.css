@@ -5,11 +5,11 @@
   display: flex; flex-direction: column; gap: 12px; background: var(--bg); color: var(--ink);
   overscroll-behavior: contain;
 }
-.composer__bar { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; gap: 10px; flex: none; }
-.composer__bar .ui-seg { justify-self: center; width: 100%; max-width: 220px; }
+.composer__bar { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 10px; flex: none; }
+.composer__bar .ui-seg { justify-self: center; width: 100%; max-width: 220px; min-width: 0; }
 .composer__bar .ui-seg__opt { flex: 1; }
 .composer__close { background: transparent; }
-.composer__slot { display: flex; justify-content: flex-end; }
+.composer__slot { display: flex; justify-content: flex-end; align-items: center; }
 .composer__offline {
   padding: 3px 8px; border-radius: var(--r-pill); background: var(--warn-soft); color: var(--warn);
   font-size: 11.5px; font-weight: 650; white-space: nowrap;
@@ -17,8 +17,8 @@
 .composer[data-type="income"] .ui-seg__opt[aria-pressed="true"] { color: var(--pos); }
 
 .composer__body { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
-.composer__modes { display: flex; justify-content: center; gap: 8px; }
-.composer__modes .ck-chip { min-height: 44px; font-size: 12.5px; }
+.composer__scan { margin-left: 4px; }
+.pill.pill--attention { border-style: dashed; border-color: var(--warn); color: var(--warn); background: var(--warn-soft); }
 .composer__hint { margin: -4px 0 0; text-align: center; font-size: 13px; color: var(--warn); }
 
 .composer__merchant-wrap { position: relative; }
@@ -105,6 +105,10 @@
 /* More: fuel, currency and rate, split */
 .ck-more__num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
 .ck-more__figure { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.ck-more__cur {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 14px; border: 1px solid var(--line);
+  border-radius: var(--r-pill); background: transparent; color: var(--ink); font: inherit; font-weight: 600; cursor: pointer;
+}
 .ck-more__fx { margin: 0; font-size: 16px; font-weight: 600; color: var(--ink); }
 .ck-more__shares {
   align-self: flex-start; min-height: 44px; padding: 0; border: 0; background: transparent; color: var(--accent);
@@ -124,7 +128,6 @@
   .composer__title { margin: 0; font-family: var(--font-display); font-weight: var(--display-weight); font-size: 20px; letter-spacing: -.01em; }
   .composer--panel .ui-seg { max-width: none; }
   .composer--panel .composer__pills { justify-content: flex-start; }
-  .composer--panel .composer__modes { justify-content: flex-start; }
   .composer--panel .composer__foot { margin-top: 0; }
 
   .panelamount { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; }
@@ -147,6 +150,12 @@
     min-height: 36px; padding: 0 12px; border: 0; border-radius: var(--r-sm); background: transparent; color: inherit;
     font: inherit; font-weight: 750; text-decoration: underline; text-underline-offset: 3px; cursor: pointer;
   }
+  .composer__rule {
+    margin: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 8px 8px 14px;
+    border-radius: var(--r-md); background: var(--pos-soft); color: var(--pos); font-size: 14px; font-weight: 600;
+  }
+  .composer__rule--fail { background: var(--neg-soft); color: var(--neg); }
+  .composer__rule-acts { display: flex; flex: none; }
   .composer--panel :is(button, input, a):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .composer--panel .composer__merchant:focus-visible { outline-offset: 0; }
   .composer--panel .composer__close svg { width: 20px; height: 20px; }
