@@ -129,7 +129,7 @@
   .insights__bar--wide .chipset { margin-inline: 0; padding-inline: 0; }
   .insights__bar--wide .insights__lens { flex: none; margin-top: 0; }
   .insights__bar--wide .insights__lens .ui-seg__opt { flex: none; min-height: 36px; padding-inline: 14px; }
-  .insights.shell__main--wide { display: block; columns: 2; column-gap: 16px; padding-inline: 24px; }
+  .insights.shell__main--wide { display: block; columns: 2; column-gap: 16px; orphans: 1; widows: 1; padding-inline: 24px; }
   /* inline-block, not block: Chrome stretches a balanced column group far past its content when blocks
      carry break-inside: avoid (a 300 px hole before the next wide card); inline-blocks balance exactly.
      vertical-align: top keeps the line's strut from adding space under a card. */

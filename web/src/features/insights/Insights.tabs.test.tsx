@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
-import { MemoryRouter, useLocation } from 'react-router'
+import { MemoryRouter, useLocation, useNavigate } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { installMemoryStorage } from '../../test/storage'
 import { makeInsights, query } from './fixtures'
@@ -35,7 +35,11 @@ beforeEach(() => {
   hooks.usePlanMonth.mockReturnValue(query(undefined))
 })
 
-function Where() { const l = useLocation(); return <p data-testid="at">{l.pathname + l.search + l.hash}</p> }
+function Where() {
+  const l = useLocation()
+  const nav = useNavigate()
+  return <><p data-testid="at">{l.pathname + l.search + l.hash}</p><button type="button" onClick={() => nav(-1)}>history back</button></>
+}
 function renderAt(url: string) {
   const wrap = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={[url]}>{children}<Where /></MemoryRouter></QueryClientProvider>
@@ -197,7 +201,8 @@ describe('the tab in the URL, edge cases', () => {
   it('tab changes replace the history entry (Back leaves Insights, like period and lens)', () => {
     renderAt('/insights')
     fireEvent.click(screen.getByRole('tab', { name: 'Trends' }))
-    // MemoryRouter: a replace leaves a single entry, so the location is the only one; push would keep /insights behind it
+    fireEvent.click(screen.getByRole('button', { name: 'history back' }))
+    // A push would leave /insights behind it and Back would return there; a replace leaves one entry, so Back stays.
     expect(at()).toContain('tab=trends')
   })
 })

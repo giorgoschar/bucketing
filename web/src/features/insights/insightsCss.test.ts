@@ -62,3 +62,12 @@ it('the phone tabs are text tabs with an underline, not a second segmented bar',
   expect(phone).toMatch(/\.insights__tabs \.ui-seg__opt\[aria-selected='true'\][^{]*\{[^}]*border-bottom-color:\s*var\(--accent\)/)
   expect(/\.ui-seg\.insights__tabs\s*\{([^}]*)\}/.exec(phone)?.[1]).toMatch(/background:\s*none/)
 })
+
+// Fix round 2: the cards are inline-blocks (one line each); with the default orphans/widows of 2 two cards could
+// never split across the columns and both stacked on the left.
+it('the desktop columns allow a break between two single-line cards', () => {
+  const desktop = css.slice(css.indexOf('@media (min-width: 1024px)'))
+  const block = /\.insights\.shell__main--wide\s*\{([^}]*)\}/.exec(desktop)?.[1] ?? ''
+  expect(block).toMatch(/orphans:\s*1/)
+  expect(block).toMatch(/widows:\s*1/)
+})
