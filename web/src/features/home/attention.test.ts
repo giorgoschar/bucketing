@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest'
 import { budgetRow, categoryUsual, day, entry, match } from '../../test/fixtures'
-import { attentionReady, buildAttention, overdueWindow, type AttentionInput } from './attention'
+import { attentionReady, buildAttention, overdueWindow, visibleAttention, type AttentionInput } from './attention'
+import { billRow, change } from '../insights/bills/fixtures'
 
 const TODAY = '2026-10-07'
 const full = (over: Partial<AttentionInput> = {}): AttentionInput => ({
@@ -28,12 +29,11 @@ const full = (over: Partial<AttentionInput> = {}): AttentionInput => ({
 
 it('orders the attention items as the spec lists them', () => {
   expect(buildAttention(full()).map((i) => i.key)).toEqual([
-    'match:m1',
+    'failed:7',
     'overdue:late1', 'overdue:late2',
-    'amount:est', 'amount:novalue',
+    'match:m1',
     'budget:b2',
     'category:c1', 'category:c2', 'category:c3',
-    'failed:7',
   ])
 })
 
@@ -53,9 +53,9 @@ it('the overdue window runs from the first of last month to yesterday', () => {
 })
 
 // Plan › Cash §4.6: the viewer's own not-yet-logged cash this month.
-it('cash not logged sits after missingAmount and before budget', () => {
+it('cash not logged sits after the match and before budget', () => {
   const keys = buildAttention(full({ cashNotLogged: 45 })).map((i) => i.key)
-  expect(keys.slice(3, 7)).toEqual(['amount:est', 'amount:novalue', 'cash', 'budget:b2'])
+  expect(keys.slice(3, 6)).toEqual(['match:m1', 'cash', 'budget:b2'])
   expect(buildAttention(full({ cashNotLogged: 45 })).find((i) => i.kind === 'cash')).toMatchObject({ amount: 45 })
 })
 
@@ -63,10 +63,10 @@ it.each([0.004, 0, undefined])('no cash row at %s', (cashNotLogged) => {
   expect(buildAttention(full({ cashNotLogged })).some((i) => i.kind === 'cash')).toBe(false)
 })
 
-// Plan › Pantry §4.7: "N pantry items running low", after cash and before budget.
-it('pantry sits after cash and before budget', () => {
+// Plan › Pantry §4.7: "N pantry items running low", after budget and before category.
+it('pantry sits after budget and before category', () => {
   const items = buildAttention(full({ cashNotLogged: 45, pantryLow: 3 }))
-  expect(items.map((i) => i.key).slice(5, 8)).toEqual(['cash', 'pantry', 'budget:b2'])
+  expect(items.map((i) => i.key).slice(5, 8)).toEqual(['budget:b2', 'pantry', 'category:c1'])
   expect(items.find((i) => i.kind === 'pantry')).toMatchObject({ count: 3 })
 })
 
@@ -76,4 +76,45 @@ it.each([0, undefined])('no pantry row at %s', (pantryLow) => {
 
 it('the pantry summary does not hold back "All clear"', () => {
   expect(attentionReady(full({ pantryLow: undefined }))).toBe(true)
+})
+
+// Spec §2.1: one row per recurring item; the most urgent kind is the row, the others are lines under it.
+const lateRent = entry({ id: 'r1', item_id: 'rent', name: 'Rent', overdue: true, due_date: '2026-10-03' })
+const rentNoAmount = entry({ id: 'r2', item_id: 'rent', name: 'Rent', amount: null, due_date: '2026-10-13' })
+const rentBill = billRow({ item_id: 'rent', name: 'Rent', change: change({ entry_id: 'r3' }) })
+const merged = (over: Partial<AttentionInput> = {}) =>
+  buildAttention({
+    today: TODAY, failed: [], overdue: [lateRent], upcoming: [day('2026-10-13', [rentNoAmount], 0)], bills: [rentBill], ...over,
+  })
+
+it('merges overdue, missing amount and bill change of one item into the overdue row', () => {
+  const rows = merged()
+  expect(rows.map((r) => r.key)).toEqual(['overdue:r1'])
+  expect(rows[0].also?.map((a) => a.kind)).toEqual(['missingAmount', 'billChange'])
+})
+
+it('the most urgent kind that is present is the row', () => {
+  expect(merged({ overdue: [] }).map((r) => [r.kind, r.also?.map((a) => a.kind)])).toEqual([['missingAmount', ['billChange']]])
+  expect(merged({ overdue: [], upcoming: [] }).map((r) => [r.kind, r.also])).toEqual([['billChange', undefined]])
+})
+
+it('dismissing the bill change leaves one row with the right action (Review Focus 2), and it stays dismissed', () => {
+  const rows = merged({ dismissedBills: new Set(['r3']) })
+  expect(rows.map((r) => r.key)).toEqual(['overdue:r1'])
+  expect(rows[0].also?.map((a) => a.kind)).toEqual(['missingAmount'])
+})
+
+it('items of different recurring items do not merge', () => {
+  const rows = merged({ bills: [billRow({ item_id: 'other', change: change({ entry_id: 'o1' }) })] })
+  expect(rows.map((r) => r.kind)).toEqual(['overdue', 'billChange'])
+  expect(rows[0].also?.map((a) => a.kind)).toEqual(['missingAmount'])
+})
+
+it('shows 3 rows and counts the rest; expanded shows all; one or none hidden has no expander', () => {
+  const rows = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+  expect(visibleAttention(rows, false)).toEqual({ shown: [1, 2, 3], hidden: 6 })
+  expect(visibleAttention(rows, true)).toEqual({ shown: rows, hidden: 6 })
+  expect(visibleAttention(rows.slice(0, 4), false).hidden).toBe(1)
+  expect(visibleAttention(rows.slice(0, 3), false).hidden).toBe(0)
+  expect(visibleAttention([], false)).toEqual({ shown: [], hidden: 0 })
 })

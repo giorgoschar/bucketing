@@ -23,7 +23,7 @@ const routes = (list: Parameters<typeof listRoutes>[0] | null, over: Routes = {}
   ...readRoutes(),
   'GET /api/v1/matches': () => [],
   'GET /api/v1/recurring/entries': () => [],
-  'GET /api/v1/plan/upcoming': () => [day('2026-10-04', [entry({ id: 'e5', name: 'Gym', estimated: true, amount: 30 })], 900)],
+  'GET /api/v1/plan/upcoming': () => [day('2026-10-04', [entry({ id: 'e5', item_id: 'i2', name: 'Gym', estimated: true, amount: 30 })], 900)],
   'GET /api/v1/plan/budgets': () => [],
   'GET /api/v1/insights/categories-vs-usual': () => [],
   ...billsRoutes([billRow({ change: change({ entry_id: 'e9' }) })]),
@@ -81,9 +81,9 @@ it('comes before every other row (pure order)', () => {
   const order = buildAttention({
     today: '2026-10-02', failed: [], cashNotLogged: 12, review,
     bills: [billRow({ change: change() })],
-    upcoming: [day('2026-10-04', [entry({ estimated: true })], 0)],
+    upcoming: [day('2026-10-04', [entry({ item_id: 'i2', estimated: true })], 0)],
   }).map((i) => i.kind)
-  expect(order).toEqual(['monthReview', 'missingAmount', 'billChange', 'cash'])
+  expect(order).toEqual(['monthReview', 'missingAmount', 'cash', 'billChange'])
   expect(buildAttention({ today: '2026-10-02', failed: [], review: null }).map((i) => i.kind)).toEqual([])
   expect(buildAttention({ today: '2026-10-02', failed: [] }).map((i) => i.kind)).toEqual([])
 })

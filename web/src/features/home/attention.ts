@@ -4,7 +4,7 @@ import { addDays, shiftMonth } from '../../ui/format'
 import type { BillRow } from '../insights/bills/types'
 import type { StatementReview } from '../insights/statements/types'
 
-export type AttentionItem =
+type AttentionVariant =
   | { kind: 'monthReview'; key: string; review: StatementReview }
   | { kind: 'match'; key: string; match: MatchOut }
   | { kind: 'overdue'; key: string; entry: EntryOut }
@@ -15,6 +15,42 @@ export type AttentionItem =
   | { kind: 'budget'; key: string; row: BudgetRowOut }
   | { kind: 'category'; key: string; row: CategoryUsualOut }
   | { kind: 'failed'; key: string; change: FailedQueueRow }
+
+/** `also`: lines of other kinds about the same recurring item, merged under this row (spec §2.1). */
+export type AttentionItem = AttentionVariant & { also?: AttentionVariant[] }
+
+/** Spec §2.1: most urgent first. */
+export const ATTENTION_ORDER: AttentionVariant['kind'][] = [
+  'failed', 'overdue', 'monthReview', 'match', 'missingAmount', 'cash', 'billChange', 'budget', 'pantry', 'category',
+]
+export const ATTENTION_VISIBLE = 3
+
+const itemIdOf = (it: AttentionVariant): string | null =>
+  it.kind === 'overdue' || it.kind === 'missingAmount' ? it.entry.item_id : it.kind === 'billChange' ? it.bill.item_id : null
+
+/** One row per recurring item: a later kind about the same item becomes a line under the first (most urgent) row. */
+function mergeByItem(sorted: AttentionVariant[]): AttentionItem[] {
+  const primary = new Map<string, AttentionItem>()
+  const out: AttentionItem[] = []
+  for (const it of sorted) {
+    const id = itemIdOf(it)
+    const head = id === null ? undefined : primary.get(id)
+    if (head && head.kind !== it.kind) {
+      head.also = [...(head.also ?? []), it]
+      continue
+    }
+    const row: AttentionItem = { ...it }
+    if (id !== null && !head) primary.set(id, row)
+    out.push(row)
+  }
+  return out
+}
+
+/** The rows that show, and how many wait behind "Show N more". */
+export function visibleAttention<T>(rows: T[], expanded: boolean): { shown: T[]; hidden: number } {
+  const hidden = Math.max(0, rows.length - ATTENTION_VISIBLE)
+  return { shown: expanded ? rows : rows.slice(0, ATTENTION_VISIBLE), hidden }
+}
 
 /** undefined = not loaded (no cache, no answer yet). */
 export interface AttentionInput {
@@ -58,33 +94,34 @@ export function buildAttention(i: AttentionInput): AttentionItem[] {
   const missing = (i.upcoming ?? [])
     .flatMap((d) => d.entries)
     .filter((e) => e.status === 'expected' && (e.estimated || e.amount === null) && e.due_date <= horizon)
-  return [
+  const flat: AttentionVariant[] = [
     // The one row about the past month; it expires by itself (the server stops sending `review` after day 5).
     // Saved while the window was open and read after it closed (offline): the server would send null by now.
     ...(i.review && i.today <= `${shiftMonth(i.review.month, 1)}-05`
-      ? [{ kind: 'monthReview', key: `review:${i.review.month}`, review: i.review } satisfies AttentionItem]
+      ? [{ kind: 'monthReview', key: `review:${i.review.month}`, review: i.review } satisfies AttentionVariant]
       : []),
-    ...(i.matches ?? []).map((match): AttentionItem => ({ kind: 'match', key: `match:${match.id}`, match })),
-    ...overdue.map((entry): AttentionItem => ({ kind: 'overdue', key: `overdue:${entry.id}`, entry })),
-    ...missing.map((entry): AttentionItem => ({ kind: 'missingAmount', key: `amount:${entry.id}`, entry })),
+    ...(i.matches ?? []).map((match): AttentionVariant => ({ kind: 'match', key: `match:${match.id}`, match })),
+    ...overdue.map((entry): AttentionVariant => ({ kind: 'overdue', key: `overdue:${entry.id}`, entry })),
+    ...missing.map((entry): AttentionVariant => ({ kind: 'missingAmount', key: `amount:${entry.id}`, entry })),
     ...(i.bills ?? [])
       .filter((b) => b.change !== null && !i.dismissedBills?.has(b.change.entry_id))
-      .map((bill): AttentionItem => ({ kind: 'billChange', key: `bill:${bill.item_id}:${bill.change?.entry_id}`, bill })),
+      .map((bill): AttentionVariant => ({ kind: 'billChange', key: `bill:${bill.item_id}:${bill.change?.entry_id}`, bill })),
     ...(i.cashNotLogged !== undefined && i.cashNotLogged > CASH_EPS
-      ? [{ kind: 'cash', key: 'cash', amount: i.cashNotLogged } satisfies AttentionItem]
+      ? [{ kind: 'cash', key: 'cash', amount: i.cashNotLogged } satisfies AttentionVariant]
       : []),
     ...(i.pantryLow !== undefined && i.pantryLow > 0
-      ? [{ kind: 'pantry', key: 'pantry', count: i.pantryLow } satisfies AttentionItem]
+      ? [{ kind: 'pantry', key: 'pantry', count: i.pantryLow } satisfies AttentionVariant]
       : []),
     ...(i.budgets ?? [])
       .filter((b) => b.pct !== null && b.pct >= BUDGET_WARN_PCT)
-      .map((row): AttentionItem => ({ kind: 'budget', key: `budget:${row.bucket_id}`, row })),
+      .map((row): AttentionVariant => ({ kind: 'budget', key: `budget:${row.bucket_id}`, row })),
     ...(i.categories ?? [])
       .filter((c) => c.flagged)
       .slice(0, MAX_CATEGORIES)
-      .map((row): AttentionItem => ({ kind: 'category', key: `category:${row.category_id ?? row.name}`, row })),
-    ...i.failed.map((change): AttentionItem => ({ kind: 'failed', key: `failed:${change.id}`, change })),
+      .map((row): AttentionVariant => ({ kind: 'category', key: `category:${row.category_id ?? row.name}`, row })),
+    ...i.failed.map((change): AttentionVariant => ({ kind: 'failed', key: `failed:${change.id}`, change })),
   ]
+  return mergeByItem(ATTENTION_ORDER.flatMap((k) => flat.filter((x) => x.kind === k)))
 }
 
 /** True once every server source has data: only then does an empty list mean "All clear". */

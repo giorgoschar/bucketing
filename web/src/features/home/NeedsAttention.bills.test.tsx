@@ -22,7 +22,7 @@ const routes = (rows = [changed], over: Routes = {}): Routes => ({
   ...readRoutes(),
   'GET /api/v1/matches': () => [],
   'GET /api/v1/recurring/entries': () => [],
-  'GET /api/v1/plan/upcoming': () => [day('2026-10-09', [entry({ id: 'e5', name: 'Gym', estimated: true, amount: 30 })], 900)],
+  'GET /api/v1/plan/upcoming': () => [day('2026-10-09', [entry({ id: 'e5', item_id: 'i2', name: 'Gym', estimated: true, amount: 30 })], 900)],
   'GET /api/v1/plan/budgets': () => [],
   'GET /api/v1/insights/categories-vs-usual': () => [],
   ...billsRoutes(rows),
@@ -40,12 +40,12 @@ it('a changed bill shows "Electricity was €84, usually €61" with See why, af
   expect(router.state.location.pathname).toBe('/insights/bills/i1')
 })
 
-it('sits before the cash row (pure order)', () => {
+it('sits after the cash row (pure order, spec §2.1)', () => {
   const order = buildAttention({
     today: '2026-10-07', failed: [], cashNotLogged: 12, bills: [changed],
-    upcoming: [day('2026-10-09', [entry({ estimated: true })], 0)],
+    upcoming: [day('2026-10-09', [entry({ item_id: 'i2', estimated: true })], 0)],
   }).map((i) => i.kind)
-  expect(order).toEqual(['missingAmount', 'billChange', 'cash'])
+  expect(order).toEqual(['missingAmount', 'cash', 'billChange'])
 })
 
 it('only items with a change make a row, and a dismissed entry makes none', () => {

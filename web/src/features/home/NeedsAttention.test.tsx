@@ -8,12 +8,15 @@ import { budgetRow, cashWallets, categoryUsual, day, entry, match, readRoutes, w
 import { renderWithProviders, resetTestEnv, setOnline, TEST_IDENTITY } from '../../test/render'
 import { setIdentity } from '../../offline/identity'
 import { NeedsAttention } from './NeedsAttention'
+import { setAttentionExpanded } from './attentionExpanded'
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date(2026, 9, 7, 12))
 })
-afterEach(resetTestEnv)
+// Most cases look at every row, so they start with the list expanded (spec §2.1: only 3 show by default).
+beforeEach(() => setAttentionExpanded(true))
+afterEach(() => { setAttentionExpanded(false); resetTestEnv() })
 
 const LINK = 'POST /api/v1/matches/{match_id}/link' as const
 const DISMISS = 'POST /api/v1/matches/{match_id}/dismiss' as const
@@ -36,7 +39,7 @@ const kinds = () => Array.from(document.querySelectorAll('[data-attn]')).map((n)
 it('lists what needs a tap in the spec order, with words for each state', async () => {
   fakeApi(routes())
   renderWithProviders(<NeedsAttention />)
-  await waitFor(() => expect(kinds()).toEqual(['match', 'overdue', 'missingAmount', 'budget', 'category']))
+  await waitFor(() => expect(kinds()).toEqual(['overdue', 'match', 'missingAmount', 'budget', 'category']))
   expect(screen.getByRole('heading', { name: /Needs attention/ })).toHaveTextContent('Needs attention5')
   expect(document.querySelector('[data-attn="match"]')).toHaveTextContent('Payment €38.90 at Cosmote on 3 Oct looks like Cosmote due 5 Oct')
   expect(document.querySelector('[data-attn="overdue"]')).toHaveTextContent('Overdue')
@@ -139,7 +142,7 @@ const cashRoute = (wallets: CashWalletsOut | Response): Routes => ({ 'GET /api/v
 it('cash not logged: "€45.00 cash not logged yet" with Log it, after missingAmount and before budget', async () => {
   const fake = fakeApi(routes(cashRoute(cashWallets())))
   const { router } = renderWithProviders(<NeedsAttention />)
-  await waitFor(() => expect(kinds()).toEqual(['match', 'overdue', 'missingAmount', 'cash', 'budget', 'category']))
+  await waitFor(() => expect(kinds()).toEqual(['overdue', 'match', 'missingAmount', 'cash', 'budget', 'category']))
   expect(fake.calls.find((c) => c.path === '/api/v1/cash/wallets')?.query.get('month')).toBe('2026-10')
   const row = document.querySelector('[data-attn="cash"]') as HTMLElement
   expect(row).toHaveTextContent('€45.00 cash not logged yet')
@@ -157,13 +160,13 @@ it('no cash row at 0.004, and none for another member\'s not-logged cash', async
   })
   fakeApi(routes(cashRoute(w)))
   renderWithProviders(<NeedsAttention />)
-  await waitFor(() => expect(kinds()).toEqual(['match', 'overdue', 'missingAmount', 'budget', 'category']))
+  await waitFor(() => expect(kinds()).toEqual(['overdue', 'match', 'missingAmount', 'budget', 'category']))
 })
 
 it('the wallets query failing or not cached shows no cash row and no error', async () => {
   fakeApi(routes(cashRoute(reply(500, { detail: 'boom' }))))
   renderWithProviders(<NeedsAttention />)
-  await waitFor(() => expect(kinds()).toEqual(['match', 'overdue', 'missingAmount', 'budget', 'category']))
+  await waitFor(() => expect(kinds()).toEqual(['overdue', 'match', 'missingAmount', 'budget', 'category']))
   expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   expect(screen.queryByText(/cash/)).not.toBeInTheDocument()
 })
@@ -172,10 +175,10 @@ it('the wallets query failing or not cached shows no cash row and no error', asy
 const pantryRoute = (summary: { low_count: number; ticked_count: number } | Response): Routes =>
   ({ 'GET /api/v1/stock/summary': () => summary })
 
-it('pantry: "3 pantry items running low" with List, after cash and before budget', async () => {
+it('pantry: "3 pantry items running low" with List, after budget and before category', async () => {
   fakeApi(routes({ ...cashRoute(cashWallets()), ...pantryRoute({ low_count: 3, ticked_count: 0 }) }))
   const { router } = renderWithProviders(<NeedsAttention />)
-  await waitFor(() => expect(kinds()).toEqual(['match', 'overdue', 'missingAmount', 'cash', 'pantry', 'budget', 'category']))
+  await waitFor(() => expect(kinds()).toEqual(['overdue', 'match', 'missingAmount', 'cash', 'budget', 'pantry', 'category']))
   const row = document.querySelector('[data-attn="pantry"]') as HTMLElement
   expect(row).toHaveTextContent('3 pantry items running low')
   fireEvent.click(within(row).getByRole('button', { name: 'List' }))
@@ -196,7 +199,7 @@ it.each([
 ])('no pantry row and no error when %s', async (_why, extra) => {
   fakeApi(routes(extra))
   renderWithProviders(<NeedsAttention />)
-  await waitFor(() => expect(kinds()).toEqual(['match', 'overdue', 'missingAmount', 'budget', 'category']))
+  await waitFor(() => expect(kinds()).toEqual(['overdue', 'match', 'missingAmount', 'budget', 'category']))
   expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   expect(screen.queryByText(/pantry/)).not.toBeInTheDocument()
 })

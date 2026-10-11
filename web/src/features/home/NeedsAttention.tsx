@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router'
+import { useState, type ReactNode } from 'react'
+import { Link, useNavigate } from 'react-router'
 import type { EntryOut, MatchOut } from '../../data/types'
 import { dismissFailed } from '../../offline/useQueue'
 import { Badge } from '../../ui/Badge'
@@ -8,8 +8,9 @@ import { AlertIcon, CheckIcon, ClockIcon, LinkIcon, WalletIcon, XIcon } from '..
 import { ListRow } from '../../ui/ListRow'
 import { Money } from '../../ui/Money'
 import { EntrySheet, type EntryIntent } from '../plan/EntrySheet'
-import { changeTitle } from '../insights/bills/format'
-import type { AttentionItem } from './attention'
+import { changeTitle, moneyShort } from '../insights/bills/format'
+import { visibleAttention, type AttentionItem } from './attention'
+import { setAttentionExpanded, useAttentionExpanded } from './attentionExpanded'
 import { dismissBill } from './billDismiss'
 import { useAttention, useMatchActions } from './hooks'
 import './home.css'
@@ -17,7 +18,10 @@ import './home.css'
 export function NeedsAttention() {
   const { items, ready } = useAttention()
   const [open, setOpen] = useState<{ entry: EntryOut; intent: EntryIntent } | null>(null)
+  const expanded = useAttentionExpanded()
   if (!ready && items.length === 0) return null
+  const { shown, hidden } = visibleAttention(items, expanded)
+  const onOpen = (entry: EntryOut, intent: EntryIntent) => setOpen({ entry, intent })
   return (
     <section className="home-attn" aria-labelledby="attn-title">
       <div className="ui-sec">
@@ -28,20 +32,76 @@ export function NeedsAttention() {
       {items.length === 0 ? (
         <div className="ui-card home-clear"><CheckIcon /> All clear</div>
       ) : (
-        <div className="ui-list">
-          {items.map((it) => (
-            <div key={it.key} className="home-attn__wrap" data-attn={it.kind}>
-              <AttentionRow item={it} onOpen={(entry, intent) => setOpen({ entry, intent })} />
-            </div>
-          ))}
-        </div>
+        <>
+          <div className="ui-list" id="attn-list">
+            {shown.map((it, n) => (
+              <div key={it.key} className="home-attn__wrap" data-attn={it.kind}>
+                <AttentionRow item={it} lead={n === 0} onOpen={onOpen} />
+                {it.also && (
+                  <ul className="home-attn__also">
+                    {it.also.map((a) => <AlsoLine key={a.key} line={a} onOpen={onOpen} />)}
+                  </ul>
+                )}
+              </div>
+            ))}
+          </div>
+          {hidden > 0 && (
+            <button type="button" className="btn btn--sm btn--ghost home-attn__more" aria-expanded={expanded} aria-controls="attn-list"
+              onClick={() => setAttentionExpanded(!expanded)}>
+              {expanded ? 'Show fewer' : `Show ${hidden} more`}
+            </button>
+          )}
+        </>
       )}
       <EntrySheet entry={open?.entry ?? null} intent={open?.intent} onClose={() => setOpen(null)} />
     </section>
   )
 }
 
-function AttentionRow({ item, onOpen }: { item: AttentionItem; onOpen: (e: EntryOut, intent: EntryIntent) => void }) {
+type Open = (e: EntryOut, intent: EntryIntent) => void
+
+/** A merged line under a row (spec §2.1): itself a link. Dismissing a bill change removes only this line. */
+function AlsoLine({ line, onOpen }: { line: AttentionItem; onOpen: Open }) {
+  switch (line.kind) {
+    case 'overdue':
+      return <li><button type="button" className="home-attn__link" onClick={() => onOpen(line.entry, 'default')}>Was due {formatShortDate(line.entry.due_date)}</button></li>
+    case 'missingAmount':
+      return <li><button type="button" className="home-attn__link" onClick={() => onOpen(line.entry, 'amount')}>Needs an amount for {formatShortDate(line.entry.due_date)}</button></li>
+    case 'billChange': {
+      const c = line.bill.change
+      if (!c) return null
+      return (
+        <li className="home-attn__alsoRow">
+          <Link className="home-attn__link" to={`/insights/bills/${encodeURIComponent(line.bill.item_id)}`}>
+            Was {moneyShort(c.amount)}, usually {moneyShort(c.usual)}
+          </Link>
+          <button type="button" className="ui-iconbtn ui-iconbtn--bare home-attn__x" aria-label={`Dismiss ${line.bill.name}`}
+            onClick={() => dismissBill(c.entry_id)}><XIcon /></button>
+        </li>
+      )
+    }
+    default:
+      return null
+  }
+}
+
+/** A row's action is a quiet text button, filled only on the first row. */
+const act = (lead: boolean) => (lead ? 'btn btn--sm btn--primary' : 'btn btn--sm btn--ghost')
+
+function LinkRow({ to, leading, title, subtitle, badges }: { to: string; leading?: ReactNode; title: ReactNode; subtitle?: ReactNode; badges?: ReactNode }) {
+  return (
+    <Link to={to} className="ui-row">
+      {leading && <span className="ui-row__lead">{leading}</span>}
+      <span className="ui-row__main">
+        <span className="ui-row__title">{title}</span>
+        {subtitle && <span className="ui-row__sub">{subtitle}</span>}
+        {badges && <span className="ui-row__badges">{badges}</span>}
+      </span>
+    </Link>
+  )
+}
+
+function AttentionRow({ item, lead, onOpen }: { item: AttentionItem; lead: boolean; onOpen: Open }) {
   const navigate = useNavigate()
   switch (item.kind) {
     case 'monthReview': {
@@ -52,12 +112,12 @@ function AttentionRow({ item, onOpen }: { item: AttentionItem; onOpen: (e: Entry
           <div className="home-attn__text">
             <div className="ui-row__title home-attn__wrapnum">Review {formatMonthName(Number(review.month.slice(5, 7)))}</div>
           </div>
-          <button type="button" className="btn btn--sm btn--primary" onClick={() => navigate(`/insights/statements/${encodeURIComponent(review.month)}`)}>Review</button>
+          <button type="button" className={act(lead)} onClick={() => navigate(`/insights/statements/${encodeURIComponent(review.month)}`)}>Review</button>
         </div>
       )
     }
     case 'match':
-      return <MatchRow match={item.match} />
+      return <MatchRow match={item.match} lead={lead} />
     case 'overdue': {
       const e = item.entry
       return (
@@ -81,7 +141,7 @@ function AttentionRow({ item, onOpen }: { item: AttentionItem; onOpen: (e: Entry
     case 'budget': {
       const b = item.row
       return (
-        <ListRow onClick={() => navigate('/plan?view=budgets')}
+        <LinkRow to="/plan?view=budgets"
           title={b.name}
           subtitle={b.budget === null ? undefined : <><Money amount={b.spent} whole /> of <Money amount={b.budget} whole /></>}
           badges={<Badge tone={b.pct !== null && b.pct >= 100 ? 'neg' : 'warn'}>{`${Math.round(b.pct ?? 0)}% used`}</Badge>} />
@@ -90,7 +150,7 @@ function AttentionRow({ item, onOpen }: { item: AttentionItem; onOpen: (e: Entry
     case 'category': {
       const c = item.row
       return (
-        <ListRow onClick={() => navigate('/plan?view=month')}
+        <LinkRow to={`/insights/category/${encodeURIComponent(c.category_id ?? 'uncategorised')}`}
           leading={<span className="home-attn__emoji" aria-hidden="true">{c.icon}</span>}
           title={`${c.name} above usual`}
           subtitle={<><Money amount={c.this_month} whole /> this month{c.usual !== null && <> · usually <Money amount={c.usual} whole /></>}</>}
@@ -107,7 +167,7 @@ function AttentionRow({ item, onOpen }: { item: AttentionItem; onOpen: (e: Entry
           <div className="home-attn__text">
             <div className="ui-row__title home-attn__wrapnum">{changeTitle(bill.name, c)}</div>
           </div>
-          <button type="button" className="btn btn--sm" onClick={() => navigate(`/insights/bills/${encodeURIComponent(bill.item_id)}`)}>See why</button>
+          <button type="button" className={act(lead)} onClick={() => navigate(`/insights/bills/${encodeURIComponent(bill.item_id)}`)}>See why</button>
           <button type="button" className="ui-iconbtn ui-iconbtn--bare home-attn__x" aria-label={`Dismiss ${bill.name}`}
             onClick={() => dismissBill(c.entry_id)}><XIcon /></button>
         </div>
@@ -120,7 +180,7 @@ function AttentionRow({ item, onOpen }: { item: AttentionItem; onOpen: (e: Entry
           <div className="home-attn__text">
             <div className="ui-row__title home-attn__wrapnum"><span className="ui-num">{formatMoney(item.amount)}</span> cash not logged yet</div>
           </div>
-          <button type="button" className="btn btn--sm btn--primary"
+          <button type="button" className={act(lead)}
             onClick={() => navigate(`/new?mode=cash&take=none&amount=${item.amount.toFixed(2)}`)}>Log it</button>
         </div>
       )
@@ -133,7 +193,7 @@ function AttentionRow({ item, onOpen }: { item: AttentionItem; onOpen: (e: Entry
               <span className="ui-num">{item.count}</span> {item.count === 1 ? 'pantry item' : 'pantry items'} running low
             </div>
           </div>
-          <button type="button" className="btn btn--sm" onClick={() => navigate('/plan/pantry/list')}>List</button>
+          <button type="button" className={act(lead)} onClick={() => navigate('/plan/pantry/list')}>List</button>
         </div>
       )
     case 'failed':
@@ -144,7 +204,7 @@ function AttentionRow({ item, onOpen }: { item: AttentionItem; onOpen: (e: Entry
             <div className="ui-row__title">1 change couldn't be saved</div>
             <div className="home-attn__sub">{item.change.error}</div>
           </div>
-          <button type="button" className="btn btn--sm" onClick={() => void dismissFailed(item.change.id)}>Dismiss</button>
+          <button type="button" className={act(lead)} onClick={() => void dismissFailed(item.change.id)}>Dismiss</button>
         </div>
       )
   }
@@ -160,7 +220,7 @@ function PackageIcon() {
   )
 }
 
-function MatchRow({ match }: { match: MatchOut }) {
+function MatchRow({ match, lead }: { match: MatchOut; lead: boolean }) {
   const actions = useMatchActions(match)
   return (
     <div className="home-attn__item">
@@ -171,8 +231,8 @@ function MatchRow({ match }: { match: MatchOut }) {
         {formatShortDate(match.entry.due_date)}
       </p>
       <div className="home-attn__acts">
-        <button type="button" className="btn btn--sm btn--primary" disabled={actions.busy} onClick={() => void actions.link()}>Link</button>
-        <button type="button" className="btn btn--sm" disabled={actions.busy} onClick={() => void actions.dismiss()}>Not this</button>
+        <button type="button" className={act(lead)} disabled={actions.busy} onClick={() => void actions.link()}>Link</button>
+        <button type="button" className="btn btn--sm btn--ghost" disabled={actions.busy} onClick={() => void actions.dismiss()}>Not this</button>
       </div>
     </div>
   )
