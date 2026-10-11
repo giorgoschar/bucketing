@@ -20,3 +20,12 @@ it('null and undefined are not usable', () => {
   expect(normalisePattern(null)).toBeNull()
   expect(normalisePattern(undefined)).toBeNull()
 })
+
+it('text with a mark of unknown combining class is not safe to match on the device', async () => {
+  const { isFoldSafe } = await import('./normalise')
+  const { matchRule } = await import('../composer/defaults')
+  expect(isFoldSafe('Straße ☕️ Αθήνα')).toBe(true)
+  expect(isFoldSafe('ก็อปปี้')).toBe(false)
+  expect(matchRule('ก็อปปี้ shop', [{ id: 'r', pattern: 'shop', category_id: 'c' }])).toBeNull()
+  expect(matchRule('Weißbier Haus', [{ id: 'r', pattern: 'weissbier', category_id: 'c' }])).not.toBeNull()
+})
