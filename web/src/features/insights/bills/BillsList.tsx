@@ -13,7 +13,7 @@ export function BillsList() {
   const bills = useBills()
   return (
     <>
-      <BackHeader title="Bills" back="/insights" />
+      <BackHeader title="Bills" back="/insights?tab=bills" />
       <section className="screen insights bills">
         <QueryView result={bills} showBanner={false} noDataText="No saved bills yet. Connect once to load Bills.">
           {(rows) => {

@@ -14,10 +14,9 @@ import { HOUSEHOLD, type Lens, lensOptions, useLens } from './lens'
 import { type WidgetId, visibleWidgets } from './overview'
 import { type Period, type Preset, PRESETS, usePeriod } from './period'
 import { type InsightFilters, type InsightsData, NO_FILTERS } from './types'
-import {
-  Biggest, BillsCard, BudgetsCard, FuelCard, HowYouPaid, InOut, InOutMonths, OnTrack, SavingsRate, SpendTrend, StatementsCard, VsUsual, WhereItWent,
-} from './widgets/cards'
-import { EmptyPeriod, Headline, Identity, ShareCard } from './widgets/summary'
+import { Biggest, BillsCard, BudgetsCard, ByMonth, FuelCard, HowYouPaid, StatementsCard, VsUsual, WhereItWent } from './widgets/cards'
+import { EmptyPeriod, Identity, ShareCard, Summary } from './widgets/summary'
+import { InsightsTabs, useInsightsTab } from './InsightsTabs'
 import './insights.css'
 
 // Desktop only (spec §5.4): kept out of the phone's main chunk.
@@ -36,17 +35,13 @@ export interface WidgetCtx {
 }
 
 const RENDER: Record<Exclude<WidgetId, 'identity' | 'share'>, (ctx: WidgetCtx) => ReactNode> = {
-  headline: ({ data }) => <Headline data={data} />,
+  summary: (c) => <Summary {...c} />,
   empty: ({ data, period, setPeriod }) => <EmptyPeriod data={data} period={period} onPeriod={setPeriod} />,
-  onTrack: (c) => <OnTrack {...c} />,
-  inOut: (c) => <InOut {...c} />,
   where: (c) => <WhereItWent {...c} />,
-  inOutMonths: (c) => <InOutMonths {...c} />,
-  trend: (c) => <SpendTrend {...c} />,
+  byMonth: (c) => <ByMonth {...c} />,
   biggest: (c) => <Biggest {...c} />,
   method: (c) => <HowYouPaid {...c} />,
   budgets: (c) => <BudgetsCard {...c} />,
-  savings: (c) => <SavingsRate {...c} />,
   vsUsual: (c) => <VsUsual {...c} />,
   bills: () => <BillsCard />,
   statements: () => <StatementsCard />,
@@ -62,6 +57,7 @@ export function Insights() {
   const members = household.data?.members
   const [period, setPeriod] = usePeriod()
   const [lens, setLens] = useLens(members)
+  const [tab, setTab] = useInsightsTab()
   const [filters, setFilters] = useInsightFilters()
   const [sheet, setSheet] = useState(false)
   const insights = useInsights(period, lens, filters)
@@ -99,13 +95,14 @@ export function Insights() {
       </div>
       <section className="screen insights shell__main--wide">
         {!desktop && lensControl}
+        <InsightsTabs value={tab} onChange={setTab} />
         <QueryView
           result={insights}
           noDataText={firstView ? 'No saved data yet. Connect once to load Insights.' : 'No saved data for this view. Connect once to load it.'}
         >
           {(data) => {
             const ctx: WidgetCtx = { data, period, lens, members: members ?? [], meId, filters, setPeriod }
-            return visibleWidgets(data, { lens, period, bills: true, statements: true, desktop }).map((id) => (
+            return visibleWidgets(data, { tab, lens, period, bills: true, statements: true, desktop }).map((id) => (
               <div key={id} data-widget={id} className="insights__widget">
                 {id === 'identity' ? (
                   <Identity member={member} />

@@ -1,32 +1,60 @@
 import { describe, expect, it } from 'vitest'
 import { makeInsights } from './fixtures'
-import { deltaText, paidOutSentence, visibleWidgets } from './overview'
+import { deltaText, paidOutSentence, summaryParts, visibleWidgets } from './overview'
 
 const THIS = { preset: 'this_month' } as const
 
+const EMPTY = makeInsights({ total_spent: 0, in_out: { in: 0, out: 0, logged: 0, cash_not_logged: 0, net: 0 }, kpis: { ...makeInsights().kpis, count: 0, total: 0 } })
+const NO_MIN = makeInsights({ fuel: null, kpis: { ...makeInsights().kpis, savings_rate: null, largest: null } })
+
+// Phase C §2.2: the old single list is now three tabs; Summary stands for headline, On track, In/Out/Net and Savings rate.
 describe('visibleWidgets', () => {
-  it('is the fixed order for the household this month', () => {
-    expect(visibleWidgets(makeInsights(), { lens: 'household', period: THIS })).toEqual([
-      'headline', 'onTrack', 'inOut', 'where', 'inOutMonths', 'trend', 'biggest', 'method', 'budgets', 'savings', 'vsUsual', 'fuel',
-    ])
+  it('Overview, household this month: Summary, Where it went, Categories vs usual, Budgets', () => {
+    expect(visibleWidgets(makeInsights(), { lens: 'household', period: THIS })).toEqual(['summary', 'where', 'vsUsual', 'budgets'])
   })
-  it('a member lens adds identity and share and hides the household-only widgets', () => {
-    expect(visibleWidgets(makeInsights(), { lens: 'm', period: THIS })).toEqual([
-      'identity', 'headline', 'share', 'inOut', 'where', 'inOutMonths', 'trend', 'biggest', 'method', 'budgets', 'savings', 'fuel',
-    ])
+  it('Overview, member lens: identity and share first, and no Categories vs usual', () => {
+    expect(visibleWidgets(makeInsights(), { lens: 'm', period: THIS })).toEqual(['identity', 'share', 'summary', 'where', 'budgets'])
   })
-  it('hides widgets on null data and On track outside this month', () => {
-    const d = makeInsights({ fuel: null, kpis: { ...makeInsights().kpis, savings_rate: null, largest: null } })
-    const ids = visibleWidgets(d, { lens: 'household', period: { preset: 'last_3m' } })
-    expect(ids).not.toContain('fuel')
-    expect(ids).not.toContain('savings')
-    expect(ids).not.toContain('biggest')
-    expect(ids).not.toContain('onTrack')
-    expect(ids).not.toContain('vsUsual') // not a single month
+  it('Trends: By month, Biggest expense, How you paid, Fuel', () => {
+    expect(visibleWidgets(makeInsights(), { tab: 'trends', lens: 'household', period: THIS })).toEqual(['byMonth', 'biggest', 'method', 'fuel'])
+    expect(visibleWidgets(makeInsights(), { tab: 'trends', lens: 'm', period: THIS })).toEqual(['byMonth', 'biggest', 'method', 'fuel'])
   })
-  it('an empty period shows the empty card only', () => {
-    const empty = makeInsights({ total_spent: 0, in_out: { in: 0, out: 0, logged: 0, cash_not_logged: 0, net: 0 }, kpis: { ...makeInsights().kpis, count: 0, total: 0 } })
-    expect(visibleWidgets(empty, { lens: 'household', period: THIS })).toEqual(['headline', 'empty'])
+  it('Trends on desktop adds the two tables', () => {
+    expect(visibleWidgets(makeInsights(), { tab: 'trends', lens: 'household', period: THIS, desktop: true })).toEqual(
+      ['byMonth', 'biggest', 'method', 'fuel', 'monthsTable', 'categoriesTable'],
+    )
+  })
+  it('Bills & statements: Bills (the panel on desktop) then Statements', () => {
+    const o = { tab: 'bills', lens: 'household', period: THIS, bills: true, statements: true } as const
+    expect(visibleWidgets(makeInsights(), o)).toEqual(['bills', 'statements'])
+    expect(visibleWidgets(makeInsights(), { ...o, desktop: true })).toEqual(['billsPanel', 'statements'])
+  })
+  it('the same lists in a past-month period, minus the household-only cards outside a single month', () => {
+    const last3 = { preset: 'last_3m' } as const
+    expect(visibleWidgets(makeInsights(), { lens: 'household', period: last3 })).toEqual(['summary', 'where', 'budgets'])
+    expect(visibleWidgets(makeInsights(), { lens: 'household', period: { preset: 'last_month' } })).toEqual(['summary', 'where', 'vsUsual', 'budgets'])
+  })
+  it('hides cards on null data', () => {
+    expect(visibleWidgets(NO_MIN, { tab: 'trends', lens: 'household', period: THIS })).toEqual(['byMonth', 'method'])
+    const bare = makeInsights({ categories: [], budget_status: [] })
+    expect(visibleWidgets(bare, { lens: 'household', period: THIS })).toEqual(['summary', 'vsUsual'])
+    expect(visibleWidgets(bare, { tab: 'trends', lens: 'household', period: THIS, desktop: true })).not.toContain('categoriesTable')
+  })
+  it('an empty period: Overview shows the Summary (spent figure only) and the empty card; the other tabs work as usual', () => {
+    expect(visibleWidgets(EMPTY, { lens: 'household', period: THIS })).toEqual(['summary', 'empty'])
+    expect(visibleWidgets(EMPTY, { lens: 'm', period: THIS })).toEqual(['identity', 'share', 'summary', 'empty'])
+    expect(visibleWidgets(EMPTY, { tab: 'trends', lens: 'household', period: THIS }).slice(0, 1)).toEqual(['byMonth'])
+    expect(visibleWidgets(EMPTY, { tab: 'bills', lens: 'household', period: THIS, bills: true, statements: true })).toEqual(['bills', 'statements'])
+  })
+})
+
+describe('summaryParts', () => {
+  it('each line is where its old card was: On track = household this month, Savings = a rate exists', () => {
+    expect(summaryParts(makeInsights(), { lens: 'household', period: THIS })).toEqual({ onTrack: true, inOut: true, savings: true })
+    expect(summaryParts(makeInsights(), { lens: 'm', period: THIS })).toEqual({ onTrack: false, inOut: true, savings: true })
+    expect(summaryParts(makeInsights(), { lens: 'household', period: { preset: 'last_month' } }).onTrack).toBe(false)
+    expect(summaryParts(NO_MIN, { lens: 'household', period: THIS }).savings).toBe(false)
+    expect(summaryParts(EMPTY, { lens: 'household', period: THIS })).toEqual({ onTrack: false, inOut: false, savings: false })
   })
 })
 

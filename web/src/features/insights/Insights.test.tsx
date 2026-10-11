@@ -46,9 +46,9 @@ beforeEach(() => {
 const order = (c: HTMLElement) => [...c.querySelectorAll('[data-widget]')].map((e) => e.getAttribute('data-widget'))
 
 describe('Insights', () => {
-  it('renders the widgets in the fixed order with the headline', () => {
+  it('renders the Overview with the Summary card first', () => {
     const { container } = renderAt('/insights')
-    expect(order(container)[0]).toBe('headline')
+    expect(order(container)[0]).toBe('summary')
     expect(screen.getByText('Spent · Oct 1 – 6')).toBeInTheDocument()
     expect(screen.getByText('−8% vs the previous period')).toBeInTheDocument()
   })
@@ -68,7 +68,7 @@ describe('Insights', () => {
   it('a member lens shows identity, the share card and its sentence', () => {
     hooks.usePersonShare.mockReturnValue(query({ user_id: 'm', paid_out: 600, my_share: 458.8, balance: 141.2, share_pct: 36, household_total: 1284.6, largest: null, shared_count: 4, transaction_count: 31 }))
     const { container } = renderAt('/insights?lens=m')
-    expect(order(container).slice(0, 3)).toEqual(['identity', 'headline', 'share'])
+    expect(order(container).slice(0, 3)).toEqual(['identity', 'share', 'summary'])
     expect(screen.getByText('Maria paid €141.20 more than their share this month')).toBeInTheDocument()
     expect(hooks.usePersonShare).toHaveBeenLastCalledWith({ preset: 'this_month' }, 'm')
   })

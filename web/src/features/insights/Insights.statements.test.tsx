@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { installMemoryStorage } from '../../test/storage'
@@ -29,8 +29,8 @@ beforeEach(() => {
   hooks.usePlanMonth.mockReturnValue(query(undefined))
 })
 
-const renderIt = () => render(
-  <QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={['/insights']}><Insights /></MemoryRouter></QueryClientProvider>,
+const renderIt = (url = '/insights?tab=bills') => render(
+  <QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={[url]}><Insights /></MemoryRouter></QueryClientProvider>,
 )
 
 it('the Statements card is on the Insights screen, after the Bills card', () => {
@@ -45,7 +45,8 @@ it('and in an empty period too', () => {
   hooks.useInsights.mockReturnValue(query(makeInsights({
     total_spent: 0, in_out: { in: 0, out: 0, logged: 0, cash_not_logged: 0, net: 0 }, kpis: { ...base.kpis, count: 0 },
   })))
-  const { container } = renderIt()
+  const { container } = renderIt('/insights')
   expect(container.querySelector('[data-widget="empty"]')).not.toBeNull()
+  fireEvent.click(screen.getByRole('tab', { name: 'Bills & statements' }))
   expect(screen.getByRole('region', { name: 'Statements' })).toBeInTheDocument()
 })

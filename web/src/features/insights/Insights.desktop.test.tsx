@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { fakeApi, type Routes } from '../../test/fakeApi'
 import { categoryUsual, readRoutes } from '../../test/fixtures'
@@ -42,7 +42,7 @@ afterEach(async () => { vi.unstubAllGlobals(); await resetTestEnv() })
 
 it('phone: the screen is as before plus the Bills card, and no request carries months=12', async () => {
   const fake = fakeApi(routes())
-  const { container } = renderWithProviders(<Insights />, { route: '/insights' })
+  const { container } = renderWithProviders(<Insights />, { route: '/insights?tab=bills' })
   await screen.findByRole('region', { name: 'Bills' })
   expect(fake.callsTo('GET /api/v1/insights').every((c) => !c.query.has('months'))).toBe(true)
   expect(screen.queryByRole('table', { name: 'Last 12 months' })).toBeNull()
@@ -55,10 +55,11 @@ it('phone: the screen is as before plus the Bills card, and no request carries m
 it('desktop: the Bills panel (up to 8 rows), the 12-month table and the categories table', async () => {
   stubDesktop(true)
   const fake = fakeApi(routes())
-  renderWithProviders(<Insights />, { route: '/insights' })
+  renderWithProviders(<Insights />, { route: '/insights?tab=bills' })
   const panel = await screen.findByRole('region', { name: 'Bills' })
   expect(within(panel).getAllByRole('link', { name: /Bill \d/ })).toHaveLength(8)
   expect(within(panel).getByRole('link', { name: 'All bills' })).toHaveAttribute('href', '/insights/bills')
+  fireEvent.click(screen.getByRole('tab', { name: 'Trends' })) // the tables moved to the Trends tab (spec §2.2)
   await screen.findByRole('table', { name: 'Last 12 months' })
   await screen.findByRole('table', { name: 'Categories' })
   expect(fake.callsTo('GET /api/v1/insights').some((c) => c.query.get('months') === '12')).toBe(true)
@@ -68,7 +69,7 @@ it('desktop: the Bills panel (up to 8 rows), the 12-month table and the categori
 it('the months table has Month, In, Out and Net, the net with its sign as text', async () => {
   stubDesktop(true)
   fakeApi(routes())
-  renderWithProviders(<Insights />, { route: '/insights' })
+  renderWithProviders(<Insights />, { route: '/insights?tab=trends' })
   const table = await screen.findByRole('table', { name: 'Last 12 months' })
   expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Month', 'In', 'Out', 'Net'])
   const rows = within(table).getAllByRole('row').slice(1)
@@ -82,7 +83,7 @@ it('the months table has Month, In, Out and Net, the net with its sign as text',
 it('the categories table lists every category with its amount, share and against-usual', async () => {
   stubDesktop(true)
   fakeApi(routes())
-  renderWithProviders(<Insights />, { route: '/insights' })
+  renderWithProviders(<Insights />, { route: '/insights?tab=trends' })
   const table = await screen.findByRole('table', { name: 'Categories' })
   expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Category', 'Amount', 'Share', 'Against usual'])
   const rows = within(table).getAllByRole('row').slice(1)
@@ -112,7 +113,7 @@ it('phone: the lens stays where it was, under the period bar', async () => {
 
 it('the screen asks for the wide column', async () => {
   fakeApi(routes())
-  const { container } = renderWithProviders(<Insights />, { route: '/insights' })
+  const { container } = renderWithProviders(<Insights />, { route: '/insights?tab=bills' })
   await screen.findByRole('region', { name: 'Bills' })
   expect(container.querySelector('section.insights')).toHaveClass('shell__main--wide')
 })
@@ -120,7 +121,7 @@ it('the screen asks for the wide column', async () => {
 it('F7: the panel lists paused bills when nothing is active, not the empty copy', async () => {
   stubDesktop(true)
   fakeApi(routes({ ...billsRoutes([billRow({ name: 'Old gym', is_active: false })]) }))
-  renderWithProviders(<Insights />, { route: '/insights' })
+  renderWithProviders(<Insights />, { route: '/insights?tab=bills' })
   const panel = await screen.findByRole('region', { name: 'Bills' })
   await within(panel).findByRole('link', { name: /Old gym/ })
   expect(within(panel).queryByText(/No recurring bills yet/)).toBeNull()
@@ -131,5 +132,6 @@ it('F2: an empty period still shows the Bills card (phone) and panel (desktop)',
   fakeApi(routes({ 'GET /api/v1/insights': () => empty }))
   renderWithProviders(<Insights />, { route: '/insights' })
   expect(await screen.findByText('No spending in this period')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('tab', { name: 'Bills & statements' }))
   expect(await screen.findByRole('region', { name: 'Bills' })).toBeInTheDocument()
 })
