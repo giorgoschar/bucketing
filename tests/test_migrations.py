@@ -568,3 +568,54 @@ def test_bill_usage_migration_adds_and_drops_both_columns(tmp_path):
     insp = inspect(create_engine(db_url))
     assert "usage_unit" not in {c["name"] for c in insp.get_columns("recurring_bills")}
     assert "usage" not in {c["name"] for c in insp.get_columns("bill_occurrences")}
+
+
+def test_category_rule_dismissals_migration_round_trip(tmp_path):
+    """Phase C S1: e7f8a9b0c1d2 follows d6e7f8a9b0c1, adds the dismissals table
+    (unique per household and pattern, rows go with their household) and the
+    downgrade drops it."""
+    import importlib.util
+    import uuid
+
+    from sqlalchemy import text
+    from sqlalchemy.exc import IntegrityError
+
+    spec = importlib.util.spec_from_file_location(
+        "dismissals_mig",
+        ROOT / "alembic" / "versions" / "e7f8a9b0c1d2_category_rule_dismissals.py",
+    )
+    mig = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mig)
+    assert (mig.revision, mig.down_revision) == ("e7f8a9b0c1d2", "d6e7f8a9b0c1")
+
+    db_url = _db_url(tmp_path, "dismissals.db")
+    up = _alembic(["upgrade", "head"], db_url)
+    assert up.returncode == 0, up.stderr
+    engine = create_engine(db_url)
+    assert "category_rule_dismissals" in set(inspect(engine).get_table_names())
+    hh = str(uuid.uuid4())
+    insert = text(
+        "INSERT INTO category_rule_dismissals (id, household_id, pattern) VALUES (:i, :h, 'lidl')"
+    )
+    with engine.begin() as conn:
+        conn.execute(
+            text("INSERT INTO households (id, name, default_currency) VALUES (:i, 'H', 'EUR')"),
+            {"i": hh},
+        )
+        conn.execute(insert, {"i": str(uuid.uuid4()), "h": hh})
+        assert conn.execute(text("SELECT times FROM category_rule_dismissals")).scalar() == 1
+    try:
+        with engine.begin() as conn:
+            conn.execute(insert, {"i": str(uuid.uuid4()), "h": hh})
+        raise AssertionError("duplicate (household, pattern) was accepted")
+    except IntegrityError:
+        pass
+    engine.dispose()
+
+    down = _alembic(["downgrade", "d6e7f8a9b0c1"], db_url)
+    assert down.returncode == 0, down.stderr
+    engine = create_engine(db_url)
+    assert "category_rule_dismissals" not in set(inspect(engine).get_table_names())
+    engine.dispose()
+    up = _alembic(["upgrade", "head"], db_url)
+    assert up.returncode == 0, up.stderr

@@ -10,6 +10,7 @@ from tests.test_migrations import _alembic, _db_url
 
 PREV_HEAD = "c5d6e7f8a9b0"
 NEW = "d6e7f8a9b0c1"
+HEAD = "e7f8a9b0c1d2"  # Phase C: the dismissals table follows Phase B
 
 
 def _unique_cols(insp, table):
@@ -71,7 +72,7 @@ def test_one_head_and_it_is_the_new_revision(tmp_path):
     res = _alembic(["heads"], _db_url(tmp_path, "ph.db"))
     assert res.returncode == 0, res.stderr
     heads = [ln for ln in res.stdout.splitlines() if "(head)" in ln]
-    assert len(heads) == 1 and heads[0].startswith(NEW)
+    assert len(heads) == 1 and heads[0].startswith(HEAD)
 
 
 def test_month_review_is_a_notification_type_and_a_pref():

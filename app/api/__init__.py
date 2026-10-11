@@ -23,6 +23,7 @@ from app.api import (
     personal_tokens,
     plan,
     recurring,
+    search,
     security,
     settings,
     stock,
@@ -48,6 +49,7 @@ router.include_router(personal_tokens.router)
 router.include_router(settings.router)
 # 2d §7.4: owned here, consumed by 2b's composer.
 router.include_router(category_rules.router)
+router.include_router(category_rules.suggestion_router)
 # 2d §7.5: 2FA set up, on and off from the new app.
 router.include_router(security.router)
 router.include_router(notification_prefs.router)
@@ -58,3 +60,4 @@ router.include_router(stock.products_router)
 router.include_router(recurring.router)
 router.include_router(matches.router)
 router.include_router(plan.router)
+router.include_router(search.router)

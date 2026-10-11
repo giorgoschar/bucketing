@@ -3449,6 +3449,52 @@
         "title": "EntryDoneIn",
         "type": "object"
       },
+      "EntryHit": {
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "number"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "date",
+          "label",
+          "category",
+          "amount",
+          "currency"
+        ],
+        "title": "EntryHit",
+        "type": "object"
+      },
       "EntryOut": {
         "properties": {
           "amount": {
@@ -3995,6 +4041,34 @@
         "title": "ItemHistoryOut",
         "type": "object"
       },
+      "ItemHit": {
+        "properties": {
+          "direction": {
+            "title": "Direction",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "direction",
+          "is_active"
+        ],
+        "title": "ItemHit",
+        "type": "object"
+      },
       "LineCheckIn": {
         "properties": {
           "checked": {
@@ -4511,6 +4585,41 @@
           "over_pace"
         ],
         "title": "PaceOut",
+        "type": "object"
+      },
+      "PantryHit": {
+        "properties": {
+          "brand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "quantity": {
+            "title": "Quantity",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "brand",
+          "quantity"
+        ],
+        "title": "PantryHit",
         "type": "object"
       },
       "PasswordIn": {
@@ -5905,6 +6014,37 @@
         "title": "RetailerPriceOut",
         "type": "object"
       },
+      "RuleDismissIn": {
+        "properties": {
+          "pattern": {
+            "title": "Pattern",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pattern"
+        ],
+        "title": "RuleDismissIn",
+        "type": "object"
+      },
+      "RuleDismissOut": {
+        "properties": {
+          "pattern": {
+            "title": "Pattern",
+            "type": "string"
+          },
+          "times": {
+            "title": "Times",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pattern",
+          "times"
+        ],
+        "title": "RuleDismissOut",
+        "type": "object"
+      },
       "RulePreviewIn": {
         "description": "The schedule fields of RecurringItemIn, plus how many dates to return.",
         "properties": {
@@ -6024,6 +6164,71 @@
           "dates"
         ],
         "title": "RulePreviewOut",
+        "type": "object"
+      },
+      "RuleSuggestionOut": {
+        "properties": {
+          "category_id": {
+            "title": "Category Id",
+            "type": "string"
+          },
+          "category_name": {
+            "title": "Category Name",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "pattern": {
+            "title": "Pattern",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pattern",
+          "label",
+          "category_id",
+          "category_name"
+        ],
+        "title": "RuleSuggestionOut",
+        "type": "object"
+      },
+      "SearchOut": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/EntryHit"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "entries_more": {
+            "title": "Entries More",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ItemHit"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "pantry": {
+            "items": {
+              "$ref": "#/components/schemas/PantryHit"
+            },
+            "title": "Pantry",
+            "type": "array"
+          }
+        },
+        "required": [
+          "entries",
+          "entries_more",
+          "items",
+          "pantry"
+        ],
+        "title": "SearchOut",
         "type": "object"
       },
       "SecurityOut": {
@@ -10110,6 +10315,109 @@
         ]
       }
     },
+    "/api/v1/category-rules/suggestion": {
+      "get": {
+        "description": "Whether to offer \"always use this category for this merchant\" after the\nentry was saved: a suggestion, or null. Another household's entry is 404.",
+        "operationId": "rule_suggestion_api_v1_category_rules_suggestion_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "transaction_id",
+            "required": true,
+            "schema": {
+              "title": "Transaction Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/RuleSuggestionOut"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Rule Suggestion Api V1 Category Rules Suggestion Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Rule Suggestion",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/category-rules/suggestion/dismiss": {
+      "post": {
+        "description": "\"Not now\": one more dismissal for this pattern (two stop the offer).",
+        "operationId": "dismiss_rule_suggestion_api_v1_category_rules_suggestion_dismiss_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuleDismissIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleDismissOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Dismiss Rule Suggestion",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
     "/api/v1/dashboard": {
       "get": {
         "description": "Monthly expense summary: total spent, who paid, income total, In / Out /\nNet, upcoming bills (next 60 days), and overdue bills.",
@@ -12033,6 +12341,60 @@
         "summary": "Get History",
         "tags": [
           "recurring"
+        ]
+      }
+    },
+    "/api/v1/search": {
+      "get": {
+        "operationId": "search_everything_api_v1_search_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Q",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "q is shorter than 2 or longer than 100 characters"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "description": "More than 60 searches a minute for this user"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Search Everything",
+        "tags": [
+          "search"
         ]
       }
     },
