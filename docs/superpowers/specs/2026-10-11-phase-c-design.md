@@ -25,8 +25,8 @@ Out of scope: long-press and right-click menus, changes to what any number means
 
 - **Order, most urgent first:** `failed` (a change that could not sync), `overdue`, `monthReview`, `match`, `missingAmount`, `cash`, `billChange`, `budget`, `pantry`, `category`. Within a kind, the existing order.
 - **One row per recurring item.** `overdue`, `missingAmount` and `billChange` rows of the same item merge into one row: the most urgent kind is the row and keeps its action; each of the others is a line under it that is itself a link ("Needs an amount for 13 Oct", "Was €84, usually €61"). Dismissing a bill change (✕) removes only that line.
-- **Three rows, then the rest.** The first 3 rows show. Under them, one button: "Show 6 more" (the number of hidden rows; singular "Show 1 more"). It expands in place and becomes "Show fewer". The choice lasts for the session (not stored). The count badge beside the heading stays the total.
-- **Actions.** Only the first row's main action is a filled button. Every other action is a quiet text button. A second action ("Not this") is always quiet. Rows that had no action (`budget`, `category`) become links: to Plan › Budgets, and to the category screen for this month.
+- **Three rows, then the rest.** The first 3 rows show. Under them, one button: "Show 6 more" (the number of hidden rows; singular "Show 1 more"). It expands in place and becomes "Show fewer". The choice lasts for the session (not stored). The count badge beside the heading counts the things needing attention (a merged row's extra lines count), not the merged rows.
+- **Actions.** The first row always has a filled button ("Set" for a missing amount, "Paid"/"Received" for an overdue entry; "Link" for a match). Only that one is filled. Every other action is a quiet text button. A second action ("Not this") is always quiet. Rows that had no action (`budget`, `category`) become links: to Plan › Budgets, and to the category screen for this month.
 - Nothing is removed: every kind that shows today still shows, in the list or behind "Show more".
 
 **Recent activity:** 5 rows (today 10). "See all" stays.
@@ -35,7 +35,7 @@ Out of scope: long-press and right-click menus, changes to what any number means
 
 ### 2.2 Insights
 
-**Tabs.** Under the lens and period controls, a segmented control: **Overview**, **Trends**, **Bills & statements**. It is kept in the query string (`?tab=trends`, `?tab=bills`; Overview is the default and writes nothing). Changing the lens or period keeps the tab. Phone and desktop.
+**Tabs.** Under the lens and period controls, a segmented control: **Overview**, **Trends**, **Bills & statements**. It is kept in the query string (`?tab=trends`, `?tab=bills`; Overview is the default and writes nothing). Changing the lens or period keeps the tab. Phone and desktop. As built: the tabs are text tabs with an underline on the phone (not a segmented control); on desktop a lone flowing card spans both columns.
 
 | Tab | Cards, in order |
 |---|---|
@@ -62,18 +62,20 @@ Every sentence and figure is the one its old card showed. The explanatory footno
 
 - One list grouped by week (Monday to Sunday): "This week", "Next week", then "20–26 Oct". One card per week, one row per entry.
 - A row: the weekday and day ("Tue 13"), the name, the amount (with "≈" and "No amount yet" as today). The "Out" label under the name goes; income rows keep "In" and the positive tone.
-- "Net this month" appears once per week, in the week's header, as the figure after that week's last entry. A week that crosses into the next month shows it per month it touches.
+- "Net this month" appears once per week, in the week's header, as the figure after that week's last entry. A week that crosses into the next month shows it per month it touches, labelled "Net Oct" and "Net Nov".
 - Tapping a row opens the entry sheet, as today. Overdue entries keep their place and their mark.
 
 ### 2.4 Add
 
 - **One scan button,** top right of the form (an icon button labelled "Scan"). It opens a small sheet with two choices: **Receipt QR** (the existing receipt scan) and **Pantry barcode** (§5). The "Scan receipt" chip goes.
-- **Cash from wallet** moves into the payment-method chip. The method list is Card, Cash, then the other existing methods. Choosing Cash shows the existing "taken from" control (My stash, another member, Bank / ATM, Not tracked) directly under the chips, with today's default. The "Cash from wallet" chip goes. Links with `?mode=cash…` keep working and land in this state.
+- **Cash from wallet** moves into the payment-method chip. The method list is Card, Cash, then the other existing methods. Choosing Cash shows the existing "taken from" control (My stash, another member, Bank / ATM, Not tracked) directly under the chips. Picking Cash defaults to "Not tracked" (as built, not today's default); the "taken from" labels are the existing ones. The "Cash from wallet" chip goes. Links with `?mode=cash…` keep working and land in this state.
 - **One budget prompt.** The amber "Choose a budget" line above the keypad goes. The budget chip itself turns amber when a budget is required and missing, and Save stays disabled with its existing reason available to screen readers (`aria-describedby`).
 - **Currency** moves into More, as its first field. It stays on the main form only when the entry being edited is not in the household currency, or when one of the household's last 20 entries was in another currency.
 - The desktop Add panel gets the same four changes.
 
 ### 2.5 Type scale
+
+**DEFERRED: not built in Phase C** (see `docs/redesign/backlog.md`, Phase C follow-ups).
 
 One scale of six sizes as tokens (`--fs-xs` 12, `--fs-sm` 13.5, `--fs-md` 15, `--fs-lg` 17, `--fs-xl` 22, `--fs-hero` 34 px) and three weights (400, 500, 600). Every `font-size` and `font-weight` in `web/src` uses a token, except the amount in the composer and inside SVG charts. Sizes move to the nearest token; a size that would change by more than 1.5 px is listed in the report with before and after, and checked in a screenshot. This is done as one pass after the other streams are merged.
 
@@ -147,6 +149,7 @@ When "Where?" is filled and the category has not been touched by the user, the c
 - A result opens its place: the entry, the bill's history, the pantry item, the statement, the settings page. Entries end with "See all in Activity", which opens Activity with the same search.
 - Keyboard: Up and Down move through results across groups, Enter opens, Esc clears then closes. The list is a `listbox` with `aria-activedescendant`; the number of results is announced.
 - No results: "Nothing found for “lidl”."
+- A failed or rate-limited search shows one quiet error line, not a message per group.
 - Offline: device-side groups still work; the server groups show "Connect to search entries, bills and pantry."
 
 ## 5. Scan a pantry item from Add

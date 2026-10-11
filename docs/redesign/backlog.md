@@ -122,3 +122,13 @@ Gaps found in the current app that the new app (web/) must cover.
   - "Couldn't open this entry." does not name the row that was tapped.
   - `ui-num` trailing comma: `Nums` takes the comma into the span ("€84," in "Electricity was €84, usually €61"); end the number on a digit (`€\d[\d,]*\d|€\d`).
   - `src/shell/AddPanel.test.tsx` "resize with a typed amount...": flaky, noted only if it recurred during integration (see the integration report).
+
+## Phase C follow-ups (integration 2026-10-11; reviews in `.superpowers/sdd/phase-c/`)
+
+- Type-scale pass (spec §2.5): deferred, not built.
+- H: "Paid" on Home opens the sheet where Paid is tapped again.
+- Q: re-review R1 (search panel height cap rests on a fixed 190 px), R2 (count announced after the box closed), R3 (two fixes not pinned by a test: announce while loading, Enter while loading), R4 (`KeyK` on layouts that move K), R5 (tap on a phone result blurs the field first).
+- I: check the `display: contents` tabpanel in Safari.
+- C: review findings 7 and 15, and the fail-safe for text with an unknown combining class.
+- S: Greek case-insensitive search needs Postgres (SQLite lower() is ASCII only).
+- S: the income item's history page title and back link.
