@@ -126,6 +126,11 @@
 .pantry-lookup__credit { margin-top: 8px; }
 .pantry-lookup__note .ui-num { white-space: normal; overflow-wrap: anywhere; }
 .pantry-lookup__have { color: var(--ink); }
+/* The scanned barcode is one of yours: its count, changeable in place. */
+.pantry-have { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; margin-top: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 14px; }
+.pantry-have__id { min-width: 0; }
+.pantry-have__label { margin: 0; font-size: 12.5px; color: var(--muted); }
+.pantry-have__name { margin: 2px 0 0; font-weight: 600; overflow-wrap: anywhere; }
 .pantry-lookup__msg { padding: 12px 14px; border-radius: var(--r-md); background: var(--surface-2); }
 .pantry-lookup__head { margin: 0 0 2px; font-weight: 650; color: var(--ink); }
 .pantry-lookup__others { margin: 0; font-size: 13px; line-height: 1.5; color: var(--muted); }

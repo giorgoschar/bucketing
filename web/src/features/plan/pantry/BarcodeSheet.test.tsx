@@ -151,3 +151,36 @@ it('Open Food Facts but already in the pantry: Open still wins over Add', async 
   fireEvent.click(within(sheet).getByRole('button', { name: 'Open' }))
   expect(router.state.location.pathname).toBe('/plan/pantry/s1')
 })
+
+// A scanned barcode that is already one of yours can be topped up in the sheet (user report, 2026-10-11).
+const ADJUST = 'POST /api/v1/stock/s1/adjust'
+
+it.each([
+  ['found', () => barcodeProduct({ in_pantry: { stock_item_id: 's1', quantity: 5 } })],
+  ['not listed anywhere (a custom barcode)', () => reply(404, { detail: 'Product not found', in_pantry: { stock_item_id: 's1', quantity: 5 } })],
+])('in pantry, %s: the item is named and + / − change its count in the sheet', async (_, answer) => {
+  const fake = fakeApi({ ...pantryRoutes(), [BARCODE]: answer, [ADJUST]: () => Response.json(stockItem({ quantity: 6 })) })
+  renderWithProviders(<BarcodeSheet code="12345678" {...handlers()} />)
+  const sheet = await screen.findByRole('dialog')
+  expect(await within(sheet).findByText('In your pantry')).toBeInTheDocument()
+  expect(await within(sheet).findByText('Barilla spaghetti')).toBeInTheDocument()
+  expect(sheet).toHaveTextContent('In pantry: 5')
+  fireEvent.click(within(sheet).getByRole('button', { name: 'Increase Barilla spaghetti' }))
+  expect(within(sheet).getByTestId('pantry-qty')).toHaveTextContent('6')
+  expect(sheet).toHaveTextContent('In pantry: 6')
+  await waitFor(() => expect(fake.callsTo(ADJUST)).toHaveLength(1))
+  expect(fake.callsTo(ADJUST)[0].body).toMatchObject({ delta: 1 })
+  fireEvent.click(within(sheet).getByRole('button', { name: 'Decrease Barilla spaghetti' }))
+  expect(within(sheet).getByTestId('pantry-qty')).toHaveTextContent('5')
+  await waitFor(() => expect(fake.callsTo(ADJUST)).toHaveLength(2))
+  expect(fake.callsTo(ADJUST)[1].body).toMatchObject({ delta: -1 })
+  expect(within(sheet).getByRole('button', { name: 'Open' })).toBeInTheDocument()
+})
+
+it('not in the pantry: no stepper', async () => {
+  fakeApi({ ...pantryRoutes(), [BARCODE]: () => barcodeProduct() })
+  renderWithProviders(<BarcodeSheet code="5201004021108" {...handlers()} />)
+  const sheet = await screen.findByRole('dialog', { name: 'Dodoni Feta PDO' })
+  expect(within(sheet).queryByText('In your pantry')).not.toBeInTheDocument()
+  expect(within(sheet).queryByTestId('pantry-qty')).not.toBeInTheDocument()
+})

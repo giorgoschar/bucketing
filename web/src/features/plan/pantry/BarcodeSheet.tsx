@@ -6,9 +6,10 @@ import { useOnline } from '../../../data/online'
 import { formatMoney } from '../../../ui/format'
 import { PlusIcon } from '../../../ui/icons'
 import { Sheet } from '../../../ui/Sheet'
-import { addBodyFor, useAddProduct } from './hooks'
+import { addBodyFor, useAddProduct, useAdjustStock, useStockList } from './hooks'
 import { ScanIcon } from './icons'
 import { Initial } from './PantryRow'
+import { Stepper } from './Stepper'
 import { type BarcodeLookupError, type BarcodeProduct, formatQty, sizeLabel } from './types'
 
 export const OFFLINE_WRITE = 'Connect to change the pantry'
@@ -60,7 +61,10 @@ export function BarcodeSheet({ code, onClose, onScanAnother, onAddManually, onAd
   }, [code])
 
   const title = result.state === 'found' ? result.product.name : `Barcode ${code}`
-  const missHave = result.state === 'missing' || result.state === 'unavailable' ? result.inPantry : null
+  const matched = result.state === 'found' ? result.product.in_pantry
+    : result.state === 'missing' || result.state === 'unavailable' ? result.inPantry : null
+  const mine = useMine(matched ?? null)
+  const missHave = result.state === 'missing' || result.state === 'unavailable' ? mine.match : null
   const have = missHave && <> · <b className="pantry-lookup__have">In pantry: {formatQty(missHave.quantity)}</b></>
   const scanAnother = (
     <button type="button" className="btn" disabled={!online} onClick={onScanAnother}><ScanIcon />Scan another</button>
@@ -79,7 +83,7 @@ export function BarcodeSheet({ code, onClose, onScanAnother, onAddManually, onAd
       )}>
       <div className="pantry-lookup" aria-live="polite">
         {result.state === 'loading' && <p className="pantry-lookup__note">Looking up {code}…</p>}
-        {result.state === 'found' && <Found product={result.product} code={code} />}
+        {result.state === 'found' && <Found product={{ ...result.product, in_pantry: mine.match }} code={code} />}
         {result.state === 'missing' && (
           <div className="pantry-lookup__msg">
             <p className="pantry-lookup__head">Not on PosoKanei</p>
@@ -102,6 +106,15 @@ export function BarcodeSheet({ code, onClose, onScanAnother, onAddManually, onAd
           <div className="pantry-lookup__msg">
             <p className="pantry-lookup__head">Couldn’t look that up</p>
             <p className="pantry-lookup__note">{result.message}</p>
+          </div>
+        )}
+        {mine.match && (
+          <div className="pantry-have">
+            <div className="pantry-have__id">
+              <p className="pantry-have__label">In your pantry</p>
+              {mine.name && <p className="pantry-have__name">{mine.name}</p>}
+            </div>
+            <Stepper name={mine.name ?? 'this item'} value={mine.match.quantity} onStep={mine.step} />
           </div>
         )}
         {result.state !== 'loading' && !online && <p className="pantry-offline">{OFFLINE_WRITE}</p>}
@@ -165,6 +178,30 @@ function Found({ product, code }: { product: BarcodeProduct; code: string }) {
 }
 
 /** Open: the barcode is already in the pantry, so go to that item instead of adding it again. */
+/**
+ * The household's own item for a scanned barcode: its name comes from the saved pantry list, and − / + in the
+ * sheet change the count at once (queued offline, like the pantry rows).
+ */
+function useMine(match: InPantry | null) {
+  const list = useStockList()
+  const id = match?.stock_item_id ?? ''
+  const { adjust } = useAdjustStock({ id })
+  // The lookup's count is fresher than a saved list, so the sheet counts from it plus the taps made here.
+  const [bump, setBump] = useState({ id, by: 0 })
+  const row = match ? list.data?.find((i) => i.id === id) : undefined
+  const by = bump.id === id ? bump.by : 0
+  const quantity = match ? Math.max(0, match.quantity + by) : 0
+  return {
+    match: match ? { ...match, quantity } : null,
+    name: row?.name ?? null,
+    step: (delta: 1 | -1) => {
+      if (!match || quantity + delta < 0) return
+      setBump({ id, by: by + delta })
+      void adjust(delta)
+    },
+  }
+}
+
 function OpenButton({ item, onClose }: { item: InPantry; onClose: () => void }) {
   const navigate = useNavigate()
   return (
