@@ -1,14 +1,9 @@
-// Hand-typed from Phase C spec §4.1 (GET /api/v1/search); integration aliases these to the generated schema.
+import type { components } from '../../api/schema'
 
-export interface SearchEntry { id: string; date: string; label: string; category: string | null; amount: number; currency: string }
-export interface SearchItem { id: string; name: string; direction: 'in' | 'out' | string; is_active: boolean }
-export interface SearchPantry { id: string; name: string; brand: string | null; quantity: number }
-export interface SearchResponse {
-  entries: SearchEntry[]
-  entries_more: boolean
-  items: SearchItem[]
-  pantry: SearchPantry[]
-}
+export type SearchEntry = components['schemas']['EntryHit']
+export type SearchItem = components['schemas']['ItemHit']
+export type SearchPantry = components['schemas']['PantryHit']
+export type SearchResponse = components['schemas']['SearchOut']
 
 export type GroupKey = 'entries' | 'bills' | 'pantry' | 'statements' | 'settings'
 

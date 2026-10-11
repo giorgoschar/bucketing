@@ -12,13 +12,6 @@ export const DEBOUNCE_MS = 200
 export const MIN_CHARS = 2
 export const MAX_CHARS = 100
 
-type SearchCall = (
-  path: '/api/v1/search',
-  init: { params: { query: { q: string } }; signal: AbortSignal },
-) => Promise<{ data?: unknown; error?: unknown; response: Response }>
-/** The one cast for GET /api/v1/search: the generated schema does not have it until integration regenerates it. */
-const searchApi = api as unknown as { GET: SearchCall }
-
 function useDebounced(value: string, ms: number): string {
   const [out, setOut] = useState(value)
   useEffect(() => {
@@ -91,7 +84,7 @@ export function useSearch(input: string, idPrefix = 'search-opt'): Search {
     let current = true
     void (async () => {
       try {
-        const data = (await unwrap(searchApi.GET('/api/v1/search', { params: { query: { q } }, signal: ctl.signal }))) as SearchResponse
+        const data = (await unwrap(api.GET('/api/v1/search', { params: { query: { q } }, signal: ctl.signal })))
         if (current) setServer({ q, data, status: 'done' })
       } catch {
         if (!current) return
