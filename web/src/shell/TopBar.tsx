@@ -8,11 +8,11 @@ import { AccountDialog, type AccountDialogHandle, MyAvatar } from './AccountDial
 const SEARCHABLE = new Set(['/', '/activity', '/plan', '/insights'])
 
 function SearchButton() {
-  const { pathname, search, state } = useLocation()
+  const { pathname, search, hash, state } = useLocation()
   const navigate = useNavigate()
   if (!SEARCHABLE.has(pathname)) return null
   // A pushed history entry: Back removes the flag and so closes the search.
-  const open = () => { void navigate({ pathname, search }, { state: { ...(typeof state === 'object' ? state : null), [SEARCH_STATE]: true } }) }
+  const open = () => { void navigate({ pathname, search, hash }, { state: { ...(typeof state === 'object' ? state : null), [SEARCH_STATE]: true } }) }
   return (
     <button type="button" className="topbar__search" aria-label="Search" onClick={open}><SearchIcon /></button>
   )

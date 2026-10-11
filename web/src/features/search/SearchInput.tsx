@@ -1,8 +1,15 @@
 import { lazy, Suspense, type Ref } from 'react'
 import { SearchIcon } from '../../shell/icons'
-import { MAX_CHARS } from './useSearch'
+import { MAX_CHARS, type Search } from './useSearch'
 import type { SearchField } from './useSearchField'
 import './search.css'
+
+/** "3 results" or "No results", only when the answer for the text in the field is complete. */
+function announcement({ active, status, count }: Search): string {
+  if (!active || status === 'loading') return ''
+  if (count === 0) return status === 'offline' || status === 'failed' ? '' : 'No results'
+  return `${count} ${count === 1 ? 'result' : 'results'}`
+}
 
 const SearchResults = lazy(() => import('./SearchResults'))
 
@@ -43,6 +50,8 @@ export function SearchInput({ field, ref, autoFocus, hint, onFocus }: {
         onKeyDown={field.onKeyDown}
       />
       {hint && field.value === '' && <kbd className="search__key" aria-hidden="true">{hint}</kbd>}
+      {/* Always mounted, outside the results panel, and only changed once the answer has settled. */}
+      <p className="search__live" role="status" aria-live="polite">{announcement(search)}</p>
     </div>
   )
 }

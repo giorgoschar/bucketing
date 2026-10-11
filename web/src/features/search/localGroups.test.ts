@@ -44,3 +44,8 @@ it('% and _ are plain text for the device-side match', () => {
   expect(settingsOptions('%%')).toEqual([])
   expect(statementOptions(months, '_ _')).toEqual([])
 })
+
+it('no keyword promises something the pages do not show', () => {
+  const all = SETTINGS_PAGES.flatMap((p) => p.keywords)
+  for (const gone of ['digest', 'reminders', 'merchant', 'partner', 'family', 'api']) expect(all).not.toContain(gone)
+})

@@ -23,7 +23,10 @@ export function Sidebar() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return
-      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') {
+      // e.code, because on a Greek layout the key reports "κ". Not while a dialog is open: it keeps the
+      // browser's own shortcut and focus stays where it is.
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && (e.code === 'KeyK' || e.key.toLowerCase() === 'k')) {
+        if (document.querySelector(OPEN_DIALOG)) return
         e.preventDefault()
         searchBox.current?.focus()
         return

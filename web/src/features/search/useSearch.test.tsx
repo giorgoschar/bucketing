@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { fakeApi, reply, type Routes } from '../../test/fakeApi'
 import { resetTestEnv, setOnline, testQueryClient } from '../../test/render'
 import { setIdentity } from '../../offline/identity'
@@ -111,7 +111,6 @@ it('offline: the device groups still answer, the server groups are missing, no r
   setOnline(false)
   const { result } = setup('dark')
   await waitFor(() => expect(result.current.status).toBe('offline'))
-  expect(result.current.serverMissing).toBe(true)
   expect(result.current.groups.map((g) => g.key)).toEqual(['settings'])
   expect(api.callsTo('GET /api/v1/search' as never)).toHaveLength(0)
 })
@@ -119,12 +118,11 @@ it('offline: the device groups still answer, the server groups are missing, no r
 it('a 429 or a failure keeps the device groups and says so', async () => {
   fakeApi(routes(() => reply(429, { detail: 'slow down' })))
   const limited = setup('dark')
-  await waitFor(() => expect(limited.result.current.status).toBe('limited'))
+  await waitFor(() => expect(limited.result.current.status).toBe('failed'))
   expect(limited.result.current.groups.map((g) => g.key)).toEqual(['settings'])
   fakeApi(routes(() => reply(500, { detail: 'boom' })))
   const failed = setup('dark')
   await waitFor(() => expect(failed.result.current.status).toBe('failed'))
-  expect(failed.result.current.serverMissing).toBe(true)
   expect(failed.result.current.groups.map((g) => g.key)).toEqual(['settings'])
 })
 
@@ -138,4 +136,41 @@ it('hostile text goes to the server as plain text; a 100+ character string is no
   rerender({ q: 'x'.repeat(101) })
   await act(() => wait(350))
   expect(api.callsTo('GET /api/v1/search' as never)).toHaveLength(2)
+})
+
+it('clear, then "da" within 200 ms: results of the earlier query never show and no request repeats it', async () => {
+  const api = fakeApi(routes((q) => (q === 'lidl' ? lidl : body())))
+  const { result, rerender } = setup('lidl')
+  await waitFor(() => expect(result.current.status).toBe('done'))
+  expect(result.current.options.length).toBeGreaterThan(0)
+  rerender({ q: '' })
+  expect(result.current.active).toBe(false)
+  await act(() => wait(60)); rerender({ q: 'd' })
+  await act(() => wait(60)); rerender({ q: 'da' })
+  // Still inside the debounce window: nothing from "lidl" may be shown or opened.
+  expect(result.current.query).not.toBe('lidl')
+  expect(result.current.options).toEqual([])
+  expect(result.current.active).toBe(false)
+  await waitFor(() => expect(result.current.query).toBe('da'))
+  await waitFor(() => expect(api.callsTo('GET /api/v1/search' as never).map((c) => c.query.get('q'))).toEqual(['lidl', 'da']))
+})
+
+it('the request URL carries the text percent-encoded', async () => {
+  fakeApi(routes(() => body()))
+  const spy = vi.mocked(globalThis.fetch)
+  setup('a+b&c#%')
+  await waitFor(() => expect(spy.mock.calls.some(([r]) => r instanceof Request && r.url.includes('/search'))).toBe(true))
+  const req = spy.mock.calls.map(([r]) => r).find((r): r is Request => r instanceof Request && r.url.includes('/search'))!
+  expect(req.url).toMatch(/\/search\?q=a%2Bb%26c%23%25$/)
+})
+
+it('unmounting cancels the request that is out', async () => {
+  const signals: AbortSignal[] = []
+  fakeApi(routes(() => new Promise(() => {})))
+  const spy = vi.mocked(globalThis.fetch)
+  const { unmount } = setup('lidl')
+  await waitFor(() => expect(spy.mock.calls.some(([r]) => r instanceof Request && r.url.includes('/search'))).toBe(true))
+  for (const [r] of spy.mock.calls) if (r instanceof Request && r.url.includes('/search')) signals.push(r.signal)
+  unmount()
+  await waitFor(() => expect(signals.every((x) => x.aborted)).toBe(true))
 })

@@ -1,5 +1,5 @@
 import { QueryClientProvider } from '@tanstack/react-query'
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createMemoryRouter, RouterProvider, useLocation } from 'react-router'
@@ -88,6 +88,48 @@ it('/ does nothing while a field has focus, a dialog is open or a modifier is do
   await screen.findByRole('navigation', { name: 'Main' })
   await userEvent.keyboard('/')
   expect(field()).not.toHaveFocus()
+  cleanup()
+  at('/activity', true)
+  await screen.findByRole('navigation', { name: 'Main' })
+  for (const mod of [{ ctrlKey: true }, { metaKey: true }, { altKey: true }]) {
+    expect(fireEvent.keyDown(document.body, { key: '/', ...mod })).toBe(true) // not prevented
+  }
+  expect(field()).not.toHaveFocus()
+})
+
+it('Cmd K and Ctrl K do nothing, and keep the browser default, while a dialog is open', async () => {
+  at('/activity?dialog=1', true)
+  await screen.findByRole('navigation', { name: 'Main' })
+  expect(fireEvent.keyDown(document.body, { key: 'k', metaKey: true })).toBe(true)
+  expect(fireEvent.keyDown(document.body, { key: 'k', ctrlKey: true })).toBe(true)
+  expect(field()).not.toHaveFocus()
+  cleanup()
+  at('/activity', true)
+  await screen.findByRole('navigation', { name: 'Main' })
+  expect(fireEvent.keyDown(document.body, { key: 'k', ctrlKey: true })).toBe(false) // taken
+  expect(field()).toHaveFocus()
+})
+
+it('Ctrl K works on a layout where the key is not "k" (it is the K key)', async () => {
+  at('/activity', true)
+  await screen.findByRole('navigation', { name: 'Main' })
+  fireEvent.keyDown(document.body, { key: 'κ', code: 'KeyK', ctrlKey: true })
+  expect(field()).toHaveFocus()
+})
+
+it('after Cmd K from a field, closing returns focus to that field; after a click it stays in the search field', async () => {
+  at('/activity', true)
+  await screen.findByRole('navigation', { name: 'Main' })
+  act(() => screen.getByLabelText('Notes').focus())
+  await userEvent.keyboard('{Meta>}k{/Meta}')
+  expect(field()).toHaveFocus()
+  await userEvent.keyboard('{Escape}')
+  expect(screen.getByLabelText('Notes')).toHaveFocus()
+  await userEvent.click(field())
+  await userEvent.keyboard('{Escape}')
+  expect(field()).toHaveFocus()
+  await userEvent.keyboard('x')
+  expect(field()).toHaveValue('x') // typing reopens it
 })
 
 it('typing in the search field does not trigger N, and N still opens the Add panel elsewhere', async () => {
@@ -180,8 +222,8 @@ it('Esc clears the text, then closes the panel', async () => {
   expect(field()).toHaveValue('')
   expect(field()).toHaveFocus()
   await userEvent.keyboard('{Escape}')
-  expect(field()).not.toHaveFocus()
   expect(screen.queryByRole('listbox')).toBeNull()
+  expect(field()).toHaveFocus() // the user clicked into it: it stays where they are
 })
 
 it('offline: device-side groups work and the server groups say to connect', async () => {
@@ -194,13 +236,13 @@ it('offline: device-side groups work and the server groups say to connect', asyn
   expect(screen.queryByText(/Nothing found/)).toBeNull()
 })
 
-it('a failed search shows the device groups and one quiet line', async () => {
+it('a 429 shows the device groups and the one quiet line', async () => {
   const api = fakeApi(searchRoutes())
   api.on('GET /api/v1/insights/statements', () => statementList())
   api.on('GET /api/v1/search' as never, (() => new Response(JSON.stringify({ detail: 'x' }), { status: 429 })) as never)
   at('/', true)
   await userEvent.type(await screen.findByRole('combobox', { name: 'Search' }), 'dark')
-  expect(await screen.findByText('Too many searches. Wait a moment and try again.')).toBeInTheDocument()
+  expect(await screen.findByText('Couldn’t search entries, bills and pantry right now.')).toBeInTheDocument()
   expect(screen.getByRole('option', { name: 'Appearance' })).toBeInTheDocument()
 })
 
@@ -252,4 +294,106 @@ it('phone: a result replaces the search, so Back from it returns to where the se
   await act(() => router.navigate(-1))
   expect(where()).toBe('/plan')
   expect(screen.queryByRole('dialog', { name: 'Search' })).toBeNull()
+})
+
+// ---------------- Fix round 1 ----------------
+
+it('Enter only opens a result of the text in the field (clear, then retype fast)', async () => {
+  fakeApi(searchRoutes())
+  at('/', true)
+  await userEvent.type(await screen.findByRole('combobox', { name: 'Search' }), 'lidl')
+  await screen.findByRole('listbox')
+  await userEvent.clear(field())
+  await userEvent.type(field(), 'da')
+  expect(screen.queryByRole('listbox')).toBeNull()
+  await userEvent.keyboard('{Enter}')
+  expect(where()).toBe('/')
+})
+
+it('the highlighted result is scrolled into view', async () => {
+  fakeApi(searchRoutes())
+  const scroll = vi.fn()
+  Element.prototype.scrollIntoView = scroll
+  at('/', true)
+  await userEvent.type(await screen.findByRole('combobox', { name: 'Search' }), 'lidl')
+  await screen.findByRole('listbox')
+  await userEvent.keyboard('{ArrowDown}{ArrowDown}')
+  expect(scroll).toHaveBeenLastCalledWith({ block: 'nearest' })
+  expect(scroll.mock.contexts.at(-1)).toBe(document.getElementById(field().getAttribute('aria-activedescendant')!))
+})
+
+it('"See all in Activity" and the request carry the text URL-encoded', async () => {
+  const api = fakeApi(searchRoutes())
+  at('/', true)
+  await userEvent.type(await screen.findByRole('combobox', { name: 'Search' }), 'a&b%')
+  const row = (await screen.findByText('See all in Activity')).closest('[role="option"]')!
+  await userEvent.click(row)
+  expect(where()).toBe('/activity?q=a%26b%25')
+  expect(api.callsTo('GET /api/v1/search' as never)[0].query.get('q')).toBe('a&b%')
+})
+
+it('Greek text is searched; a long paste stops at 100 characters', async () => {
+  const api = fakeApi(searchRoutes())
+  at('/', true)
+  await userEvent.type(await screen.findByRole('combobox', { name: 'Search' }), 'Λιντλ')
+  await screen.findByRole('listbox')
+  expect(api.callsTo('GET /api/v1/search' as never)[0].query.get('q')).toBe('Λιντλ')
+  await userEvent.clear(field())
+  await userEvent.click(field())
+  await userEvent.paste('x'.repeat(130))
+  expect((field() as HTMLInputElement).value).toHaveLength(100)
+})
+
+it('the count is announced by a live region that is always there and only changes once results settle', async () => {
+  fakeApi(searchRoutes())
+  at('/', true)
+  const input = await screen.findByRole('combobox', { name: 'Search' })
+  const region = live()!
+  expect(region).toBeInTheDocument()
+  expect(region).toHaveAttribute('aria-live', 'polite')
+  expect(region).toHaveTextContent('')
+  await userEvent.type(input, 'lid')
+  expect(region).toHaveTextContent('') // typing does not announce
+  expect(live()).toBe(region) // not recreated
+  await waitFor(() => expect(region).toHaveTextContent('3 results'))
+})
+
+it('one quiet line for a failed search and for a 429', async () => {
+  for (const status of [500, 429]) {
+    const api = fakeApi(searchRoutes())
+    api.on('GET /api/v1/search' as never, (() => new Response(JSON.stringify({ detail: 'x' }), { status })) as never)
+    at('/', true)
+    await userEvent.type(await screen.findByRole('combobox', { name: 'Search' }), 'dark')
+    expect(await screen.findByText('Couldn’t search entries, bills and pantry right now.')).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Appearance' })).toBeInTheDocument()
+    cleanup()
+  }
+})
+
+it('a click on the panel (a group title) keeps the field focused and the panel open', async () => {
+  fakeApi(searchRoutes())
+  at('/', true)
+  await userEvent.type(await screen.findByRole('combobox', { name: 'Search' }), 'lidl')
+  await screen.findByRole('listbox')
+  expect(fireEvent.mouseDown(screen.getByText('Pantry'))).toBe(false) // default prevented: focus stays
+})
+
+it('phone: the search is a modal dialog, Tab stays inside, and closing returns focus to the icon', async () => {
+  fakeApi(searchRoutes())
+  at('/activity', false)
+  const icon = await screen.findByRole('button', { name: 'Search' })
+  await userEvent.click(icon)
+  const dialog = screen.getByRole('dialog', { name: 'Search' })
+  expect(dialog).toHaveAttribute('aria-modal', 'true')
+  await userEvent.keyboard('lidl')
+  await screen.findByRole('listbox')
+  await userEvent.tab()
+  await userEvent.tab()
+  expect(dialog.contains(document.activeElement)).toBe(true)
+  await userEvent.tab({ shift: true })
+  await userEvent.tab({ shift: true })
+  expect(dialog.contains(document.activeElement)).toBe(true)
+  await userEvent.keyboard('{Escape}{Escape}')
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Search' })).toBeNull())
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Search' })).toHaveFocus())
 })

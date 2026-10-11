@@ -28,8 +28,8 @@ export interface SearchOption {
 
 export interface SearchGroup { key: GroupKey; title: string; options: SearchOption[] }
 
-/** How the server groups fared: `done`, still `loading`, `offline`, rate limited, or `failed`. */
-export type ServerStatus = 'idle' | 'loading' | 'done' | 'offline' | 'limited' | 'failed'
+/** How the server groups fared: `done`, still `loading`, `offline` or `failed` (a 429 too). */
+export type ServerStatus = 'idle' | 'loading' | 'done' | 'offline' | 'failed'
 
 export const GROUP_TITLES: Record<GroupKey, string> = {
   entries: 'Entries',

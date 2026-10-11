@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../../api/client'
 import { useCachedQuery } from '../../data/cachedQuery'
-import { ApiError, unwrap } from '../../data/http'
+import { unwrap } from '../../data/http'
 import { keys } from '../../data/keys'
+import { formatMoney } from '../../ui/format'
 import { useOnline } from '../../data/online'
 import { settingsOptions, statementOptions } from './localGroups'
 import { GROUP_TITLES, type GroupKey, type SearchGroup, type SearchOption, type SearchResponse, type ServerStatus } from './types'
@@ -28,13 +29,6 @@ function useDebounced(value: string, ms: number): string {
   return out
 }
 
-/** "−€29.90", in the entry's own currency. */
-function money(n: number, currency: string): string {
-  let text: string
-  try { text = new Intl.NumberFormat('en-IE', { style: 'currency', currency }).format(n) } catch { text = `${n.toFixed(2)} ${currency}` }
-  return text.replace('-', '−')
-}
-
 const longDate = (iso: string): string => {
   const [y, m, d] = iso.split('-').map(Number)
   return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-IE', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
@@ -44,7 +38,7 @@ function serverOptions(data: SearchResponse, q: string): Record<'entries' | 'bil
   const entries: SearchOption[] = data.entries.map((e) => ({
     id: '', group: 'entries', label: e.label || 'Entry',
     sub: [longDate(e.date), e.category].filter(Boolean).join(' · '),
-    end: money(e.amount, e.currency), to: `/activity/${encodeURIComponent(e.id)}`,
+    end: formatMoney(e.amount, { currency: e.currency }), to: `/activity/${encodeURIComponent(e.id)}`,
   }))
   if (entries.length > 0) {
     entries.push({ id: '', group: 'entries', label: 'See all in Activity', to: `/activity?q=${encodeURIComponent(q)}`, seeAll: true })
@@ -73,8 +67,6 @@ export interface Search {
   /** Result count, without the "See all" row. */
   count: number
   status: ServerStatus
-  /** The server groups are not part of the answer (offline, rate limited or failed). */
-  serverMissing: boolean
 }
 
 /**
@@ -86,7 +78,8 @@ export interface Search {
 export function useSearch(input: string, idPrefix = 'search-opt'): Search {
   const typed = input.trim()
   const settled = useDebounced(typed, DEBOUNCE_MS)
-  const q = typed.length >= MIN_CHARS && settled.length >= MIN_CHARS ? settled : ''
+  // Only text that has settled counts: while the debounce runs, nothing from an earlier query may show or open.
+  const q = typed.length >= MIN_CHARS && settled === typed ? typed : ''
   const online = useOnline()
   const [server, setServer] = useState<{ q: string; data: SearchResponse | null; status: ServerStatus } | null>(null)
 
@@ -100,17 +93,16 @@ export function useSearch(input: string, idPrefix = 'search-opt'): Search {
       try {
         const data = (await unwrap(searchApi.GET('/api/v1/search', { params: { query: { q } }, signal: ctl.signal }))) as SearchResponse
         if (current) setServer({ q, data, status: 'done' })
-      } catch (e) {
+      } catch {
         if (!current) return
-        const limited = e instanceof ApiError && e.status === 429
-        setServer({ q, data: null, status: limited ? 'limited' : 'failed' })
+        setServer({ q, data: null, status: 'failed' })
       }
     })()
     return () => { current = false; ctl.abort() }
   }, [q, online])
 
   return useMemo<Search>(() => {
-    const empty: Search = { query: typed, active: false, groups: [], options: [], count: 0, status: 'idle', serverMissing: false }
+    const empty: Search = { query: typed, active: false, groups: [], options: [], count: 0, status: 'idle' }
     if (q === '') return empty
     const tooLong = q.length > MAX_CHARS
     const answered = server !== null && server.q === q
@@ -128,7 +120,6 @@ export function useSearch(input: string, idPrefix = 'search-opt'): Search {
     const options = groups.flatMap((g) => g.options)
     return {
       query: q, active: true, groups, options, count: options.filter((o) => !o.seeAll).length, status,
-      serverMissing: status === 'offline' || status === 'limited' || status === 'failed',
     }
   }, [q, typed, server, online, statements.data, idPrefix])
 }

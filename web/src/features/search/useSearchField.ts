@@ -1,4 +1,4 @@
-import { useCallback, useId, useState, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useId, useState, type KeyboardEvent } from 'react'
 import { useNavigate } from 'react-router'
 import { useSearch, type Search } from './useSearch'
 
@@ -30,6 +30,12 @@ export function useSearchField(opts: { onEscape: () => void; afterPick?: () => v
   if (forList !== search.options) { setForList(search.options); setCursor(-1) }
   const active = cursor >= 0 && cursor < n ? cursor : -1
 
+  // aria-activedescendant does not scroll: bring the highlighted row into view.
+  const activeId = active >= 0 ? search.options[active]?.id : undefined
+  useEffect(() => {
+    if (activeId) document.getElementById(activeId)?.scrollIntoView?.({ block: 'nearest' })
+  }, [activeId])
+
   const setValue = useCallback((v: string) => { setValueRaw(v); setCursor(-1) }, [])
   const { onEscape, afterPick, replace } = opts
   const pick = useCallback((to: string) => {
@@ -45,6 +51,8 @@ export function useSearchField(opts: { onEscape: () => void; afterPick?: () => v
       const step = e.key === 'ArrowDown' ? 1 : -1
       setCursor(active === -1 ? (step === 1 ? 0 : n - 1) : (active + step + n) % n)
     } else if (e.key === 'Enter') {
+      // With nothing highlighted, Enter takes the first row, but not while the server's answer is still out.
+      if (active === -1 && search.status === 'loading') return
       const o = search.options[active === -1 ? 0 : active]
       if (!o) return
       e.preventDefault()
@@ -57,5 +65,5 @@ export function useSearchField(opts: { onEscape: () => void; afterPick?: () => v
     }
   }
 
-  return { value, setValue, search, listId, active, activeId: active >= 0 ? search.options[active]?.id : undefined, pick, onKeyDown }
+  return { value, setValue, search, listId, active, activeId, pick, onKeyDown }
 }

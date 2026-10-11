@@ -54,7 +54,7 @@
   .search--box .search__field { min-height: 38px; padding: 0 10px; border-radius: var(--r-sm); }
   .search--box .search__input { min-height: 36px; font-size: 14px; }
   .search__panel {
-    position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; width: 380px; max-height: min(70dvh, 560px); overflow-y: auto;
+    position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; width: 380px; max-height: min(560px, calc(100dvh - 190px)); overflow-y: auto;
     padding: 6px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface);
     box-shadow: 0 20px 60px rgba(0, 0, 0, .35);
   }
