@@ -10,7 +10,7 @@ import { Money } from '../../ui/Money'
 import { QueryView } from '../../ui/QueryView'
 import type { PendingRow } from '../composer/hooks/pendingStore'
 import { usePendingTransactions } from '../composer/hooks/usePendingTransactions'
-import { useRecentTransactions } from './hooks'
+import { RECENT_COUNT, useRecentTransactions } from './hooks'
 import { mergePending } from './mergePending'
 import './home.css'
 
@@ -40,7 +40,7 @@ export function RecentActivity() {
       </div>
       {recent.data === undefined && recent.noData && (() => {
         // Nothing loaded and nothing coming, but this phone's own queued saves are still worth showing.
-        const queued = mergePending([], pending)
+        const queued = mergePending([], pending, RECENT_COUNT)
         return queued.length > 0 && (
           <div className="ui-list">
             {queued.map((it) => (it.kind === 'pending' ? pendingRow(it.row, `p:${it.row.key}`) : null))}
@@ -49,7 +49,7 @@ export function RecentActivity() {
       })()}
       <QueryView result={recent} noDataText="No saved activity yet." showBanner={false}>
         {(rows) => {
-          const items = mergePending(rows, pending)
+          const items = mergePending(rows, pending, RECENT_COUNT)
           if (items.length === 0) return <EmptyState title="No payments yet" />
           return (
             <div className="ui-list">

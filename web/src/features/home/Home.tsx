@@ -19,8 +19,10 @@ export function Home() {
           {(p) => <HomeFigure picture={p} />}
         </QueryView>
         <WaitingToSync />
-        <NeedsAttention />
-        <RecentActivity />
+        <div className="home__cols">
+          <NeedsAttention />
+          <RecentActivity />
+        </div>
       </section>
     </>
   )
