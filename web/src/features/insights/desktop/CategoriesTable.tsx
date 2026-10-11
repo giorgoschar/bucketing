@@ -44,7 +44,7 @@ function Table({ data, period, lens, usual }: Pick<WidgetCtx, 'data' | 'period' 
                 <tr key={id}>
                   <th scope="row">
                     {isCash ? <span><span aria-hidden="true">{c.icon}</span> {c.name}</span> : (
-                      <Link to={`/insights/category/${encodeURIComponent(id)}${insightsSearch(period, lens)}`}>
+                      <Link to={`/insights/category/${encodeURIComponent(id)}${insightsSearch(period, lens)}&tab=trends`}>
                         <span aria-hidden="true">{c.icon}</span> {c.name}
                       </Link>
                     )}

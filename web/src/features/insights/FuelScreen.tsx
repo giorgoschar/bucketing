@@ -46,7 +46,7 @@ export function FuelScreen() {
 
   return (
     <>
-      <BackHeader title="Fuel" back="/insights" keepSearch />
+      <BackHeader title="Fuel" back="/insights?tab=trends" keepSearch />
       <section className="screen insights">
         <QueryView result={insights} noDataText="No saved data for this view. Connect once to load it.">
           {(data) => {

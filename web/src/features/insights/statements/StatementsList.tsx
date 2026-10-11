@@ -14,7 +14,7 @@ export function StatementsList() {
   const list = useStatements()
   return (
     <>
-      <BackHeader title="Statements" back="/insights" />
+      <BackHeader title="Statements" back="/insights?tab=bills" />
       <section className="screen insights stmt">
         <QueryView result={list} showBanner={false} noDataText="No saved statements yet. Connect once to load them.">
           {({ review, months }) => {

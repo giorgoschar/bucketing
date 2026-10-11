@@ -14,9 +14,28 @@
   margin-inline: -16px; padding-inline: 16px; scroll-padding-inline: 16px;
 }
 .insights__lens { margin-top: 2px; }
-.insights__lens .ui-seg__opt { flex: 1; min-height: 44px; }
-.ui-seg__opt[aria-checked='true'] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px rgba(0, 0, 0, .12); }
-.ui-seg__opt[role='radio']:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.insights__lens .ui-seg__opt, .insights__tabs .ui-seg__opt, .insights__monthseg .ui-seg__opt { flex: 1; min-height: 44px; }
+.insights__panel { display: contents; }
+.ui-seg.insights__tabs { margin-top: 2px; flex-wrap: nowrap; padding: 0; gap: 0; background: none; border-radius: 0; border-bottom: 1px solid var(--line); }
+/* Text tabs with an underline for the selected one: the lens above stays the only segmented row. */
+.insights__tabs .ui-seg__opt { flex: 1 1 auto; min-width: 0; padding-inline: 6px; white-space: nowrap; background: none; box-shadow: none; border-radius: 0; border-bottom: 2px solid transparent; }
+.insights__tabs .ui-seg__opt[aria-selected='true'] { background: none; box-shadow: none; color: var(--ink); border-bottom-color: var(--accent); }
+.insights__monthseg { align-self: flex-start; }
+.insights__monthseg .ui-seg__opt { flex: none; padding-inline: 14px; }
+.insights__monthpanel { display: flex; flex-direction: column; gap: 12px; }
+
+/* The Summary card: the spent figure leads; In / Out / Net and the sentences sit under a hairline. */
+.insights__card > .insights__headline { padding: 0; }
+.insights__card > .insights__trio, .insights__card > .insights__lead { padding-top: 12px; border-top: 1px solid var(--line); }
+.insights__counted { border-top: 1px solid var(--line); }
+.insights__counted summary {
+  min-height: 44px; display: flex; align-items: center; cursor: pointer;
+  font-size: 13.5px; font-weight: 600; color: var(--accent); touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.insights__counted summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.insights__counted .insights__note { padding-bottom: 4px; }
+.ui-seg__opt[aria-checked='true'], .insights__monthseg .ui-seg__opt[role='tab'][aria-selected='true'] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px rgba(0, 0, 0, .12); }
+.ui-seg__opt[role='radio']:focus-visible, .ui-seg__opt[role='tab']:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .insights__headline { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 4px 2px 0; }
 .insights__eyebrow { text-transform: none; letter-spacing: 0; font-size: 13px; }
@@ -110,19 +129,23 @@
   .insights__bar--wide .chipset { margin-inline: 0; padding-inline: 0; }
   .insights__bar--wide .insights__lens { flex: none; margin-top: 0; }
   .insights__bar--wide .insights__lens .ui-seg__opt { flex: none; min-height: 36px; padding-inline: 14px; }
-  .insights.shell__main--wide { display: block; columns: 2; column-gap: 16px; padding-inline: 24px; }
+  .insights.shell__main--wide { display: block; columns: 2; column-gap: 16px; orphans: 1; widows: 1; padding-inline: 24px; }
   /* inline-block, not block: Chrome stretches a balanced column group far past its content when blocks
      carry break-inside: avoid (a 300 px hole before the next wide card); inline-blocks balance exactly.
      vertical-align: top keeps the line's strut from adding space under a card. */
-  .insights.shell__main--wide > :not(:empty) { display: inline-block; width: 100%; vertical-align: top; box-sizing: border-box; break-inside: avoid; margin: 0 0 16px; min-width: 0; }
-  .insights.shell__main--wide > [data-widget='headline'],
-  .insights.shell__main--wide > [data-widget='identity'],
-  .insights.shell__main--wide > [data-widget='share'],
-  .insights.shell__main--wide > [data-widget='empty'],
-  .insights.shell__main--wide > [data-widget='billsPanel'],
-  .insights.shell__main--wide > [data-widget='statements'],
-  .insights.shell__main--wide > [data-widget='fuel'],
-  .insights.shell__main--wide > [data-widget='monthsTable'],
-  .insights.shell__main--wide > [data-widget='categoriesTable'],
-  .insights.shell__main--wide > :not([data-widget]) { display: block; width: auto; column-span: all; }
+  .insights.shell__main--wide > .insights__panel > :not(:empty) { display: inline-block; width: 100%; vertical-align: top; box-sizing: border-box; break-inside: avoid; margin: 0 0 16px; min-width: 0; }
+  .insights.shell__main--wide > .insights__panel > [data-widget='summary'],
+  .insights.shell__main--wide > .insights__panel > [data-widget='identity'],
+  .insights.shell__main--wide > .insights__panel > [data-widget='share'],
+  .insights.shell__main--wide > .insights__panel > [data-widget='empty'],
+  .insights.shell__main--wide > .insights__panel > [data-widget='billsPanel'],
+  .insights.shell__main--wide > .insights__panel > [data-widget='statements'],
+  .insights.shell__main--wide > .insights__panel > [data-widget='monthsTable'],
+  .insights.shell__main--wide > .insights__panel > [data-widget='categoriesTable'],
+  .insights.shell__main--wide > .insights__panel > :not([data-widget]) { display: block; width: auto; column-span: all; }
+  /* The only visible flowing card spans too (no hole beside it): no later and no earlier flowing sibling with content. */
+  .insights.shell__main--wide > .insights__panel > .insights__flow:not(:empty):not(:has(~ .insights__flow:not(:empty))):not(.insights__flow:not(:empty) ~ .insights__flow) { display: block; width: auto; column-span: all; }
+  /* The tab switch: a compact control above the columns (same specificity as the card rule, so it must follow it). */
+  .insights.shell__main--wide > .insights__tabs { display: flex; width: fit-content; column-span: all; margin: 0 0 16px; }
+  .insights__tabs .ui-seg__opt { min-height: 36px; flex: none; padding-inline: 14px; }
 }

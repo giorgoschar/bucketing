@@ -4,9 +4,17 @@ import type { Period } from './period'
 import type { InsightsData } from './types'
 
 export type WidgetId =
-  | 'identity' | 'headline' | 'share' | 'empty' | 'onTrack' | 'inOut' | 'where' | 'inOutMonths'
-  | 'trend' | 'biggest' | 'method' | 'budgets' | 'savings' | 'vsUsual' | 'bills' | 'fuel'
-  | 'billsPanel' | 'statements' | 'monthsTable' | 'categoriesTable'
+  | 'identity' | 'share' | 'summary' | 'empty' | 'where' | 'vsUsual' | 'budgets'
+  | 'byMonth' | 'biggest' | 'method' | 'fuel' | 'monthsTable' | 'categoriesTable'
+  | 'bills' | 'billsPanel' | 'statements'
+
+/** The three Insights tabs (spec §2.2). Overview is the default and writes nothing to the URL. */
+export type InsightsTab = 'overview' | 'trends' | 'bills'
+export const TABS: readonly { value: InsightsTab; label: string }[] = [
+  { value: 'overview', label: 'Overview' },
+  { value: 'trends', label: 'Trends' },
+  { value: 'bills', label: 'Bills & statements' },
+]
 
 export const isEmptyPeriod = (d: InsightsData) => d.kpis.count === 0 && d.total_spent === 0 && d.in_out.in === 0
 
@@ -15,31 +23,54 @@ export function singleMonth(p: Period, d: InsightsData): string | null {
   return (p.preset === 'this_month' || p.preset === 'last_month') && d.start_date ? d.start_date.slice(0, 7) : null
 }
 
-/** The spec's fixed order (§4), minus what this lens, period or data hides. */
+/** Which lines of the Summary card show: each is the condition its old card had (spec §2.2). */
+export function summaryParts(
+  d: InsightsData,
+  { lens, period }: { lens: Lens; period: Period },
+): { onTrack: boolean; inOut: boolean; savings: boolean } {
+  const empty = isEmptyPeriod(d)
+  return {
+    onTrack: !empty && lens === HOUSEHOLD && period.preset === 'this_month',
+    inOut: !empty,
+    savings: !empty && d.kpis.savings_rate != null,
+  }
+}
+
+/** Cards that span both desktop columns whatever else is in the tab (the CSS span list). */
+const SPANNING: readonly WidgetId[] = ['identity', 'share', 'summary', 'empty', 'billsPanel', 'statements', 'monthsTable', 'categoriesTable']
+
+/** A card that flows down the two desktop columns (the others span). The CSS lets the only visible flowing card
+ *  span too, so none sits at half width with a hole beside it; a card that renders nothing (Categories vs usual
+ *  with no rows) is an empty wrapper and does not count. */
+export const isFlowing = (id: WidgetId) => !SPANNING.includes(id)
+
+/** The cards of one tab, in order (spec §2.2), minus what this lens, period or data hides. */
 export function visibleWidgets(
   d: InsightsData,
-  { lens, period, bills = false, statements = false, desktop = false }: { lens: Lens; period: Period; bills?: boolean; statements?: boolean; desktop?: boolean },
+  { tab = 'overview', lens, period, bills = false, statements = false, desktop = false }: {
+    tab?: InsightsTab; lens: Lens; period: Period; bills?: boolean; statements?: boolean; desktop?: boolean
+  },
 ): WidgetId[] {
   const member = lens !== HOUSEHOLD
-  const ids: WidgetId[] = member ? ['identity', 'headline', 'share'] : ['headline']
-  // A bill's history is the household's, for all time: the Bills card stays when the period has no spending.
-  const billsId = bills ? ([desktop ? 'billsPanel' : 'bills'] as const) : []
-  // Like a bill, a past month's statement is the household's: its card stays when the period has no spending.
-  const statementsId = statements ? (['statements'] as const) : []
-  if (isEmptyPeriod(d)) return [...ids, 'empty', ...billsId, ...statementsId]
-  if (!member && period.preset === 'this_month') ids.push('onTrack')
-  ids.push('inOut')
+  const empty = isEmptyPeriod(d)
+  if (tab === 'bills') {
+    // A bill's history and a past month's statement are the household's, for all time: they stay in an empty period.
+    return [...(bills ? [desktop ? 'billsPanel' : 'bills'] as const : []), ...(statements ? (['statements'] as const) : [])]
+  }
+  if (tab === 'trends') {
+    const ids: WidgetId[] = ['byMonth']
+    if (d.kpis.largest) ids.push('biggest')
+    if (d.by_method.length) ids.push('method')
+    if (d.fuel) ids.push('fuel')
+    // Desktop only (spec §5.4): the last 12 months as a table, and every category.
+    if (desktop) ids.push('monthsTable', ...(d.categories.length ? (['categoriesTable'] as const) : []))
+    return ids
+  }
+  const ids: WidgetId[] = member ? ['identity', 'share', 'summary'] : ['summary']
+  if (empty) return [...ids, 'empty']
   if (d.categories.length) ids.push('where')
-  ids.push('inOutMonths', 'trend')
-  if (d.kpis.largest) ids.push('biggest')
-  if (d.by_method.length) ids.push('method')
-  if (d.budget_status.length) ids.push('budgets')
-  if (d.kpis.savings_rate != null) ids.push('savings')
   if (!member && singleMonth(period, d)) ids.push('vsUsual')
-  ids.push(...billsId, ...statementsId)
-  if (d.fuel) ids.push('fuel')
-  // Desktop only (spec §5.4): the last 12 months as a table, and every category.
-  if (desktop) ids.push('monthsTable', ...(d.categories.length ? (['categoriesTable'] as const) : []))
+  if (d.budget_status.length) ids.push('budgets')
   return ids
 }
 

@@ -1,3 +1,4 @@
+import { type KeyboardEvent, useId, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { HBarList, MonthBars, seriesColor, StackBar } from '../../../ui/charts'
 import { formatShortDate } from '../../../ui/format'
@@ -21,32 +22,34 @@ const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0)
 const firstName = (s: string | null | undefined) => (s ?? '').split(' ')[0]
 
 /** "On track for €2,310 by Oct 31": Out projected (Fixed + Buckets) from 2a's month picture,
- *  not the straight-line forecast (which ignores bills and income). */
-export function OnTrack({ data }: WidgetCtx) {
+ *  not the straight-line forecast (which ignores bills and income). Null until the month's plan is saved. */
+export function useOnTrackText({ data }: Pick<WidgetCtx, 'data'>): string | null {
   const month = (data.start_date ?? '').slice(0, 7)
   const plan = usePlanMonth(month).data
   if (!plan) return null
   const out = plan.fixed.projected + plan.buckets.projected
-  return (
-    <Card title="This month">
-      <p className="insights__lead">On track for {eurWhole(out)} by {monthEnd(`${plan.month}-01`)}</p>
-      <p className="insights__note">Spent so far plus the bills and budgets still to come.</p>
-    </Card>
-  )
+  return `On track for ${eurWhole(out)} by ${monthEnd(`${plan.month}-01`)}`
 }
 
-export function InOut({ data, lens, members }: WidgetCtx) {
+/** The footnote of the old "This month" card; the Summary card keeps it under "How these are counted". */
+export const ON_TRACK_NOTE = 'Spent so far plus the bills and budgets still to come.'
+
+export function OnTrack({ data }: Pick<WidgetCtx, 'data'>) {
+  const text = useOnTrackText({ data })
+  return text ? <p className="insights__lead">{text}</p> : null
+}
+
+/** In, Out and Net in one row (the old "In / Out / Net" card's content). */
+export function InOut({ data, lens, members }: Pick<WidgetCtx, 'data' | 'lens' | 'members'>) {
   const who = members.find((m) => m.user_id === lens)
   const inLabel = lens === HOUSEHOLD || !who ? 'In' : `In · received by ${firstName(who.display_name || who.username)}`
   const net = data.in_out.net
   return (
-    <Card title="In / Out / Net">
-      <dl className="insights__trio">
-        <div><dt>{inLabel}</dt><dd className="ui-num">{eur(data.in_out.in)}</dd></div>
-        <div><dt>Out</dt><dd className="ui-num">{eur(data.in_out.out)}</dd></div>
-        <div><dt>Net</dt><dd className={net >= 0 ? 'ui-num ui-pos' : 'ui-num'}>{eur(net)}</dd></div>
-      </dl>
-    </Card>
+    <dl className="insights__trio">
+      <div><dt>{inLabel}</dt><dd className="ui-num">{eur(data.in_out.in)}</dd></div>
+      <div><dt>Out</dt><dd className="ui-num">{eur(data.in_out.out)}</dd></div>
+      <div><dt>Net</dt><dd className={net >= 0 ? 'ui-num ui-pos' : 'ui-num'}>{eur(net)}</dd></div>
+    </dl>
   )
 }
 
@@ -70,28 +73,66 @@ export function WhereItWent({ data, period, lens }: WidgetCtx) {
   )
 }
 
-export function InOutMonths({ data }: WidgetCtx) {
+/** The old "In and Out by month" card's chart, legend and footnote. */
+export function InOutMonths({ data }: Pick<WidgetCtx, 'data'>) {
   const m = data.monthly_in_out
   const totIn = sum(m.map((r) => r.in))
   const totOut = sum(m.map((r) => r.out))
   return (
-    <Card title="In and Out by month">
+    <>
       <MonthBars title="In and Out by month" months={m.map((r) => r.label)} current format={eur}
         series={[{ name: 'In', values: m.map((r) => r.in) }, { name: 'Out', values: m.map((r) => r.out) }]} />
       <p className="insights__foot ui-num">{m.length} months: In {eur(totIn)} · Out {eur(totOut)} · Net {eur(totIn - totOut)}</p>
-    </Card>
+    </>
   )
 }
 
-export function SpendTrend({ data }: WidgetCtx) {
+/** The old "Spend trend" card's chart and footnote. */
+export function SpendTrend({ data }: Pick<WidgetCtx, 'data'>) {
   const t = data.monthly_trend
   const done = t.filter((r) => !r.is_current)
   const avg = done.length ? sum(done.map((r) => r.total)) / done.length : null
   return (
-    <Card title="Spend trend">
+    <>
       <MonthBars title="Spend by month" months={t.map((r) => r.label)} current={t.at(-1)?.is_current}
         series={[{ name: 'Spent', values: t.map((r) => r.total) }]} format={eur} />
       {avg != null && <p className="insights__foot ui-num">Average {eur(avg)} a month</p>}
+    </>
+  )
+}
+
+type MonthView = 'inout' | 'spending'
+const MONTH_VIEWS: readonly { value: MonthView; label: string }[] = [
+  { value: 'inout', label: 'In and out' },
+  { value: 'spending', label: 'Spending' },
+]
+
+/** One chart, two views (spec §2.2): In and out (default) or Spending; each is the old card's content. */
+export function ByMonth({ data }: Pick<WidgetCtx, 'data'>) {
+  const [view, setView] = useState<MonthView>('inout')
+  const uid = useId()
+  const move = (e: KeyboardEvent<HTMLButtonElement>, i: number) => {
+    const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0
+    if (!step) return
+    e.preventDefault()
+    const at = (i + step + MONTH_VIEWS.length) % MONTH_VIEWS.length
+    setView(MONTH_VIEWS[at].value)
+    ;(e.currentTarget.parentElement?.children[at] as HTMLElement | undefined)?.focus()
+  }
+  return (
+    <Card title="By month">
+      <div className="ui-seg insights__monthseg" role="tablist" aria-label="Chart view">
+        {MONTH_VIEWS.map((v, i) => (
+          <button key={v.value} type="button" role="tab" id={`${uid}-${v.value}`} className="ui-seg__opt"
+            aria-selected={v.value === view} aria-controls={`${uid}-panel`} tabIndex={v.value === view ? 0 : -1}
+            onClick={() => setView(v.value)} onKeyDown={(e) => move(e, i)}>
+            {v.label}
+          </button>
+        ))}
+      </div>
+      <div role="tabpanel" id={`${uid}-panel`} aria-labelledby={`${uid}-${view}`} className="insights__monthpanel">
+        {view === 'inout' ? <InOutMonths data={data} /> : <SpendTrend data={data} />}
+      </div>
     </Card>
   )
 }
@@ -155,14 +196,11 @@ export function BudgetsCard({ data }: WidgetCtx) {
   )
 }
 
-export function SavingsRate({ data }: WidgetCtx) {
+/** The old "Savings rate" card's sentence. */
+export function SavingsRate({ data }: Pick<WidgetCtx, 'data'>) {
   const r = data.kpis.savings_rate
   if (r == null) return null
-  return (
-    <Card title="Savings rate">
-      <p className="insights__lead">{r >= 0 ? `You kept ${Math.round(r)}% of what came in` : `You spent ${Math.abs(Math.round(r))}% more than came in`}</p>
-    </Card>
-  )
+  return <p className="insights__lead">{r >= 0 ? `You kept ${Math.round(r)}% of what came in` : `You spent ${Math.abs(Math.round(r))}% more than came in`}</p>
 }
 
 export function VsUsual({ data, period }: WidgetCtx) {

@@ -76,7 +76,7 @@ it('has one h1 and links back to Insights', async () => {
   renderWithProviders(<StatementsList />, { route: '/insights/statements' })
   await screen.findByRole('link', { name: /August 2026/ })
   expect(screen.getAllByRole('heading', { level: 1 }).map((h) => h.textContent)).toEqual(['Statements'])
-  expect(screen.getByRole('link', { name: 'Back' })).toHaveAttribute('href', '/insights')
+  expect(screen.getByRole('link', { name: 'Back' })).toHaveAttribute('href', '/insights?tab=bills')
 })
 
 it('offline with a saved copy: the rows and "Offline · showing saved statement"', async () => {
