@@ -132,3 +132,9 @@ Gaps found in the current app that the new app (web/) must cover.
 - C: review findings 7 and 15, and the fail-safe for text with an unknown combining class.
 - S: Greek case-insensitive search needs Postgres (SQLite lower() is ASCII only).
 - S: the income item's history page title and back link.
+- Final review 6: the search rate limit is per worker (about 120 a minute per user with two workers, not 60); set `RATE_LIMIT_STORAGE_URI` or accept.
+- Final review 7: a two-character merchant is offered as a "contains" rule (`ab` matches any text containing it); consider a higher minimum (4) for suggested patterns.
+- Final review 8: no test pins that opening a search result while the desktop Add panel is dirty shows the discard question.
+- Browser 2 (pre-existing): a chart axis label runs past the card edge.
+- Browser 4 (pre-existing): in Categories vs usual the emoji touches the label.
+- Browser 5 (pre-existing): the Insights period chip row is cut at the edge with no scroll hint.
