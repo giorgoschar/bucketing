@@ -233,4 +233,4 @@ def test_the_suggestion_route_is_in_the_openapi_with_a_model(client):
     spec = client.get("/openapi.json").json()["paths"]
     get = spec[SUGGEST]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
     assert "RuleSuggestionOut" in json.dumps(get)
-    assert "DismissOut" in json.dumps(spec[DISMISS]["post"])
+    assert "RuleDismissOut" in json.dumps(spec[DISMISS]["post"])

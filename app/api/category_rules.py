@@ -169,11 +169,11 @@ class RuleSuggestionOut(BaseModel):
     category_name: str
 
 
-class DismissIn(BaseModel):
+class RuleDismissIn(BaseModel):
     pattern: str
 
 
-class DismissOut(BaseModel):
+class RuleDismissOut(BaseModel):
     pattern: str
     times: int
 
@@ -193,9 +193,9 @@ def rule_suggestion(
     return suggest_rule(db, txn)
 
 
-@suggestion_router.post("/suggestion/dismiss", response_model=DismissOut)
+@suggestion_router.post("/suggestion/dismiss", response_model=RuleDismissOut)
 def dismiss_rule_suggestion(
-    body: DismissIn, auth=Depends(require_api_auth), db: Session = Depends(get_db)
+    body: RuleDismissIn, auth=Depends(require_api_auth), db: Session = Depends(get_db)
 ):
     """ "Not now": one more dismissal for this pattern (two stop the offer)."""
     user, hh_id = auth
@@ -204,4 +204,4 @@ def dismiss_rule_suggestion(
         raise HTTPException(status_code=400, detail="Enter at least 2 characters.")
     times = dismiss_suggestion(db, hh_id, pattern)
     db.commit()
-    return DismissOut(pattern=pattern, times=times)
+    return RuleDismissOut(pattern=pattern, times=times)

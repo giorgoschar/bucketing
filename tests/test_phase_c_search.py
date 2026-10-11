@@ -182,8 +182,11 @@ def test_greek_text_matches_case_insensitively(client, db, api):  # noqa: F811
     headers, hh = api
     _bill(db, hh, "Νερό ΕΥΔΑΠ")
     _txn(db, hh, merchant="Σκλαβενίτης")
-    body = _get(client, headers, "σκλαβ").json()
-    assert len(body["entries"]) == 1
+    assert len(_get(client, headers, "Σκλαβ").json()["entries"]) == 1
+    assert [i["name"] for i in _get(client, headers, "ΕΥΔΑΠ").json()["items"]] == ["Νερό ΕΥΔΑΠ"]
+    if db.get_bind().dialect.name != "postgresql":
+        return  # SQLite's LOWER/ILIKE folds ASCII only; production is PostgreSQL
+    assert len(_get(client, headers, "σκλαβ").json()["entries"]) == 1
     assert [i["name"] for i in _get(client, headers, "νερό").json()["items"]] == ["Νερό ΕΥΔΑΠ"]
 
 
