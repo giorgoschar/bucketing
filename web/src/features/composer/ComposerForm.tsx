@@ -39,7 +39,7 @@ import { DateSheet } from './pickers/DateSheet'
 import { MethodSheet } from './pickers/MethodSheet'
 import { PayerSheet } from './pickers/PayerSheet'
 import { METHOD_LABELS, memberName } from './pickers/labels'
-import { type ComposerState, type Method, reduce, type Remembered, type TxnType } from './state'
+import { type ComposerState, reduce, type Remembered, type TxnType } from './state'
 import type { Duplicate } from './types'
 import { useClose } from './useClose'
 
@@ -285,7 +285,7 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
   useLayoutEffect(() => {
     if (panel) return // the panel's amount is a text field; Enter and Esc are handled below
     const onKeyDown = (e: KeyboardEvent) => {
-      if (sheet || dup || confirmDelete || scanOpen || blocker.state === 'blocked') return
+      if (sheet || dup || confirmDelete || scanOpen || pantryScan || blocker.state === 'blocked') return
       const t = e.target as HTMLElement | null
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
       let key: AmountKey | null = null
@@ -302,20 +302,12 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [panel, sheet, dup, confirmDelete, scanOpen, blocker.state])
+  }, [panel, sheet, dup, confirmDelete, scanOpen, pantryScan, blocker.state])
 
   const switchType = (value: TxnType) => {
     const r = sanitize(value === 'income' ? defaults.lastIncome : defaults.last, lookup(value))
     dispatch({ type: 'setType', value, defaults: { ...r, paid_by: r.paid_by ?? data.meId } })
   }
-  // Cash in the method chip (spec §2.4) is the old "Cash from wallet": a new expense that picks Cash gets the wallet
-  // default, the payer locked to you and the "took from" control. Re-picking Cash, and an edit, change nothing else.
-  const pickMethod = (method: Method) => {
-    if (method === 'cash' && s.method !== 'cash' && s.mode === 'new' && s.type !== 'income') {
-      dispatch({ type: 'setCashMode', on: true, meId: data.meId, defaultMethod: s.method })
-    } else if (method !== s.method) dispatch({ type: 'pickMethod', method })
-  }
-
   const rule = matchRule(s.merchant, data.rules)
   const suggestions = typing && !listClosed ? suggestMerchants(s.merchant, data.merchants) : []
   const setMerchant = (value: string) => {
@@ -371,7 +363,9 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
     : income
       ? `Save income ${spokenMoney(cents, s.currency)}`
       : `Save ${spokenMoney(cents, s.currency)}${bucketName ? ` to ${bucketName}` : ''}`
-  const allowOwnShare = !income && data.members.length > 1 && s.tookFrom === 'none' && !s.cashMode
+  // The payer is you, and fixed, only while cash is taken from a wallet or the bank (took_cash needs you as payer).
+  const payerLocked = s.mode === 'new' && !income && s.method === 'cash' && s.tookFrom !== 'none'
+  const allowOwnShare = !income && data.members.length > 1 && s.tookFrom === 'none'
 
   // Currency lives in More (spec §2.4). It stays on the main form for a foreign entry, being edited or typed, and
   // when one of the last 20 entries was foreign; `initial` is the saved entry on an edit.
@@ -388,7 +382,7 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
       tag={s.ruleLabel ?? (s.fromReceipt.includes('category') ? 'from receipt' : null)}
       onPress={() => setSheet('category')} />
   )
-  const payerValue = s.ownShare ? 'Each paid own share' : s.cashMode ? 'You' : memberName(payer)
+  const payerValue = s.ownShare ? 'Each paid own share' : payerLocked ? 'You' : memberName(payer)
 
   const typeSwitch = (
     <Segmented label="Entry type" value={s.type} onChange={switchType} disabled={s.mode === 'edit'}
@@ -490,7 +484,7 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
               {categoryPill}
               {income
                 ? <Pill label="Received by" value={memberName(payer)} onPress={() => setSheet('payer')} />
-                : <Pill label="Payer" value={payerValue} readOnly={s.cashMode} onPress={() => setSheet('payer')} />}
+                : <Pill label="Payer" value={payerValue} readOnly={payerLocked} onPress={() => setSheet('payer')} />}
               {!income && <Pill label="Method" value={METHOD_LABELS[s.method]} onPress={() => setSheet('method')} />}
               <Pill label="Date" value={dayLabel(s.date, today)} onPress={() => setSheet('date')} />
             </>
@@ -505,14 +499,14 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
             <>
               {budgetPill}
               {categoryPill}
-              <Pill label="Payer" value={payerValue} readOnly={s.cashMode} onPress={() => setSheet('payer')} />
+              <Pill label="Payer" value={payerValue} readOnly={payerLocked} onPress={() => setSheet('payer')} />
               <Pill label="Method" value={METHOD_LABELS[s.method]} onPress={() => setSheet('method')} />
             </>
           )}
         </div>
 
         {s.mode === 'new' && !income && s.method === 'cash' && (
-          <CashControls s={s} dispatch={dispatch} householdCurrency={data.householdCurrency} onStash={setStashCents} />
+          <CashControls s={s} dispatch={dispatch} meId={data.meId} householdCurrency={data.householdCurrency} onStash={setStashCents} />
         )}
 
         {dup && <DuplicateCard dup={dup} onOpen={() => leave(`/edit/${dup.id}`)} onSaveAnyway={() => void onSave(true)} />}
@@ -567,13 +561,13 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
         recentIds={defaults.recentCategoryIds} selectedId={s.categoryId}
         suggestion={rule ? { id: rule.category_id, reason: `rule: ${rule.pattern}` } : null}
         onPick={(id) => dispatch({ type: 'pickCategory', id, remembered: remembered(defaults.byCategory[id]) })} />
-      {!s.cashMode && (
+      {!payerLocked && (
         <PayerSheet open={sheet === 'payer'} onClose={() => setSheet(null)} title={income ? 'Received by' : 'Payer'}
           members={data.members} selectedId={s.paidBy} ownShare={s.ownShare} allowOwnShare={allowOwnShare}
           onPick={(id) => dispatch({ type: 'pickPayer', id })} onOwnShare={() => setSheet('own')} />
       )}
       <MethodSheet open={sheet === 'method'} onClose={() => setSheet(null)} selected={s.method}
-        onPick={pickMethod} />
+        onPick={(m) => dispatch({ type: 'pickMethod', method: m })} />
       <CurrencySheet open={sheet === 'currency'} onClose={() => setSheet(null)} selected={s.currency}
         onPick={(code) => dispatch({ type: 'pickCurrency', code, householdCurrency: data.householdCurrency, lastRate: defaults.rates[code] })} />
       <DateSheet open={sheet === 'date'} onClose={() => setSheet(null)} value={s.date} today={today}

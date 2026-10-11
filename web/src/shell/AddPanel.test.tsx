@@ -28,6 +28,11 @@ const session: Session = {
 }
 vi.mock('../session/SessionProvider', () => ({ useSession: () => session }))
 
+// The pantry camera is replaced by a modal dialog like the real one (role dialog, aria-modal).
+vi.mock('../features/plan/pantry/scan/Scanner', () => ({
+  Scanner: () => <div role="dialog" aria-modal="true" aria-label="Scan barcode" />,
+}))
+
 afterEach(async () => {
   cleanup()
   vi.unstubAllGlobals()
@@ -113,6 +118,7 @@ it('a /new?mode=cash&take=none&amount=45.00 link opens the panel over the curren
   expect(where()).toBe('/activity?add=1&mode=cash&take=none&amount=45.00')
   expect(screen.getByText('activity screen')).toBeInTheDocument()
   expect(within(panel()).getByRole('button', { name: 'Method: Cash. Change' })).toBeInTheDocument() // spec §2.4: Cash lives in the method chip
+  expect(within(within(panel()).getByRole('group', { name: 'Took from' })).getByRole('button', { name: 'Not tracked' })).toHaveAttribute('aria-pressed', 'true')
   await userEvent.keyboard('{Enter}')
   await waitFor(() => expect(writes(api)).toHaveLength(1))
   expect(writes(api)[0].body).toMatchObject({ amount: '45.00', payment_method: 'cash', took_cash: false, paid_by: 'u1' })
@@ -225,6 +231,7 @@ it('the cash-from-wallet mode locks the payer to you and saves as cash', async (
   await waitFor(() => amount())
   await user.click(within(panel()).getByRole('button', { name: /^Method:/ })) // spec §2.4: Cash lives in the method chip
   await user.click(within(screen.getByRole('dialog', { name: 'Payment method' })).getByRole('button', { name: 'Cash' }))
+  await user.click(within(panel()).getByRole('button', { name: 'My wallet' })) // Cash starts on Not tracked; the wallet is the user's choice
   expect(within(panel()).getByRole('group', { name: 'Payer: You' })).toBeInTheDocument()
   await user.type(amount(), '6{Enter}')
   await waitFor(() => expect(writes(api)).toHaveLength(1))
@@ -517,4 +524,19 @@ it('in the panel, Not now dismisses the pattern and the question goes', async ()
   expect(within(panel()).queryByRole('group', { name: 'Rule suggestion' })).not.toBeInTheDocument()
   await waitFor(() => expect(writes(api).some((c) => c.path === '/api/v1/category-rules/suggestion/dismiss')).toBe(true))
   expect(writes(api).find((c) => c.path.endsWith('/dismiss'))!.body).toEqual({ pattern: 'lidl' })
+})
+
+// Fix round 1, finding 3: in the panel too, Enter does not save the entry behind the pantry camera.
+it('the panel does not save on Enter while the pantry camera is open', async () => {
+  const user = userEvent.setup()
+  const { api } = await setup('/?add=1')
+  await waitFor(() => amount())
+  await user.type(amount(), '6')
+  await user.click(within(panel()).getByRole('button', { name: 'Scan' }))
+  await user.click(within(await screen.findByRole('dialog', { name: 'Scan' })).getByRole('button', { name: /^Pantry barcode/ }))
+  await screen.findByRole('dialog', { name: 'Scan barcode' })
+  fireEvent.keyDown(amount(), { key: 'Enter' })
+  fireEvent.keyDown(amount(), { key: 'Enter', metaKey: true })
+  expect(writes(api)).toHaveLength(0)
+  expect(amount()).toHaveValue('6')
 })

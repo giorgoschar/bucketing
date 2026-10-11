@@ -2,7 +2,7 @@ import { fireEvent, screen, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { resetTestEnv } from '../../test/render'
 import { writes } from './testHelpers'
-import { renderComposer, TXN } from './testing'
+import { DEFAULTS, renderComposer, TXN } from './testing'
 
 vi.mock('../../session/SessionProvider', () => ({
   useSession: () => ({
@@ -47,14 +47,37 @@ it('the method list is Card, Cash, then the others', async () => {
   expect(names.slice(2).join()).toMatch(/Apple Pay.*Transfer.*Other/)
 })
 
-it('choosing Cash shows "Took from" with the wallet default, locks the payer, and saves as before', async () => {
+const took = () => within(screen.getByRole('group', { name: 'Took from' }))
+const noCashPost = (api: { calls: { method: string; path: string }[] }) =>
+  expect(api.calls.some((c) => c.method === 'POST' && c.path.startsWith('/api/v1/cash'))).toBe(false)
+
+// Money safety (fix round 1, finding 1): Cash from the method sheet is "Not tracked", exactly as plain Cash was.
+it('picking Cash shows "Took from" on Not tracked, leaves the payer free, and sends no take', async () => {
   const { api } = await renderComposer('/new')
   await ready()
   expect(screen.queryByRole('group', { name: 'Took from' })).not.toBeInTheDocument()
   await pickMethod('Cash')
-  const took = within(await screen.findByRole('group', { name: 'Took from' }))
-  expect(took.getByRole('button', { name: 'My wallet' })).toHaveAttribute('aria-pressed', 'true')
+  await screen.findByRole('group', { name: 'Took from' })
+  expect(took().getByRole('button', { name: 'Not tracked' })).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.getByRole('button', { name: /^Payer:/ })).toBeInTheDocument()
+  press('6')
+  fireEvent.click(screen.getByRole('button', { name: /^Save 6 euro/ }))
+  await screen.findByText('home screen')
+  expect(writes(api)).toHaveLength(1)
+  const body = writes(api)[0].body as Record<string, unknown>
+  expect(body).toMatchObject({ payment_method: 'cash', took_cash: false })
+  expect(body).not.toHaveProperty('take_from')
+  noCashPost(api)
+})
+
+it('picking Cash, then My wallet, takes once from the wallet and locks the payer to you', async () => {
+  const { api } = await renderComposer('/new')
+  await ready()
+  await pickMethod('Cash')
+  await screen.findByRole('group', { name: 'Took from' })
+  fireEvent.click(took().getByRole('button', { name: 'My wallet' }))
   expect(screen.getByLabelText('Payer: You')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /^Payer:/ })).not.toBeInTheDocument()
   expect(await screen.findByText('Wallet: €50.00')).toBeInTheDocument()
   press('6')
   fireEvent.click(screen.getByRole('button', { name: /^Save 6 euro/ }))
@@ -63,11 +86,62 @@ it('choosing Cash shows "Took from" with the wallet default, locks the payer, an
   expect(writes(api)[0].body).toMatchObject({ payment_method: 'cash', took_cash: true, take_from: 'stash', paid_by: 'u1' })
 })
 
+it('a payer picked before My wallet becomes you when the wallet is chosen', async () => {
+  const { api } = await renderComposer('/new')
+  await ready()
+  fireEvent.click(screen.getByRole('button', { name: /^Payer:/ }))
+  fireEvent.click(within(await screen.findByRole('dialog', { name: 'Payer' })).getByRole('button', { name: /Maria/ }))
+  await pickMethod('Cash')
+  fireEvent.click(took().getByRole('button', { name: 'My wallet' }))
+  press('6')
+  fireEvent.click(screen.getByRole('button', { name: /^Save 6 euro/ }))
+  await screen.findByText('home screen')
+  expect(writes(api)[0].body).toMatchObject({ took_cash: true, take_from: 'stash', paid_by: 'u1' })
+})
+
+// Fix round 1, finding 2: the payer is locked only while a take is tracked.
+it('Cash with Not tracked lets Maria be the payer; My wallet then Not tracked frees the chip again', async () => {
+  const { api } = await renderComposer('/new?mode=cash')
+  await ready()
+  expect(screen.getByLabelText('Payer: You')).toBeInTheDocument()
+  fireEvent.click(took().getByRole('button', { name: 'Not tracked' }))
+  fireEvent.click(await screen.findByRole('button', { name: /^Payer:/ }))
+  fireEvent.click(within(await screen.findByRole('dialog', { name: 'Payer' })).getByRole('button', { name: /Maria/ }))
+  press('6')
+  fireEvent.click(screen.getByRole('button', { name: /^Save 6 euro/ }))
+  await screen.findByText('home screen')
+  expect(writes(api)[0].body).toMatchObject({ payment_method: 'cash', took_cash: false, paid_by: 'u2' })
+})
+
+it('Cash pre-selected from the last entry is Not tracked and sends no take', async () => {
+  const { api } = await renderComposer('/new', {
+    defaults: { ...DEFAULTS, last: { ...DEFAULTS.last, payment_method: 'cash' } },
+  })
+  await ready()
+  expect(screen.getByRole('button', { name: 'Method: Cash. Change' })).toBeInTheDocument()
+  expect(took().getByRole('button', { name: 'Not tracked' })).toHaveAttribute('aria-pressed', 'true')
+  press('4')
+  fireEvent.click(screen.getByRole('button', { name: /^Save 4 euro/ }))
+  await screen.findByText('home screen')
+  expect(writes(api)[0].body).toMatchObject({ payment_method: 'cash', took_cash: false })
+  expect(writes(api)[0].body).not.toHaveProperty('take_from')
+})
+
+it('?mode=cash is the wallet take with the payer locked, as before', async () => {
+  const { api } = await renderComposer('/new?mode=cash&amount=6')
+  await ready()
+  expect(took().getByRole('button', { name: 'My wallet' })).toHaveAttribute('aria-pressed', 'true')
+  fireEvent.click(await screen.findByRole('button', { name: /^Save 6 euro/ }))
+  await screen.findByText('home screen')
+  expect(writes(api)[0].body).toMatchObject({ payment_method: 'cash', took_cash: true, take_from: 'stash', paid_by: 'u1' })
+})
+
 it('choosing Cash, then another method, takes the control away and sends no take', async () => {
   const { api } = await renderComposer('/new')
   await ready()
   await pickMethod('Cash')
   await screen.findByRole('group', { name: 'Took from' })
+  fireEvent.click(took().getByRole('button', { name: 'My wallet' }))
   await pickMethod('Transfer')
   expect(screen.queryByRole('group', { name: 'Took from' })).not.toBeInTheDocument()
   expect(screen.getByRole('button', { name: /^Payer:/ })).toBeInTheDocument()
@@ -80,7 +154,6 @@ it('choosing Cash, then another method, takes the control away and sends no take
 it('?mode=cash&take=none keeps "Not tracked" and picking Cash again does not reset it', async () => {
   const { api } = await renderComposer('/new?mode=cash&take=none&amount=12')
   await ready()
-  const took = () => within(screen.getByRole('group', { name: 'Took from' }))
   expect(took().getByRole('button', { name: 'Not tracked' })).toHaveAttribute('aria-pressed', 'true')
   await pickMethod('Cash')
   expect(took().getByRole('button', { name: 'Not tracked' })).toHaveAttribute('aria-pressed', 'true')

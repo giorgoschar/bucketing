@@ -126,3 +126,55 @@ it('an unknown code offers Add manually inside the flow', async () => {
   fireEvent.click(await screen.findByRole('button', { name: 'Add manually' }))
   expect(await screen.findByRole('dialog', { name: 'Add to pantry' })).toHaveTextContent('Barcode 12345678')
 })
+
+// Fix round 1, finding 3: no key reaches the form behind the scan sheet, the camera or the barcode sheet.
+async function amountSevenThen(open: () => Promise<void>) {
+  const r = await renderComposer('/new', { routes: routes() })
+  await screen.findByRole('button', { name: /^Budget:/ })
+  fireEvent.click(screen.getByRole('button', { name: '7' }))
+  await open()
+  return r
+}
+const chooseScan = async (choice: RegExp) => {
+  fireEvent.click(screen.getByRole('button', { name: 'Scan' }))
+  fireEvent.click(within(await screen.findByRole('dialog', { name: 'Scan' })).getByRole('button', { name: choice }))
+}
+const keysDoNothing = (api: { calls: { method: string; path: string }[] }) => {
+  // One key at a time: a "9" then a Backspace would cancel out and hide the leak.
+  for (const key of ['9', 'Backspace', 'Enter']) {
+    fireEvent.keyDown(document.activeElement ?? document.body, { key })
+    expect(screen.getByText('Amount 7.00 euro')).toBeInTheDocument()
+    expect(api.calls.some((c) => c.method === 'POST' && c.path === '/api/v1/transactions')).toBe(false)
+  }
+}
+
+it('the scan sheet swallows digits, Backspace and Enter', async () => {
+  const { api } = await amountSevenThen(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Scan' }))
+    await screen.findByRole('dialog', { name: 'Scan' })
+  })
+  keysDoNothing(api)
+})
+
+it('harness: a key does reach the bare form', async () => {
+  await amountSevenThen(async () => {})
+  fireEvent.keyDown(window, { key: '9' })
+  expect(screen.getByText('Amount 79.00 euro')).toBeInTheDocument()
+})
+
+it('the pantry camera swallows digits, Backspace and Enter', async () => {
+  const { api } = await amountSevenThen(async () => {
+    await chooseScan(/^Pantry barcode/)
+    await screen.findByRole('dialog', { name: 'Scan barcode' })
+  })
+  keysDoNothing(api)
+})
+
+it('the barcode sheet swallows digits, Backspace and Enter', async () => {
+  const { api } = await amountSevenThen(async () => {
+    await chooseScan(/^Pantry barcode/)
+    fireEvent.click(await screen.findByRole('button', { name: 'Read a code' }))
+    await screen.findByRole('dialog', { name: 'Dodoni Feta PDO' })
+  })
+  keysDoNothing(api)
+})

@@ -14,15 +14,16 @@ export interface CashControlsProps {
   s: ComposerState
   dispatch: Dispatch<Action>
   householdCurrency: string
+  meId: string
   onStash: (cents: number | null) => void
 }
 
 /** Method Cash: where the cash came from. "My wallet" shows (and checks against) the wallet balance. */
-export function CashControls({ s, dispatch, householdCurrency, onStash }: CashControlsProps) {
+export function CashControls({ s, dispatch, meId, householdCurrency, onStash }: CashControlsProps) {
   return (
     <div className="composer__cash">
       <Segmented<TookFrom> label="Took from" options={OPTIONS} value={s.tookFrom}
-        onChange={(value) => dispatch({ type: 'setTookFrom', value })} />
+        onChange={(value) => dispatch({ type: 'setTookFrom', value, meId })} />
       {s.tookFrom === 'stash' && <WalletLine householdCurrency={householdCurrency} onStash={onStash} />}
     </div>
   )
