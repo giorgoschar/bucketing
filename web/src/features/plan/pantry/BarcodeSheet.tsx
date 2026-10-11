@@ -60,11 +60,13 @@ export function BarcodeSheet({ code, onClose, onScanAnother, onAddManually, onAd
     return () => ctrl.abort()
   }, [code])
 
-  const title = result.state === 'found' ? result.product.name : `Barcode ${code}`
   const matched = result.state === 'found' ? result.product.in_pantry
     : result.state === 'missing' || result.state === 'unavailable' ? result.inPantry : null
   const mine = useMine(matched ?? null)
   const missHave = result.state === 'missing' || result.state === 'unavailable' ? mine.match : null
+  // Spec §2.6: a 404 for a barcode that is the household's own is "your own item", named from the saved list.
+  const own = result.state === 'missing' && !!mine.match
+  const title = result.state === 'found' ? result.product.name : own && mine.name ? mine.name : `Barcode ${code}`
   const have = missHave && <> · <b className="pantry-lookup__have">In pantry: {formatQty(missHave.quantity)}</b></>
   const scanAnother = (
     <button type="button" className="btn" disabled={!online} onClick={onScanAnother}><ScanIcon />Scan another</button>
@@ -86,7 +88,7 @@ export function BarcodeSheet({ code, onClose, onScanAnother, onAddManually, onAd
         {result.state === 'found' && <Found product={{ ...result.product, in_pantry: mine.match }} code={code} />}
         {result.state === 'missing' && (
           <div className="pantry-lookup__msg">
-            <p className="pantry-lookup__head">Not on PosoKanei</p>
+            <p className="pantry-lookup__head">{own ? 'Your own item · no store lists this barcode' : 'Not on PosoKanei'}</p>
             <p className="pantry-lookup__note">
               {missHave ? <>Barcode <span className="ui-num">{code}</span> isn’t listed{have}</>
                 : <>Barcode {code} isn’t listed. You can still add it by hand.</>}
