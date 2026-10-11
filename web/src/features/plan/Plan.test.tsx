@@ -22,7 +22,7 @@ it('opens on Upcoming and switches views through the URL', async () => {
   const { router } = renderWithProviders(<Plan />, { route: '/plan' })
   expect(screen.getByRole('heading', { level: 1, name: 'Plan' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Upcoming' })).toHaveAttribute('aria-pressed', 'true')
-  expect(await screen.findByRole('region', { name: 'Fri 9 Oct' })).toBeInTheDocument()
+  expect(await screen.findByRole('button', { name: /Cosmote/ })).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: 'Budgets' }))
   expect(router.state.location.search).toBe('?view=budgets')
   expect(await screen.findByRole('progressbar', { name: 'Day to day' })).toBeInTheDocument()

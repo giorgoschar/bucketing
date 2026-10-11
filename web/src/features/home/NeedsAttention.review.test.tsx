@@ -23,7 +23,7 @@ const routes = (list: Parameters<typeof listRoutes>[0] | null, over: Routes = {}
   ...readRoutes(),
   'GET /api/v1/matches': () => [],
   'GET /api/v1/recurring/entries': () => [],
-  'GET /api/v1/plan/upcoming': () => [day('2026-10-04', [entry({ id: 'e5', name: 'Gym', estimated: true, amount: 30 })], 900)],
+  'GET /api/v1/plan/upcoming': () => [day('2026-10-04', [entry({ id: 'e5', item_id: 'i2', name: 'Gym', estimated: true, amount: 30 })], 900)],
   'GET /api/v1/plan/budgets': () => [],
   'GET /api/v1/insights/categories-vs-usual': () => [],
   ...billsRoutes([billRow({ change: change({ entry_id: 'e9' }) })]),
@@ -32,7 +32,7 @@ const routes = (list: Parameters<typeof listRoutes>[0] | null, over: Routes = {}
 })
 const kinds = () => Array.from(document.querySelectorAll('[data-attn]')).map((n) => n.getAttribute('data-attn'))
 
-it('"Review September" is the first row, and Review opens the statement', async () => {
+it('"Review September" shows as a row with no failed or overdue ones, and Review opens the statement', async () => {
   fakeApi(routes(statementList({ review, months: [listMonth()] })))
   const { router } = renderWithProviders(<NeedsAttention />)
   await waitFor(() => expect(kinds()).toEqual(['monthReview', 'missingAmount', 'billChange']))
@@ -77,13 +77,13 @@ it('does not hold back "All clear" while the list loads', async () => {
   expect(await screen.findByText('All clear')).toBeInTheDocument()
 })
 
-it('comes before every other row (pure order)', () => {
+it('comes before the amount, cash and bill rows (pure order)', () => {
   const order = buildAttention({
     today: '2026-10-02', failed: [], cashNotLogged: 12, review,
     bills: [billRow({ change: change() })],
-    upcoming: [day('2026-10-04', [entry({ estimated: true })], 0)],
+    upcoming: [day('2026-10-04', [entry({ item_id: 'i2', estimated: true })], 0)],
   }).map((i) => i.kind)
-  expect(order).toEqual(['monthReview', 'missingAmount', 'billChange', 'cash'])
+  expect(order).toEqual(['monthReview', 'missingAmount', 'cash', 'billChange'])
   expect(buildAttention({ today: '2026-10-02', failed: [], review: null }).map((i) => i.kind)).toEqual([])
   expect(buildAttention({ today: '2026-10-02', failed: [] }).map((i) => i.kind)).toEqual([])
 })

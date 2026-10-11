@@ -17,7 +17,7 @@ import { useStatements } from '../insights/statements/hooks'
 import { useDismissedBills } from './billDismiss'
 import { attentionReady, buildAttention, overdueWindow, type AttentionInput, type AttentionItem } from './attention'
 
-export const RECENT_COUNT = 10
+export const RECENT_COUNT = 5
 
 export function useOverdueEntries(today: string = todayISO()) {
   const { from, to } = overdueWindow(today)
@@ -29,7 +29,7 @@ export function useMatches() {
   return useCachedQuery(keys.matches(), (signal) => unwrap(api.GET('/api/v1/matches', { signal })))
 }
 
-/** The last 10 transactions, newest first (spec §5.3). 2b merges its pending rows into this key. */
+/** The last 5 transactions, newest first (spec §5.3). 2b merges its pending rows into this key. */
 export function useRecentTransactions() {
   return useCachedQuery(keys.transactions.recent(), async (signal) =>
     toTransactionPage(await unwrap(api.GET('/api/v1/transactions', { params: { query: { page_size: RECENT_COUNT } }, signal }))).items)
