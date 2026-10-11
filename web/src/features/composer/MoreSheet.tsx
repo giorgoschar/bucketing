@@ -1,6 +1,6 @@
 import { type Dispatch, type ReactNode, useState } from 'react'
 import { ToggleRow } from '../../ui/ToggleRow'
-import { type Member, Sheet } from './bridge'
+import { ChevronDownIcon, type Member, Sheet } from './bridge'
 import { convertCents, formatLitres, litresMilli, parseFuelPrice, parseRate, toCents } from './amount'
 import { formatCents } from './currencies'
 import { isFuel, type Validation } from './model'
@@ -18,6 +18,7 @@ export interface MoreCtx {
   meId: string
   problems: Validation['problems']
   onOpenSplit?: () => void
+  onOpenCurrency?: () => void
 }
 
 export interface MoreSheetProps {
@@ -48,6 +49,13 @@ export function MoreSheet({ open, onClose, s, dispatch, ctx }: MoreSheetProps) {
   return (
     <Sheet open={open} onClose={onClose} title="More"
       footer={<button type="button" className="btn btn--primary btn--lg btn--block" onClick={onClose}>Done</button>}>
+      <Section title="Currency">
+        <button type="button" className="ck-more__cur" onClick={() => ctx.onOpenCurrency?.()}
+          aria-label={`Currency: ${s.currency}. Change`}>
+          {s.currency}
+          <ChevronDownIcon />
+        </button>
+      </Section>
       {!income && (
         <Section title="Date">
           <DateChips value={s.date} today={ctx.today} onPick={(d) => dispatch({ type: 'setDate', value: d })} />

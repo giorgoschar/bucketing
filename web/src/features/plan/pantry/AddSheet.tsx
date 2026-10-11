@@ -213,7 +213,7 @@ function ResultRow({ p, online, added, onAdd }: {
   )
 }
 
-function ManualFooter({ formId, online }: { formId: string; online: boolean }) {
+export function ManualFooter({ formId, online }: { formId: string; online: boolean }) {
   return (
     <div className="pantry-sheet__foot">
       {!online && <p className="pantry-offline">{OFFLINE_WRITE}</p>}
@@ -224,7 +224,7 @@ function ManualFooter({ formId, online }: { formId: string; online: boolean }) {
   )
 }
 
-function ManualForm({ id, barcode, online, onBack, onAdded }: {
+export function ManualForm({ id, barcode, online, onBack, onAdded }: {
   id: string; barcode: string | null; online: boolean; onBack: () => void; onAdded: (name: string) => void
 }) {
   const add = useAddProduct()

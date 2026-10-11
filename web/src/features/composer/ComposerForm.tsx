@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useReducer, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useId, useLayoutEffect, useReducer, useRef, useState } from 'react'
 import { useBlocker, useNavigate, useSearchParams } from 'react-router'
 import { CloseIcon } from '../../shell/icons'
 import { AmountDisplay } from '../../ui/AmountDisplay'
@@ -8,6 +8,8 @@ import { Pill } from '../../ui/Pill'
 import { type AmountKey, centsToString, convertCents, displayAmount, parseRate, toApiAmount, toCents } from './amount'
 import { Segmented, type ToastInput, useComposerToast, useOfferTickedPrompt, useOnline } from './bridge'
 import { CashControls } from './CashControls'
+import { ScanChoiceSheet } from './ScanChoiceSheet'
+import { ScanIcon } from '../plan/pantry/icons'
 import { ConfirmSheet } from './ConfirmSheet'
 import { currencyName, currencySymbol, formatCents, spokenMoney } from './currencies'
 import { dayLabel, todayLocal } from './dates'
@@ -34,11 +36,14 @@ import { DateSheet } from './pickers/DateSheet'
 import { MethodSheet } from './pickers/MethodSheet'
 import { PayerSheet } from './pickers/PayerSheet'
 import { METHOD_LABELS, memberName } from './pickers/labels'
-import { type ComposerState, reduce, type Remembered, type TxnType } from './state'
+import { type ComposerState, type Method, reduce, type Remembered, type TxnType } from './state'
 import type { Duplicate } from './types'
 import { useClose } from './useClose'
 
-type SheetName = 'bucket' | 'category' | 'payer' | 'method' | 'currency' | 'date' | 'more' | 'split' | 'own'
+type SheetName = 'scan' | 'bucket' | 'category' | 'payer' | 'method' | 'currency' | 'date' | 'more' | 'split' | 'own'
+
+// The pantry camera and its barcode sheet: their own chunk, never part of the composer's (Phase C spec §5).
+const PantryScanFlow = lazy(() => import('./PantryScanFlow').then((m) => ({ default: m.PantryScanFlow })))
 
 const QUEUED = "Saved on this phone. It will sync when you're back online."
 const QUEUED_NO_RECEIPT = "Saved on this phone. The receipt wasn't attached: add it when you're back online."
@@ -73,12 +78,14 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
   const upload = useReceiptUpload()
   const undo = useUndoCreate()
   const [sheet, setSheet] = useState<SheetName | null>(null)
+  const [pantryScan, setPantryScan] = useState(false)
   const [dup, setDup] = useState<Duplicate | null>(null)
   const [typing, setTyping] = useState(false)
   // Merchant combobox: the highlighted suggestion (-1 none) and whether Escape closed the list.
   const [active, setActive] = useState(-1)
   const [listClosed, setListClosed] = useState(false)
   const listId = useId()
+  const hintId = useId()
   const [stashCents, setStashCents] = useState<number | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const splitTyped = useRef<Record<string, string>>({})
@@ -283,8 +290,13 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
     const r = sanitize(value === 'income' ? defaults.lastIncome : defaults.last, lookup(value))
     dispatch({ type: 'setType', value, defaults: { ...r, paid_by: r.paid_by ?? data.meId } })
   }
-  const toggleCash = () =>
-    dispatch({ type: 'setCashMode', on: !s.cashMode, meId: data.meId, defaultMethod: remembered(defaults.last).payment_method ?? 'card' })
+  // Cash in the method chip (spec §2.4) is the old "Cash from wallet": a new expense that picks Cash gets the wallet
+  // default, the payer locked to you and the "took from" control. Re-picking Cash, and an edit, change nothing else.
+  const pickMethod = (method: Method) => {
+    if (method === 'cash' && s.method !== 'cash' && s.mode === 'new' && s.type !== 'income') {
+      dispatch({ type: 'setCashMode', on: true, meId: data.meId, defaultMethod: s.method })
+    } else if (method !== s.method) dispatch({ type: 'pickMethod', method })
+  }
 
   const rule = matchRule(s.merchant, data.rules)
   const suggestions = typing && !listClosed ? suggestMerchants(s.merchant, data.merchants) : []
@@ -343,10 +355,14 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
       : `Save ${spokenMoney(cents, s.currency)}${bucketName ? ` to ${bucketName}` : ''}`
   const allowOwnShare = !income && data.members.length > 1 && s.tookFrom === 'none' && !s.cashMode
 
+  // Currency lives in More (spec §2.4). It stays on the main form for a foreign entry, being edited or typed, and
+  // when one of the last 20 entries was foreign; `initial` is the saved entry on an edit.
+  const showCurrency = s.currency !== data.householdCurrency || initial.currency !== data.householdCurrency || data.recentForeign
+
   const pillIcon = (glyph: string) => <span className="ck-pill__glyph">{glyph}</span>
   const budgetPill = s.fixedCost
     ? <Pill label="Budget" value="Fixed cost" readOnly />
-    : <Pill label="Budget" value={bucketName ?? (income ? 'None' : 'Choose a budget')} empty={!s.bucketId && !income}
+    : <Pill label="Budget" value={bucketName ?? (income ? 'None' : 'Choose a budget')} empty={!s.bucketId && !income} attention={!s.bucketId && !income}
         onPress={() => setSheet('bucket')} />
   const categoryPill = (
     <Pill label="Category" value={category?.name ?? 'None'} empty={!category && income}
@@ -360,36 +376,37 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
     <Segmented label="Entry type" value={s.type} onChange={switchType} disabled={s.mode === 'edit'}
       options={[{ value: 'expense', label: 'Expense' }, { value: 'income', label: 'Income' }]} />
   )
+  // One scan button (spec §2.4): Receipt QR or Pantry barcode. New expenses only, as the old chip was.
+  const scanButton = s.mode === 'new' && !income && (
+    <button type="button" className="ui-iconbtn composer__scan" aria-label="Scan" onClick={() => setSheet('scan')}>
+      <ScanIcon />
+    </button>
+  )
   const slot = (
     <span className="composer__slot">
       {!online && <span className="composer__offline">Offline</span>}
+      {scanButton}
       {s.mode === 'edit' && <EditTopMenu onDelete={() => setConfirmDelete(true)} />}
     </span>
-  )
-  const modes = s.mode === 'new' && !income && (
-    <div className="composer__modes" role="group" aria-label="Entry mode">
-      <button type="button" className="ck-chip" onClick={() => setScan(true)}>Scan receipt</button>
-      <button type="button" className={s.cashMode ? 'ck-chip on' : 'ck-chip'} aria-pressed={s.cashMode} onClick={toggleCash}>
-        Cash from wallet
-      </button>
-    </div>
   )
   const amountField = panel ? (
     <div className={income ? 'amount amount--income panelamount' : 'amount panelamount'}>
       <span className="panelamount__symbol" aria-hidden="true">{currencySymbol(s.currency)}</span>
       <input ref={amountRef} className="panelamount__input" aria-label="Amount" inputMode="decimal" autoComplete="off"
         placeholder="0.00" autoFocus value={s.amount} onChange={(e) => dispatch({ type: 'setAmount', value: e.target.value })} />
-      <button type="button" className="amount__cur" onClick={() => setSheet('currency')}
-        aria-label={`Currency: ${s.currency}. Change`}>
-        {s.currency}
-      </button>
+      {showCurrency ? (
+        <button type="button" className="amount__cur" onClick={() => setSheet('currency')}
+          aria-label={`Currency: ${s.currency}. Change`}>
+          {s.currency}
+        </button>
+      ) : <span className="amount__cur">{s.currency}</span>}
       {converted && <p className="amount__converted">{converted}</p>}
       {s.fromReceipt.includes('amount') && <span className="amount__tag">from receipt</span>}
     </div>
   ) : (
     <AmountDisplay text={displayAmount(s.amount)} symbol={currencySymbol(s.currency)} currency={s.currency}
       spoken={`Amount ${centsToString(cents)} ${currencyName(s.currency)}`} tone={income ? 'income' : 'default'}
-      converted={converted} onCurrency={() => setSheet('currency')}
+      converted={converted} onCurrency={showCurrency ? () => setSheet('currency') : undefined}
       tag={s.fromReceipt.includes('amount') ? 'from receipt' : null} />
   )
 
@@ -416,8 +433,6 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
       </header>
 
       <div className="composer__body">
-        {!panel && modes}
-
         <ReviewBanner s={s} categories={data.categories} rulesReady={RULES_API_READY}
           onRemember={(on) => dispatch({ type: 'setRemember', on })} />
         {amountField}
@@ -489,11 +504,13 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
           {income ? 'More: notes, receipt' : 'More: date, split, notes, receipt'}
           {moreDirty(s, { ...ctx, today }) && <span className="composer__dot" aria-hidden="true" />}
         </button>
-        {panel && modes}
       </div>
 
       <div className="composer__foot">
-        {hint && <p className="composer__problem">{hint}</p>}
+        {hint && (
+          // The budget reason is the amber chip's job: still read out as Save's description, but not shown twice.
+          <p id={hintId} className={hint === v.problems.bucket ? 'ck-visually-hidden' : 'composer__problem'}>{hint}</p>
+        )}
         {panel && note && (
           <p className="composer__saved" role="status">
             <span>{note.text}</span>
@@ -506,7 +523,7 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
           </p>
         )}
         {!panel && <Keypad onKey={(k) => dispatch({ type: 'key', key: k })} hidden={typing} />}
-        <button type="button" aria-label={saveName} disabled={!v.ok || save.saving} onClick={() => void onSave()}
+        <button type="button" aria-label={saveName} aria-describedby={hint ? hintId : undefined} disabled={!v.ok || save.saving} onClick={() => void onSave()}
           className={`btn btn--primary btn--lg btn--block composer__save${income ? ' composer__save--income' : ''}`}>
           {saveLabel}
         </button>
@@ -527,7 +544,7 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
           onPick={(id) => dispatch({ type: 'pickPayer', id })} onOwnShare={() => setSheet('own')} />
       )}
       <MethodSheet open={sheet === 'method'} onClose={() => setSheet(null)} selected={s.method}
-        onPick={(m) => dispatch({ type: 'pickMethod', method: m })} />
+        onPick={pickMethod} />
       <CurrencySheet open={sheet === 'currency'} onClose={() => setSheet(null)} selected={s.currency}
         onPick={(code) => dispatch({ type: 'pickCurrency', code, householdCurrency: data.householdCurrency, lastRate: defaults.rates[code] })} />
       <DateSheet open={sheet === 'date'} onClose={() => setSheet(null)} value={s.date} today={today}
@@ -535,7 +552,7 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
       <MoreSheet open={sheet === 'more'} onClose={() => setSheet(null)} s={s} dispatch={dispatch}
         ctx={{
           today, online, householdCurrency: data.householdCurrency, fuelCategoryId: data.fuelCategoryId,
-          members: data.members, meId: data.meId, problems: v.problems, onOpenSplit: () => setSheet('split'),
+          members: data.members, meId: data.meId, problems: v.problems, onOpenSplit: () => setSheet('split'), onOpenCurrency: () => setSheet('currency'),
         }} />
       <SplitSheet open={sheet === 'split' || sheet === 'own'} variant={sheet === 'own' ? 'own' : 'split'} totalCents={cents}
         currency={s.currency} members={data.members} payerId={s.paidBy} initial={{ mode: s.splitMode, shares: s.splits, typed: (sheet === 'own' ? s.ownShare : s.splitOn) ? s.splitTyped : undefined }}
@@ -545,6 +562,13 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
           dispatch(sheet === 'own' ? { type: 'setOwnShare', splits: r.shares, typed } : { type: 'setSplit', on: true, mode: r.mode, splits: r.shares, typed })
         }}
         onClose={() => setSheet(sheet === 'split' ? 'more' : null)} />
+      <ScanChoiceSheet open={sheet === 'scan'} onClose={() => setSheet(null)}
+        onReceipt={() => setScan(true)} onPantry={() => setPantryScan(true)} />
+      {pantryScan && (
+        <Suspense fallback={null}>
+          <PantryScanFlow onClose={() => setPantryScan(false)} />
+        </Suspense>
+      )}
       {scanOpen && (
         <ScanScreen
           online={online}

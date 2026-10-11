@@ -7,6 +7,8 @@ export interface PillProps {
   value: string
   /** Nothing chosen yet: dashed outline (e.g. "Choose a budget"). */
   empty?: boolean
+  /** Required and missing: the outline turns amber (the Add form's budget). */
+  attention?: boolean
   icon?: ReactNode
   /** "rule: coffee island", "from receipt". */
   tag?: string | null
@@ -15,8 +17,8 @@ export interface PillProps {
   onPress?: () => void
 }
 
-export function Pill({ label, value, empty, icon, tag, readOnly, onPress }: PillProps) {
-  const cls = ['pill', 'ck-pill', empty ? 'pill--empty' : '', readOnly ? 'pill--static' : ''].filter(Boolean).join(' ')
+export function Pill({ label, value, empty, attention, icon, tag, readOnly, onPress }: PillProps) {
+  const cls = ['pill', 'ck-pill', empty ? 'pill--empty' : '', attention ? 'pill--attention' : '', readOnly ? 'pill--static' : ''].filter(Boolean).join(' ')
   const body = (
     <>
       {icon && <span className="ck-pill__icon" aria-hidden="true">{icon}</span>}

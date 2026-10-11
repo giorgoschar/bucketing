@@ -112,7 +112,7 @@ it('a /new?mode=cash&take=none&amount=45.00 link opens the panel over the curren
   await waitFor(() => expect(amount()).toHaveValue('45'))
   expect(where()).toBe('/activity?add=1&mode=cash&take=none&amount=45.00')
   expect(screen.getByText('activity screen')).toBeInTheDocument()
-  expect(within(panel()).getByRole('button', { name: 'Cash from wallet' })).toHaveAttribute('aria-pressed', 'true')
+  expect(within(panel()).getByRole('button', { name: 'Method: Cash. Change' })).toBeInTheDocument() // spec §2.4: Cash lives in the method chip
   await userEvent.keyboard('{Enter}')
   await waitFor(() => expect(writes(api)).toHaveLength(1))
   expect(writes(api)[0].body).toMatchObject({ amount: '45.00', payment_method: 'cash', took_cash: false, paid_by: 'u1' })
@@ -223,7 +223,8 @@ it('the cash-from-wallet mode locks the payer to you and saves as cash', async (
   const user = userEvent.setup()
   const { api } = await setup('/?add=1')
   await waitFor(() => amount())
-  await user.click(within(panel()).getByRole('button', { name: 'Cash from wallet' }))
+  await user.click(within(panel()).getByRole('button', { name: /^Method:/ })) // spec §2.4: Cash lives in the method chip
+  await user.click(within(screen.getByRole('dialog', { name: 'Payment method' })).getByRole('button', { name: 'Cash' }))
   expect(within(panel()).getByRole('group', { name: 'Payer: You' })).toBeInTheDocument()
   await user.type(amount(), '6{Enter}')
   await waitFor(() => expect(writes(api)).toHaveLength(1))
@@ -241,7 +242,7 @@ it('Tab order follows the spec: amount, type, description, budget, category, pay
     names.push(el.getAttribute('aria-label') ?? el.textContent ?? '')
   }
   const idx = (re: RegExp) => names.findIndex((n) => re.test(n))
-  const order = [/^Currency/, /^Expense$/, /^Income$/, /^Merchant$/, /^Budget:/, /^Category:/, /^Payer:/, /^Method:/, /^Date:/, /^More options/]
+  const order = [/^Expense$/, /^Income$/, /^Merchant$/, /^Budget:/, /^Category:/, /^Payer:/, /^Method:/, /^Date:/, /^More options/]
     .map(idx)
   expect(order.every((i) => i >= 0)).toBe(true)
   expect([...order].sort((a, b) => a - b)).toEqual(order)
@@ -460,4 +461,28 @@ it('Undo offline says it needs a connection and does not claim "Undone"', async 
   await user.click(undo)
   expect(await screen.findByText('Undo needs a connection.')).toBeInTheDocument()
   expect(within(panel()).queryByText('Undone')).toBeNull()
+})
+
+// Phase C spec §2.4: the panel gets the same four changes as the phone form.
+it('the panel has one Scan button with both choices, the amber budget chip, and the currency only in More', async () => {
+  const user = userEvent.setup()
+  await setup('/?add=1')
+  await waitFor(() => amount())
+  expect(within(panel()).queryByRole('button', { name: 'Scan receipt' })).not.toBeInTheDocument()
+  expect(within(panel()).queryByRole('button', { name: /^Currency:/ })).not.toBeInTheDocument()
+  await user.click(within(panel()).getByRole('button', { name: 'Scan' }))
+  const choices = within(await screen.findByRole('dialog', { name: 'Scan' }))
+  expect(choices.getByRole('button', { name: /^Receipt QR/ })).toBeInTheDocument()
+  expect(choices.getByRole('button', { name: /^Pantry barcode/ })).toBeInTheDocument()
+  await user.keyboard('{Escape}')
+  await user.click(within(panel()).getByRole('button', { name: 'More options' }))
+  expect(within(await screen.findByRole('dialog', { name: 'More' })).getByRole('button', { name: /^Currency:/ })).toBeInTheDocument()
+})
+
+it('the panel shows the amber budget chip with no second line when no budget is chosen', async () => {
+  await setup('/?add=1', { defaults: { ...DEFAULTS, last: { ...DEFAULTS.last, bucket_id: undefined } } })
+  await waitFor(() => amount())
+  await userEvent.type(amount(), '5')
+  expect(within(panel()).getByRole('button', { name: /^Budget: Choose a budget/ })).toHaveClass('pill--attention')
+  expect(panel().querySelector('.composer__problem')).toBeNull()
 })

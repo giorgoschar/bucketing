@@ -63,10 +63,10 @@ it('a double tap on Save, or Enter pressed twice, sends one POST (Review Focus 1
 it('first use: the budget pill is dashed "Choose a budget" and Save stays disabled', async () => {
   await renderComposer('/new', { defaults: null })
   const pill = await screen.findByRole('button', { name: 'Budget: Choose a budget. Change' })
-  expect(pill).toHaveClass('pill--empty')
+  expect(pill).toHaveClass('pill--empty', 'pill--attention') // spec §2.4: the chip is the one budget prompt
   press('3')
   expect(screen.getByRole('button', { name: /^Save 3 euro/ })).toBeDisabled()
-  expect(screen.getByText('Choose a budget', { selector: '.composer__problem' })).toBeInTheDocument()
+  expect(document.querySelector('.composer__problem')).toBeNull() // no second, visible line
 })
 
 it('income: green state, Received by, optional budget, no method pill, transfer, no duplicate check', async () => {
