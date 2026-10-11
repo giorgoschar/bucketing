@@ -194,6 +194,13 @@ def test_dismiss_rejects_an_unusable_pattern(client, api):  # noqa: F811
     assert client.post(DISMISS, headers=headers, json={"pattern": "a"}).status_code == 400
 
 
+def test_dismiss_rejects_control_characters_and_a_long_pattern(client, api):  # noqa: F811
+    headers, _ = api
+    assert client.post(DISMISS, headers=headers, json={"pattern": "li\u0000dl"}).status_code == 400
+    assert client.post(DISMISS, headers=headers, json={"pattern": "a" * 201}).status_code == 422
+    assert client.post(DISMISS, headers=headers, json={"pattern": "a" * 200}).status_code == 200
+
+
 def test_other_households_entry_is_404_and_dismissals_are_per_household(
     client,
     db,
@@ -238,4 +245,6 @@ def test_the_suggestion_route_is_in_the_openapi_with_a_model(client):
 
 def test_normalisation_fixture_is_the_same_file_as_the_web_copy():
     web = Path(__file__).parent.parent / "web/src/features/rules/rule_normalisation_cases.json"
-    assert web.read_text("utf-8") == (Path(__file__).parent / "fixtures/rule_normalisation_cases.json").read_text("utf-8")
+    assert web.read_text("utf-8") == (
+        Path(__file__).parent / "fixtures/rule_normalisation_cases.json"
+    ).read_text("utf-8")

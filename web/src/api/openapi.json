@@ -6017,6 +6017,7 @@
       "RuleDismissIn": {
         "properties": {
           "pattern": {
+            "maxLength": 200,
             "title": "Pattern",
             "type": "string"
           }

@@ -279,8 +279,9 @@ def test_barcode_limit_is_per_user(client, api, other, fake, off, make_household
     off.product = None
     for _ in range(31):
         client.get(URL, headers=headers)
-    from tests.test_api import PASSWORD  # noqa: F401
     import pyotp
+
+    from tests.test_api import PASSWORD  # noqa: F401
 
     r = client.post("/api/v1/auth/login", json={"username": other.username, "password": PASSWORD})
     r = client.post(

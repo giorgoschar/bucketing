@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.api_auth import require_api_auth
 from app.core.database import get_db
 from app.core.ratelimit import limiter
+from app.services.category_rules import has_control_char
 from app.services.search import MAX_QUERY, MIN_QUERY, SearchOut, search
 
 router = APIRouter(prefix="/search", tags=["search"])
@@ -37,5 +38,9 @@ def search_everything(
         raise HTTPException(
             status_code=400,
             detail=f"Search for {MIN_QUERY} to {MAX_QUERY} characters.",
+        )
+    if has_control_char(text):
+        raise HTTPException(
+            status_code=400, detail="Search text cannot contain control characters."
         )
     return search(db, hh_id, text)

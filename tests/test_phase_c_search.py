@@ -190,6 +190,13 @@ def test_greek_text_matches_case_insensitively(client, db, api):  # noqa: F811
     assert [i["name"] for i in _get(client, headers, "νερό").json()["items"]] == ["Νερό ΕΥΔΑΠ"]
 
 
+def test_control_characters_are_a_400_not_a_500(client, api):  # noqa: F811
+    headers, _ = api
+    for bad in ("ab\x00cd", "ab\x01cd"):
+        assert _get(client, headers, bad).status_code == 400, repr(bad)
+    assert _get(client, headers, "ab\tcd").status_code == 200
+
+
 def test_length_limits(client, api):  # noqa: F811
     headers, _ = api
     for bad in ("", " ", "a", "  a  ", "x" * 101, " " + "x" * 101):

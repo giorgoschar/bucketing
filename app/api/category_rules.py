@@ -10,7 +10,7 @@ app/routes/settings.py keep working on the same table.
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -20,6 +20,7 @@ from app.models import Category, CategoryRule, Transaction
 from app.services.category_rules import (
     clear_dismissal,
     dismiss_suggestion,
+    has_control_char,
     learn_rule,
     list_rules,
     normalise_pattern,
@@ -170,7 +171,7 @@ class RuleSuggestionOut(BaseModel):
 
 
 class RuleDismissIn(BaseModel):
-    pattern: str
+    pattern: str = Field(max_length=200)
 
 
 class RuleDismissOut(BaseModel):
@@ -199,6 +200,8 @@ def dismiss_rule_suggestion(
 ):
     """ "Not now": one more dismissal for this pattern (two stop the offer)."""
     user, hh_id = auth
+    if has_control_char(body.pattern):
+        raise HTTPException(status_code=400, detail="Pattern cannot contain control characters.")
     pattern = normalise_pattern(body.pattern)
     if not pattern:
         raise HTTPException(status_code=400, detail="Enter at least 2 characters.")

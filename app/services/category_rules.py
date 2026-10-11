@@ -54,6 +54,11 @@ def fold(text: str | None) -> str:
     return " ".join(stripped.replace("ς", "σ").split())
 
 
+def has_control_char(text: str) -> bool:
+    """A control character other than whitespace (NUL breaks PostgreSQL string literals)."""
+    return any(unicodedata.category(c) == "Cc" and not c.isspace() for c in text)
+
+
 def normalise_pattern(text: str | None) -> str | None:
     """Fold a pattern for storage, or None if it is not usable."""
     cleaned = fold(text)
