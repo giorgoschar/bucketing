@@ -170,3 +170,17 @@ describe('editing the amount of a stored split (I1)', () => {
     expect(v.problems.split).toBe('Who paid what must add up to €64.00')
   })
 })
+
+describe('a tracked wallet take is pinned like cash mode', () => {
+  const walletCash = () => reduce(reduce(expense({ amount: '6' }), { type: 'pickMethod', method: 'cash' }), { type: 'setTookFrom', value: 'stash', meId: 'u1' })
+  it('Cash pre-selected (not picked by hand), then My wallet: a category that remembers Card keeps Cash and the take, and the body carries the one take', () => {
+    const s = reduce(reduce(expense({ amount: '6', method: 'cash' }), { type: 'setTookFrom', value: 'stash', meId: 'u1' }), { type: 'pickCategory', id: 'c-x', remembered: { payment_method: 'card' } })
+    expect(s).toMatchObject({ method: 'cash', tookFrom: 'stash' })
+    expect(toCreateBody(s, CTX)).toMatchObject({ payment_method: 'cash', took_cash: true, take_from: 'stash', paid_by: 'u1' })
+  })
+  it('a category that remembers the other member keeps you as payer and Save enabled', () => {
+    const s = reduce(walletCash(), { type: 'pickCategory', id: 'c-x', remembered: { paid_by: 'u2' } })
+    expect(s.paidBy).toBe('u1')
+    expect(validate(s, V).ok).toBe(true)
+  })
+})

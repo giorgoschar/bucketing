@@ -29,9 +29,9 @@ describe('re-defaulting respects touched', () => {
     })
     expect(reduce(base({ touched: ['category'] }), { type: 'setMerchant', value: 'Coffee Island', rule }).categoryId).toBe('c-coffee')
   })
-  it('a filled method that is not cash clears "Took from"', () => {
+  it('a take the user picked pins Cash: a remembered Card does not replace it', () => {
     const s = reduce(base({ method: 'cash', tookFrom: 'bank' }), { type: 'pickCategory', id: 'c-x', remembered: { payment_method: 'card' } })
-    expect(s).toMatchObject({ method: 'card', tookFrom: 'none' })
+    expect(s).toMatchObject({ method: 'cash', tookFrom: 'bank' })
   })
 })
 

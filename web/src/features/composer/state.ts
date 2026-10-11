@@ -109,14 +109,15 @@ const drop = <T,>(xs: readonly T[], x: T): T[] => xs.filter((y) => y !== x)
 /** Fill the default fields the user has not picked by hand (spec §4.3 "re-defaulting"). */
 export function fill(s: ComposerState, r: Remembered, except: DefaultField): ComposerState {
   const free = (f: DefaultField) => f !== except && !s.touched.includes(f)
-  const method = free('method') && !s.cashMode && s.type === 'expense' && r.payment_method ? r.payment_method : s.method
+  const pinned = s.cashMode || s.tookFrom !== 'none'
+  const method = free('method') && !pinned && s.type === 'expense' && r.payment_method ? r.payment_method : s.method
   const category = free('category') && r.category_id ? r.category_id : s.categoryId
   return {
     ...s,
     bucketId: free('bucket') && !s.fixedCost && r.bucket_id ? r.bucket_id : s.bucketId,
     categoryId: category,
     ruleLabel: category !== s.categoryId ? null : s.ruleLabel,
-    paidBy: free('payer') && !s.cashMode && !s.ownShare && r.paid_by ? r.paid_by : s.paidBy,
+    paidBy: free('payer') && !pinned && !s.ownShare && r.paid_by ? r.paid_by : s.paidBy,
     method,
     tookFrom: method === 'cash' ? s.tookFrom : 'none',
   }
