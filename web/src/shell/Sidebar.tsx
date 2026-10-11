@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { NavLink } from 'react-router'
 import { AccountDialog, type AccountDialogHandle, MyAvatar } from './AccountDialog'
+import { SearchBox, type SearchBoxHandle } from '../features/search/SearchBox'
 import { useOpenAdd } from './addPanel'
 import { CalendarRangeIcon, ChartPieIcon, HouseIcon, ListIcon, PlusIcon, SettingsIcon } from './icons'
 
@@ -13,12 +14,28 @@ const OPEN_DIALOG = 'dialog[open], [role="dialog"], [aria-modal="true"]'
 export function Sidebar() {
   const openAdd = useOpenAdd()
   const account = useRef<AccountDialogHandle>(null)
+  const searchBox = useRef<SearchBoxHandle>(null)
   const openRef = useRef(openAdd)
   useEffect(() => { openRef.current = openAdd })
 
   // N opens Add, unless a field has focus, a dialog is open, or it is part of a shortcut.
+  // / focuses the search box under the same conditions; Cmd K and Ctrl K do from anywhere (Phase C spec §4.2).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        searchBox.current?.focus()
+        return
+      }
+      if (e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.repeat) {
+        const t = e.target as Element | null
+        if (t?.closest?.(TYPING) || document.activeElement?.closest?.(TYPING)) return
+        if (document.querySelector(OPEN_DIALOG)) return
+        e.preventDefault()
+        searchBox.current?.focus()
+        return
+      }
       if (e.key.toLowerCase() !== 'n' || e.metaKey || e.ctrlKey || e.altKey || e.repeat || e.defaultPrevented) return
       const t = e.target as Element | null
       if (t?.closest?.(TYPING) || document.activeElement?.closest?.(TYPING)) return
@@ -38,6 +55,7 @@ export function Sidebar() {
         <span aria-hidden="true">Add</span>
         <kbd className="sidebar__key" aria-hidden="true">N</kbd>
       </button>
+      <SearchBox ref={searchBox} />
       <div className="sidebar__links">
         <NavLink to="/" end className={link}><HouseIcon />Home</NavLink>
         <NavLink to="/activity" className={link}><ListIcon />Activity</NavLink>

@@ -87,3 +87,9 @@ export const SettingsIcon = () => (
     <path d="M1 14h6" /><path d="M9 8h6" /><path d="M17 16h6" />
   </Icon>
 )
+
+export const SearchIcon = () => (
+  <Icon strokeWidth={2}>
+    <path d="m21 21-4.34-4.34" /><circle cx="11" cy="11" r="8" />
+  </Icon>
+)
