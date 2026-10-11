@@ -68,3 +68,21 @@ it('hovering pauses it too', () => {
   act(() => { vi.advanceTimersByTime(4_000) })
   expect(screen.getByRole('status')).toBeEmptyDOMElement()
 })
+
+it('several actions: each runs its own callback, and one that shows another toast keeps it', () => {
+  const always = vi.fn(() => toast('Rule saved'))
+  const notNow = vi.fn()
+  render(<Toaster />)
+  act(() => toast('Always use Groceries for Lidl?', { actions: [{ label: 'Always', onClick: always }, { label: 'Not now', onClick: notNow }] }))
+  expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['Always', 'Not now'])
+  fireEvent.click(screen.getByRole('button', { name: 'Always' }))
+  expect(always).toHaveBeenCalledOnce()
+  expect(notNow).not.toHaveBeenCalled()
+  expect(screen.getByRole('status')).toHaveTextContent('Rule saved')
+})
+
+it('a toast with the single action looks and behaves as before', () => {
+  render(<Toaster />)
+  act(() => toast('Deleted', { action: { label: 'Undo', onClick: () => {} } }))
+  expect(screen.getAllByRole('button')).toHaveLength(1)
+})

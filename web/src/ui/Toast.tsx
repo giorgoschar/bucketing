@@ -4,6 +4,8 @@ import { AlertIcon } from './icons'
 export interface ToastAction { label: string; onClick: () => void }
 export interface ToastOptions {
   action?: ToastAction
+  /** Several buttons (a question with its answers). Wins over `action`. */
+  actions?: ToastAction[]
   durationMs?: number
   tone?: 'default' | 'error'
   /** Called once when this toast leaves the screen: its time ran out, it was dismissed or acted on, or another
@@ -82,19 +84,21 @@ export function useToast(): typeof handle {
 export function Toaster() {
   const t = useSyncExternalStore(subscribe, () => current, () => null)
   const isError = t?.tone === 'error'
-  const hold = t?.action
+  const buttons = t?.actions ?? (t?.action ? [t.action] : [])
+  const hold = buttons.length
     ? { onPointerEnter: pauseToast, onPointerLeave: resumeToast, onFocus: pauseToast, onBlur: resumeToast }
     : {}
   const body = t && (
     <div key={t.id} className={isError ? 'ui-toast ui-toast--error' : 'ui-toast'} {...hold}>
       {isError && <AlertIcon />}
       <span className="ui-toast__text">{t.message}</span>
-      {t.action && (
-        <button type="button" className="ui-toast__action"
-          onClick={() => { t.action?.onClick(); dismissToast() }}>
-          {t.action.label}
+      {buttons.map((a) => (
+        <button key={a.label} type="button" className="ui-toast__action"
+          // An action may show its own toast (a confirmation): only dismiss the one it was pressed on.
+          onClick={() => { a.onClick(); if (current?.id === t.id) dismissToast() }}>
+          {a.label}
         </button>
-      )}
+      ))}
     </div>
   )
   return (

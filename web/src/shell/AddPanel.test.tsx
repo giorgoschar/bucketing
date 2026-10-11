@@ -486,3 +486,35 @@ it('the panel shows the amber budget chip with no second line when no budget is 
   expect(within(panel()).getByRole('button', { name: /^Budget: Choose a budget/ })).toHaveClass('pill--attention')
   expect(panel().querySelector('.composer__problem')).toBeNull()
 })
+
+// Phase C spec §3.2: in the panel the rule prompt sits under the "Saved ·" line.
+const SUGGESTION = { pattern: 'lidl', label: 'Lidl', category_id: 'c-food', category_name: 'Groceries' }
+const ruleRoutes = {
+  'GET /api/v1/category-rules/suggestion': SUGGESTION,
+  'POST /api/v1/settings/category-rules': () => ({ id: 'r1', pattern: 'lidl', category_id: 'c-food' }),
+  'POST /api/v1/category-rules/suggestion/dismiss': () => ({ ok: true }),
+}
+
+it('the panel offers the rule under "Saved ·", and Always saves it and says where to change it', async () => {
+  const user = userEvent.setup()
+  const { api } = await setup('/?add=1', { routes: ruleRoutes })
+  await waitFor(() => amount())
+  await user.type(amount(), '6{Enter}')
+  const line = await within(panel()).findByRole('group', { name: 'Rule suggestion' })
+  expect(line).toHaveTextContent('Always use Groceries for Lidl?')
+  expect(within(panel()).getByText(/^Saved ·/)).toBeInTheDocument() // the panel stays open with its Saved line
+  await user.click(within(line).getByRole('button', { name: 'Always' }))
+  expect(await within(panel()).findByText('Rule saved. Change it in Settings › Categories.')).toBeInTheDocument()
+  expect(writes(api).find((c) => c.path === '/api/v1/settings/category-rules')!.body).toEqual({ pattern: 'lidl', category_id: 'c-food' })
+})
+
+it('in the panel, Not now dismisses the pattern and the question goes', async () => {
+  const user = userEvent.setup()
+  const { api } = await setup('/?add=1', { routes: ruleRoutes })
+  await waitFor(() => amount())
+  await user.type(amount(), '6{Enter}')
+  await user.click(await within(panel()).findByRole('button', { name: 'Not now' }))
+  expect(within(panel()).queryByRole('group', { name: 'Rule suggestion' })).not.toBeInTheDocument()
+  await waitFor(() => expect(writes(api).some((c) => c.path === '/api/v1/category-rules/suggestion/dismiss')).toBe(true))
+  expect(writes(api).find((c) => c.path.endsWith('/dismiss'))!.body).toEqual({ pattern: 'lidl' })
+})

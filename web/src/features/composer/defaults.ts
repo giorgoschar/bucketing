@@ -2,6 +2,7 @@ import type { paths } from '../../api/schema'
 import { cacheGet, cachePut } from '../../offline/db'
 import { centsToString, fromApiAmount, MAX_INT_DIGITS, parseCents, parseFuelPrice, parseRate } from './amount'
 import { blankState, type ComposerState, METHODS, type Remembered, reduce, type TxnType } from './state'
+import { fold } from '../rules/normalise'
 import type { Bucket, Category, Rule } from './types'
 
 /**
@@ -127,12 +128,7 @@ export function learn(rec: DefaultsRecord, s: ComposerState, ctx: LearnCtx): Def
   }
 }
 
-/** Mirrors app/services/category_rules.fold: case-fold, strip accents, final ς → σ, collapse spaces. */
-export function fold(text: string | null | undefined): string {
-  if (!text) return ''
-  const stripped = text.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '')
-  return stripped.replace(/ς/g, 'σ').split(/\s+/).filter(Boolean).join(' ')
-}
+export { fold }
 
 /** The household rule whose folded pattern is inside the folded merchant; the longest pattern wins. */
 export function matchRule(merchant: string, rules: Rule[]): Rule | null {

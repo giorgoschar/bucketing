@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useId, useLayoutEffect, useReducer, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useBlocker, useNavigate, useSearchParams } from 'react-router'
 import { CloseIcon } from '../../shell/icons'
 import { AmountDisplay } from '../../ui/AmountDisplay'
@@ -26,6 +27,8 @@ import { useSaveTransaction } from './hooks/useSaveTransaction'
 import { useUndoCreate } from './hooks/undo'
 import { firstProblem, isDirtyNew, isFuel, moreDirty, toUpdateBody, validate } from './model'
 import { MoreSheet } from './MoreSheet'
+import { askForSuggestion, dismissSuggestion, type RuleSuggestion } from '../rules/hooks'
+import { answerAlways, RulePromptLine, showRuleToast } from '../rules/RulePrompt'
 import { ReviewBanner } from './scan/ReviewBanner'
 import { ScanScreen } from './scan/ScanScreen'
 import { SplitSheet } from './SplitSheet'
@@ -54,7 +57,7 @@ const INTERACTIVE = 'button, a[href], select, summary, [role="button"], [role="o
 /** A modal sheet is open anywhere (they portal out, so their keys still bubble through this tree). */
 const modalOpen = () => !!document.querySelector('[aria-modal="true"], dialog[open]')
 
-type Note = { text: string; undoId?: string }
+type Note = { text: string; undoId?: string; id?: string; rule?: RuleSuggestion; ruleDone?: string | null }
 
 export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
   initial: ComposerState; data: ComposerData; defaults: DefaultsRecord; draftKey?: string
@@ -77,6 +80,7 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
   const checkDuplicate = useDuplicateCheck()
   const upload = useReceiptUpload()
   const undo = useUndoCreate()
+  const qc = useQueryClient()
   const [sheet, setSheet] = useState<SheetName | null>(null)
   const [pantryScan, setPantryScan] = useState(false)
   const [dup, setDup] = useState<Duplicate | null>(null)
@@ -179,15 +183,27 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
 
   // The panel stays open after an add (spec §4.5): a new entry that keeps the date, budget and payer, a line saying
   // what was saved, and the Undo the toast would have had.
+  // Rules that learn (Phase C spec §3.2): after an online save that created an entry or changed its category, ask the
+  // server whether to offer a rule. Null for anything else, and for a queued entry (it has no server id yet).
+  function askRule(id: string): Promise<RuleSuggestion | null> | null {
+    if (s.type !== 'expense' || !s.categoryId || !online) return null
+    if (s.mode === 'edit' && s.categoryId === initial.categoryId) return null
+    return askForSuggestion(id)
+  }
+
   function stayOpen(r: { status: string; id?: string }, receipt: File | null) {
     const queued = r.status === 'queued'
     const merchant = s.merchant.trim()
     setNote(queued
       ? { text: receipt ? QUEUED_NO_RECEIPT : QUEUED }
-      : { text: `Saved · ${money}${merchant ? ` ${merchant}` : ''}`, undoId: r.id })
+      : { text: `Saved · ${money}${merchant ? ` ${merchant}` : ''}`, undoId: r.id, id: r.id })
     if (!queued && r.id) {
       if (s.type === 'expense') offerPantry()
       if (receipt) void uploadReceipt(r.id, receipt)
+      const id = r.id
+      void askRule(id)?.then((rule) => {
+        if (rule) setNote((n) => (n && n.id === id ? { ...n, rule } : n))
+      })
     }
     const fresh = initialNew({
       defaults, buckets: data.buckets, categories: data.categories, memberIds, meId: data.meId,
@@ -202,11 +218,12 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
   }
 
   // The Undo lasts as long as the toast's would.
+  const undoId = note?.undoId
   useEffect(() => {
-    if (!note?.undoId) return
-    const t = setTimeout(() => setNote({ text: note.text }), UNDO_MS)
+    if (!undoId) return
+    const t = setTimeout(() => setNote((n) => (n && n.undoId === undoId ? { ...n, undoId: undefined } : n)), UNDO_MS)
     return () => clearTimeout(t)
-  }, [note])
+  }, [undoId])
 
   const submitting = useRef(false)
   async function onSave(skipDuplicate = false) {
@@ -234,6 +251,7 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
         return
       }
       toast(savedToast(r.id))
+      void askRule(r.id)?.then((rule) => { if (rule) showRuleToast(qc, rule) })
       // Pantry spec §4.6: a new expense saved online may prompt for ticked items. Fire and forget: never awaited.
       if (s.mode === 'new' && s.type === 'expense') offerPantry()
       if (receipt) void uploadReceipt(r.id, receipt)
@@ -521,6 +539,17 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
               </button>
             )}
           </p>
+        )}
+        {panel && note?.rule && (
+          <RulePromptLine s={note.rule} done={note.ruleDone ?? null}
+            onAlways={() => {
+              const rule = note.rule!
+              void answerAlways(qc, rule).then((res) => setNote((n) => (n && n.rule === rule ? { ...n, ruleDone: res.text } : n)))
+            }}
+            onNotNow={() => {
+              void dismissSuggestion(note.rule!)
+              setNote((n) => (n ? { ...n, rule: undefined } : n))
+            }} />
         )}
         {!panel && <Keypad onKey={(k) => dispatch({ type: 'key', key: k })} hidden={typing} />}
         <button type="button" aria-label={saveName} aria-describedby={hint ? hintId : undefined} disabled={!v.ok || save.saving} onClick={() => void onSave()}
