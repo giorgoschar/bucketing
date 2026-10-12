@@ -30,7 +30,7 @@ export function SearchBox({ ref }: { ref?: Ref<SearchBoxHandle> }) {
   }), [])
   return (
     <div
-      className="search search--box"
+      className="search--box"
       onFocus={() => setOpen(true)}
       onInput={() => setOpen(true)}
       onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) { setOpen(false); from.current = null } }}

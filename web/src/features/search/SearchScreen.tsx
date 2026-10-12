@@ -31,7 +31,7 @@ export function SearchScreen() {
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => trapTab(e.currentTarget, e.nativeEvent)
   return (
-    <div className="search search--screen" role="dialog" aria-modal="true" aria-label="Search" onKeyDown={onKeyDown}>
+    <div className="search--screen" role="dialog" aria-modal="true" aria-label="Search" onKeyDown={onKeyDown}>
       <header className="search__bar">
         <button type="button" className="search__back" aria-label="Close search" onClick={close}><ChevronLeftIcon /></button>
         <SearchInput field={field} autoFocus />
