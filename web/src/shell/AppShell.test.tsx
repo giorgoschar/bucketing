@@ -23,7 +23,7 @@ function at(url: string, status: Session['status']) {
     ? { id: '1', username: 'g', household_id: 'h', display_name: 'G', email: null, avatar_color: null }
     : undefined
   const router = createMemoryRouter(
-    [{ path: '/', element: <AppShell />, children: [{ index: true, element: <p>home screen</p> }] }],
+    [{ path: '/', element: <AppShell />, children: [{ index: true, element: <p>home screen</p> }, { path: 'join/:token', element: <p>join screen</p> }] }],
     { initialEntries: [url] },
   )
   render(<RouterProvider router={router} />)
@@ -71,4 +71,13 @@ it('starts the offline replay triggers only while signed in, and stops them on u
   expect(start).toHaveBeenCalledTimes(1)
   cleanup()
   expect(stop).toHaveBeenCalledTimes(1)
+})
+
+it('an invite opened signed out is opened again after sign-in', () => {
+  sessionStorage.clear()
+  at('/join/tok-1', 'signedOut')
+  cleanup()
+  const router = at('/', 'signedIn')
+  expect(router.state.location.pathname).toBe('/join/tok-1')
+  sessionStorage.clear()
 })

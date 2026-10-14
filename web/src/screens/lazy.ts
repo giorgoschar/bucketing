@@ -30,3 +30,6 @@ export const Notifications = lazy(() => import('../features/settings/Notificatio
 
 // Plan › Pantry › Shopping list (pantry spec §4.5): loads on first visit.
 export const ShoppingList = lazy(() => import('../features/plan/pantry/ShoppingList').then((m) => ({ default: m.ShoppingList })))
+
+// Invite link (/app/join/<token>): loads on first visit.
+export const Join = lazy(() => import('../features/join/Join').then((m) => ({ default: m.Join })))

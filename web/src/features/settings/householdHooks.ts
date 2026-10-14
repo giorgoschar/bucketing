@@ -5,7 +5,7 @@ import type { RawResult } from '../../data/rawJson'
 import { useSession } from '../../session/SessionProvider'
 import { useToast } from '../../ui/Toast'
 
-export const inviteUrl = (token: string, origin = globalThis.location.origin) => `${origin}/join/${token}`
+export const inviteUrl = (token: string, origin = globalThis.location.origin) => `${origin}/app/join/${token}`
 export const INVITE_RATE_MESSAGE = 'Too many links, wait a minute.'
 
 export function useHouseholdActions() {

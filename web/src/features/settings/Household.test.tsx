@@ -49,7 +49,7 @@ describe('Household', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ token: 'tok123', expires_at: '2026-10-14T00:00:00' }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     renderIt()
     fireEvent.click(screen.getByRole('button', { name: 'New link' }))
-    expect(await screen.findByText(`${location.origin}/join/tok123`)).toBeInTheDocument()
+    expect(await screen.findByText(`${location.origin}/app/join/tok123`)).toBeInTheDocument()
     expect(screen.getByText('Expires in 7 days · single use')).toBeInTheDocument()
   })
 

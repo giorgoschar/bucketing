@@ -11141,6 +11141,93 @@
         ]
       }
     },
+    "/api/v1/invites/{token}": {
+      "get": {
+        "description": "What the invite link is for. Public (the link is the credential): household name and who sent it.",
+        "operationId": "preview_invite_api_v1_invites__token__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Invite",
+        "tags": [
+          "invites"
+        ]
+      }
+    },
+    "/api/v1/invites/{token}/accept": {
+      "post": {
+        "description": "The signed-in caller joins the invite's household as a member. The invite is burned.",
+        "operationId": "accept_api_v1_invites__token__accept_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Accept",
+        "tags": [
+          "invites"
+        ]
+      }
+    },
     "/api/v1/matches": {
       "get": {
         "description": "Open suggestions, for Needs attention.",
