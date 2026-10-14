@@ -10,10 +10,10 @@ const NO_MIN = makeInsights({ fuel: null, kpis: { ...makeInsights().kpis, saving
 // Phase C §2.2: the old single list is now three tabs; Summary stands for headline, On track, In/Out/Net and Savings rate.
 describe('visibleWidgets', () => {
   it('Overview, household this month: Summary, Where it went, Categories vs usual, Budgets', () => {
-    expect(visibleWidgets(makeInsights(), { lens: 'household', period: THIS })).toEqual(['summary', 'where', 'vsUsual', 'budgets'])
+    expect(visibleWidgets(makeInsights(), { lens: 'household', period: THIS })).toEqual(['summary', 'where', 'analysis', 'vsUsual', 'budgets'])
   })
   it('Overview, member lens: identity and share first, and no Categories vs usual', () => {
-    expect(visibleWidgets(makeInsights(), { lens: 'm', period: THIS })).toEqual(['identity', 'share', 'summary', 'where', 'budgets'])
+    expect(visibleWidgets(makeInsights(), { lens: 'm', period: THIS })).toEqual(['identity', 'share', 'summary', 'where', 'analysis', 'budgets'])
   })
   it('Trends: By month, Biggest expense, How you paid, Fuel', () => {
     expect(visibleWidgets(makeInsights(), { tab: 'trends', lens: 'household', period: THIS })).toEqual(['byMonth', 'biggest', 'method', 'fuel'])
@@ -31,13 +31,13 @@ describe('visibleWidgets', () => {
   })
   it('the same lists in a past-month period, minus the household-only cards outside a single month', () => {
     const last3 = { preset: 'last_3m' } as const
-    expect(visibleWidgets(makeInsights(), { lens: 'household', period: last3 })).toEqual(['summary', 'where', 'budgets'])
-    expect(visibleWidgets(makeInsights(), { lens: 'household', period: { preset: 'last_month' } })).toEqual(['summary', 'where', 'vsUsual', 'budgets'])
+    expect(visibleWidgets(makeInsights(), { lens: 'household', period: last3 })).toEqual(['summary', 'where', 'analysis', 'budgets'])
+    expect(visibleWidgets(makeInsights(), { lens: 'household', period: { preset: 'last_month' } })).toEqual(['summary', 'where', 'analysis', 'vsUsual', 'budgets'])
   })
   it('hides cards on null data', () => {
     expect(visibleWidgets(NO_MIN, { tab: 'trends', lens: 'household', period: THIS })).toEqual(['byMonth', 'method'])
     const bare = makeInsights({ categories: [], budget_status: [] })
-    expect(visibleWidgets(bare, { lens: 'household', period: THIS })).toEqual(['summary', 'vsUsual'])
+    expect(visibleWidgets(bare, { lens: 'household', period: THIS })).toEqual(['summary', 'analysis', 'vsUsual'])
     expect(visibleWidgets(bare, { tab: 'trends', lens: 'household', period: THIS, desktop: true })).not.toContain('categoriesTable')
   })
   it('an empty period: Overview shows the Summary (spent figure only) and the empty card; the other tabs work as usual', () => {

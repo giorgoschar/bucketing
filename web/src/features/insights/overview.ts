@@ -4,7 +4,7 @@ import type { Period } from './period'
 import type { InsightsData } from './types'
 
 export type WidgetId =
-  | 'identity' | 'share' | 'summary' | 'empty' | 'where' | 'vsUsual' | 'budgets'
+  | 'identity' | 'share' | 'summary' | 'empty' | 'where' | 'analysis' | 'vsUsual' | 'budgets'
   | 'byMonth' | 'biggest' | 'method' | 'fuel' | 'monthsTable' | 'categoriesTable'
   | 'bills' | 'billsPanel' | 'statements'
 
@@ -69,6 +69,7 @@ export function visibleWidgets(
   const ids: WidgetId[] = member ? ['identity', 'share', 'summary'] : ['summary']
   if (empty) return [...ids, 'empty']
   if (d.categories.length) ids.push('where')
+  if (d.kpis.avg_per_day != null) ids.push('analysis')
   if (!member && singleMonth(period, d)) ids.push('vsUsual')
   if (d.budget_status.length) ids.push('budgets')
   return ids

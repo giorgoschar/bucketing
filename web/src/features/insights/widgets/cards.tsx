@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useId, useState } from 'react'
+import { type KeyboardEvent, type ReactNode, useId, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { HBarList, MonthBars, seriesColor, StackBar } from '../../../ui/charts'
 import { formatShortDate } from '../../../ui/format'
@@ -133,6 +133,30 @@ export function ByMonth({ data }: Pick<WidgetCtx, 'data'>) {
       <div role="tabpanel" id={`${uid}-panel`} aria-labelledby={`${uid}-${view}`} className="insights__monthpanel">
         {view === 'inout' ? <InOutMonths data={data} /> : <SpendTrend data={data} />}
       </div>
+    </Card>
+  )
+}
+
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
+
+/** Averages and the busiest and quietest month, from the server's kpis for the period and lens on screen. */
+export function Analysis({ data }: WidgetCtx) {
+  const k = data.kpis
+  if (k.avg_per_day == null || k.count === 0) return null
+  const cells: { label: string; value: ReactNode; note: string }[] = [
+    { label: 'Per month', value: <Money amount={k.avg_per_month} whole />, note: `over ${plural(k.months ?? 1, 'month')}` },
+    { label: 'Per day', value: <Money amount={k.avg_per_day} whole />, note: `over ${plural(k.days ?? 1, 'day')}` },
+    { label: 'Per expense', value: <Money amount={k.avg_per_txn ?? 0} />, note: `${k.count} logged` },
+    { label: 'Busiest month', value: k.busiest_month ? k.busiest_month.label : '—', note: k.busiest_month ? eur(k.busiest_month.total) : '' },
+    { label: 'Quietest month', value: k.quietest_month ? k.quietest_month.label : '—', note: k.quietest_month ? eur(k.quietest_month.total) : '' },
+  ]
+  return (
+    <Card title="Averages">
+      <dl className="insights__kpis">
+        {cells.map((c) => (
+          <div key={c.label}><dt>{c.label}</dt><dd>{c.value}</dd>{c.note && <dd className="insights__note">{c.note}</dd>}</div>
+        ))}
+      </dl>
     </Card>
   )
 }

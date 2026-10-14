@@ -6,7 +6,8 @@ export function makeInsights(over: Partial<InsightsData> = {}): InsightsData {
     total_spent: 1284.6, logged_total: 1239.6, cash_not_logged: 45, income_total: 3000,
     in_out: { in: 3000, out: 1284.6, logged: 1239.6, cash_not_logged: 45, net: 1715.4 },
     kpis: {
-      total: 1284.6, count: 31, avg_per_month: 1284.6,
+      total: 1284.6, count: 31, avg_per_month: 1284.6, months: 1, days: 6, avg_per_day: 214.1, avg_per_txn: 41.44,
+      busiest_month: { label: 'Oct 2026', total: 1284.6 }, quietest_month: null,
       largest: { amount: 420, notes: 'IKEA', date: '2026-10-03', category: 'Home' },
       previous_total: 1396.3, change_pct: -8, savings_rate: 57.2, range_start: '2026-10-01', range_end: '2026-10-06',
     },

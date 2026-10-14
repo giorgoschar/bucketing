@@ -14,7 +14,7 @@ import { HOUSEHOLD, type Lens, lensOptions, useLens } from './lens'
 import { type WidgetId, isFlowing, visibleWidgets } from './overview'
 import { type Period, type Preset, PRESETS, usePeriod } from './period'
 import { type InsightFilters, type InsightsData, NO_FILTERS } from './types'
-import { Biggest, BillsCard, BudgetsCard, ByMonth, FuelCard, HowYouPaid, StatementsCard, VsUsual, WhereItWent } from './widgets/cards'
+import { Analysis, Biggest, BillsCard, BudgetsCard, ByMonth, FuelCard, HowYouPaid, StatementsCard, VsUsual, WhereItWent } from './widgets/cards'
 import { EmptyPeriod, Identity, ShareCard, Summary } from './widgets/summary'
 import { InsightsTabs, PANEL_ID, tabId, useInsightsTab } from './InsightsTabs'
 import './insights.css'
@@ -38,6 +38,7 @@ const RENDER: Record<Exclude<WidgetId, 'identity' | 'share'>, (ctx: WidgetCtx) =
   summary: (c) => <Summary {...c} />,
   empty: ({ data, period, setPeriod }) => <EmptyPeriod data={data} period={period} onPeriod={setPeriod} />,
   where: (c) => <WhereItWent {...c} />,
+  analysis: (c) => <Analysis {...c} />,
   byMonth: (c) => <ByMonth {...c} />,
   biggest: (c) => <Biggest {...c} />,
   method: (c) => <HowYouPaid {...c} />,

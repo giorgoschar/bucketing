@@ -24,6 +24,9 @@ export interface InsightsData {
   in_out: { in: number; out: number; logged: number; cash_not_logged: number; net: number }
   kpis: {
     total: number; count: number; avg_per_month: number
+    // Optional: a copy saved on the device before these shipped lacks them.
+    months?: number; days?: number; avg_per_day?: number; avg_per_txn?: number
+    busiest_month?: { label: string; total: number } | null; quietest_month?: { label: string; total: number } | null
     largest: { amount: number; notes: string | null; date: string; category: string | null } | null
     previous_total: number | null; change_pct: number | null; savings_rate: number | null
     range_start: string | null; range_end: string | null

@@ -7,7 +7,7 @@ import { makeInsights, query } from '../fixtures'
 const hooks = vi.hoisted(() => ({ usePlanMonth: vi.fn(), useCategoriesVsUsual: vi.fn() }))
 vi.mock('../hooks', () => hooks)
 
-import { Biggest, BudgetsCard, FuelCard, HowYouPaid, InOut, InOutMonths, OnTrack, SavingsRate, SpendTrend, VsUsual, WhereItWent } from './cards'
+import { Analysis, Biggest, BudgetsCard, FuelCard, HowYouPaid, InOut, InOutMonths, OnTrack, SavingsRate, SpendTrend, VsUsual, WhereItWent } from './cards'
 
 const ctx = { data: makeInsights(), period: { preset: 'this_month' as const }, lens: 'household', members: [], meId: 'me', setPeriod: vi.fn() }
 
@@ -61,6 +61,28 @@ describe('cards', () => {
     wrap(<SpendTrend {...ctx} data={makeInsights({ monthly_trend: zero })} />)
     expect(screen.getByRole('table', { name: 'Spend by month' })).toBeInTheDocument()
     expect(screen.getByText('Average €0.00 a month')).toBeInTheDocument()
+  })
+
+  it('Averages shows per month, day and expense, and busiest and quietest month', () => {
+    const base = makeInsights()
+    wrap(<Analysis {...ctx} data={makeInsights({ kpis: { ...base.kpis, months: 3, days: 92, avg_per_month: 900, avg_per_day: 29.35, avg_per_txn: 12.5, count: 216,
+      busiest_month: { label: 'Aug 2026', total: 1200 }, quietest_month: { label: 'Sep 2026', total: 500 } } })} />)
+    const dl = screen.getByRole('heading', { name: 'Averages' }).closest('section')!
+    expect(dl).toHaveTextContent('Per month€900over 3 months')
+    expect(dl).toHaveTextContent('Per day€29over 92 days')
+    expect(dl).toHaveTextContent('Per expense€12.50216 logged')
+    expect(dl).toHaveTextContent('Busiest monthAug 2026€1,200.00')
+    expect(dl).toHaveTextContent('Quietest monthSep 2026€500.00')
+  })
+
+  it('Averages shows a dash for a quietest month that does not exist yet, and nothing without the figures', () => {
+    wrap(<Analysis {...ctx} />)
+    expect(screen.getByText('Quietest month').parentElement).toHaveTextContent('—')
+    const k = makeInsights().kpis
+    const { avg_per_day: _a, ...old } = k
+    void _a
+    const { container } = wrap(<Analysis {...ctx} data={makeInsights({ kpis: old })} />)
+    expect(container.querySelector('.insights__kpis')).toBeNull()
   })
 
   it('Biggest expense is one row', () => {

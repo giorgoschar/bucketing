@@ -60,7 +60,7 @@ describe('the tabs', () => {
 
   it('show each tab\'s cards (household)', () => {
     const { container } = renderAt('/insights')
-    expect(order(container)).toEqual(['summary', 'where', 'vsUsual', 'budgets'])
+    expect(order(container)).toEqual(['summary', 'where', 'analysis', 'vsUsual', 'budgets'])
     fireEvent.click(screen.getByRole('tab', { name: 'Trends' }))
     expect(order(container)).toEqual(['byMonth', 'biggest', 'method', 'fuel'])
     fireEvent.click(screen.getByRole('tab', { name: 'Bills & statements' }))
@@ -69,7 +69,7 @@ describe('the tabs', () => {
 
   it('show each tab\'s cards (member lens)', () => {
     const { container } = renderAt('/insights?lens=m')
-    expect(order(container)).toEqual(['identity', 'share', 'summary', 'where', 'budgets'])
+    expect(order(container)).toEqual(['identity', 'share', 'summary', 'where', 'analysis', 'budgets'])
     fireEvent.click(screen.getByRole('tab', { name: 'Trends' }))
     expect(order(container)).toEqual(['byMonth', 'biggest', 'method', 'fuel'])
   })
@@ -160,7 +160,10 @@ describe('a lone flowing card spans (desktop columns)', () => {
   })
 
   it('Overview with only Where it went: the only flowing card', () => {
-    hooks.useInsights.mockReturnValue(query(makeInsights({ budget_status: [] })))
+    // Without the averages (a copy saved before they shipped) the Averages card is not there either.
+    const { avg_per_day: _drop, ...kpis } = makeInsights().kpis
+    void _drop
+    hooks.useInsights.mockReturnValue(query(makeInsights({ budget_status: [], kpis })))
     hooks.useCategoriesVsUsual.mockReturnValue(query([]))
     const { container } = renderAt('/insights')
     expect(order(container)).toEqual(['summary', 'where', 'vsUsual'])
