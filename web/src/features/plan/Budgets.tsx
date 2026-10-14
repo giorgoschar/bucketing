@@ -44,7 +44,7 @@ function BudgetRow({ row, pace }: { row: BudgetRowOut; pace?: PaceOut }) {
   const event = row.kind === 'event'
   const days = row.days_left
   return (
-    <Link className="plan-budget plan-budget--link" to={`/plan/buckets/${row.bucket_id}`} aria-label={row.name}>
+    <Link className="plan-budget plan-budget--link" to={`/plan/buckets/${row.bucket_id}`}>
       <div className="plan-budget__top">
         <span className="plan-budget__name">{row.name}</span>
         <span className="plan-budget__fig">

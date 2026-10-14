@@ -62,7 +62,15 @@ it('event buckets show their dates, days left and the ended label', async () => 
 it('a bucket row is one link to its page, with no Edit or Archive button on it', async () => {
   fakeApi({ 'GET /api/v1/plan/budgets': () => rows, 'GET /api/v1/plan/pace': () => [] })
   renderWithProviders(<Budgets />)
-  const kids = await screen.findByRole('link', { name: 'Kids' })
+  const kids = await screen.findByRole('link', { name: /^Kids/ })
   expect(kids).toHaveAttribute('href', '/plan/buckets/b2')
   expect(screen.queryByRole('button', { name: /Edit|Archive/ })).toBeNull()
+})
+
+it('a bucket link is named by its content: figures and badges are read, not hidden by an aria-label', async () => {
+  fakeApi({ 'GET /api/v1/plan/budgets': () => rows, 'GET /api/v1/plan/pace': () => [] })
+  renderWithProviders(<Budgets />)
+  const fun = await screen.findByRole('link', { name: /^Fun/ })
+  expect(fun).not.toHaveAttribute('aria-label')
+  expect(fun).toHaveAccessibleName(/over budget/)
 })
