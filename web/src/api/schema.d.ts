@@ -1285,6 +1285,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/household/leave": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Leave */
+        post: operations["leave_api_v1_settings_household_leave_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/household/members/{member_id}/reset-2fa": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reset 2Fa */
+        post: operations["reset_2fa_api_v1_settings_household_members__member_id__reset_2fa_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings/household/members/{member_user_id}": {
         parameters: {
             query?: never;
@@ -1297,6 +1331,67 @@ export interface paths {
         post?: never;
         /** Remove Member */
         delete: operations["remove_member_api_v1_settings_household_members__member_user_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/household/transfer-ownership/{member_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Transfer */
+        post: operations["transfer_api_v1_settings_household_transfer_ownership__member_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/households": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Households
+         * @description The households the caller belongs to (archived ones are gone from their memberships).
+         */
+        get: operations["list_households_api_v1_settings_households_get"];
+        put?: never;
+        /**
+         * Create New Household
+         * @description Any signed-in user may start another household; they own it and it becomes active.
+         */
+        post: operations["create_new_household_api_v1_settings_households_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/households/switch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Switch Household
+         * @description Make another household of the caller's the active one for this browser session.
+         */
+        post: operations["switch_household_api_v1_settings_households_switch_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -3576,6 +3671,16 @@ export interface components {
             /** No Payer */
             no_payer: number;
         };
+        /** CreateIn */
+        CreateIn: {
+            /**
+             * Default Currency
+             * @default EUR
+             */
+            default_currency: string;
+            /** Name */
+            name: string;
+        };
         /** DismissIn */
         DismissIn: {
             /** Ids */
@@ -3846,6 +3951,14 @@ export interface components {
             is_active: boolean;
             /** Name */
             name: string;
+        };
+        /** LeaveIn */
+        LeaveIn: {
+            /**
+             * Confirm Name
+             * @default
+             */
+            confirm_name: string;
         };
         /** LineCheckIn */
         LineCheckIn: {
@@ -4406,6 +4519,11 @@ export interface components {
             total_occurrences: number | null;
             /** Usage Unit */
             usage_unit?: string | null;
+        };
+        /** ResetIn */
+        ResetIn: {
+            /** Owner Code */
+            owner_code: string;
         };
         /** RetailerOut */
         RetailerOut: {
@@ -4986,6 +5104,11 @@ export interface components {
             still_have: number | null;
             /** Taken */
             taken: number;
+        };
+        /** SwitchIn */
+        SwitchIn: {
+            /** Household Id */
+            household_id: string;
         };
         /** TickIn */
         TickIn: {
@@ -7847,6 +7970,72 @@ export interface operations {
             };
         };
     };
+    leave_api_v1_settings_household_leave_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LeaveIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reset_2fa_api_v1_settings_household_members__member_id__reset_2fa_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                member_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResetIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     remove_member_api_v1_settings_household_members__member_user_id__delete: {
         parameters: {
             query?: never;
@@ -7864,6 +8053,121 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    transfer_api_v1_settings_household_transfer_ownership__member_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                member_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_households_api_v1_settings_households_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_new_household_api_v1_settings_households_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    switch_household_api_v1_settings_households_switch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SwitchIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
             };
             /** @description Validation Error */
             422: {

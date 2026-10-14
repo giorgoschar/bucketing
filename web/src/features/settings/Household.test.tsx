@@ -16,37 +16,42 @@ vi.mock('./hooks', () => ({
 
 import { Household } from './Household'
 
+/** The households list is a GET; the call under test is the POST/PUT/DELETE. */
+const mockFetch = (reply: Response) => vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
+  (input as Request).method === 'GET' ? new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } }) : reply.clone())
+const sent = (f: ReturnType<typeof mockFetch>) => f.mock.calls.map((c) => c[0] as Request).filter((r) => r.method !== 'GET')
+
 const renderIt = () => render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><Household /></MemoryRouter></QueryClientProvider>)
 afterEach(() => { vi.restoreAllMocks(); toast.mockClear(); me.current = 'me' })
 
 describe('Household', () => {
   it('owner: members with you and roles, currency fixed, remove with confirm', async () => {
-    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 204 }))
+    const fetch = mockFetch(new Response(null, { status: 204 }))
     renderIt()
     expect(screen.getByText('Giorgos (you)')).toBeInTheDocument()
     expect(screen.getByText('EUR · Fixed')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Actions for Maria' }))
     fireEvent.click(screen.getByRole('button', { name: 'Remove from household' }))
     fireEvent.click(screen.getByRole('button', { name: 'Remove Maria' }))
-    await waitFor(() => expect(fetch).toHaveBeenCalled())
-    const req = fetch.mock.calls[0][0] as Request
+    await waitFor(() => expect(sent(fetch)).toHaveLength(1))
+    const req = sent(fetch)[0]
     expect([req.method, new URL(req.url).pathname]).toEqual(['DELETE', '/api/v1/settings/household/members/m'])
   })
 
   it('owner: renames with the currency unchanged', async () => {
-    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ id: 'hh1', name: 'Casa', default_currency: 'EUR' }), { status: 200 }))
+    const fetch = mockFetch(new Response(JSON.stringify({ id: 'hh1', name: 'Casa', default_currency: 'EUR' }), { status: 200 }))
     renderIt()
     fireEvent.click(screen.getByRole('button', { name: 'Edit name' }))
     fireEvent.change(screen.getByLabelText('Household name'), { target: { value: ' Casa ' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-    await waitFor(() => expect(fetch).toHaveBeenCalled())
-    const req = fetch.mock.calls[0][0] as Request
+    await waitFor(() => expect(sent(fetch)).toHaveLength(1))
+    const req = sent(fetch)[0]
     expect(req.method).toBe('PUT')
     expect(await req.json()).toEqual({ name: 'Casa', default_currency: 'EUR' })
   })
 
   it('owner: a new invite link is shown once', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ token: 'tok123', expires_at: '2026-10-14T00:00:00' }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    mockFetch(new Response(JSON.stringify({ token: 'tok123', expires_at: '2026-10-14T00:00:00' }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     renderIt()
     fireEvent.click(screen.getByRole('button', { name: 'New link' }))
     expect(await screen.findByText(`${location.origin}/app/join/tok123`)).toBeInTheDocument()
@@ -54,7 +59,7 @@ describe('Household', () => {
   })
 
   it('invite 429 says to wait', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 429 }))
+    mockFetch(new Response('{}', { status: 429 }))
     renderIt()
     fireEvent.click(screen.getByRole('button', { name: 'New link' }))
     await waitFor(() => expect(toast).toHaveBeenCalledWith('Too many links, wait a minute.', { tone: 'error' }))

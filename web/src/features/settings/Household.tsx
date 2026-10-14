@@ -3,9 +3,9 @@ import { useSession } from '../../session/SessionProvider'
 import { BackHeader } from '../../ui/BackHeader'
 import { Badge } from '../../ui/Badge'
 import { QueryView } from '../../ui/QueryView'
-import { Sheet } from '../../ui/Sheet'
 import { type HouseholdInfo, type HouseholdMember, useHousehold } from './hooks'
 import { inviteUrl, useHouseholdActions } from './householdHooks'
+import { Households, LeaveCard, MemberSheets, type MemberStep } from './HouseholdAdmin'
 import { avatarLook } from '../../shell/avatar'
 import './settings.css'
 
@@ -63,7 +63,7 @@ export function Household() {
   const household = useHousehold()
   const actions = useHouseholdActions()
   const [menuFor, setMenuFor] = useState<HouseholdMember | null>(null)
-  const [confirm, setConfirm] = useState<HouseholdMember | null>(null)
+  const [step, setStep] = useState<MemberStep | null>(null)
   const [link, setLink] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -73,14 +73,6 @@ export function Household() {
     setBusy(false)
     if (out.ok) setLink(inviteUrl(out.data.token))
   }
-  const remove = async () => {
-    if (!confirm) return
-    setBusy(true)
-    const out = await actions.removeMember(confirm.user_id)
-    setBusy(false)
-    if (out.ok) setConfirm(null)
-  }
-
   return (
     <>
       <BackHeader title="Household" back="/settings" />
@@ -135,26 +127,16 @@ export function Household() {
                     )}
                   </section>
                 )}
+
+                <Households />
+                <LeaveCard householdName={h.name} owner={owner} others={h.members.length - 1} />
               </>
             )
           }}
         </QueryView>
       </section>
 
-      <Sheet open={menuFor !== null} onClose={() => setMenuFor(null)} title={menuFor ? nameOf(menuFor) : 'Member'}>
-        <button type="button" className="btn btn--danger btn--block" onClick={() => { setConfirm(menuFor); setMenuFor(null) }}>Remove from household</button>
-      </Sheet>
-      <Sheet open={confirm !== null} onClose={() => setConfirm(null)} title="Remove member">
-        <div className="settings__form">
-          <p className="settings__help">{confirm ? `${nameOf(confirm)} loses access to this household's data.` : ''}</p>
-          <div className="settings__btnrow">
-            <button type="button" className="btn" onClick={() => setConfirm(null)}>Cancel</button>
-            <button type="button" className="btn btn--danger" disabled={busy} onClick={() => void remove()}>
-              {confirm ? `Remove ${nameOf(confirm)}` : 'Remove'}
-            </button>
-          </div>
-        </div>
-      </Sheet>
+      <MemberSheets menuFor={menuFor} onMenu={setMenuFor} step={step} onStep={setStep} />
     </>
   )
 }

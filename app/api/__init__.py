@@ -49,6 +49,7 @@ router.include_router(notifications.router)
 router.include_router(personal_tokens.router)
 router.include_router(settings.router)
 router.include_router(households.invites)
+router.include_router(households.admin)
 # 2d §7.4: owned here, consumed by 2b's composer.
 router.include_router(category_rules.router)
 router.include_router(category_rules.suggestion_router)
