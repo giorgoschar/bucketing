@@ -58,6 +58,9 @@
 
 /* 2d §5.6: Archive a finished event budget (online only, confirm first). */
 .plan-budget__archive { margin-left: auto; }
+.plan-budget__edit { margin-left: auto; }
+.plan-budget__archive + .plan-budget__edit, .plan-budget__edit + .plan-budget__archive { margin-left: 0; }
+.plan-buckets__bar { display: flex; justify-content: flex-end; margin-bottom: 10px; }
 .plan-archive { display: flex; flex-direction: column; gap: 14px; }
 .plan-archive__text { margin: 0; font-size: 14.5px; line-height: 1.45; color: var(--ink-2); }
 .plan-archive__actions { display: flex; gap: 8px; }

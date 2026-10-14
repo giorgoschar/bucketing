@@ -7,6 +7,7 @@ import { Money } from '../../ui/Money'
 import { ProgressBar } from '../../ui/ProgressBar'
 import { QueryView } from '../../ui/QueryView'
 import { Sheet } from '../../ui/Sheet'
+import { BucketSheet, useRawBuckets, type RawBucket } from './BucketSheet'
 import { useArchiveBucket, useBudgets, usePace } from './hooks'
 import './plan.css'
 
@@ -16,6 +17,9 @@ export function Budgets() {
   const archive = useArchiveBucket()
   const [archiving, setArchiving] = useState<BudgetRowOut | null>(null)
   const [busy, setBusy] = useState(false)
+  const raw = useRawBuckets().data ?? []
+  // undefined: closed, null: a new bucket
+  const [editing, setEditing] = useState<RawBucket | null | undefined>(undefined)
   const confirmArchive = async () => {
     if (!archiving) return
     setBusy(true)
@@ -25,6 +29,9 @@ export function Budgets() {
   }
   return (
     <>
+    <div className="plan-buckets__bar">
+      <button type="button" className="btn btn--sm btn--primary" onClick={() => setEditing(null)}>New bucket</button>
+    </div>
     <QueryView result={budgets} noDataText="No saved data yet. Connect once to load Plan.">
       {(rows) =>
         rows.length === 0 ? (
@@ -32,7 +39,7 @@ export function Budgets() {
         ) : (
           <div className="ui-list">
             {rows.map((b) => (
-              <BudgetRow key={b.bucket_id} row={b} pace={pace.data?.find((p) => p.bucket_id === b.bucket_id)} onArchive={setArchiving} />
+              <BudgetRow key={b.bucket_id} row={b} pace={pace.data?.find((p) => p.bucket_id === b.bucket_id)} onArchive={setArchiving} onEdit={setEditing} raw={raw.find((r) => r.id === b.bucket_id)} />
             ))}
           </div>
         )
@@ -47,11 +54,14 @@ export function Budgets() {
         </div>
       </div>
     </Sheet>
+    <BucketSheet open={editing !== undefined} bucket={editing ?? null} onClose={() => setEditing(undefined)} />
     </>
   )
 }
 
-function BudgetRow({ row, pace, onArchive }: { row: BudgetRowOut; pace?: PaceOut; onArchive(row: BudgetRowOut): void }) {
+function BudgetRow({ row, pace, raw, onArchive, onEdit }: {
+  row: BudgetRowOut; pace?: PaceOut; raw?: RawBucket; onArchive(row: BudgetRowOut): void; onEdit(b: RawBucket): void
+}) {
   const event = row.kind === 'event'
   const days = row.days_left
   return (
@@ -73,6 +83,9 @@ function BudgetRow({ row, pace, onArchive }: { row: BudgetRowOut; pace?: PaceOut
         {pace && pace.pace !== null && <span>on pace for <Money amount={pace.pace} whole /></span>}
         {pace && pace.pace !== null && pace.over_pace && <Badge tone="warn">over pace</Badge>}
         {row.pct !== null && row.pct >= 100 && <Badge tone="neg">over budget</Badge>}
+        {raw && (
+          <button type="button" className="btn btn--sm plan-budget__edit" aria-label={`Edit ${row.name}`} onClick={() => onEdit(raw)}>Edit</button>
+        )}
         {event && row.archive_suggested && (
           <button type="button" className="btn btn--sm plan-budget__archive" aria-label={`Archive ${row.name}`} onClick={() => onArchive(row)}>
             Archive?
