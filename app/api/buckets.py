@@ -9,9 +9,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.api.planning_models import Money
 from app.api_auth import require_api_auth
 from app.core.database import get_db
-from app.core.money import quantize
+from app.core.money import ZERO, quantize
 from app.models import (
     Bucket,
     BucketKind,
@@ -28,10 +29,13 @@ from app.services import (
     get_household_settlement,
     get_household_settlement_history,
     get_member_balances,
+    get_savings_summary,
+    get_trip_summary,
     record_household_settlement,
     settlement_fingerprint,
 )
 from app.services.budgets import EVENT_BLOCKED_BY_BILLS, blocks_event_change
+from app.services.insights import get_insights_summary
 from app.validators import parse_amount, parse_color, validate_split_users
 
 router = APIRouter(prefix="/buckets", tags=["buckets"])
@@ -163,6 +167,77 @@ def get_bucket(
     if not bucket:
         raise HTTPException(status_code=404, detail="Bucket not found")
     return _bucket_dict(bucket, get_bucket_balance(db, bucket.id))
+
+
+class TripPerson(BaseModel):
+    user_id: str
+    name: str
+    color: str
+    share: Money
+    paid: Money
+
+
+class TripSummary(BaseModel):
+    total: Money
+    start: date | None
+    end: date | None
+    days: int | None
+    nights: int | None
+    per_day: Money | None
+    status: str
+    days_until: int | None
+    days_remaining: int | None
+    remaining: Money | None
+    transaction_count: int
+    people: list[TripPerson]
+
+
+class SavingsSummary(BaseModel):
+    saved: Money
+    goal: Money | None
+    pct: Money | None
+    pct_actual: Money | None = None
+    remaining: Money | None
+    per_month: Money | None
+    months_left: int | None
+    reached: bool
+    target_date: date | None
+
+
+class BucketSummary(BaseModel):
+    trip: TripSummary | None
+    savings: SavingsSummary | None
+
+
+@router.get("/{bucket_id}/summary", response_model=BucketSummary)
+def bucket_summary(
+    bucket_id: str,
+    auth=Depends(require_api_auth),
+    db: Session = Depends(get_db),
+):
+    """The typed cards of the bucket page: the trip (event) summary with each person's
+    share and what they paid, or the savings-goal progress. Both are the services the
+    old bucket page used."""
+    user, hh_id = auth
+    bucket = db.query(Bucket).filter_by(id=bucket_id, household_id=hh_id).first()
+    if not bucket:
+        raise HTTPException(status_code=404, detail="Bucket not found")
+
+    trip = get_trip_summary(db, bucket) or None
+    if trip:
+        paid = get_insights_summary(db, hh_id, None, None, bucket_ids=[bucket_id])["paid_by"]
+        people = {
+            p["user_id"]: {**p, "share": p["amount"], "paid": ZERO} for p in trip["per_person"]
+        }
+        for uid, row in paid.items():
+            person = people.setdefault(
+                uid,
+                {"user_id": uid, "name": row["name"], "color": row["color"], "share": ZERO},
+            )
+            person["paid"] = quantize(row["amount"])
+        trip = {**trip, "people": list(people.values())}
+    savings = get_savings_summary(db, bucket) or None
+    return {"trip": trip, "savings": savings}
 
 
 @router.put("/{bucket_id}")

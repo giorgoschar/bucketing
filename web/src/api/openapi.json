@@ -2123,6 +2123,36 @@
         "title": "BucketMonthRowOut",
         "type": "object"
       },
+      "BucketSummary": {
+        "properties": {
+          "savings": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SavingsSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "trip": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TripSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "trip",
+          "savings"
+        ],
+        "title": "BucketSummary",
+        "type": "object"
+      },
       "BucketsMonthOut": {
         "properties": {
           "projected": {
@@ -6195,6 +6225,108 @@
         "title": "RuleSuggestionOut",
         "type": "object"
       },
+      "SavingsSummary": {
+        "properties": {
+          "goal": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Goal"
+          },
+          "months_left": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Months Left"
+          },
+          "pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pct"
+          },
+          "pct_actual": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pct Actual"
+          },
+          "per_month": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per Month"
+          },
+          "reached": {
+            "title": "Reached",
+            "type": "boolean"
+          },
+          "remaining": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remaining"
+          },
+          "saved": {
+            "title": "Saved",
+            "type": "number"
+          },
+          "target_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Date"
+          }
+        },
+        "required": [
+          "saved",
+          "goal",
+          "pct",
+          "remaining",
+          "per_month",
+          "months_left",
+          "reached",
+          "target_date"
+        ],
+        "title": "SavingsSummary",
+        "type": "object"
+      },
       "SearchOut": {
         "properties": {
           "entries": {
@@ -8830,6 +8962,168 @@
         "title": "TransactionUpdate",
         "type": "object"
       },
+      "TripPerson": {
+        "properties": {
+          "color": {
+            "title": "Color",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "paid": {
+            "title": "Paid",
+            "type": "number"
+          },
+          "share": {
+            "title": "Share",
+            "type": "number"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "name",
+          "color",
+          "share",
+          "paid"
+        ],
+        "title": "TripPerson",
+        "type": "object"
+      },
+      "TripSummary": {
+        "properties": {
+          "days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days"
+          },
+          "days_remaining": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days Remaining"
+          },
+          "days_until": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days Until"
+          },
+          "end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "nights": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nights"
+          },
+          "people": {
+            "items": {
+              "$ref": "#/components/schemas/TripPerson"
+            },
+            "title": "People",
+            "type": "array"
+          },
+          "per_day": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per Day"
+          },
+          "remaining": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remaining"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "number"
+          },
+          "transaction_count": {
+            "title": "Transaction Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "start",
+          "end",
+          "days",
+          "nights",
+          "per_day",
+          "status",
+          "days_until",
+          "days_remaining",
+          "remaining",
+          "transaction_count",
+          "people"
+        ],
+        "title": "TripSummary",
+        "type": "object"
+      },
       "UndoResult": {
         "properties": {
           "bill_restored": {
@@ -10012,6 +10306,54 @@
           }
         ],
         "summary": "Get Settlement",
+        "tags": [
+          "buckets"
+        ]
+      }
+    },
+    "/api/v1/buckets/{bucket_id}/summary": {
+      "get": {
+        "description": "The typed cards of the bucket page: the trip (event) summary with each person's\nshare and what they paid, or the savings-goal progress. Both are the services the\nold bucket page used.",
+        "operationId": "bucket_summary_api_v1_buckets__bucket_id__summary_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "bucket_id",
+            "required": true,
+            "schema": {
+              "title": "Bucket Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BucketSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Bucket Summary",
         "tags": [
           "buckets"
         ]

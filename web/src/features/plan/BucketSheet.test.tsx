@@ -4,6 +4,8 @@ import { fakeApi, reply } from '../../test/fakeApi'
 import { budgetRow } from '../../test/fixtures'
 import { renderWithProviders, resetTestEnv } from '../../test/render'
 import { Budgets } from './Budgets'
+import { BucketDetail } from './bucket/BucketDetail'
+import { makeTxn, pageOf, refRoutes, renderActivity } from '../activity/testing'
 
 afterEach(resetTestEnv)
 
@@ -12,6 +14,18 @@ const PUT = 'PUT /api/v1/buckets/{bucket_id}' as const
 const ARCHIVE = 'POST /api/v1/buckets/{bucket_id}/archive' as const
 const raw = { id: 'b1', name: 'Day to day', type: 'custom', kind: 'monthly', color: '#112233', icon: '🛒', budget: 1200, description: 'x',
   show_income: false, enable_settlement: true, start_date: null, end_date: null, status: 'active' }
+
+function setupDetail(extra = {}) {
+  const fake = fakeApi({
+    ...refRoutes(),
+    'GET /api/v1/buckets/{bucket_id}': () => ({ ...raw, balance: { income: 0, expenses: 10, net: -10 } }),
+    'GET /api/v1/buckets/{bucket_id}/summary': () => ({ trip: null, savings: null }),
+    'GET /api/v1/transactions': () => pageOf([makeTxn()]),
+    ...extra,
+  } as never)
+  renderActivity(<BucketDetail />, { route: '/plan/buckets/b1', path: '/plan/buckets/:id' })
+  return fake
+}
 
 function setup(extra = {}) {
   let rows = [raw]
@@ -72,8 +86,8 @@ it('shows a server rejection inline and keeps the sheet open', async () => {
 })
 
 it('Edit opens the saved bucket and PUTs it back with its stored fields', async () => {
-  const fake = setup({ [PUT]: () => raw })
-  fireEvent.click(await screen.findByRole('button', { name: 'Edit Day to day' }))
+  const fake = setupDetail({ [PUT]: () => raw })
+  fireEvent.click(await screen.findByRole('button', { name: 'Edit bucket' }))
   expect(within(dialog()).getByLabelText('Name')).toHaveValue('Day to day')
   type('Name', 'Daily')
   fireEvent.click(within(dialog()).getByRole('button', { name: 'Save' }))
@@ -82,14 +96,13 @@ it('Edit opens the saved bucket and PUTs it back with its stored fields', async 
   expect(fake.callsTo(PUT)[0].body).toMatchObject({ name: 'Daily', kind: 'monthly', budget: '1200.00', color: '#112233', icon: '🛒', enable_settlement: true })
 })
 
-it('Archive asks inside the sheet first, then POSTs and the bucket leaves the list', async () => {
-  const fake = setup()
-  fireEvent.click(await screen.findByRole('button', { name: 'Edit Day to day' }))
+it('Archive asks inside the sheet first, then POSTs', async () => {
+  const fake = setupDetail({ [ARCHIVE]: () => reply(200, {}) })
+  fireEvent.click(await screen.findByRole('button', { name: 'Edit bucket' }))
   fireEvent.click(within(dialog()).getByRole('button', { name: 'Archive' }))
   expect(fake.callsTo(ARCHIVE)).toHaveLength(0)
   expect(within(dialog()).getByText(/Archive Day to day\? There is no undo/)).toBeInTheDocument()
   fireEvent.click(within(dialog()).getByRole('button', { name: 'Confirm archive' }))
   await waitFor(() => expect(fake.callsTo(ARCHIVE)).toHaveLength(1))
   expect(fake.callsTo(ARCHIVE)[0].path).toBe('/api/v1/buckets/b1/archive')
-  await waitFor(() => expect(screen.queryByText('Day to day')).toBeNull())
 })

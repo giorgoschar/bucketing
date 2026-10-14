@@ -33,3 +33,5 @@ export const ShoppingList = lazy(() => import('../features/plan/pantry/ShoppingL
 
 // The in-app notification list (the bell).
 export const NotificationCentre = lazy(() => import('../features/notifications/NotificationCentre').then((m) => ({ default: m.NotificationCentre })))
+// Plan › Buckets › one bucket (its entries, and the trip or savings card).
+export const BucketDetail = lazy(() => import('../features/plan/bucket/BucketDetail').then((m) => ({ default: m.BucketDetail })))

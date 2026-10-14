@@ -5,7 +5,7 @@ import { FullScreenShell } from './shell/FullScreenShell'
 import { Home } from './screens/Home'
 import { Insights } from './screens/Insights'
 import {
-  ActivityRoute, Appearance, Automations, BillHistory, BillsList, Categories, CategoryScreen, Compose, FuelScreen, Household, Items, NotificationCentre, Notifications,
+  ActivityRoute, Appearance, Automations, BillHistory, BucketDetail, BillsList, Categories, CategoryScreen, Compose, FuelScreen, Household, Items, NotificationCentre, Notifications,
   PantryDetail, Plan, Profile, Settings, ShoppingList, Statement, StatementsList,
 } from './screens/lazy'
 
@@ -23,6 +23,7 @@ export const router = createBrowserRouter(
         { path: 'activity', element: <ActivityRoute /> },
         { path: 'activity/:id', element: <ActivityRoute /> },
         { path: 'plan', element: <Plan /> },
+        { path: 'plan/buckets/:id', element: <BucketDetail /> },
         { path: 'plan/items', element: <Items /> },
         // Static pantry routes before any 'plan/pantry/:id'.
         { path: 'plan/pantry/list', element: <ShoppingList /> },

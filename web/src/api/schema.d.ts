@@ -279,6 +279,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/buckets/{bucket_id}/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Bucket Summary
+         * @description The typed cards of the bucket page: the trip (event) summary with each person's
+         *     share and what they paid, or the savings-goal progress. Both are the services the
+         *     old bucket page used.
+         */
+        get: operations["bucket_summary_api_v1_buckets__bucket_id__summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cash/movements": {
         parameters: {
             query?: never;
@@ -3181,6 +3203,11 @@ export interface components {
             /** Still To Come */
             still_to_come: number;
         };
+        /** BucketSummary */
+        BucketSummary: {
+            savings: components["schemas"]["SavingsSummary"] | null;
+            trip: components["schemas"]["TripSummary"] | null;
+        };
         /** BucketsMonthOut */
         BucketsMonthOut: {
             /** Projected */
@@ -4462,6 +4489,27 @@ export interface components {
             /** Pattern */
             pattern: string;
         };
+        /** SavingsSummary */
+        SavingsSummary: {
+            /** Goal */
+            goal: number | null;
+            /** Months Left */
+            months_left: number | null;
+            /** Pct */
+            pct: number | null;
+            /** Pct Actual */
+            pct_actual?: number | null;
+            /** Per Month */
+            per_month: number | null;
+            /** Reached */
+            reached: boolean;
+            /** Remaining */
+            remaining: number | null;
+            /** Saved */
+            saved: number;
+            /** Target Date */
+            target_date: string | null;
+        };
         /** SearchOut */
         SearchOut: {
             /** Entries */
@@ -5242,6 +5290,46 @@ export interface components {
             /** @default expense */
             type: components["schemas"]["TransactionType"];
         };
+        /** TripPerson */
+        TripPerson: {
+            /** Color */
+            color: string;
+            /** Name */
+            name: string;
+            /** Paid */
+            paid: number;
+            /** Share */
+            share: number;
+            /** User Id */
+            user_id: string;
+        };
+        /** TripSummary */
+        TripSummary: {
+            /** Days */
+            days: number | null;
+            /** Days Remaining */
+            days_remaining: number | null;
+            /** Days Until */
+            days_until: number | null;
+            /** End */
+            end: string | null;
+            /** Nights */
+            nights: number | null;
+            /** People */
+            people: components["schemas"]["TripPerson"][];
+            /** Per Day */
+            per_day: number | null;
+            /** Remaining */
+            remaining: number | null;
+            /** Start */
+            start: string | null;
+            /** Status */
+            status: string;
+            /** Total */
+            total: number;
+            /** Transaction Count */
+            transaction_count: number;
+        };
         /** UndoResult */
         UndoResult: {
             /** Bill Restored */
@@ -5966,6 +6054,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bucket_summary_api_v1_buckets__bucket_id__summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bucket_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BucketSummary"];
                 };
             };
             /** @description Validation Error */
