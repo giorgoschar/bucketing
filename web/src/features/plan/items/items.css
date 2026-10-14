@@ -14,7 +14,11 @@
 /* Item sheet */
 .items-form { display: flex; flex-direction: column; gap: 14px; }
 .items-form__row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 10px; }
-.items-form__row--even { grid-template-columns: 1fr 1fr; }
+.items-form__row--even { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+/* A date input's own minimum width pushed the row past the sheet; let the fields shrink, and stack them when narrow. */
+.items-form__row > * { min-width: 0; }
+.items-form__row :is(input, select) { min-width: 0; width: 100%; box-sizing: border-box; }
+@media (max-width: 420px) { .items-form__row--even { grid-template-columns: minmax(0, 1fr); } }
 .items-form__hint { margin: -6px 0 0; font-size: 12.5px; color: var(--muted); }
 .items-form__problem {
   margin: 0; padding: 10px 12px; border-radius: var(--r-md);
