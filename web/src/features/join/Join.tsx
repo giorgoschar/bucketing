@@ -15,7 +15,7 @@ import '../settings/settings.css'
 interface Preview { household_name: string; inviter: string | null }
 
 /** An invite link (/app/join/<token>): who invited you to which household, and one button to join.
- *  The token is a credential: it stays in the URL and in memory, never in a cache key or a log. */
+ *  The token is a credential: the preview query key carries it, but only in memory (gcTime 0, never persisted). */
 export function Join() {
   const { token = '' } = useParams()
   const toast = useToast()
