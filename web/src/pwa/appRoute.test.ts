@@ -6,8 +6,8 @@ describe('appRoute', () => {
   it.each([
     // every link the server creates (scheduler, ingest, login alerts, push test)
     ['/bills', '/app/plan'],
-    ['/buckets/3f2a', '/app/plan'],
-    ['/buckets', '/app/plan'],
+    ['/buckets/3f2a', '/app/plan/buckets/3f2a'],
+    ['/buckets', '/app/plan?view=buckets'],
     ['/transactions/abc/edit', '/app/activity'],
     ['/search?q=x', '/app/activity'],
     ['/settings', '/app/settings'],

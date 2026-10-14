@@ -15,7 +15,9 @@ export function appRoute(link: string | null | undefined): string {
   // Plan › Pantry (pantry spec §4.9): stock_low links to /stock/shopping, price_drop to /stock.
   if (under('/stock/shopping')) return '/app/plan/pantry/list'
   if (under('/stock')) return '/app/plan?view=pantry'
-  if (under('/bills') || under('/buckets')) return '/app/plan'
+  if (path.startsWith('/buckets/')) return `/app/plan/buckets/${path.slice('/buckets/'.length)}`
+  if (under('/buckets')) return '/app/plan?view=buckets'
+  if (under('/bills')) return '/app/plan'
   if (under('/transactions') || under('/search')) return '/app/activity'
   if (under('/settings')) return '/app/settings'
   return '/app/'
