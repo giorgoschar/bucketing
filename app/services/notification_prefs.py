@@ -22,7 +22,7 @@ ALERT_TYPES: tuple[AlertType, ...] = (
     AlertType(NotificationType.bill_auto_paid.value, "Bills", "Paid automatically"),
     AlertType(NotificationType.contract_expiring.value, "Bills", "Contract ending"),
     AlertType(NotificationType.bill_drift.value, "Bills", "Amount changed"),
-    AlertType(NotificationType.budget_warning.value, "Budgets", "Budget limit reached"),
+    AlertType(NotificationType.budget_warning.value, "Buckets", "Budget limit reached"),
     AlertType(NotificationType.stock_low.value, "Pantry", "Running low"),
     AlertType(NotificationType.price_drop.value, "Pantry", "Price drops"),
     AlertType(NotificationType.month_review.value, "Insights", "Month ready to review"),

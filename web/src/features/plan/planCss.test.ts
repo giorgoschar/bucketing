@@ -31,7 +31,7 @@ it('the five Plan segments fit on one row at 390 px', () => {
   const segPad = px(kitSeg, 'padding')
   const gap = px(kitSeg, 'gap')
   // A generous 0.66 em per character for the 650-weight UI face (its real average is about 0.58 em).
-  const labels = ['Upcoming', 'Month', 'Budgets', 'Cash', 'Pantry']
+  const labels = ['Upcoming', 'Month', 'Buckets', 'Cash', 'Pantry']
   const text = labels.join('').length * 0.66 * font
   const needed = text + labels.length * 2 * pad + (labels.length - 1) * gap + 2 * segPad
   expect(needed).toBeLessThanOrEqual(390 - 2 * screenPad)

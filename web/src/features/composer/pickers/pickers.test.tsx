@@ -30,7 +30,7 @@ it('budget: active only; event range; expense has no None; picking closes', () =
   const onPick = vi.fn()
   const onClose = vi.fn()
   render(<BucketSheet open onClose={onClose} buckets={BUCKETS} type="expense" selectedId="b-day" onPick={onPick} />)
-  const sheet = screen.getByRole('dialog', { name: 'Budget' })
+  const sheet = screen.getByRole('dialog', { name: 'Bucket' })
   expect(within(sheet).queryByRole('button', { name: /Old budget/ })).not.toBeInTheDocument()
   expect(within(sheet).queryByRole('button', { name: /^None/ })).not.toBeInTheDocument()
   expect(within(sheet).getByRole('button', { name: /Crete.*12–19 Aug/ })).toBeInTheDocument()

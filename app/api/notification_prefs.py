@@ -16,7 +16,7 @@ router = APIRouter(prefix="/settings/notifications", tags=["settings"])
 
 class AlertTypeOut(BaseModel):
     type: str
-    group: str  # Bills | Budgets | Pantry | Apple Pay
+    group: str  # Bills | Buckets | Pantry | Apple Pay
     label: str
     enabled: bool
 

@@ -41,7 +41,7 @@ describe('Automations', () => {
     const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ id: 't2', name: 'Watch', prefix: 'pat_cd34', scopes: ['ingest'], default_bucket_id: null, last_used_at: null, created_at: null, token: 'pat_cd34SECRETSECRET' }), { status: 201, headers: { 'Content-Type': 'application/json' } }))
     renderIt()
     fireEvent.change(screen.getByLabelText('Token name'), { target: { value: 'Watch' } })
-    fireEvent.change(screen.getByLabelText('Default budget'), { target: { value: 'b1' } })
+    fireEvent.change(screen.getByLabelText('Default bucket'), { target: { value: 'b1' } })
     fireEvent.click(screen.getByRole('button', { name: 'Create token' }))
     const card = await screen.findByRole('alert')
     expect(within(card).getByText('pat_cd34SECRETSECRET')).toBeInTheDocument()
@@ -89,7 +89,7 @@ describe('Automations', () => {
   it('the token form has the classify checkbox, off by default, and does not send it when off', async () => {
     const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ id: 't2', name: 'Watch', prefix: 'pat_cd34', scopes: ['ingest'], default_bucket_id: null, last_used_at: null, created_at: null, token: 'pat_x' }), { status: 201, headers: { 'Content-Type': 'application/json' } }))
     renderIt()
-    const box = screen.getByRole('checkbox', { name: 'Let the Shortcut ask for a category (shares your category and budget names with the Shortcut)' })
+    const box = screen.getByRole('checkbox', { name: 'Let the Shortcut ask for a category (shares your category and bucket names with the Shortcut)' })
     expect(box).not.toBeChecked()
     fireEvent.change(screen.getByLabelText('Token name'), { target: { value: 'Watch' } })
     fireEvent.click(screen.getByRole('button', { name: 'Create token' }))

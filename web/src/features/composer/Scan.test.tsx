@@ -30,7 +30,7 @@ const RESULT = { amount: 12.5, currency: 'EUR', date: '2026-10-05', merchant: 'T
 
 async function scan(result: object) {
   const r = await renderComposer('/new', { routes: { 'POST /api/v1/transactions/scan/qr': result } })
-  await screen.findByRole('button', { name: 'Budget: Day to day. Change' })
+  await screen.findByRole('button', { name: 'Bucket: Day to day. Change' })
   fireEvent.click(screen.getByRole('button', { name: 'Scan' })) // spec §2.4: one scan button, then Receipt QR
   fireEvent.click(within(await screen.findByRole('dialog', { name: 'Scan' })).getByRole('button', { name: /^Receipt QR/ }))
   await waitFor(() => expect(cam.decode).not.toBeNull())
@@ -75,7 +75,7 @@ it('with the rules API present, changing the scanned category offers Remember; c
 
 it('Photo attaches the shrunk image, opens an empty composer, and never calls /scan/parse', async () => {
   const { api } = await renderComposer('/new', { routes: { 'POST /api/v1/transactions/t1/receipt': { receipt_path: 'x.jpg' } } })
-  await screen.findByRole('button', { name: 'Budget: Day to day. Change' })
+  await screen.findByRole('button', { name: 'Bucket: Day to day. Change' })
   fireEvent.click(screen.getByRole('button', { name: 'Scan' })) // spec §2.4: one scan button, then Receipt QR
   fireEvent.click(within(await screen.findByRole('dialog', { name: 'Scan' })).getByRole('button', { name: /^Receipt QR/ }))
   fireEvent.click(await screen.findByRole('button', { name: 'Photo' }))
@@ -92,7 +92,7 @@ it('Photo attaches the shrunk image, opens an empty composer, and never calls /s
 
 it('offline: the scan screen says it needs a connection', async () => {
   await renderComposer('/new')
-  await screen.findByRole('button', { name: 'Budget: Day to day. Change' })
+  await screen.findByRole('button', { name: 'Bucket: Day to day. Change' })
   act(() => setOnline(false))
   fireEvent.click(screen.getByRole('button', { name: 'Scan' })) // spec §2.4: one scan button, then Receipt QR
   fireEvent.click(within(await screen.findByRole('dialog', { name: 'Scan' })).getByRole('button', { name: /^Receipt QR/ }))

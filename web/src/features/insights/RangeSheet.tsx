@@ -67,9 +67,9 @@ export function RangeSheet({ open, onClose, initialFrom, initialTo, filters, onA
       {draft.error && <p id={errorId} className="ui-field__error" role="alert">{draft.error}</p>}
       {buckets.length > 0 && (
         <div className="insights__filtergroup">
-          <p className="ui-field__label">Budgets</p>
+          <p className="ui-field__label">Buckets</p>
           <div className="insights__chipwrap">
-            <Chips multiple label="Budgets" options={buckets.map((b) => ({ value: b.id, label: b.name }))}
+            <Chips multiple label="Buckets" options={buckets.map((b) => ({ value: b.id, label: b.name }))}
               value={draft.bucketIds} onChange={(bucketIds) => patch({ bucketIds })} />
           </div>
         </div>

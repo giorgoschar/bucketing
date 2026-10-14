@@ -171,7 +171,7 @@ export function CashSheet({ mode: initialMode, onClose, stash, members, currency
             {spend && (
               <div className="cash-form__row">
                 <label className="ui-field">
-                  <span className="ui-field__label">Budget</span>
+                  <span className="ui-field__label">Bucket</span>
                   <select className="ui-input" value={bucket} onChange={(ev) => setBucketId(ev.target.value)}>
                     {buckets.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                   </select>
@@ -185,7 +185,7 @@ export function CashSheet({ mode: initialMode, onClose, stash, members, currency
                 </label>
               </div>
             )}
-            {spend && buckets.length === 0 && <p className="ui-field__error">No budget to log it in. Connect once to load budgets.</p>}
+            {spend && buckets.length === 0 && <p className="ui-field__error">No bucket to log it in. Connect once to load buckets.</p>}
           </div>
         )}
 

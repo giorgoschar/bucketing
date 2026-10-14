@@ -184,7 +184,7 @@ it('missing amount first: "Set" is the filled button and opens the amount step',
 })
 
 // ---- Hidden rows are reachable and work
-it('Show 2 more, then the revealed budget row opens Plan › Budgets', async () => {
+it('Show 2 more, then the revealed budget row opens Plan › Buckets', async () => {
   fakeApi(many())
   const { router } = renderWithProviders(<NeedsAttention />)
   fireEvent.click(await screen.findByRole('button', { name: 'Show 2 more' }))

@@ -34,7 +34,7 @@ async function compose(url = '/new', routes: Record<string, unknown> = {}) {
   render(<QueryClientProvider client={client}><TickedPrompt /></QueryClientProvider>)
   return out
 }
-const ready = () => screen.findByRole('button', { name: 'Budget: Day to day. Change' })
+const ready = () => screen.findByRole('button', { name: 'Bucket: Day to day. Change' })
 const saveThree = async () => {
   await ready()
   fireEvent.click(screen.getByRole('button', { name: '3' }))

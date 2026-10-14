@@ -180,7 +180,7 @@ export function HowYouPaid({ data }: WidgetCtx) {
 
 export function BudgetsCard({ data }: WidgetCtx) {
   return (
-    <Card title="Budgets" action={<Link to="/plan?view=budgets">Plan › Budgets</Link>}>
+    <Card title="Buckets" action={<Link to="/plan?view=budgets">Plan › Buckets</Link>}>
       <ul className="insights__budgets">
         {data.budget_status.map((b) => (
           <li key={b.bucket_id}>

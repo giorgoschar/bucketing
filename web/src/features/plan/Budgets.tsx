@@ -28,7 +28,7 @@ export function Budgets() {
     <QueryView result={budgets} noDataText="No saved data yet. Connect once to load Plan.">
       {(rows) =>
         rows.length === 0 ? (
-          <EmptyState title="No budgets yet" body="Budgets are set on buckets." />
+          <EmptyState title="No buckets yet" body="Add a bucket to give your spending a place." />
         ) : (
           <div className="ui-list">
             {rows.map((b) => (
@@ -38,7 +38,7 @@ export function Budgets() {
         )
       }
     </QueryView>
-    <Sheet open={archiving !== null} onClose={() => setArchiving(null)} title="Archive budget">
+    <Sheet open={archiving !== null} onClose={() => setArchiving(null)} title="Archive bucket">
       <div className="plan-archive">
         <p className="plan-archive__text">{archiving ? `Archive ${archiving.name}? There is no undo: it leaves Plan and the new app.` : ''}</p>
         <div className="plan-archive__actions">

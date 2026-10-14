@@ -101,8 +101,8 @@ describe('validate', () => {
   it('amount > 0, expense needs a budget, no future date', () => {
     const v = validate(expense({ amount: '', bucketId: null, date: '2026-10-08' }), V)
     expect(v.ok).toBe(false)
-    expect(v.problems).toMatchObject({ amount: 'Enter an amount', bucket: 'Choose a budget', date: "Date can't be in the future" })
-    expect(firstProblem(v.problems)).toBe('Choose a budget')
+    expect(v.problems).toMatchObject({ amount: 'Enter an amount', bucket: 'Choose a bucket', date: "Date can't be in the future" })
+    expect(firstProblem(v.problems)).toBe('Choose a bucket')
     expect(validate(expense({ type: 'income', bucketId: null }), V).ok).toBe(true)
     expect(validate(expense({ fixedCost: true, bucketId: null }), V).ok).toBe(true)
   })

@@ -131,7 +131,7 @@ it('saves from the keyboard, takes a comma, and stays open with the date, budget
   const { api } = await setup('/?add=1')
   await waitFor(() => amount())
   // Pick a budget and a payer by typing (lists filter as you type, Enter picks), and yesterday.
-  await user.click(within(panel()).getByRole('button', { name: /^Budget:/ }))
+  await user.click(within(panel()).getByRole('button', { name: /^Bucket:/ }))
   await user.keyboard('car{Enter}')
   await user.click(within(panel()).getByRole('button', { name: /^Payer:/ }))
   await user.keyboard('mar{Enter}')
@@ -150,7 +150,7 @@ it('saves from the keyboard, takes a comma, and stays open with the date, budget
   expect(amount()).toHaveValue('')
   expect(amount()).toHaveFocus()
   expect(within(panel()).getByRole('combobox', { name: 'Merchant' })).toHaveValue('')
-  expect(within(panel()).getByRole('button', { name: /^Budget: Car/ })).toBeInTheDocument()
+  expect(within(panel()).getByRole('button', { name: /^Bucket: Car/ })).toBeInTheDocument()
   expect(within(panel()).getByRole('button', { name: /^Payer: Maria/ })).toBeInTheDocument()
   expect(within(panel()).getByRole('button', { name: /^Date: Yesterday/ })).toBeInTheDocument()
 
@@ -249,7 +249,7 @@ it('Tab order follows the spec: amount, type, description, budget, category, pay
     names.push(el.getAttribute('aria-label') ?? el.textContent ?? '')
   }
   const idx = (re: RegExp) => names.findIndex((n) => re.test(n))
-  const order = [/^Expense$/, /^Income$/, /^Merchant$/, /^Budget:/, /^Category:/, /^Payer:/, /^Method:/, /^Date:/, /^More options/]
+  const order = [/^Expense$/, /^Income$/, /^Merchant$/, /^Bucket:/, /^Category:/, /^Payer:/, /^Method:/, /^Date:/, /^More options/]
     .map(idx)
   expect(order.every((i) => i >= 0)).toBe(true)
   expect([...order].sort((a, b) => a - b)).toEqual(order)
@@ -344,7 +344,7 @@ it('Esc closes the Add panel first and the pane on the next Esc', async () => {
   const user = userEvent.setup()
   await setup('/activity/t9?add=1', { activity: true })
   await waitFor(() => amount())
-  act(() => within(panel()).getByRole('button', { name: /^Budget:/ }).focus())
+  act(() => within(panel()).getByRole('button', { name: /^Bucket:/ }).focus())
   await user.keyboard('{Escape}')
   await waitFor(() => expect(screen.queryByRole('complementary', { name: /entry$/ })).toBeNull())
   expect(screen.getByRole('complementary', { name: 'Payment details' })).toBeInTheDocument()
@@ -359,7 +359,7 @@ it('with the pane open, Esc in a dirty panel asks once and keeps the pane', asyn
   await setup('/activity/t9?add=1', { activity: true })
   await waitFor(() => amount())
   await user.type(amount(), '5')
-  act(() => within(panel()).getByRole('button', { name: /^Budget:/ }).focus())
+  act(() => within(panel()).getByRole('button', { name: /^Bucket:/ }).focus())
   await user.keyboard('{Escape}')
   expect(await screen.findAllByRole('dialog', { name: 'Discard this entry?' })).toHaveLength(1)
   expect(screen.getByRole('complementary', { name: 'Payment details' })).toBeInTheDocument()
@@ -490,7 +490,7 @@ it('the panel shows the amber budget chip with no second line when no budget is 
   await setup('/?add=1', { defaults: { ...DEFAULTS, last: { ...DEFAULTS.last, bucket_id: undefined } } })
   await waitFor(() => amount())
   await userEvent.type(amount(), '5')
-  expect(within(panel()).getByRole('button', { name: /^Budget: Choose a budget/ })).toHaveClass('pill--attention')
+  expect(within(panel()).getByRole('button', { name: /^Bucket: Choose a bucket/ })).toHaveClass('pill--attention')
   expect(panel().querySelector('.composer__problem')).toBeNull()
 })
 

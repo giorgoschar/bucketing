@@ -16,7 +16,7 @@ vi.mock('../../session/SessionProvider', () => ({
 
 afterEach(resetTestEnv)
 
-const ready = () => screen.findByRole('button', { name: 'Budget: Day to day. Change' })
+const ready = () => screen.findByRole('button', { name: 'Bucket: Day to day. Change' })
 const press = (...keys: string[]) => keys.forEach((k) => fireEvent.click(screen.getByRole('button', { name: k })))
 
 it('two-tap path: 3 then Save sends one POST with the stored defaults, today and a client_id', async () => {
@@ -60,9 +60,9 @@ it('a double tap on Save, or Enter pressed twice, sends one POST (Review Focus 1
   expect(writes(api).filter((c) => c.path === '/api/v1/transactions')).toHaveLength(1)
 })
 
-it('first use: the budget pill is dashed "Choose a budget" and Save stays disabled', async () => {
+it('first use: the budget pill is dashed "Choose a bucket" and Save stays disabled', async () => {
   await renderComposer('/new', { defaults: null })
-  const pill = await screen.findByRole('button', { name: 'Budget: Choose a budget. Change' })
+  const pill = await screen.findByRole('button', { name: 'Bucket: Choose a bucket. Change' })
   expect(pill).toHaveClass('pill--empty', 'pill--attention') // spec §2.4: the chip is the one budget prompt
   press('3')
   expect(screen.getByRole('button', { name: /^Save 3 euro/ })).toBeDisabled()
@@ -76,7 +76,7 @@ it('income: green state, Received by, optional budget, no method pill, transfer,
   expect(document.querySelector('.composer[data-type="income"]')).not.toBeNull()
   expect(screen.queryByRole('button', { name: /^Method:/ })).not.toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Received by: Giorgos. Change' })).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: 'Budget: None. Change' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Bucket: None. Change' })).toBeInTheDocument()
   press('7', '0', '0')
   fireEvent.click(screen.getByRole('button', { name: 'Save income 700 euro' }))
   await screen.findByText('home screen')

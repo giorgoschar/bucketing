@@ -107,7 +107,7 @@ export function validate(s: ComposerState, c: ValidateCtx): Validation {
   const p: Partial<Record<Problem, string>> = {}
   const cents = toCents(s.amount)
   if (cents <= 0) p.amount = 'Enter an amount'
-  if (s.type === 'expense' && !s.bucketId && !s.fixedCost) p.bucket = 'Choose a budget'
+  if (s.type === 'expense' && !s.bucketId && !s.fixedCost) p.bucket = 'Choose a bucket'
   if (s.date > c.today) p.date = "Date can't be in the future"
   if (s.currency !== c.householdCurrency && parseRate(s.rate) === null) p.rate = 'Enter the rate'
   if (isFuel(s, c) && s.fuelPrice.trim() !== '' && parseFuelPrice(s.fuelPrice) === null) {

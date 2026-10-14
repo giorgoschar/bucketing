@@ -38,7 +38,7 @@ it('an archived budget keeps its name and its id (Review Focus 3)', async () => 
   const { api } = await renderComposer('/edit/t9', {
     routes: { 'GET /api/v1/transactions/t9': { ...TXN, bucket_id: 'b-old' }, 'PUT /api/v1/transactions/t9': TXN },
   })
-  expect(await screen.findByRole('button', { name: 'Budget: Old budget. Change' })).toBeInTheDocument()
+  expect(await screen.findByRole('button', { name: 'Bucket: Old budget. Change' })).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
   await screen.findByText('home screen')
   expect(writes(api)[0].body).toMatchObject({ bucket_id: 'b-old' })
@@ -48,7 +48,7 @@ it('a Fixed cost shows a read-only budget and keeps bucket_id null', async () =>
   const { api } = await renderComposer('/edit/t9', {
     routes: { 'GET /api/v1/transactions/t9': { ...TXN, bucket_id: null, recurring_bill_id: 'r1' }, 'PUT /api/v1/transactions/t9': TXN },
   })
-  expect(await screen.findByLabelText('Budget: Fixed cost')).toBeInTheDocument()
+  expect(await screen.findByLabelText('Bucket: Fixed cost')).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
   await screen.findByText('home screen')
   expect(writes(api)[0].body).toMatchObject({ bucket_id: null })

@@ -36,7 +36,7 @@ describe('Chips', () => {
 
   it('multi select toggles membership', () => {
     const onChange = vi.fn()
-    render(<Chips multiple label="Budgets" options={[...OPTIONS]} value={['a']} onChange={onChange} />)
+    render(<Chips multiple label="Buckets" options={[...OPTIONS]} value={['a']} onChange={onChange} />)
     fireEvent.click(screen.getByRole('button', { name: 'Alpha' }))
     expect(onChange).toHaveBeenLastCalledWith([])
     fireEvent.click(screen.getByRole('button', { name: 'Beta' }))

@@ -32,7 +32,7 @@ const askedFor = (api: { calls: { path: string; query: URLSearchParams }[] }) =>
 
 async function saveOne(extra: Record<string, unknown> = {}) {
   const r = await renderComposer('/new', { routes: { ...ruleRoutes(), ...extra } })
-  await screen.findByRole('button', { name: /^Budget: Day to day/ })
+  await screen.findByRole('button', { name: /^Bucket: Day to day/ })
   press('5')
   fireEvent.click(screen.getByRole('button', { name: /^Save 5 euro/ }))
   await screen.findByText('home screen')
@@ -100,7 +100,7 @@ it('nothing is shown, and no error, when the suggestion request fails', async ()
 
 it('offline, the entry is queued and no suggestion is asked for', async () => {
   const { api } = await renderComposer('/new', { routes: ruleRoutes() })
-  await screen.findByRole('button', { name: /^Budget: Day to day/ })
+  await screen.findByRole('button', { name: /^Bucket: Day to day/ })
   goOffline()
   press('5')
   fireEvent.click(screen.getByRole('button', { name: /^Save 5 euro/ }))
@@ -185,21 +185,21 @@ const merchant = () => screen.getByPlaceholderText('Where? (optional)')
 
 it.each(['LIDL Express', 'lidl ', 'LÍDL Athens'])('typing "%s" pre-selects the rule\'s category', async (text) => {
   await renderComposer('/new', { routes: rules })
-  await screen.findByRole('button', { name: /^Budget:/ })
+  await screen.findByRole('button', { name: /^Bucket:/ })
   fireEvent.change(merchant(), { target: { value: text } })
   expect(await screen.findByRole('button', { name: /^Category: Groceries, rule: lidl/ })).toBeInTheDocument()
 })
 
 it('a Greek merchant matches a rule typed in another case', async () => {
   await renderComposer('/new', { routes: { 'GET /api/v1/settings/category-rules': [{ id: 'r2', pattern: 'ΛΙΝΤΛ', category_id: 'c-food' }] } })
-  await screen.findByRole('button', { name: /^Budget:/ })
+  await screen.findByRole('button', { name: /^Bucket:/ })
   fireEvent.change(merchant(), { target: { value: 'Λιντλ Αθήνα' } })
   expect(await screen.findByRole('button', { name: /^Category: Groceries/ })).toBeInTheDocument()
 })
 
 it('a category the user picked is never overwritten by a rule', async () => {
   await renderComposer('/new', { routes: rules })
-  await screen.findByRole('button', { name: /^Budget:/ })
+  await screen.findByRole('button', { name: /^Bucket:/ })
   fireEvent.click(screen.getByRole('button', { name: /^Category:/ }))
   fireEvent.click(await screen.findByRole('button', { name: /^Eating out/ }))
   fireEvent.change(merchant(), { target: { value: 'Lidl' } })

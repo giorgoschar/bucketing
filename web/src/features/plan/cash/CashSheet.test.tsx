@@ -69,7 +69,7 @@ it('the spend toggle sends the bucket and category, and the button says "and log
   const { api, sheet } = await open('Take')
   type(sheet, 'Amount', '40')
   fireEvent.click(within(sheet).getByRole('switch', { name: 'I spent it on…' }))
-  expect(within(sheet).getByLabelText('Budget')).toHaveValue('b1')
+  expect(within(sheet).getByLabelText('Bucket')).toHaveValue('b1')
   fireEvent.change(within(sheet).getByLabelText('Category'), { target: { value: 'c1' } })
   fireEvent.click(within(sheet).getByRole('button', { name: 'Take €40.00 and log it' }))
   await waitFor(() => expect(posts(api)).toHaveLength(1))

@@ -128,9 +128,9 @@ function ItemBody({ item, onClose, onOpenEntry }: Omit<ItemSheetProps, 'open'>) 
 
       {out && (
         <label className="ui-field">
-          <span className="ui-field__label">Budget</span>
+          <span className="ui-field__label">Bucket</span>
           <select className="ui-input" value={form.bucket_id} onChange={(e) => set('bucket_id', e.target.value)}>
-            <option value="">No budget (a Fixed cost)</option>
+            <option value="">No bucket (a Fixed cost)</option>
             {extra && (
               <option value={extra.id}>{`${extra.name} (${extra.status === 'archived' ? 'archived' : 'not monthly'})`}</option>
             )}

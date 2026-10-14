@@ -32,7 +32,7 @@ export function Automations() {
   const [fresh, setFresh] = useState<string | null>(null)
   const [revoking, setRevoking] = useState<TokenItem | null>(null)
   const [busy, setBusy] = useState(false)
-  const bucketName = (id: string | null) => buckets.find((b) => b.id === id)?.name ?? 'No default budget'
+  const bucketName = (id: string | null) => buckets.find((b) => b.id === id)?.name ?? 'No default bucket'
 
   const create = async () => {
     const trimmed = name.trim()
@@ -108,14 +108,14 @@ export function Automations() {
             </label>
             {nameError && <p className="ui-field__error" role="alert">{nameError}</p>}
             <label className="ui-field">
-              <span className="ui-field__label">Default budget</span>
+              <span className="ui-field__label">Default bucket</span>
               <select className="ui-input" value={bucket} onChange={(e) => setBucket(e.target.value)}>
                 <option value="">None</option>
                 {buckets.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select>
             </label>
             <label className="ui-check">
-              <span>Let the Shortcut ask for a category (shares your category and budget names with the Shortcut)</span>
+              <span>Let the Shortcut ask for a category (shares your category and bucket names with the Shortcut)</span>
               <input type="checkbox" checked={classify} onChange={(e) => setClassify(e.target.checked)} />
             </label>
             <button type="button" className="btn btn--primary" disabled={busy} onClick={() => void create()}>Create token</button>

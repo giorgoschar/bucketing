@@ -36,7 +36,7 @@ it('fuel: price per litre prefilled from the last one, litres shown, price sent'
 
 it('foreign currency: Save waits for a rate; the ≈ line and the rate are sent', async () => {
   const { api } = await renderComposer()
-  await screen.findByRole('button', { name: 'Budget: Day to day. Change' })
+  await screen.findByRole('button', { name: 'Bucket: Day to day. Change' })
   // spec §2.4: the currency is the first field in More, not on the main form
   expect(screen.queryByRole('button', { name: 'Currency: EUR. Change' })).not.toBeInTheDocument()
   fireEvent.click(within(await openMore()).getByRole('button', { name: 'Currency: EUR. Change' }))
@@ -59,7 +59,7 @@ it('foreign currency: Save waits for a rate; the ≈ line and the rate are sent'
 
 it('split with Maria: equal shares for every member are sent', async () => {
   const { api } = await renderComposer()
-  await screen.findByRole('button', { name: 'Budget: Day to day. Change' })
+  await screen.findByRole('button', { name: 'Bucket: Day to day. Change' })
   press('1', '0')
   const more = await openMore()
   fireEvent.click(within(more).getByRole('switch', { name: 'Split with Maria' }))
@@ -74,7 +74,7 @@ it('split with Maria: equal shares for every member are sent', async () => {
 
 it('each paid own share: from the payer pill, sent as own_share with no payer', async () => {
   const { api } = await renderComposer()
-  await screen.findByRole('button', { name: 'Budget: Day to day. Change' })
+  await screen.findByRole('button', { name: 'Bucket: Day to day. Change' })
   press('1', '0')
   fireEvent.click(screen.getByRole('button', { name: 'Payer: Giorgos. Change' }))
   fireEvent.click(await screen.findByRole('button', { name: 'Each paid own share' }))
@@ -92,7 +92,7 @@ it('each paid own share: from the payer pill, sent as own_share with no payer', 
 
 it('a one-member household has no split row and no own share', async () => {
   await renderComposer('/new', { routes: { 'GET /api/v1/settings/household': { ...HOUSEHOLD, members: [HOUSEHOLD.members[0]] } } })
-  await screen.findByRole('button', { name: 'Budget: Day to day. Change' })
+  await screen.findByRole('button', { name: 'Bucket: Day to day. Change' })
   const more = await openMore()
   expect(within(more).queryByRole('switch', { name: /^Split with/ })).not.toBeInTheDocument()
 })

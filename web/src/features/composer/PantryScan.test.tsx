@@ -45,7 +45,7 @@ const routes = (extra: Record<string, unknown> = {}) => ({
 
 async function openPantryScan(extra: Record<string, unknown> = {}) {
   const r = await renderComposer('/new', { routes: routes(extra) })
-  await screen.findByRole('button', { name: /^Budget:/ })
+  await screen.findByRole('button', { name: /^Bucket:/ })
   fireEvent.click(screen.getByRole('button', { name: 'Scan' }))
   fireEvent.click(within(await screen.findByRole('dialog', { name: 'Scan' })).getByRole('button', { name: /^Pantry barcode/ }))
   return r
@@ -53,7 +53,7 @@ async function openPantryScan(extra: Record<string, unknown> = {}) {
 
 it('the pantry camera is only imported when Pantry barcode is chosen', async () => {
   await renderComposer('/new', { routes: routes() })
-  await screen.findByRole('button', { name: /^Budget:/ })
+  await screen.findByRole('button', { name: /^Bucket:/ })
   fireEvent.click(screen.getByRole('button', { name: 'Scan' }))
   fireEvent.click(within(await screen.findByRole('dialog', { name: 'Scan' })).getByRole('button', { name: /^Receipt QR/ }))
   await new Promise((r) => setTimeout(r, 20))
@@ -85,13 +85,13 @@ it('Scan another goes back to the camera', async () => {
 
 it('closing at the camera and at the sheet returns to the form with the typed amount, place and budget intact', async () => {
   await renderComposer('/new', { routes: routes() })
-  await screen.findByRole('button', { name: /^Budget:/ })
+  await screen.findByRole('button', { name: /^Bucket:/ })
   fireEvent.click(screen.getByRole('button', { name: '7' }))
   fireEvent.change(screen.getByPlaceholderText('Where? (optional)'), { target: { value: 'Bakery' } })
   const intact = () => {
     expect(screen.getByText('Amount 7.00 euro')).toBeInTheDocument()
     expect(screen.getByPlaceholderText('Where? (optional)')).toHaveValue('Bakery')
-    expect(screen.getByRole('button', { name: /^Budget: Day to day/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Bucket: Day to day/ })).toBeInTheDocument()
   }
   const open = async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Scan' }))
@@ -130,7 +130,7 @@ it('an unknown code offers Add manually inside the flow', async () => {
 // Fix round 1, finding 3: no key reaches the form behind the scan sheet, the camera or the barcode sheet.
 async function amountSevenThen(open: () => Promise<void>) {
   const r = await renderComposer('/new', { routes: routes() })
-  await screen.findByRole('button', { name: /^Budget:/ })
+  await screen.findByRole('button', { name: /^Bucket:/ })
   fireEvent.click(screen.getByRole('button', { name: '7' }))
   await open()
   return r

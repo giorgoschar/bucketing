@@ -8,7 +8,7 @@ import { disabledAfter, useNotificationActions } from './notificationHooks'
 import './settings.css'
 
 /** The groups the screen knows, in the order it shows them. Any other group the server sends follows them. */
-const KNOWN_GROUPS = ['Bills', 'Budgets', 'Pantry', 'Insights', 'Apple Pay']
+const KNOWN_GROUPS = ['Bills', 'Buckets', 'Pantry', 'Insights', 'Apple Pay']
 
 function groupsOf(present: string[]): string[] {
   const known = KNOWN_GROUPS.filter((g) => present.includes(g))

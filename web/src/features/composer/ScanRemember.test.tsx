@@ -30,7 +30,7 @@ it('changing the scanned category offers Remember, on by default; Save sends one
       'POST /api/v1/settings/category-rules': () => Response.json({ id: 'r1', pattern: 'test taverna', category_id: 'c-coffee' }, { status: 201 }),
     },
   })
-  await screen.findByRole('button', { name: 'Budget: Day to day. Change' })
+  await screen.findByRole('button', { name: 'Bucket: Day to day. Change' })
   fireEvent.click(screen.getByRole('button', { name: 'Scan' })) // spec §2.4: one scan button, then Receipt QR
   fireEvent.click(within(await screen.findByRole('dialog', { name: 'Scan' })).getByRole('button', { name: /^Receipt QR/ }))
   await waitFor(() => expect(cam.decode).not.toBeNull())

@@ -41,9 +41,9 @@ it('a new In item posts its rule fields and no bucket, auto-pay or shares', asyn
 it('out items choose among active monthly budgets only', async () => {
   fakeApi(routes())
   renderWithProviders(<ItemSheet open item={null} onClose={() => {}} />)
-  await waitFor(() => expect(within(screen.getByLabelText('Budget')).getAllByRole('option')).toHaveLength(2))
-  expect(within(screen.getByLabelText('Budget')).getAllByRole('option').map((o) => o.textContent))
-    .toEqual(['No budget (a Fixed cost)', 'Day to day'])
+  await waitFor(() => expect(within(screen.getByLabelText('Bucket')).getAllByRole('option')).toHaveLength(2))
+  expect(within(screen.getByLabelText('Bucket')).getAllByRole('option').map((o) => o.textContent))
+    .toEqual(['No bucket (a Fixed cost)', 'Day to day'])
 })
 
 it('saving an edit keeps shares, payer mode, contract end and occurrence count', async () => {
@@ -110,9 +110,9 @@ it('changing the amount of a shared item sends scaled shares and says so', async
 it('an item whose budget is archived keeps it as an extra option', async () => {
   fakeApi(routes())
   renderWithProviders(<ItemSheet open item={item({ bucket_id: 'b8' })} onClose={() => {}} />)
-  await waitFor(() => expect(within(screen.getByLabelText('Budget')).getAllByRole('option')).toHaveLength(3))
-  expect(screen.getByLabelText('Budget')).toHaveValue('b8')
-  expect(within(screen.getByLabelText('Budget')).getByRole('option', { name: 'Old (archived)' })).toBeInTheDocument()
+  await waitFor(() => expect(within(screen.getByLabelText('Bucket')).getAllByRole('option')).toHaveLength(3))
+  expect(screen.getByLabelText('Bucket')).toHaveValue('b8')
+  expect(within(screen.getByLabelText('Bucket')).getByRole('option', { name: 'Old (archived)' })).toBeInTheDocument()
 })
 
 it('an item on an event budget shows it as not monthly', async () => {

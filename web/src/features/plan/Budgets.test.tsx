@@ -69,7 +69,7 @@ it('Archive (2d §5.6): asks first, says there is no undo, then archives online 
   const fake = fakeApi({ 'GET /api/v1/plan/budgets': () => [trip], 'GET /api/v1/plan/pace': () => [], [ARCHIVE]: () => reply(200, {}) })
   renderWithProviders(<Budgets />)
   fireEvent.click(await screen.findByRole('button', { name: 'Archive Crete' }))
-  const sheet = screen.getByRole('dialog', { name: 'Archive budget' })
+  const sheet = screen.getByRole('dialog', { name: 'Archive bucket' })
   expect(within(sheet).getByText('Archive Crete? There is no undo: it leaves Plan and the new app.')).toBeInTheDocument()
   const before = fake.callsTo('GET /api/v1/plan/budgets').length
   fireEvent.click(within(sheet).getByRole('button', { name: 'Archive' }))
@@ -84,10 +84,10 @@ it('Archive (2d §5.6): offline it is refused with the reason and nothing is sen
   renderWithProviders(<Budgets />)
   fireEvent.click(await screen.findByRole('button', { name: 'Archive Crete' }))
   setOnline(false)
-  fireEvent.click(within(screen.getByRole('dialog', { name: 'Archive budget' })).getByRole('button', { name: 'Archive' }))
+  fireEvent.click(within(screen.getByRole('dialog', { name: 'Archive bucket' })).getByRole('button', { name: 'Archive' }))
   expect(await screen.findByRole('alert')).toHaveTextContent("You're offline. This change needs a connection.")
   expect(fake.callsTo(ARCHIVE)).toHaveLength(0)
-  expect(screen.getByRole('dialog', { name: 'Archive budget' })).toBeInTheDocument()
+  expect(screen.getByRole('dialog', { name: 'Archive bucket' })).toBeInTheDocument()
 })
 
 it('Archive (2d §5.6): rows without the suggestion have no button', async () => {

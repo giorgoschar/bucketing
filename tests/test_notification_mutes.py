@@ -40,7 +40,7 @@ def test_get_lists_types_on_by_default_and_counts_devices(client, db, api):  # n
     assert all(t["enabled"] for t in body["types"])
     assert {t["group"] for t in body["types"]} == {
         "Bills",
-        "Budgets",
+        "Buckets",
         "Pantry",
         "Apple Pay",
         "Insights",

@@ -23,7 +23,7 @@ it('opens on Upcoming and switches views through the URL', async () => {
   expect(screen.getByRole('heading', { level: 1, name: 'Plan' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Upcoming' })).toHaveAttribute('aria-pressed', 'true')
   expect(await screen.findByRole('button', { name: /Cosmote/ })).toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: 'Budgets' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Buckets' }))
   expect(router.state.location.search).toBe('?view=budgets')
   expect(await screen.findByRole('progressbar', { name: 'Day to day' })).toBeInTheDocument()
   // Year folded into Month (cash spec §4.1): Month, then its Year scale.
@@ -46,7 +46,7 @@ const planView = () => within(screen.getByRole('group', { name: 'Plan view' }))
 it('the segments read exactly Upcoming, Month, Budgets, Cash, Pantry', () => {
   fakeApi(routes())
   renderWithProviders(<Plan />, { route: '/plan' })
-  expect(planView().getAllByRole('button').map((b) => b.textContent)).toEqual(['Upcoming', 'Month', 'Budgets', 'Cash', 'Pantry'])
+  expect(planView().getAllByRole('button').map((b) => b.textContent)).toEqual(['Upcoming', 'Month', 'Buckets', 'Cash', 'Pantry'])
 })
 
 it('?view=pantry opens Pantry', async () => {
@@ -92,8 +92,14 @@ it('?view=cash shows the Cash screen', () => {
 it('switching view keeps the Add panel parameters and drops the old view\'s', async () => {
   fakeApi(routes())
   const { router } = renderWithProviders(<Plan />, { route: '/plan?view=month&add=1&copy=t9&mode=cash&scale=year' })
-  fireEvent.click(screen.getByRole('button', { name: 'Budgets' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Buckets' }))
   expect(router.state.location.search).toBe('?add=1&mode=cash&copy=t9&view=budgets')
   fireEvent.click(screen.getByRole('button', { name: 'Upcoming' }))
   expect(router.state.location.search).toBe('?add=1&mode=cash&copy=t9')
+})
+
+it('?view=buckets opens the Buckets view as well as ?view=budgets', () => {
+  fakeApi(routes())
+  renderWithProviders(<Plan />, { route: '/plan?view=buckets' })
+  expect(screen.getByRole('button', { name: 'Buckets' })).toHaveAttribute('aria-pressed', 'true')
 })

@@ -5,7 +5,7 @@ import './composer-kit.css'
 export interface PillProps {
   label: string
   value: string
-  /** Nothing chosen yet: dashed outline (e.g. "Choose a budget"). */
+  /** Nothing chosen yet: dashed outline (e.g. "Choose a bucket"). */
   empty?: boolean
   /** Required and missing: the outline turns amber (the Add form's budget). */
   attention?: boolean

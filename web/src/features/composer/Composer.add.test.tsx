@@ -14,7 +14,7 @@ vi.mock('../../session/SessionProvider', () => ({
 afterEach(resetTestEnv)
 
 // Phase C spec §2.4 (the Add form). The desktop panel renders this same form; its cases are in shell/AddPanel.test.tsx.
-const ready = () => screen.findByRole('button', { name: /^Budget:/ })
+const ready = () => screen.findByRole('button', { name: /^Bucket:/ })
 const pickMethod = async (name: string) => {
   fireEvent.click(screen.getByRole('button', { name: /^Method:/ }))
   fireEvent.click(within(await screen.findByRole('dialog', { name: 'Payment method' })).getByRole('button', { name }))
@@ -172,7 +172,7 @@ it('a missing budget turns the chip amber, shows no second line, and stays Save\
   const save = screen.getByRole('button', { name: /^Save 3 euro/ })
   expect(save).toBeDisabled()
   const reason = document.getElementById(save.getAttribute('aria-describedby') ?? '')
-  expect(reason).toHaveTextContent('Choose a budget')
+  expect(reason).toHaveTextContent('Choose a bucket')
   expect(reason).toHaveClass('ck-visually-hidden')
   expect(document.querySelector('.composer__problem')).toBeNull()
 })

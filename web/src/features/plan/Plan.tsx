@@ -12,7 +12,7 @@ import './plan.css'
 const VIEWS = [
   { value: 'upcoming', label: 'Upcoming' },
   { value: 'month', label: 'Month' },
-  { value: 'budgets', label: 'Budgets' },
+  { value: 'budgets', label: 'Buckets' },
   { value: 'cash', label: 'Cash' },
   { value: 'pantry', label: 'Pantry' },
 ] as const
@@ -21,7 +21,7 @@ type View = (typeof VIEWS)[number]['value']
 export function Plan() {
   const [params, setParams] = useSearchParams()
   // Year folded into Month (cash spec §4.1): old ?view=year links open Month at the Year scale.
-  const asked = params.get('view') === 'year' ? 'month' : params.get('view')
+  const asked = params.get('view') === 'year' ? 'month' : params.get('view') === 'buckets' ? 'budgets' : params.get('view')
   const view: View = VIEWS.find((v) => v.value === asked)?.value ?? 'upcoming'
   // Only the Add panel's own parameters survive a switch: the other views' parameters belong to the view left.
   const choose = (v: View) => setParams((p) => {

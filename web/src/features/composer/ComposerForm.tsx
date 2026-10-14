@@ -376,8 +376,8 @@ export function ComposerForm({ initial, data, defaults, draftKey = 'new' }: {
 
   const pillIcon = (glyph: string) => <span className="ck-pill__glyph">{glyph}</span>
   const budgetPill = s.fixedCost
-    ? <Pill label="Budget" value="Fixed cost" readOnly />
-    : <Pill label="Budget" value={bucketName ?? (income ? 'None' : 'Choose a budget')} empty={!s.bucketId && !income} attention={!s.bucketId && !income}
+    ? <Pill label="Bucket" value="Fixed cost" readOnly />
+    : <Pill label="Bucket" value={bucketName ?? (income ? 'None' : 'Choose a bucket')} empty={!s.bucketId && !income} attention={!s.bucketId && !income}
         onPress={() => setSheet('bucket')} />
   const categoryPill = (
     <Pill label="Category" value={category?.name ?? 'None'} empty={!category && income}

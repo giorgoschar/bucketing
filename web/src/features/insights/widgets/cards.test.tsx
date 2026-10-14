@@ -78,7 +78,7 @@ describe('cards', () => {
   it('Budgets says "over" in words and links to Plan', () => {
     wrap(<BudgetsCard {...ctx} />)
     expect(screen.getByText('€1,310.00 of €1,200.00 · over')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Plan › Budgets' })).toHaveAttribute('href', '/plan?view=budgets')
+    expect(screen.getByRole('link', { name: 'Plan › Buckets' })).toHaveAttribute('href', '/plan?view=budgets')
   })
 
   it('Savings rate reads as a sentence', () => {
