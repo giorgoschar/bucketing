@@ -1,5 +1,7 @@
 import pyotp
+import pytest
 
+from app.api_auth import create_access_token
 from app.models import Category, Household, HouseholdMember, MemberRole
 from tests.test_api_invites import CSRF_COOKIE_NAME, _login, _user
 
@@ -238,3 +240,25 @@ def test_reset_needs_csrf(client, db):
     _login(client, ann, hh)
     r = client.post(f"{H}/members/{bob.id}/reset-2fa", json={"owner_code": "1"})
     assert r.status_code == 403
+
+
+# --- cookie session only -----------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "path,body",
+    [
+        ("/api/v1/invites/tok/accept", None),
+        (f"{HS}/switch", {"household_id": "x"}),
+        (HS, {"name": "New"}),
+        (f"{H}/leave", {"confirm_name": ""}),
+        (f"{H}/transfer-ownership/m", None),
+        (f"{H}/members/m/reset-2fa", {"owner_code": "000000"}),
+    ],
+)
+def test_household_admin_rejects_bearer_tokens(client, db, path, body):
+    ann, hh = _user(db, "ann")
+    token = create_access_token(ann.id, hh.id, ann.session_version)
+    r = client.post(path, json=body, headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 403, r.text
+    assert db.query(Household).count() == 1

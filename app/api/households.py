@@ -31,6 +31,13 @@ from app.services.households import (
 invites = APIRouter(prefix="/invites", tags=["invites"])
 
 
+def cookie_only(credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> None:
+    """Household changes are for the browser session, like the old cookie-only routes: a Bearer
+    (mobile or personal) token can never move ownership, join, leave or switch."""
+    if credentials is not None:
+        raise HTTPException(status_code=403, detail="This is for the signed-in browser session.")
+
+
 def _fail(e: HouseholdError) -> HTTPException:
     return HTTPException(status_code=e.status, detail=e.detail)
 
@@ -66,7 +73,7 @@ def preview_invite(request: Request, token: str, db: Session = Depends(get_db)):
     }
 
 
-@invites.post("/{token}/accept")
+@invites.post("/{token}/accept", dependencies=[Depends(cookie_only)])
 @limiter.limit("10/minute")
 def accept(
     request: Request,
@@ -128,7 +135,7 @@ def list_households(auth=Depends(require_api_auth), db: Session = Depends(get_db
     return [{"id": h.id, "name": h.name, "role": r.value, "active": h.id == hh_id} for h, r in rows]
 
 
-@admin.post("/households/switch")
+@admin.post("/households/switch", dependencies=[Depends(cookie_only)])
 def switch_household(
     request: Request,
     response: Response,
@@ -139,8 +146,6 @@ def switch_household(
 ):
     """Make another household of the caller's the active one for this browser session."""
     user, _ = auth
-    if credentials is not None:
-        raise HTTPException(status_code=400, detail="Switching is for the browser session.")
     if (
         not db.query(HouseholdMember)
         .filter_by(user_id=user.id, household_id=body.household_id)
@@ -151,7 +156,7 @@ def switch_household(
     return {"household_id": body.household_id}
 
 
-@admin.post("/households", status_code=status.HTTP_201_CREATED)
+@admin.post("/households", status_code=status.HTTP_201_CREATED, dependencies=[Depends(cookie_only)])
 def create_new_household(
     request: Request,
     response: Response,
@@ -170,7 +175,7 @@ def create_new_household(
     return {"household_id": household.id}
 
 
-@admin.post("/household/leave")
+@admin.post("/household/leave", dependencies=[Depends(cookie_only)])
 def leave(
     request: Request,
     response: Response,
@@ -192,7 +197,11 @@ def leave(
     return {"household_id": nxt}
 
 
-@admin.post("/household/transfer-ownership/{member_id}", status_code=status.HTTP_204_NO_CONTENT)
+@admin.post(
+    "/household/transfer-ownership/{member_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(cookie_only)],
+)
 def transfer(member_id: str, auth=Depends(require_api_auth), db: Session = Depends(get_db)):
     user, hh_id = auth
     try:
@@ -201,7 +210,11 @@ def transfer(member_id: str, auth=Depends(require_api_auth), db: Session = Depen
         raise _fail(e) from None
 
 
-@admin.post("/household/members/{member_id}/reset-2fa", status_code=status.HTTP_204_NO_CONTENT)
+@admin.post(
+    "/household/members/{member_id}/reset-2fa",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(cookie_only)],
+)
 @limiter.limit("5/minute")
 def reset_2fa(
     request: Request,
