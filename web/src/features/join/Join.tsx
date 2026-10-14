@@ -5,6 +5,7 @@ import { api } from '../../api/client'
 import { ApiError, unwrap } from '../../data/http'
 import { runOnline } from '../../data/onlineAction'
 import type { RawResult } from '../../data/rawJson'
+import { queuedBlock } from '../../offline/queuedChanges'
 import { afterHouseholdChange } from '../../session/householdChange'
 import { BackHeader } from '../../ui/BackHeader'
 import { EmptyState } from '../../ui/EmptyState'
@@ -28,6 +29,8 @@ export function Join() {
   })
 
   const join = async () => {
+    const blocked = await queuedBlock()
+    if (blocked) { toast.show(blocked, { tone: 'error' }); return }
     setBusy(true)
     const out = await runOnline(
       () => api.POST('/api/v1/invites/{token}/accept', { params: { path: { token } } }) as Promise<RawResult<{ household_id: string }>>,

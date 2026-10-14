@@ -7,6 +7,7 @@ const { toast, changed } = vi.hoisted(() => ({ toast: vi.fn(), changed: vi.fn() 
 vi.mock('../../ui/Toast', () => ({ useToast: () => ({ show: toast }) }))
 vi.mock('../../session/householdChange', () => ({ afterHouseholdChange: changed }))
 
+import { db } from '../../offline/db'
 import { Join } from './Join'
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -52,5 +53,15 @@ describe('Join', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Join Casa' }))
     await waitFor(() => expect(toast).toHaveBeenCalledWith('You are already in this household.', { tone: 'error' }))
     expect(changed).not.toHaveBeenCalled()
+  })
+
+  it('does not join while offline writes wait: the join would wipe them', async () => {
+    await db.queue.add({ createdAt: 1, attempts: 0, nextAttemptAt: 0, status: 'pending', iv: new Uint8Array(12), data: new ArrayBuffer(1) })
+    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(json({ household_name: 'Casa', inviter: null }))
+    renderIt()
+    fireEvent.click(await screen.findByRole('button', { name: 'Join Casa' }))
+    await waitFor(() => expect(toast).toHaveBeenCalledWith('You have 1 change waiting to sync. Go online and let them sync first.', { tone: 'error' }))
+    expect(fetch.mock.calls.some((c) => (c[0] as Request).method === 'POST')).toBe(false)
+    await db.queue.clear()
   })
 })

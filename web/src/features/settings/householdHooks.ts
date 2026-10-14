@@ -2,10 +2,11 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '../../api/client'
 import { insightsKeys, settingsKeys } from '../../data/keys'
 import { unwrap } from '../../data/http'
-import { runOnline, useOnlineAction } from '../../data/onlineAction'
+import { type OnlineOutcome, runOnline, useOnlineAction } from '../../data/onlineAction'
 import type { RawResult } from '../../data/rawJson'
 import { useSession } from '../../session/SessionProvider'
 import { afterHouseholdChange } from '../../session/householdChange'
+import { queuedBlock } from '../../offline/queuedChanges'
 import { useToast } from '../../ui/Toast'
 
 export interface HouseholdRow { id: string; name: string; role: 'owner' | 'member'; active: boolean }
@@ -27,6 +28,13 @@ export function useHouseholdActions() {
   const act = useOnlineAction()
   const toast = useToast()
   const hh = useSession().me?.household_id ?? ''
+  /** Household changes wipe the offline queue: refuse while writes wait, and say why. */
+  const guarded = async <T,>(run: () => Promise<OnlineOutcome<T>>): Promise<OnlineOutcome<T>> => {
+    const message = await queuedBlock()
+    if (!message) return run()
+    toast.show(message, { tone: 'error' })
+    return { ok: false, status: null, kind: 'rejected', message }
+  }
   const keys = [settingsKeys.household(hh), insightsKeys.all(hh)]
   return {
     rename: (name: string, currency: string) =>
@@ -36,17 +44,17 @@ export function useHouseholdActions() {
         { invalidates: keys, success: 'Removed' }),
     /** Switch, create and leave change which household every screen shows: they reload the app on it. */
     switchTo: async (id: string) => {
-      const out = await act(() => api.POST('/api/v1/settings/households/switch', { body: { household_id: id } }))
+      const out = await guarded(() => act(() => api.POST('/api/v1/settings/households/switch', { body: { household_id: id } })))
       if (out.ok) afterHouseholdChange()
       return out
     },
     create: async (name: string) => {
-      const out = await act(() => api.POST('/api/v1/settings/households', { body: { name, default_currency: 'EUR' } }))
+      const out = await guarded(() => act(() => api.POST('/api/v1/settings/households', { body: { name, default_currency: 'EUR' } })))
       if (out.ok) afterHouseholdChange()
       return out
     },
     leave: async (confirmName: string) => {
-      const out = await act(() => api.POST('/api/v1/settings/household/leave', { body: { confirm_name: confirmName } }))
+      const out = await guarded(() => act(() => api.POST('/api/v1/settings/household/leave', { body: { confirm_name: confirmName } })))
       // Nowhere left to go: the old app's /setup starts a new household.
       if (out.ok) afterHouseholdChange((out.data as { household_id: string | null }).household_id ? '/app/' : '/setup')
       return out

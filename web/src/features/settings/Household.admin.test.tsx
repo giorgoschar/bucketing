@@ -13,6 +13,7 @@ vi.mock('../../session/householdChange', () => ({ afterHouseholdChange: changed 
 vi.mock('../../session/SessionProvider', () => ({ useSession: () => ({ status: 'signedIn', me: { id: me.current, household_id: 'hh1' } }) }))
 vi.mock('./hooks', () => ({ useHousehold: () => query({ id: 'hh1', name: 'Home', default_currency: 'EUR', members: members.current }) }))
 
+import { db } from '../../offline/db'
 import { Household } from './Household'
 
 const two = [
@@ -58,6 +59,18 @@ describe('Household admin', () => {
     await waitFor(() => expect(changed).toHaveBeenCalled())
     expect(await posts(f)[0].json()).toEqual({ household_id: 'hh2' })
     expect(screen.queryByRole('button', { name: 'Switch to Home' })).toBeNull() // the active one is not a button
+  })
+
+  it('switching is refused while offline writes wait, since the reload would wipe them', async () => {
+    members.current = solo
+    await db.queue.bulkAdd([1, 2].map((n) => ({ createdAt: n, attempts: 0, nextAttemptAt: 0, status: 'pending' as const, iv: new Uint8Array(12), data: new ArrayBuffer(1) })))
+    const f = serve(rows(2), json({ household_id: 'hh2' }))
+    renderIt()
+    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Cabin' }))
+    await waitFor(() => expect(toast).toHaveBeenCalledWith('You have 2 changes waiting to sync. Go online and let them sync first.', { tone: 'error' }))
+    expect(posts(f)).toHaveLength(0)
+    expect(changed).not.toHaveBeenCalled()
+    await db.queue.clear()
   })
 
   it('transfer ownership asks in the page first, never with window.confirm', async () => {
