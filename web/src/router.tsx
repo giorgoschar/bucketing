@@ -5,7 +5,7 @@ import { FullScreenShell } from './shell/FullScreenShell'
 import { Home } from './screens/Home'
 import { Insights } from './screens/Insights'
 import {
-  ActivityRoute, Appearance, Automations, BillHistory, BucketDetail, BillsList, Categories, CategoryScreen, Compose, FuelScreen, Household, Items, NotificationCentre, Notifications,
+  ActivityRoute, Appearance, Automations, BillHistory, BucketDetail, BillsList, Categories, CategoryScreen, Compose, FuelScreen, Household, Items, Join, NotificationCentre, Notifications,
   PantryDetail, Plan, Profile, Settings, ShoppingList, Statement, StatementsList,
 } from './screens/lazy'
 
@@ -36,6 +36,7 @@ export const router = createBrowserRouter(
         { path: 'insights/statements', element: <StatementsList /> },
         { path: 'insights/statements/:month', element: <Statement /> },
         { path: 'notifications', element: <NotificationCentre /> },
+        { path: 'join/:token', element: <Join /> },
         { path: 'settings', element: <Settings /> },
         { path: 'settings/profile', element: <Profile /> },
         { path: 'settings/household', element: <Household /> },

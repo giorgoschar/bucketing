@@ -4,6 +4,7 @@ import { clearPending } from '../data/pending'
 import { installQueueBridge } from '../data/queueBridge'
 import { startReplayTriggers } from '../offline/queue'
 import { queryClient } from '../queryClient'
+import { rememberInvite, takeAfterSignIn } from '../session/afterSignIn'
 import { authErrorMessage, LINKED_MESSAGE, readAuthResult } from '../session/authMessages'
 import { useSession } from '../session/SessionProvider'
 import { SignIn } from '../session/SignIn'
@@ -40,6 +41,15 @@ export function AppShell() {
     const rest = params.toString()
     navigate({ search: rest ? `?${rest}` : '' }, { replace: true })
   }, [hasParams, location.search, navigate])
+
+  // An invite link opened signed out: remember it across the sign-in redirect, then open it.
+  useEffect(() => {
+    if (status === 'signedOut') rememberInvite(location.pathname)
+    else if (status === 'signedIn') {
+      const to = takeAfterSignIn()
+      if (to && to !== location.pathname) navigate(to, { replace: true })
+    }
+  }, [status, location.pathname, navigate])
 
   // Where a later /new link should open its panel on a desktop (addPanel.ts).
   useEffect(() => { rememberScreen(location.pathname, location.search) }, [location.pathname, location.search])

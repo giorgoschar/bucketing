@@ -35,3 +35,5 @@ export const ShoppingList = lazy(() => import('../features/plan/pantry/ShoppingL
 export const NotificationCentre = lazy(() => import('../features/notifications/NotificationCentre').then((m) => ({ default: m.NotificationCentre })))
 // Plan › Buckets › one bucket (its entries, and the trip or savings card).
 export const BucketDetail = lazy(() => import('../features/plan/bucket/BucketDetail').then((m) => ({ default: m.BucketDetail })))
+// Invite link (/app/join/<token>): loads on first visit.
+export const Join = lazy(() => import('../features/join/Join').then((m) => ({ default: m.Join })))

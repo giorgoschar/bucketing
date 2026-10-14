@@ -3232,6 +3232,24 @@
         "title": "CountsOut",
         "type": "object"
       },
+      "CreateIn": {
+        "properties": {
+          "default_currency": {
+            "default": "EUR",
+            "title": "Default Currency",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "CreateIn",
+        "type": "object"
+      },
       "DismissIn": {
         "additionalProperties": false,
         "properties": {
@@ -4097,6 +4115,17 @@
           "is_active"
         ],
         "title": "ItemHit",
+        "type": "object"
+      },
+      "LeaveIn": {
+        "properties": {
+          "confirm_name": {
+            "default": "",
+            "title": "Confirm Name",
+            "type": "string"
+          }
+        },
+        "title": "LeaveIn",
         "type": "object"
       },
       "LineCheckIn": {
@@ -5953,6 +5982,19 @@
           "has_history"
         ],
         "title": "RecurringItemOut",
+        "type": "object"
+      },
+      "ResetIn": {
+        "properties": {
+          "owner_code": {
+            "title": "Owner Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner_code"
+        ],
+        "title": "ResetIn",
         "type": "object"
       },
       "RetailerOut": {
@@ -8090,6 +8132,19 @@
           "labelled_out"
         ],
         "title": "SummaryWalletOut",
+        "type": "object"
+      },
+      "SwitchIn": {
+        "properties": {
+          "household_id": {
+            "title": "Household Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "household_id"
+        ],
+        "title": "SwitchIn",
         "type": "object"
       },
       "TickIn": {
@@ -11483,6 +11538,93 @@
         ]
       }
     },
+    "/api/v1/invites/{token}": {
+      "get": {
+        "description": "What the invite link is for. Public (the link is the credential): household name and who sent it.",
+        "operationId": "preview_invite_api_v1_invites__token__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Invite",
+        "tags": [
+          "invites"
+        ]
+      }
+    },
+    "/api/v1/invites/{token}/accept": {
+      "post": {
+        "description": "The signed-in caller joins the invite's household as a member. The invite is burned.",
+        "operationId": "accept_api_v1_invites__token__accept_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Accept",
+        "tags": [
+          "invites"
+        ]
+      }
+    },
     "/api/v1/matches": {
       "get": {
         "description": "Open suggestions, for Needs attention.",
@@ -13174,6 +13316,100 @@
         ]
       }
     },
+    "/api/v1/settings/household/leave": {
+      "post": {
+        "operationId": "leave_api_v1_settings_household_leave_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeaveIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Leave",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/household/members/{member_id}/reset-2fa": {
+      "post": {
+        "operationId": "reset_2fa_api_v1_settings_household_members__member_id__reset_2fa_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "member_id",
+            "required": true,
+            "schema": {
+              "title": "Member Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reset 2Fa",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
     "/api/v1/settings/household/members/{member_user_id}": {
       "delete": {
         "operationId": "remove_member_api_v1_settings_household_members__member_user_id__delete",
@@ -13209,6 +13445,159 @@
           }
         ],
         "summary": "Remove Member",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/household/transfer-ownership/{member_id}": {
+      "post": {
+        "operationId": "transfer_api_v1_settings_household_transfer_ownership__member_id__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "member_id",
+            "required": true,
+            "schema": {
+              "title": "Member Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Transfer",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/households": {
+      "get": {
+        "description": "The households the caller belongs to (archived ones are gone from their memberships).",
+        "operationId": "list_households_api_v1_settings_households_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Households",
+        "tags": [
+          "settings"
+        ]
+      },
+      "post": {
+        "description": "Any signed-in user may start another household; they own it and it becomes active.",
+        "operationId": "create_new_household_api_v1_settings_households_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create New Household",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/households/switch": {
+      "post": {
+        "description": "Make another household of the caller's the active one for this browser session.",
+        "operationId": "switch_household_api_v1_settings_households_switch_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SwitchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Switch Household",
         "tags": [
           "settings"
         ]
