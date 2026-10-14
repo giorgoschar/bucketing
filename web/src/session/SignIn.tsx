@@ -7,6 +7,8 @@ import { useSession } from './SessionProvider'
 export function SignIn({ result }: { result: AuthResult }) {
   const { logoutFailed, retryLogout } = useSession()
   const [notice] = useState(takeSignInNotice)
+  // An invite link opened signed out: the old /join page is the one that registers a new account.
+  const invite = /^\/app\/join\/([^/]+)/.exec(globalThis.location.pathname)?.[1]
   return (
     <main className="signin">
       <div className="signin__brand">
@@ -31,6 +33,7 @@ export function SignIn({ result }: { result: AuthResult }) {
           <ScanFaceIcon />
           Sign in with Face ID
         </a>
+        {invite && <a className="btn btn--block" href={`/join/${invite}`}>Create an account</a>}
         <p className="signin__hint">No account? Ask a household member for an invite link.</p>
       </div>
     </main>

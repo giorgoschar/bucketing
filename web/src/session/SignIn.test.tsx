@@ -13,3 +13,13 @@ it('shows a one-shot notice once', () => {
   render(<SignIn result={{ error: null, linked: false }} />)
   expect(screen.queryByText('Password changed. Sign in again.')).toBeNull()
 })
+
+it('an invite link offers the old page that registers new accounts', () => {
+  history.pushState({}, '', '/app/join/tok1')
+  render(<SignIn result={{ error: null, linked: false }} />)
+  expect(screen.getByRole('link', { name: 'Create an account' })).toHaveAttribute('href', '/join/tok1')
+  history.pushState({}, '', '/app/')
+  cleanup()
+  render(<SignIn result={{ error: null, linked: false }} />)
+  expect(screen.queryByRole('link', { name: 'Create an account' })).toBeNull()
+})
