@@ -138,3 +138,8 @@ Gaps found in the current app that the new app (web/) must cover.
 - Browser 2 (pre-existing): a chart axis label runs past the card edge.
 - Browser 4 (pre-existing): in Categories vs usual the emoji touches the label.
 - Browser 5 (pre-existing): the Insights period chip row is cut at the edge with no scroll hint.
+
+## Parity follow-ups (review in `.superpowers/sdd/parity/`)
+
+- `POST /settings/households` (create household) has no rate limit; add `@limiter.limit("10/minute")` like accept.
+- Notification list shows 50, no load more.
