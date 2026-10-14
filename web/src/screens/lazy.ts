@@ -30,3 +30,6 @@ export const Notifications = lazy(() => import('../features/settings/Notificatio
 
 // Plan › Pantry › Shopping list (pantry spec §4.5): loads on first visit.
 export const ShoppingList = lazy(() => import('../features/plan/pantry/ShoppingList').then((m) => ({ default: m.ShoppingList })))
+
+// The in-app notification list (the bell).
+export const NotificationCentre = lazy(() => import('../features/notifications/NotificationCentre').then((m) => ({ default: m.NotificationCentre })))

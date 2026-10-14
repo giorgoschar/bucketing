@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { NavLink } from 'react-router'
 import { AccountDialog, type AccountDialogHandle, MyAvatar } from './AccountDialog'
+import { NotificationBell } from '../features/notifications/NotificationBell'
 import { SearchBox, type SearchBoxHandle } from '../features/search/SearchBox'
 import { useOpenAdd } from './addPanel'
 import { CalendarRangeIcon, ChartPieIcon, HouseIcon, ListIcon, PlusIcon, SettingsIcon } from './icons'
@@ -67,6 +68,7 @@ export function Sidebar() {
       </div>
       <div className="sidebar__foot">
         <NavLink to="/settings" className={link}><SettingsIcon />Settings</NavLink>
+        <NotificationBell sidebar />
         <button type="button" className="sidebar__account" aria-label="Account" aria-haspopup="dialog"
           onClick={() => account.current?.open()}>
           <MyAvatar />

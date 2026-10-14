@@ -57,7 +57,7 @@ describe('Settings hub', () => {
 
 describe('account sheet', () => {
   it('has a Settings entry', () => {
-    render(<MemoryRouter><TopBar title="Home" /></MemoryRouter>)
+    render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><TopBar title="Home" /></MemoryRouter></QueryClientProvider>)
     expect(screen.getByRole('link', { name: 'Settings', hidden: true })).toHaveAttribute('href', '/settings')
   })
 })

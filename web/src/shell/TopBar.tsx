@@ -2,6 +2,7 @@ import { useRef, type ReactNode } from 'react'
 import { useInRouterContext, useLocation, useNavigate } from 'react-router'
 import { SEARCH_STATE } from '../features/search/searchState'
 import { SearchIcon } from './icons'
+import { NotificationBell } from '../features/notifications/NotificationBell'
 import { AccountDialog, type AccountDialogHandle, MyAvatar } from './AccountDialog'
 
 /** The four tab screens: the phone's search icon shows on these only (Phase C spec §4.2). */
@@ -27,6 +28,7 @@ export function TopBar({ title, actions }: { title: string; actions?: ReactNode 
       <h1 className="topbar__title">{title}</h1>
       <div className="topbar__end">
         {actions}
+        {inRouter && <NotificationBell />}
         {inRouter && <SearchButton />}
         <button
           type="button"

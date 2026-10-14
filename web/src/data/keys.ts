@@ -70,6 +70,8 @@ export const keys = {
   statement: (month: string) => ['insights', 'statements', 'month', month] as const,
   /** The prefix of both statement reads (affects.item, which does not touch 'insights', adds it; so does Done). */
   statementsAll: () => ['insights', 'statements'] as const,
+  /** NotificationList: GET /notifications (the bell and its list) */
+  notifications: () => ['notifications'] as const,
   household: () => ['household'] as const,
   buckets: () => ['buckets'] as const,
   categories: () => ['categories'] as const,

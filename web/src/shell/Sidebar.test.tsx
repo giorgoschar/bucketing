@@ -66,7 +66,7 @@ it('desktop: the sidebar renders and the tab bar does not', async () => {
   expect(within(nav).getByText('Tameio')).toBeInTheDocument()
   expect(within(nav).queryByRole('link', { name: 'Add' })).not.toBeInTheDocument()
   expect(within(nav).getByRole('button', { name: 'Add' })).toBeInTheDocument()
-  expect(within(nav).getAllByRole('link').map((l) => l.textContent)).toEqual(['Home', 'Activity', 'Plan', 'Insights', 'Settings'])
+  expect(within(nav).getAllByRole('link').map((l) => l.textContent)).toEqual(['Home', 'Activity', 'Plan', 'Insights', 'Settings', 'Notifications'])
   expect(within(nav).getByRole('button', { name: 'Account' })).toBeInTheDocument()
 })
 
