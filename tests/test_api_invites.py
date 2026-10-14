@@ -113,3 +113,21 @@ def test_already_member_is_409_and_invite_stays_usable(client, db):
     assert client.post(f"/api/v1/invites/{inv.token}/accept", headers=csrf).status_code == 409
     db.refresh(inv)
     assert inv.used_at is None
+
+
+def test_accept_race_on_membership_is_a_409_not_a_500(client, db, monkeypatch):
+    # Two invites to one household accepted at once: the second insert hits uq_household_member.
+    from sqlalchemy.exc import IntegrityError
+    from sqlalchemy.orm import Session
+
+    owner, hh = _user(db, "ann")
+    bob, bob_hh = _user(db, "bob")
+    inv = _invite(db, owner, hh)
+    csrf = _login(client, bob, bob_hh)
+
+    def boom(self):
+        raise IntegrityError("INSERT", {}, Exception("uq_household_member"))
+
+    monkeypatch.setattr(Session, "commit", boom)
+    r = client.post(f"/api/v1/invites/{inv.token}/accept", headers=csrf)
+    assert r.status_code == 409 and r.json()["detail"] == "You are already in this household."

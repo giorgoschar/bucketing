@@ -1,5 +1,6 @@
 """Household membership rules shared by the /api/v1 household routes."""
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth import invalidate_user_sessions, security_logger, verify_totp
@@ -49,7 +50,11 @@ def accept_invite(db: Session, user: User, token: str) -> Invitation:
     db.add(
         HouseholdMember(household_id=invite.household_id, user_id=user.id, role=MemberRole.member)
     )
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:  # a parallel accept already added this user (uq_household_member)
+        db.rollback()
+        raise HouseholdError(409, "You are already in this household.") from None
     return invite
 
 
